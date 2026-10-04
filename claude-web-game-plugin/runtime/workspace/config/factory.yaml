@@ -615,6 +615,9 @@ factory:
     # reference: core/reference/store-listing.yaml   # the canonical package and its bars
     # platforms: null            # default: the scaffold-record's game.config platforms
     # locales: null              # default: en plus every targeted platform's required locales
+    # copy_dir: workspace/titles/{title_id}/listing-copy
+    #                            # a person's own copy, <locale>.json each: used instead of the
+    #                            # writer for that locale, and grounded like any other text
     capture:
       kind: browser              # browser | none. `none` BLOCKS the step: a listing without
                                  # screenshots of the running build is never a silent pass

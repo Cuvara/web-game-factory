@@ -563,6 +563,77 @@ class Copy(unittest.TestCase):
         self.assertEqual(copywriter.fit_list(["Puzzle", "Zzz"], 5, allowed=["puzzle"]), ["Puzzle"])
 
 
+def _courses_design(units=6):
+    design = copy.deepcopy(DESIGN)
+    design["scope"]["content_units"] = units
+    design["scope"]["content_unit_kind"] = "courses"
+    return design
+
+
+# Sky Marble (2026-10-04): the design planned six courses, the build ships twelve in three
+# tiers; the copy said "six sky courses" and "one input and no buttons" beside a pause button.
+TWELVE = {"en": {**{f"course.{n}": f"Course Name {n}" for n in range(1, 13)},
+                 "title.course": "Course {n}", "courses.back": "Back", "clear.next": "Next course",
+                 "title.heading": "Fixture Game", "hud.objective": "Tap on the beat to switch lanes."},
+          "ru": {**{f"course.{n}": f"Трасса {n}" for n in range(1, 13)},
+                 "title.course": "Трасса {n}", "courses.back": "Назад", "clear.next": "Следующая трасса",
+                 "title.heading": "Fixture Game", "hud.objective": "Нажимайте в такт, чтобы менять полосу."}}
+
+
+class BuildFacts(unittest.TestCase):
+    def test_the_build_count_wins_over_the_design_and_the_conflict_is_recorded(self):
+        report = {"scope_deltas": [{"item": "Courses 7-12", "direction": "added", "reason": "Twelve authored."},
+                                   {"item": "nothing", "direction": "sideways"}]}
+        facts = facts_mod.extract(_courses_design(6), strings=TWELVE, prototype_report=report)
+        self.assertEqual(facts["content_units"], 12)
+        self.assertEqual(facts["content_unit_names"][:2], ["Course Name 1", "Course Name 2"])
+        self.assertEqual(facts["sources"]["content_units"], "bundle locales/en.json#course.1..12")
+        self.assertEqual(facts["conflicts"], [{"fact": "content_units", "design": 6, "build": 12,
+                                               "source": "bundle locales/en.json#course.1..12"}])
+        self.assertEqual(facts["scope_deltas"], [{"item": "Courses 7-12", "direction": "added",
+                                                  "reason": "Twelve authored."}])
+
+    def test_without_numbered_strings_the_design_count_stands(self):
+        facts = facts_mod.extract(_courses_design(6), strings={"en": {"course.1": "Only one"}})
+        self.assertEqual(facts["content_units"], 6)
+        self.assertEqual(facts["conflicts"], [])
+
+    def test_a_count_the_build_contradicts_is_refused_in_any_locale(self):
+        facts = facts_mod.extract(_courses_design(6), strings=TWELVE)
+        bad = {"title": "Fixture Game", "short_description": "Six floating sky courses to roll.",
+               "long_description": "There is one input and no buttons. Ten gems per course; the last two "
+                                   "courses ask for stars. Twelve courses in all.",
+               "features": [], "tags": []}
+        found = [p["message"] for p in grounding.check(bad, facts, [], locale="en")
+                 if p["code"] == "contradicted-claim"]
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("'Six floating sky courses'", found[0])
+        # A pause button makes "no buttons" false.
+        facts["controls"]["touch"] = ["Pause button"]
+        found = [p["message"] for p in grounding.check(bad, facts, [], locale="en")
+                 if p["code"] == "contradicted-claim"]
+        self.assertEqual(len(found), 2, found)
+        ru = {"title": "Fixture Game", "short_description": "Всего шесть небесных трасс.",
+              "long_description": "Десять кристаллов на каждой трассе.", "features": [], "tags": []}
+        found = [p["message"] for p in grounding.check(ru, facts, [], locale="ru")
+                 if p["code"] == "contradicted-claim"]
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("шесть небесных трасс", found[0])
+
+    def test_the_template_writer_leaves_out_what_the_build_contradicts(self):
+        design = _courses_design(6)
+        design["build_spec"]["mechanics"][0]["description"] = ("Six sky courses of lanes to clear. "
+                                                               "One tap switches lanes on the beat.")
+        facts = facts_mod.extract(design, strings=TWELVE)
+        reference = load_file(REFERENCE)
+        copies, _ = copywriter.write_copy(facts, ["en"], reference)
+        text = json.dumps(copies["en"])
+        self.assertNotIn("Six sky courses", text)
+        self.assertIn("One tap switches lanes on the beat", copies["en"]["long_description"])
+        self.assertEqual([p for p in grounding.check(copies["en"], facts, reference["claims"], locale="en")
+                          if p["code"] == "contradicted-claim"], [])
+
+
 class Grounding(unittest.TestCase):
     def setUp(self):
         self.reference = load_file(REFERENCE)
@@ -989,6 +1060,55 @@ class Validation(ListingCase):
         self.assertTrue(all(c["fix"] == "configure" for c in failed), failed)
         categories = next(c for c in failed if c["id"] == "platforms.yandex.list:categories")
         self.assertIn("no copy in required locale ru", categories["summary"])
+
+    def test_a_person_can_supply_the_copy_and_it_is_still_grounded(self):
+        supplied_dir = os.path.join(self.scratch, "listing-copy")
+        os.makedirs(supplied_dir)
+        ru = {"title": "Fixture Game", "short_description": "Нажимайте в такт, чтобы менять полосу.",
+              "long_description": "Нажимайте в такт, чтобы менять полосу и держать комбо.",
+              "features": [{"text": "Нажимайте в такт, чтобы менять полосу", "source": "string:ru:title.rules"}],
+              "tags": ["rhythm", "arcade", "casual"], "categories": ["Arcade"]}
+        with open(os.path.join(supplied_dir, "ru.json"), "w", encoding="utf-8") as handle:
+            json.dump(ru, handle, ensure_ascii=False)
+        config = {"listing": {"copy_dir": supplied_dir}}
+        result, _ = self.capture(context=self.context(config=config))
+        listing = self.listing_of(result)
+        self.assertEqual(listing["copy"]["locales"]["ru"]["long_description"], ru["long_description"])
+        self.assertEqual(list(listing["copy"]["supplied"]), ["ru"])
+        outcome, report = self.validate(listing)
+        self.assertEqual(report["verdict"], "PASS", [c for c in report["checks"] if c["status"] == "FAIL"])
+        # A person's text the build contradicts is refused - and is the person's to fix.
+        ru["long_description"] = "Нажимайте в такт. Всего двадцать уровней и нет кнопок."
+        ru["features"].append({"text": "Онлайн-рейтинг", "source": "nowhere"})
+        with open(os.path.join(supplied_dir, "ru.json"), "w", encoding="utf-8") as handle:
+            json.dump(ru, handle, ensure_ascii=False)
+        result, _ = self.capture(context=self.context(config=config))
+        listing = self.listing_of(result)
+        outcome, report = self.validate(listing)
+        self.assertEqual(outcome.outcome, StepOutcome.BLOCKED)
+        grounding_ru = next(c for c in report["checks"] if c["id"] == "grounding.ru")
+        self.assertEqual((grounding_ru["status"], grounding_ru["fix"]), ("FAIL", "configure"))
+        self.assertIn("supplied", grounding_ru["summary"])
+
+    def test_a_supplied_file_that_is_not_copy_is_a_problem_never_used(self):
+        supplied_dir = os.path.join(self.scratch, "listing-copy")
+        os.makedirs(supplied_dir)
+        with open(os.path.join(supplied_dir, "ru.json"), "w", encoding="utf-8") as handle:
+            json.dump({"title": "X", "blurb": "?"}, handle)
+        result, _ = self.capture(context=self.context(config={"listing": {"copy_dir": supplied_dir}}))
+        listing = self.listing_of(result)
+        self.assertNotIn("supplied", listing["copy"])
+        self.assertIn("copy-supplied-invalid", [p["code"] for p in listing["problems"]])
+        self.assertTrue(listing["copy"]["locales"]["ru"]["short_description"].startswith("Нажимайте"))
+
+    def test_scope_deltas_come_from_the_report_of_this_build_only(self):
+        step = listing_step(FakeCapture(), repo_dir=self.game.root)
+        context = self.context()
+        report = {"build_ref": {"commit_sha": self.game.head}, "scope_deltas": []}
+        self.assertIs(step._report_of_this_build(report, self.game.root, self.game.head, context), report)
+        other = {"build_ref": {"commit_sha": "b" * 40}, "scope_deltas": []}
+        self.assertIsNone(step._report_of_this_build(other, self.game.root, self.game.head, context))
+        self.assertIsNone(step._report_of_this_build(None, self.game.root, self.game.head, context))
 
     def test_only_a_person_can_fix_it_blocks(self):
         platforms_ = [{"id": "yandex", "profile": "yandex@1.1.0", "role": "required"}]

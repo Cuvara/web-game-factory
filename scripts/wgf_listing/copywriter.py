@@ -220,6 +220,24 @@ def _string_key(strings, known, named=None, *, english=None, same_as=None):
     return None
 
 
+def _without_contradictions(copy, facts, locale):
+    """The template writer quotes the design; where the build outgrew it ("six courses"
+    when twelve ship), the sentence or item the build contradicts is left out, never
+    rewritten."""
+    def keep(text):
+        return not grounding.contradictions(text, facts, locale)
+
+    for field, value in list(copy.items()):
+        if isinstance(value, str) and value and not keep(value):
+            copy[field] = " ".join(s for s in _SENTENCE_END.split(value) if keep(s))
+        elif isinstance(value, list):
+            copy[field] = [v for v in value if keep(v.get("text") if isinstance(v, dict) else v)
+                           or not isinstance(v.get("text") if isinstance(v, dict) else v, str)]
+    if isinstance(copy.get("subtitle_variants"), list) and copy.get("subtitle") not in copy["subtitle_variants"]:
+        copy["subtitle"] = copy["subtitle_variants"][0] if copy["subtitle_variants"] else ""
+    return copy
+
+
 class TemplateWriter:
     kind = "template"
 
@@ -235,8 +253,9 @@ class TemplateWriter:
             return None
         bounds = self.reference.get("copy") or {}
         if locale == "en":
-            return self._english(facts, bounds)
-        return self._from_strings(facts, strings, locale, bounds)
+            return _without_contradictions(self._english(facts, bounds), facts, locale)
+        copy = self._from_strings(facts, strings, locale, bounds)
+        return _without_contradictions(copy, facts, locale) if copy else copy
 
     def _english(self, facts, bounds):
         title = facts["title"]
@@ -430,6 +449,11 @@ def render_brief(facts, locale, bounds, claims, output_path, to_stdout, previous
              "fact it comes from in `source`. Describe, do not rate: no superlatives, no claims "
              "the facts do not make. The first sentence of each description says what the "
              "player does." % locale, "",
+             "The facts are the build's where the build says something (`sources` names where "
+             "each was read): `content_units` and `content_unit_names` are what ships, "
+             "`scope_deltas` what the build added, cut or deferred against the design, and "
+             "`conflicts` where the design said otherwise. Follow the build; a text the build "
+             "contradicts is refused.", "",
              "## Facts (the only material)", "", "```json",
              json.dumps({k: v for k, v in facts.items() if k != "strings"}, indent=2, ensure_ascii=False),
              "```", ""]

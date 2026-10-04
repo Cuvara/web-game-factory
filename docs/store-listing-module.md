@@ -66,7 +66,13 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
    observed `working`), `scaffold-record` (the targeted platforms), the checkout's
    `game.config.yaml` (the game's name), the bundle's own `locales/<locale>.json` strings and
    its runtime asset manifest (`assets/assets.json`: the asset that draws the player, the
-   fonts). Every fact records where it was read (`facts.sources`).
+   fonts), and the `prototype-report`'s `scope_deltas` when that report is of the listed
+   commit or an ancestor of it. Every fact records where it was read (`facts.sources`).
+   **The build wins over the design.** The listing describes what ships: when the game's
+   own English strings name the design's content units (`course.1` .. `course.12` for
+   `content_unit_kind: courses`), `content_units` is that count and `content_unit_names` those
+   names, and a design figure the build outgrew (six planned, twelve shipped) is recorded in
+   `facts.conflicts`.
 2. **Capture** (`capture.py`, `capture.mjs`). The bundle is served by the Factory's own
    static server on 127.0.0.1 (no package manager, no preview server); the capture script
    runs in the checkout on Node, resolving the game's own Playwright, behind the refusing
@@ -112,7 +118,18 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
    achievements, controller, 3D, levels, story, bosses, endless, offline - needs its backing
    in the facts (an `sdk:` capability, an `engine:` dimension, a `feature:` text, a `design:`
    field); superlatives the vocabulary forbids are errors; rating adjectives are warnings;
-   every feature bullet names the fact it comes from and shares words with it.
+   every feature bullet names the fact it comes from and shares words with it. A text the
+   build contradicts is an error (`contradicted-claim`): a count of the content units other
+   than the build's ("six sky courses", "шесть небесных трасс" - the unit word in another
+   locale is read from the game's own strings), or "no buttons" beside a control that names
+   a button. A count of a subset ("the last two courses") or of something else ("ten gems
+   per course") is not one. The template writer leaves out a design sentence the build
+   contradicts instead of quoting it.
+   A person may write a locale's copy themselves: `<copy_dir>/<locale>.json` (a localeCopy;
+   default `workspace/titles/<title_id>/listing-copy/` in the project) is used instead of the
+   writer for that locale, recorded in `copy.supplied`, and grounded like any other text. A
+   check that fails on it is `fix: configure`: the person fixes their file; another pass
+   would not.
 7. **Platform renditions** (`platforms.py`, `package.render_platform`). For each targeted
    platform (the scaffold-record's `game_config.platforms`, or `listing.platforms`), the
    profile's `store_listing` block becomes an explicit requirement list - texts and their
@@ -196,7 +213,8 @@ overrides any): `capture.kind` (`browser` | `none` - BLOCKED), `capture.node`,
 `capture.timeout_seconds`, `capture.trailer`, `capture.viewports`; `writer.kind` (`template` |
 `command`), `writer.argv` (`{brief}` `{output}` `{prompt}`), `writer.text_from`,
 `writer.timeout_seconds`, `writer.idle_timeout_seconds`; `platforms`; `locales`;
-`reference`; `age_rating` (per platform id or `default`). The capture runs with the game
+`reference`; `age_rating` (per platform id or `default`); `copy_dir` (a person's own copy,
+`{title_id}` substituted, relative to the project; null turns it off). The capture runs with the game
 environment (`factory.agents.game_env_passthrough`), the writer with the agent environment
 (`factory.agents.env_passthrough`). Child variables: `WGF_LISTING_BRIEF`,
 `WGF_LISTING_OUTPUT` for the writer ([env-vars.md](env-vars.md)).

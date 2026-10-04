@@ -19,7 +19,8 @@ import re
 from wgflib import paths
 from wgflib.yamllite import YamlError, load_file
 
-__all__ = ["extract", "humanize", "genre_chain", "load_vocabulary", "VOCABULARY_PATH"]
+__all__ = ["extract", "humanize", "genre_chain", "load_vocabulary", "VOCABULARY_PATH",
+           "unit_kind_forms", "built_units"]
 
 VOCABULARY_PATH = os.path.join(paths.REFERENCE, "research-vocabulary.yaml")
 _MVP = ("mvp",)
@@ -92,6 +93,48 @@ def read_strings(dist_dir):
     return out
 
 
+def unit_kind_forms(kind):
+    """The singular and plural of a content unit kind (`courses` -> {course, courses})."""
+    word = str(kind or "").strip().lower()
+    if not word:
+        return set()
+    forms = {word}
+    if word.endswith("ies"):
+        forms.add(word[:-3] + "y")
+    elif word.endswith("s"):
+        forms.add(word[:-1])
+        if word.endswith("es") and word[:-2].endswith(("ss", "x", "ch", "sh", "z")):
+            forms.add(word[:-2])
+    else:
+        forms.add(word + "s")
+    return forms
+
+
+_NUMBERED = re.compile(r"^(?P<prefix>[a-z][a-z0-9_-]*)\.(?P<n>[0-9]{1,3})$", re.I)
+
+
+def built_units(strings, kind):
+    """(count, [names], keys label) of the content units the build names in its own English
+    strings - `course.1` .. `course.12` - for the design's unit kind; None when the build
+    names none (then the design's count is all there is)."""
+    english = (strings or {}).get("en") or {}
+    forms = unit_kind_forms(kind)
+    found = {}
+    for key, value in english.items():
+        match = _NUMBERED.match(key)
+        if not match or match.group("prefix").lower() not in forms:
+            continue
+        if not isinstance(value, str) or not value.strip() or "{" in value:
+            continue
+        found[int(match.group("n"))] = (key, value.strip())
+    if len(found) < 2:
+        return None
+    ordered = [found[n] for n in sorted(found)]
+    prefix = ordered[0][0].rsplit(".", 1)[0]
+    label = f"bundle locales/en.json#{prefix}.{min(found)}..{max(found)}"
+    return len(ordered), [name for _key, name in ordered], label
+
+
 def read_runtime_assets(dist_dir):
     """The runtime asset manifest shipped in the bundle (public/assets/assets.json), or None."""
     path = os.path.join(dist_dir or "", "assets", "assets.json")
@@ -140,9 +183,15 @@ def _research_audience(design):
 
 
 def extract(design, *, sdk_report=None, scaffold=None, strings=None, runtime_assets=None,
-            game_config=None, vocabulary=None):
+            game_config=None, vocabulary=None, prototype_report=None):
     """The facts record and its sources. `strings` is read_strings()'s result; `game_config`
-    the checkout's game.config.yaml (for game.name)."""
+    the checkout's game.config.yaml (for game.name); `prototype_report` the development
+    report of the build being listed (its `scope_deltas`: what the build added, cut or
+    deferred against the design).
+
+    Where the build says something the design does not - twelve courses where the design
+    planned six - the build wins, since the listing describes what ships, and the
+    disagreement is recorded in `conflicts`."""
     design = design or {}
     build = design.get("build_spec") or {}
     experience = build.get("experience") or {}
@@ -277,6 +326,25 @@ def extract(design, *, sdk_report=None, scaffold=None, strings=None, runtime_ass
     put("content_units", units if isinstance(units, int) and not isinstance(units, bool) else None,
         "game-design#scope.content_units")
     put("content_unit_kind", _text(scope.get("content_unit_kind")), "game-design#scope.content_unit_kind")
+    conflicts = []
+    built = built_units(strings, facts.get("content_unit_kind")) if facts.get("content_unit_kind") else None
+    if built is not None:
+        count, names, label = built
+        if facts.get("content_units") is not None and facts["content_units"] != count:
+            conflicts.append({"fact": "content_units", "design": facts["content_units"], "build": count,
+                              "source": label})
+        put("content_units", count, label)
+        put("content_unit_names", names, label)
+    deltas = []
+    for index, delta in enumerate((prototype_report or {}).get("scope_deltas") or []):
+        if isinstance(delta, dict) and _text(delta.get("item")) and delta.get("direction") in (
+                "added", "cut", "deferred"):
+            entry = {"item": delta["item"].strip(), "direction": delta["direction"]}
+            if _text(delta.get("reason")):
+                entry["reason"] = delta["reason"].strip()
+            deltas.append(entry)
+    put("scope_deltas", deltas, "prototype-report#scope_deltas")
+    facts["conflicts"] = conflicts
     facts["strings"] = {locale: dict(values) for locale, values in sorted(strings.items())}
     if strings:
         note("strings", "bundle locales/<locale>.json")

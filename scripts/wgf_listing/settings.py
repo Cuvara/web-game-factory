@@ -5,6 +5,10 @@
         reference: null              # default core/reference/store-listing.yaml
         platforms: null              # default: the scaffold-record's game.config platforms
         locales: null                # default: en + every targeted platform's required locales
+        copy_dir: workspace/titles/{title_id}/listing-copy
+                                     # a person's own copy, <locale>.json each (localeCopy):
+                                     # used instead of the writer for that locale, and
+                                     # grounded like any other text. Relative to the project
         capture:
           kind: browser              # browser | none (none: BLOCKED - never a silent pass)
           node: node                 # the Node executable the capture script runs on
@@ -37,6 +41,7 @@ DEFAULTS = {
     "reference": None,
     "platforms": None,
     "locales": None,
+    "copy_dir": "workspace/titles/{title_id}/listing-copy",
     "capture": {"kind": "browser", "node": "node", "timeout_seconds": 900, "trailer": True,
                 "viewports": None},
     "writer": {"kind": "template", "argv": [], "timeout_seconds": 600,
@@ -86,6 +91,10 @@ class Settings:
                                     or not all(isinstance(l, str) and l for l in locales)):
             raise SettingsError("factory.listing.locales must be a list of locales or null")
         self.locales = [l.lower() for l in locales] if locales is not None else None
+        copy_dir = data.get("copy_dir")
+        if copy_dir is not None and (not isinstance(copy_dir, str) or not copy_dir.strip()):
+            raise SettingsError("factory.listing.copy_dir must be a directory path or null")
+        self.copy_dir = copy_dir
         capture = data.get("capture") or {}
         self.capture_kind = capture.get("kind")
         if self.capture_kind not in CAPTURE_KINDS:
@@ -125,6 +134,13 @@ class Settings:
         }
         if self.writer["text_from"] not in ("file", "stdout"):
             raise SettingsError("factory.listing.writer.text_from must be file or stdout")
+
+    def copy_dir_for(self, title_id):
+        """The directory a person's own copy for `title_id` is read from, or None."""
+        if not self.copy_dir:
+            return None
+        path = self.copy_dir.replace("{title_id}", str(title_id or "untitled"))
+        return path if os.path.isabs(path) else os.path.join(paths.PROJECT, path)
 
     @classmethod
     def resolve(cls, config, params=None):

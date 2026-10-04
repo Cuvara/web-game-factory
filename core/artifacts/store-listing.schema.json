@@ -80,6 +80,11 @@
             "problems": { "type": "array", "items": { "$ref": "#/$defs/problem" } }
           },
           "additionalProperties": false
+        },
+        "supplied": {
+          "type": "object",
+          "description": "Since 1.1.0. Locale -> the file a person wrote that locale's copy in (factory.listing.copy_dir): used instead of the writer, and grounded like any other text. A grounding failure there is the person's to fix (fix: configure).",
+          "additionalProperties": { "type": "string" }
         }
       },
       "additionalProperties": false
@@ -328,6 +333,40 @@
         "monetization": { "type": "array", "items": { "type": "string" }, "description": "Ad kinds the design places." },
         "content_units": { "type": ["integer", "null"] },
         "content_unit_kind": { "type": ["string", "null"] },
+        "content_unit_names": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Since 1.1.0. The content units the build names in its own strings (course.1 .. course.12), in order; with them `content_units` is the build's count, not the design's."
+        },
+        "scope_deltas": {
+          "type": "array",
+          "description": "Since 1.1.0. What the build added, cut or deferred against the design: the prototype-report's scope_deltas, when that report is of this build or an ancestor of it.",
+          "items": {
+            "type": "object",
+            "required": ["item", "direction"],
+            "properties": {
+              "item": { "type": "string" },
+              "direction": { "enum": ["added", "cut", "deferred"] },
+              "reason": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "description": "Since 1.1.0. Where the build and the design disagree; the build's value is the fact.",
+          "items": {
+            "type": "object",
+            "required": ["fact", "design", "build", "source"],
+            "properties": {
+              "fact": { "type": "string" },
+              "design": {},
+              "build": {},
+              "source": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
         "endless": { "type": "boolean" },
         "strings": { "type": "object", "description": "The game's own on-screen strings read from the shipped bundle's locale files, keyed by locale then key.", "additionalProperties": { "type": "object", "additionalProperties": { "type": "string" } } },
         "sources": {

@@ -431,7 +431,13 @@ class PlatformPublicationTest(unittest.TestCase):
 class ConsoleAdapterReadsTwoZeroTest(unittest.TestCase):
     def adapter(self, profile):
         from wgf_publish.adapters.console import ConsoleAdapter
-        return ConsoleAdapter(profile["id"], profile)
+
+        class NoFields(ConsoleAdapter):
+            # prepare() also maps the listing onto the selector map (workstream 1); this test
+            # is about the upload limit only, so the portal has no listing fields.
+            def selectors(self):
+                return {}
+        return NoFields(profile["id"], profile)
 
     def test_status_words_come_from_status(self):
         from wgf_publish.adapters.console import ConsoleAdapter
@@ -446,6 +452,9 @@ class ConsoleAdapterReadsTwoZeroTest(unittest.TestCase):
             package_path = FIXTURE  # any file on disk
             package = {"filename": "p.zip", "size_mb": 60}
             storage_state = "state.json"
+            metadata = {}
+            listing = {}
+            platform_profile = {}
         problems = self.adapter(fixture()).prepare(Job())
         self.assertTrue(any("exceeds the console's 50 MB upload limit" in p for p in problems),
                         problems)

@@ -10,7 +10,7 @@
 # otherwise.
 
 id: yandex
-version: 2.0.0
+version: 2.1.0
 status: unverified
 docs: https://yandex.com/dev/games/doc/en/
 
@@ -50,11 +50,9 @@ submission:
     allowed_origins: [https://games.yandex.com, https://games.yandex.ru, https://yandex.ru, https://yandex.com]
     upload_timeout_s: 900
   credential:
-    kind: storage-state
-    env: WGF_PUBLISH_YANDEX_STORAGE_STATE
-    capture: >
-      A person logs into the Games Console once in a headed browser and saves the Playwright
-      storage state where the installation keeps secrets; the variable names the file.
+    # A person logs in, live, in the browser window the publish step opens, and
+    # handles any CAPTCHA or second factor there. Nothing of the session is kept.
+    kind: human-login
   human_required: [login, captcha, two-factor, terms, review, contract, age-rating, console-switch]
 
   adaptive: allowed

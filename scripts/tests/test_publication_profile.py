@@ -1,4 +1,4 @@
-"""Publication profile 2.0.0: the schema, the flow rules, and their check in check-integrity.
+"""Publication profile 2.0.0 and 2.1.0: the schema, the flow rules, and their check in check-integrity.
 
 core/artifacts/shared/publication-profile.schema.json says what an intent, a locator ladder, a
 content policy and the adaptive bounds look like; wgflib.publication.flow_problems says what a
@@ -74,8 +74,17 @@ class ShippedProfilesTest(unittest.TestCase):
                 self.assertEqual(errors(profile), [])
                 self.assertEqual(pub.flow_problems(profile), [])
 
-    def test_the_schema_is_2_0_0(self):
-        self.assertEqual(PROFILE_SCHEMA["x-wgf"]["version"], "2.0.0")
+    def test_the_schema_is_2_1_0(self):
+        self.assertEqual(PROFILE_SCHEMA["x-wgf"]["version"], "2.1.0")
+
+    def test_every_console_is_reached_through_a_person_s_live_login(self):
+        for path in CORE_PROFILES + [FIXTURE]:
+            profile = load_file(path)
+            submission = profile["submission"]
+            if submission["method"] != "console":
+                continue
+            with self.subTest(path=os.path.basename(path)):
+                self.assertEqual(submission["credential"], {"kind": "human-login"})
 
     def test_every_profile_is_on_the_2_0_0_form(self):
         for path in CORE_PROFILES + [FIXTURE]:
@@ -229,6 +238,51 @@ class ProfileSchemaTest(unittest.TestCase):
         profile = fixture()
         profile["submission"]["identity"]["title_match"] = "fuzzy"
         self.refused(profile)
+
+
+class LoginAndIdentityTest(unittest.TestCase):
+    """2.1.0: a person's live login replaces the captured session; the ids a portal issues on
+    create, the authenticated url and the console's error marker are data."""
+
+    def test_human_login_takes_no_variable_and_storage_state_is_refused(self):
+        profile = fixture()
+        self.assertEqual(errors(profile), [])
+        profile["submission"]["credential"] = {"kind": "human-login", "env": "WGF_X"}
+        self.assertNotEqual(errors(profile), [])
+        profile["submission"]["credential"] = {"kind": "token"}
+        self.assertNotEqual(errors(profile), [], "a token is named by its variable")
+        profile["submission"]["credential"] = {"kind": "storage-state", "env": "WGF_X"}
+        self.assertEqual(errors(profile), [], "deprecated, not removed: an old file still parses")
+        self.assertTrue(any("storage-state is deprecated" in p for p in pub.flow_problems(profile)))
+        profile["submission"]["credential"] = {"kind": "token", "env": "WGF_X"}
+        self.assertTrue(any("person's live login" in p for p in pub.flow_problems(profile)))
+        self.assertEqual(pub.human_reason(profile | {"submission": dict(
+            profile["submission"], credential={"kind": "storage-state", "env": "WGF_X"})}, {}, True)[0],
+            "credential-missing")
+        self.assertIsNone(pub.human_reason(fixture(), {}, None))
+
+    def test_issued_on_create_page_id_error_and_authenticated_url(self):
+        profile = fixture()
+        identity = profile["submission"]["identity"]
+        identity["issued_on_create"] = [{"key": "external_game_id", "read": [{"label": "Game ID"}]},
+                                        {"key": "app_id", "read": [{"label": "App ID"}], "attr": "value"}]
+        self.assertEqual(errors(profile), [])
+        self.assertEqual(pub.flow_problems(profile), [])
+        identity["issued_on_create"].append({"key": "app_id", "read": [{"label": "App"}]})
+        self.assertTrue(any("names app_id twice" in p for p in pub.flow_problems(profile)))
+        identity["issued_on_create"] = [{"key": "slug", "read": [{"css": "#x"}]}]
+        self.assertNotEqual(errors(profile), [])
+        profile = fixture()
+        profile["submission"]["session"]["authenticated_url"] = "(unclosed"
+        self.assertTrue(any("not a regular expression" in p for p in pub.flow_problems(profile)))
+        profile = fixture()
+        intent(profile, "field.title")["multiple"] = True
+        self.assertTrue(any("`multiple` is for an upload" in p for p in pub.flow_problems(profile)))
+
+    def test_y8_says_where_the_ids_issued_on_create_are_read(self):
+        profile = pub.load_publication_profile("y8")
+        keys = [e["key"] for e in profile["submission"]["identity"]["issued_on_create"]]
+        self.assertEqual(keys, ["external_game_id", "app_id"])
 
 
 class FlowRulesTest(unittest.TestCase):
@@ -451,7 +505,9 @@ class ConsoleAdapterReadsTwoZeroTest(unittest.TestCase):
             console_url = "http://127.0.0.1:1/"
             package_path = FIXTURE  # any file on disk
             package = {"filename": "p.zip", "size_mb": 60}
-            storage_state = "state.json"
+            idempotency_key = "wgf-generic-web-0"
+            release_dir = os.path.dirname(FIXTURE)
+            timeouts = {}
             metadata = {}
             listing = {}
             platform_profile = {}

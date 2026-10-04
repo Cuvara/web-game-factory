@@ -1,59 +1,84 @@
-"""ConsoleAdapter: a portal with no API, driven through its developer console by the direct
-Playwright executor (wgf_publish.browser), deterministically.
+"""ConsoleAdapter: a portal with no API, driven through its developer console by the
+profile-driven intent runner (browser/console.spec.ts, run by wgf_publish.browser).
 
-A subclass supplies the selector map for its portal (`selectors()`), the console URL comes
-from the publication profile, and the phases are fixed: authenticate, find_existing, upload
-(skipped when the idempotency key is already on a draft), configure, submit (only when the
-job says so - once), verify. The executor's result is mapped here into the common outcomes;
-the portal's own status words are mapped through the profile's `status` lists (publication
-profile 2.0.0; `verification` before).
+No selector lives in code. The publication profile (core/reference/publication/<id>.yaml,
+2.1.0) holds the console flow as intents; this adapter resolves every value an intent names
+from the job - the shipped listing's copy per locale, the store metadata's media files, the
+package, the game identity - substitutes `<locale>` in per-locale intents, and hands the
+runner a flow it executes without deciding anything. The runner's result is mapped here into
+the common outcome vocabulary and the interface fields of `Publication`.
 
-Selector maps for live portals are hypotheses until a person has run them against the real
-console (profile `status: verified`); until then the step never reaches this adapter for
-them, because the profile's `automation_terms` is unverified too.
+The visit:
+
+    session        a person logs in, live, in the headed window (WAITING_FOR_HUMAN_LOGIN,
+                   relayed as step progress); a login timeout or a closed window is
+                   AUTH_REQUIRED, never a failure
+    find_game      recorded id > config ids > idempotency key > exact title; an unrecorded
+                   match stops (duplicate-candidate)
+    status_gate    a pending review stops (review-pending): nothing uploads over it
+    create_game    only when nothing matched; ids the portal issues on create that the build
+                   lacks stop before any upload (IDS_ISSUED)
+    upload_build .. save_draft
+                   live (and the fixture's dry run); a real portal's dry run stops before
+                   the first change and says what it would do (DRY_RUN)
+    request_review only in a later visit whose job carries `submit_confirmed` (a person's
+                   `wgf decide <run> submit`): once, profile locator only
+    verify         the status text, mapped through the profile's `status` lists
+
+A live upload visit ends UPLOAD_COMPLETE (WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION): the build
+is on the draft, saved, and nothing irreversible happened. Fields only a person may fill
+(the profile's `human` intents) are reported, never acted on: HUMAN_REQUIRED (`declaration`
+or `legal`) until the page shows them done.
+
+Every action and waiting period is a line of `<run scratch>/actions.jsonl`, scrubbed with
+wgflib.redact after the run; its run-relative path is `Publication.actions_log`.
 """
 
+import hashlib
+import json
 import os
+import re
 
 from wgflib import redact
 
 from .. import outcomes
 from ..browser import BrowserExecutor
-from ..evidence import Evidence
+from ..evidence import Evidence, file_sha256, relative_to_run
 from .base import Publication, PublicationAdapter, utc_now
 
-__all__ = ["ConsoleAdapter"]
+__all__ = ["ConsoleAdapter", "DEFAULT_TIMEOUTS", "LOGIN_TIMEOUT_S", "resolve_value"]
 
-PHASES = ("authenticate", "find_existing", "upload", "configure", "submit", "verify")
 DEFAULT_TIMEOUTS = {"action": 5000, "navigation": 60000, "upload": 900000}
+LOGIN_TIMEOUT_S = 900
+ACTIONS_LOG = "actions.jsonl"
+STATE_FILE = "browser-state.json"
 
-# Executor phase outcomes -> publication outcomes, for a phase that stopped the run.
-_STOPS = {
-    "login_required": (outcomes.AUTH_REQUIRED, "login"),
-    "captcha": (outcomes.CAPTCHA_REQUIRED, "captcha"),
-    "two_factor": (outcomes.HUMAN_REQUIRED, "two-factor"),
-    "timeout": (outcomes.RETRYABLE_FAILURE, None),
-    "error": (outcomes.PLATFORM_ERROR, None),
+# Where a listing field's text is in the shipped listing's localeCopy, first non-empty wins.
+TEXT_FIELDS = {
+    "description": ("long_description", "description", "short_description"),
+    "long_description": ("long_description",),
+    "short_description": ("short_description",),
+    "instructions": ("controls", "instructions"),
+    "how_to_play": ("controls", "how_to_play"),
 }
+# Values that are public listing copy: logged as they are. Everything else only by hash.
+PUBLIC = re.compile(r"^(listing\.(title|text|tags|categories)|identity\.title)")
+LEGAL = re.compile(r"terms|legal|tax|payout|payment|contract|agreement|pricing|identity|bank",
+                   re.I)
+_HANDOFF_KEYS = ("at", "url", "reason", "kind", "phase", "action", "resume", "resolved_at",
+                 "outcome")
 
 
-# The listing fields a console can be asked to fill, by the name its selector map uses
-# (`field_<name>`, with `{locale}` in the selector for a field the console has per locale):
-# where the value comes from in the shipped listing's localeCopy (first non-empty), the
-# store-metadata fallback, the platform profile's store_listing key that says whether it is
-# required, and whether its text is per language (a console with one field for it cannot take
-# two required locales). `description` is the long description, as
-# store_metadata.descriptions is.
-LISTING_FIELDS = {
-    "title": {"copy": ("title",), "metadata": "title", "profile": "title"},
-    "short_description": {"copy": ("short_description",), "profile": "short_description",
-                          "translated": True},
-    "description": {"copy": ("long_description", "short_description"), "metadata": "descriptions",
-                    "profile": "long_description", "translated": True},
-    "controls": {"copy": ("controls",), "profile": "controls", "translated": True},
-    "tags": {"copy": ("tags",), "profile": "tags"},
-    "categories": {"copy": ("categories",), "profile": "categories"},
-}
+def _sha(text):
+    return "sha256:" + hashlib.sha256(str(text).encode("utf-8")).hexdigest()
+
+
+def _text(value):
+    if isinstance(value, list):
+        value = ", ".join(str(v).strip() for v in value if str(v).strip())
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        value = str(value)
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _unique(items):
@@ -64,12 +89,95 @@ def _unique(items):
     return out
 
 
+def _substitute(value, locale):
+    """`<locale>` replaced in every string of a ladder, an expect block, a url."""
+    if locale is None:
+        return value
+    if isinstance(value, str):
+        return value.replace("<locale>", locale)
+    if isinstance(value, list):
+        return [_substitute(v, locale) for v in value]
+    if isinstance(value, dict):
+        return {k: _substitute(v, locale) for k, v in value.items()}
+    return value
+
+
+def job_identity(job):
+    """What names the game: the job's `identity` (the step's: registry and config ids), the
+    title from the shipped listing or the store metadata, the idempotency key."""
+    given = dict(getattr(job, "identity", None) or {})
+    title = given.get("title")
+    if not title:
+        for copy in (job.listing or {}).values():
+            title = _text((copy or {}).get("title"))
+            if title:
+                break
+    title = title or _text((job.metadata or {}).get("title"))
+    return {
+        "title": title,
+        "portal_game_id": given.get("portal_game_id") or given.get("registry")
+        or given.get("external_game_id"),
+        "config_game_id": given.get("config_game_id") or given.get("game_id"),
+        "config_app_id": given.get("config_app_id") or given.get("app_id"),
+        "key": job.idempotency_key,
+    }
+
+
+def resolve_value(path, job, locale=None, primary=None):
+    """("text", str) | ("files", [abs path]) | (None, None): the value an intent's path
+    names, from the job only. Nothing is invented: a missing value is None."""
+    path = _substitute(path, locale)
+    parts = path.split(".")
+    root = parts[0]
+    if path == "package.file":
+        return ("files", [job.package_path]) if job.package_path else (None, None)
+    if root == "identity":
+        ident = job_identity(job)
+        key = {"title": "title", "key": "key", "game_id": "config_game_id",
+               "app_id": "config_app_id"}.get(parts[1] if len(parts) > 1 else "", None)
+        value = _text(ident.get(key)) if key else None
+        return ("text", value) if value else (None, None)
+    if root == "manifest" and len(parts) == 3 and parts[1] == "package":
+        value = _text((job.package or {}).get(parts[2]))
+        return ("text", value) if value else (None, None)
+    if root != "listing" or len(parts) < 2:
+        return None, None
+    listing = job.listing or {}
+    metadata = job.metadata or {}
+    if parts[1] == "media" and len(parts) == 3:
+        raw = metadata.get(parts[2])
+        paths = raw if isinstance(raw, list) else [raw] if isinstance(raw, str) and raw else []
+        files = [os.path.join(job.release_dir, *str(p).split("/")) for p in paths]
+        return ("files", files) if files else (None, None)
+    if parts[1] == "text" and len(parts) == 4:
+        locale, field = parts[2], parts[3]
+    elif len(parts) == 2:
+        locale, field = primary or locale, parts[1]
+    else:
+        return None, None
+    order = [locale] if parts[1] == "text" else _unique([locale] + list(listing))
+    for where in order:
+        copy = listing.get(where) or {}
+        for key in TEXT_FIELDS.get(field, (field,)):
+            value = _text(copy.get(key))
+            if value:
+                return "text", redact.scrub_text(value)
+    if field == "title" and _text(metadata.get("title")):
+        return "text", _text(metadata["title"])
+    if field in ("description", "long_description"):
+        value = _text((metadata.get("descriptions") or {}).get(locale))
+        if value:
+            return "text", redact.scrub_text(value)
+    return None, None
+
+
 class ConsoleAdapter(PublicationAdapter):
     method = "console"
+    # A dry run on a real portal stops before its first change; only the fixture portal's
+    # dry run creates and uploads (to a draft nothing ever submits).
+    dry_run_uploads = False
 
-    def selectors(self):
-        """{name: css selector or url}. See browser/console.spec.ts for the names."""
-        raise NotImplementedError
+    # -- the console -----------------------------------------------------------------------
 
     def base_url(self, job):
         """The console's base url: the installation's override, else the profile's."""
@@ -77,15 +185,15 @@ class ConsoleAdapter(PublicationAdapter):
                 or (self.submission.get("console") or {}).get("url"))
 
     def console_url(self, job):
-        """Where `authenticate` opens: the page that shows the console when the session is
-        live and the login form when it is not. The base url, unless a subclass knows better."""
+        """Where the visit opens. The base url, unless a subclass knows better."""
         return self.base_url(job)
 
     def allowed_origins(self, job):
         """The origins the browser may reach: the profile's, plus the console url's own."""
         from urllib.parse import urlsplit
         origins = []
-        for url in list((self.submission.get("console") or {}).get("allowed_origins") or [])                 + [self.base_url(job), self.console_url(job)]:
+        for url in (list((self.submission.get("console") or {}).get("allowed_origins") or [])
+                    + [self.base_url(job), self.console_url(job)]):
             parts = urlsplit(str(url or ""))
             if not parts.scheme or not parts.netloc:
                 continue
@@ -102,6 +210,151 @@ class ConsoleAdapter(PublicationAdapter):
         out.update({k: int(v) for k, v in (job.timeouts or {}).items() if k in out})
         return out
 
+    def login_timeout_s(self, job):
+        """factory.publish.login_timeout_s as the step hands it (job.login_timeout_s), else
+        the platform's setting, else 900."""
+        for value in (getattr(job, "login_timeout_s", None), self.settings.get("login_timeout_s"),
+                      (job.timeouts or {}).get("login_s")):
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+                return value
+        return LOGIN_TIMEOUT_S
+
+    def browser_mode(self, job):
+        """(headless, test_human): headed, with a person, for every real portal."""
+        return False, None
+
+    # -- the flow ----------------------------------------------------------------------------
+
+    def locales(self, job):
+        """Required locales (the platform profile's) first, then every other the listing has."""
+        platform = job.platform_profile or {}
+        required = _unique(list((platform.get("store_listing") or {}).get("locales") or [])
+                           + list((platform.get("metadata_requirements") or {}).get(
+                               "descriptions_locales") or [])
+                           + list((platform.get("requirements") or {}).get("locales_required")
+                                  or []))
+        metadata = job.metadata or {}
+        found = _unique(required + list(job.listing or {})
+                        + list(metadata.get("locales_included") or [])
+                        + list(metadata.get("descriptions") or {}))
+        return found or ["en"]
+
+    def intents(self, job):
+        """(intents, problems, unfilled): the profile's flow with every value resolved and
+        every per-locale intent expanded. A non-optional intent whose value the job does not
+        hold is a problem (nothing is contacted); an optional one is left out and named."""
+        status = self.submission.get("status") or {}
+        locales = self.locales(job)
+        primary = locales[0]
+        out, problems, unfilled = [], [], []
+        for intent in self.submission.get("flow") or []:
+            targets = locales if intent.get("per_locale") else [None]
+            for locale in targets:
+                resolved = self._resolve_intent(intent, job, locale, primary, status)
+                if isinstance(resolved, str):
+                    key = f"{intent.get('id')}:{locale}" if locale else intent.get("id")
+                    if intent.get("optional"):
+                        unfilled.append(key)
+                    else:
+                        problems.append(f"intent {key}: {resolved}")
+                    continue
+                out.append(resolved)
+        return out, _unique(problems), unfilled
+
+    def _resolve_intent(self, intent, job, locale, primary, status):
+        """The intent as the runner takes it, or a reason (str) it cannot be run."""
+        item = {k: _substitute(intent[k], locale) for k in
+                ("id", "phase", "class", "action", "target", "url", "note", "optional", "multiple")
+                if k in intent}
+        item["locale"] = locale
+        path = intent.get("value")
+        if path:
+            kind, value = resolve_value(path, job, locale, primary)
+            if kind is None:
+                return f"the job holds no {_substitute(path, locale)}"
+            if kind == "files":
+                missing = [p for p in value if not os.path.isfile(p)]
+                if missing:
+                    return f"{_substitute(path, locale)} names a file that is not on disk"
+                item["files"] = [{"path": os.path.abspath(p).replace(os.sep, "/"),
+                                  "name": os.path.basename(p), "sha256": file_sha256(p)}
+                                 for p in value]
+                item["value_sha256"] = item["files"][0]["sha256"] if len(value) == 1 else \
+                    _sha("|".join(f["sha256"] for f in item["files"]))
+            else:
+                item["value"] = value
+                item["value_sha256"] = _sha(value)
+                item["value_public"] = bool(PUBLIC.match(path))
+        expect = dict(intent.get("expect") or {})
+        if expect:
+            if "value_equals" in expect:
+                kind, value = resolve_value(expect["value_equals"], job, locale, primary)
+                if kind != "text":
+                    return f"the job holds no {_substitute(expect['value_equals'], locale)} to check"
+                expect["value_equals"] = value
+            if "status_in" in expect:
+                expect["status_in"] = [str(w) for w in status.get(expect["status_in"]) or []]
+            if "visible" in expect:
+                expect["visible"] = _substitute(expect["visible"], locale)
+            item["expect"] = expect
+        return item
+
+    def flow(self, job, scratch):
+        intents = self.intents(job)[0]
+        identity = self.submission.get("identity") or {}
+        session = self.submission.get("session") or {}
+        status = self.submission.get("status") or {}
+        ident = job_identity(job)
+        sources = {"registry": ident["portal_game_id"], "config:game_id": ident["config_game_id"],
+                   "config:app_id": ident["config_app_id"], "idempotency-key": ident["key"],
+                   "title": ident["title"]}
+        candidates = [{"source": s, "id": str(sources[s])}
+                      for s in identity.get("portal_id_from") or [] if sources.get(s)]
+        headless, test_human = self.browser_mode(job)
+        confirmed = bool(job.submit and getattr(job, "submit_confirmed", False))
+        uploads = [f for i in intents if i.get("phase") == "upload_build" for f in i.get("files") or []]
+        return {
+            "portal": self.platform_id,
+            "step": "submit",
+            "console_url": self.console_url(job),
+            "allowed_origins": self.allowed_origins(job),
+            "out_dir": scratch.replace(os.sep, "/"),
+            "actions_log": os.path.join(scratch, ACTIONS_LOG).replace(os.sep, "/"),
+            "state_file": os.path.join(scratch, STATE_FILE).replace(os.sep, "/"),
+            "headless": bool(headless),
+            "test_human": test_human.replace(os.sep, "/") if (headless and test_human) else None,
+            "login_timeout_ms": int(self.login_timeout_s(job) * 1000),
+            "poll_ms": int(self.settings.get("poll_ms") or 1000),
+            "mode": "live" if job.submit else "dry-run",
+            "changes_allowed": bool(job.submit or self.dry_run_uploads),
+            "submit_confirmed": confirmed,
+            "allow_create": bool(getattr(job, "allow_create", True)),
+            "session": {k: session[k] for k in ("logged_in", "login", "captcha", "two_factor",
+                                                "anti_bot", "authenticated_url") if session.get(k)},
+            "identity": {**{k: identity[k] for k in ("list_url", "game_url", "row", "row_title",
+                                                     "row_id", "page_id") if identity.get(k)},
+                         "issued_on_create": list(identity.get("issued_on_create") or []),
+                         "candidates": candidates,
+                         "build_ids": {k: str(v) for k, v in (
+                             ("external_game_id", ident["config_game_id"]),
+                             ("app_id", ident["config_app_id"])) if v},
+                         "title": ident["title"]},
+            "status": {"read": status.get("read"), "error": status.get("error"),
+                       **{k: [str(w) for w in status.get(k) or []] for k in (
+                           "states", "submitted_states", "pending_states", "live_states",
+                           "approved_states", "rejected_states")}},
+            "intents": intents,
+            "plan": {"package": job.package.get("filename"),
+                     "package_sha256": uploads[0]["sha256"] if uploads else None,
+                     "fields": [i["id"] + (f":{i['locale']}" if i.get("locale") else "")
+                                for i in intents if i.get("phase") == "fill_metadata"],
+                     "media": [f["name"] for i in intents if i.get("phase") == "upload_media"
+                               for f in i.get("files") or []]},
+            "timeouts": self.timeouts(job),
+        }
+
+    # -- the visit ---------------------------------------------------------------------------
+
     def prepare(self, job):
         problems = []
         if not self.base_url(job):
@@ -112,119 +365,14 @@ class ConsoleAdapter(PublicationAdapter):
         size = job.package.get("size_mb")
         if limit is not None and isinstance(size, (int, float)) and size > limit:
             problems.append(f"{size} MB exceeds the console's {limit} MB upload limit")
-        if job.storage_state is None and (self.submission.get("credential") or {}).get(
-                "kind", "none") == "storage-state":
-            problems.append("no captured session (storage state) for this run")
-        problems.extend(self.listing_fields(job)[1])
+        kind = (self.submission.get("credential") or {}).get("kind")
+        if kind not in (None, "human-login", "none"):
+            problems.append(f"credential.kind {kind}: a console is reached through a person's "
+                            f"live login (human-login); no session is ever loaded")
+        if not self.submission.get("flow"):
+            problems.append("the publication profile has no console flow")
+        problems.extend(self.intents(job)[1])
         return problems
-
-    def listing_fields(self, job):
-        """(fields, problems, unfilled): every listing field the console has, filled from the
-        shipped listing.
-
-        A console field is a `field_<name>` selector whose name is in LISTING_FIELDS; one with
-        `{locale}` in it is filled once per locale. Locales: the platform profile's
-        `store_listing.locales`, `metadata_requirements.descriptions_locales` and
-        `requirements.locales_required` first (required), then every other locale the listing
-        carries (filled when the console has the field). Values come from the listing's
-        `localeCopy` (release/<id>/listing/platforms/<pid>/listing.json), else the store
-        metadata; nothing is invented. A required field with no value, or one the console map
-        does not name, is a problem - never a blank or skipped field. An optional field with
-        no value is in `unfilled`, so the record says what was left out."""
-        selectors = self.selectors()
-        texts = job.listing or {}
-        metadata = job.metadata or {}
-        platform = job.platform_profile or {}
-        block = platform.get("store_listing") or {}
-        wants = platform.get("metadata_requirements") or {}
-        required_locales = _unique(list(block.get("locales") or [])
-                                   + list(wants.get("descriptions_locales") or [])
-                                   + list((platform.get("requirements") or {}).get(
-                                       "locales_required") or []))
-        description_locales = [str(x) for x in wants.get("descriptions_locales") or []]
-        locales = _unique(required_locales + list(texts) + list(metadata.get("locales_included") or [])
-                          + list((metadata.get("descriptions") or {})))
-        primary = (required_locales or locales or ["en"])[0]
-        fields, problems, unfilled = [], [], []
-        for name, spec in LISTING_FIELDS.items():
-            selector = selectors.get(f"field_{name}")
-            in_profile = name == "title" or (block.get(spec["profile"]) or {}).get("required") is True
-            needed_in = _unique((required_locales or [primary] if in_profile else [])
-                                + (description_locales if spec.get("metadata") == "descriptions"
-                                   else []))
-            if not selector:
-                if needed_in:
-                    problems.append(f"the {self.platform_id} console map names no field for the "
-                                    f"required listing field {name}")
-                continue
-            per_locale = "{locale}" in selector
-            if per_locale:
-                targets = locales
-            else:
-                if spec.get("translated") and len(needed_in) > 1:
-                    problems.append(f"the {self.platform_id} console map has one {name} field but "
-                                    f"{name} is required in {', '.join(needed_in)}")
-                targets = [needed_in[0] if needed_in else primary]
-            for locale in targets:
-                required = locale in needed_in
-                key = f"{name}:{locale}" if per_locale else name
-                value = self._listing_value(spec, texts, metadata, locale)
-                if value is None and not per_locale and not spec.get("translated"):
-                    # One field, not per language (the title is the same in every language):
-                    # any locale of the listing that has it.
-                    value = next((v for v in (self._listing_value(spec, texts, metadata, other)
-                                              for other in locales) if v is not None), None)
-                if value is None:
-                    if required:
-                        problems.append(f"the shipped listing has no {name}"
-                                        + (f" ({locale})" if per_locale or spec.get("translated")
-                                           else "") + f", which {self.platform_id} requires")
-                    else:
-                        unfilled.append(key)
-                    continue
-                fields.append({"key": key, "field": name, "locale": locale if per_locale else None,
-                               "selector": selector.replace("{locale}", locale),
-                               "value": redact.scrub_text(value), "required": required})
-        return fields, _unique(problems), unfilled
-
-    @staticmethod
-    def _listing_value(spec, texts, metadata, locale):
-        """The field's value in `locale` as a string, or None: the listing's copy first, then
-        the store metadata (title; descriptions by locale)."""
-        copy = texts.get(locale) or {}
-        for key in spec["copy"]:
-            value = copy.get(key)
-            if isinstance(value, list):
-                value = ", ".join(str(v).strip() for v in value if str(v).strip())
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        fallback = spec.get("metadata")
-        if fallback == "descriptions":
-            value = (metadata.get("descriptions") or {}).get(locale)
-        elif fallback:
-            value = metadata.get(fallback)
-        else:
-            value = None
-        return value.strip() if isinstance(value, str) and value.strip() else None
-
-    def metadata(self, job):
-        """{field key: value}: the listing fields the console gets, scrubbed."""
-        return {f["key"]: f["value"] for f in self.listing_fields(job)[0]}
-
-    def flow(self, job):
-        return {
-            "console_url": self.console_url(job),
-            "allowed_origins": self.allowed_origins(job),
-            "storage_state": job.storage_state,
-            "output_dir": os.path.join(job.scratch_dir, "frames"),
-            "phases": list(PHASES),
-            "submit": bool(job.submit),
-            "key": job.idempotency_key,
-            "package": job.package_path,
-            "fields": self.listing_fields(job)[0],
-            "selectors": {k: v for k, v in self.selectors().items() if v},
-            "timeouts": self.timeouts(job),
-        }
 
     def publish(self, job):
         problems = self.prepare(job)
@@ -233,29 +381,87 @@ class ConsoleAdapter(PublicationAdapter):
                                evidence=[Evidence("observation", p, phase="prepare")
                                          for p in problems],
                                measurement_class="automation-check")
+        scratch = job.scratch_dir
+        os.makedirs(scratch, exist_ok=True)
+        log = os.path.join(scratch, ACTIONS_LOG)
+        if os.path.exists(log):
+            os.remove(log)  # one visit, one log
+        flow = self.flow(job, scratch)
+        headless, _ = self.browser_mode(job)
+        timeouts = flow["timeouts"]
+        budget = (flow["login_timeout_ms"] * 4 + timeouts["upload"] + timeouts["navigation"] * 40) // 1000
         executor = BrowserExecutor(job.checkout, job.release_dir, job.env, job.hooks,
-                                   run_process=job.run_process,
-                                   timeout_s=self.timeouts(job)["upload"] // 1000 + 600)
-        log = os.path.join(job.scratch_dir, "logs", "console.log")
-        os.makedirs(os.path.dirname(log), exist_ok=True)
-        fields, _, unfilled = self.listing_fields(job)
-        noted = [Evidence("observation", f"listing fields for the console: "
-                                         f"{', '.join(f['key'] for f in fields) or 'none'}"
-                                         + (f"; not filled, no value in the listing and not "
-                                            f"required: {', '.join(unfilled)}" if unfilled else ""),
-                          phase="prepare", data={"fields": [f["key"] for f in fields],
+                                   run_process=job.run_process, timeout_s=budget + 120,
+                                   headless=headless, on_state=self._relay(job))
+        console_log = os.path.join(scratch, "logs", "console.log")
+        os.makedirs(os.path.dirname(console_log), exist_ok=True)
+        intents, _, unfilled = self.intents(job)
+        noted = [Evidence("observation", f"flow for the console: {len(intents)} intent(s); mode "
+                                         f"{flow['mode']}"
+                                         + ("; submit confirmed by a person" if flow["submit_confirmed"] else "")
+                                         + (f"; left out, no value and optional: {', '.join(unfilled)}"
+                                            if unfilled else ""),
+                          phase="prepare", data={"intents": [i["id"] for i in intents],
                                                  "unfilled": unfilled})]
         try:
-            run = executor.execute(self.flow(job), log_path=log)
-            publication = self._interpret(job, run)
+            run = executor.execute(flow, log_path=console_log)
+            publication = self._interpret(job, run, flow)
             publication.evidence[:0] = noted
             return publication
         finally:
             executor.cleanup()
 
-    # -- mapping the executor's result ----------------------------------------------------
+    def _relay(self, job):
+        """Each browser state change, as it happens: to the step's progress (`wgf status`
+        shows it) and its log. Scrubbed; urls are origin + path already."""
+        hooks = job.hooks or {}
 
-    def _interpret(self, job, run):
+        def on_state(state):
+            name = str(state.get("state") or "STATE")
+            fields = {k: state.get(k) for k in ("portal", "step", "url", "reason", "phase",
+                                                "action", "resume", "at", "outcome")
+                      if state.get(k) is not None}
+            if state.get("kind"):
+                # `kind` is the progress callback's own first argument: named apart.
+                fields["challenge"] = state["kind"]
+            if job.logger is not None:
+                try:
+                    job.logger.info(f"publish browser: {name}", **fields)
+                except Exception:
+                    pass
+            on_event = hooks.get("on_event")
+            if on_event is not None:
+                try:
+                    on_event(name, **fields)
+                except Exception:
+                    pass
+        return on_state
+
+    # -- mapping the runner's result ---------------------------------------------------------
+
+    def _actions(self, job, scratch):
+        """Scrub actions.jsonl in place (wgflib.redact, every line) and return (lines,
+        run-relative path) - or ([], None) when the visit wrote none."""
+        path = os.path.join(scratch, ACTIONS_LOG)
+        if not os.path.isfile(path):
+            return [], None
+        lines = []
+        with open(path, encoding="utf-8") as handle:
+            for raw in handle:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    lines.append(redact.scrub(json.loads(raw)))
+                except ValueError:
+                    continue
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
+            for line in lines:
+                handle.write(json.dumps(line, ensure_ascii=False) + "\n")
+        return lines, relative_to_run(path, job.run_dir)
+
+    def _interpret(self, job, run, flow):
+        pid = self.platform_id
         evidence = [Evidence.of_process("playwright console run", run.process, phase="run")]
         if run.refused:
             evidence.append(Evidence("observation",
@@ -264,103 +470,163 @@ class ConsoleAdapter(PublicationAdapter):
                                      data={"refused": sorted(set(run.refused))[:20]}))
         if run.unavailable:
             return Publication(outcomes.BLOCKED,
-                               f"{self.platform_id}: no browser to drive the console with here "
+                               f"{pid}: no browser to drive the console with here "
                                f"(playwright install chromium)", evidence=evidence,
                                measurement_class="automation-check")
-        phases = run.phases
-        draft_id = None
-        found = False
-        for name in PHASES:
-            phase = phases.get(name)
-            if phase is None:
-                if name in ("submit", "verify") and not phases:
-                    break
-                continue
-            for key in ("screenshot",):
-                shot = phase.get(key)
-                if shot and os.path.isfile(shot):
-                    evidence.append(Evidence.screenshot(f"{name}: the console page", shot,
-                                                        job.run_dir, phase=name))
-            if phase.get("status_text"):
-                evidence.append(Evidence.console_text(f"{name}: status text", phase["status_text"],
-                                                      phase=name))
-            if phase.get("url"):
-                evidence.append(Evidence("observation", f"{name}: at {phase['url']}", phase=name))
-            if phase.get("filled") or phase.get("skipped"):
-                evidence.append(Evidence(
-                    "observation", f"{name}: filled {', '.join(phase.get('filled') or []) or 'nothing'}"
-                    + (f"; no console field for optional {', '.join(phase['skipped'])}"
-                       if phase.get("skipped") else ""), phase=name,
-                    data={"filled": list(phase.get("filled") or []),
-                          "skipped": list(phase.get("skipped") or [])}))
-            if phase.get("draft_id"):
-                draft_id = str(phase["draft_id"])
-            if phase.get("found"):
-                found = True
-            outcome = phase.get("outcome")
-            if outcome in _STOPS:
-                mapped, reason = _STOPS[outcome]
-                detail = phase.get("detail") or outcome
-                evidence.append(Evidence("observation", f"{name}: {outcome}: {detail}", phase=name))
-                if mapped == outcomes.RETRYABLE_FAILURE and name in ("submit", "verify"):
-                    # The submit may have landed: nothing retries it; a person looks.
-                    mapped, reason = outcomes.UNKNOWN, "ambiguous-portal-state"
-                return Publication(mapped, f"{self.platform_id}: {name}: {detail}",
-                                   draft_id=draft_id, found_existing=found,
-                                   evidence=evidence, human_reason=reason,
-                                   resume_with="wgf decide <run-id> done|abandon"
-                                   if mapped in outcomes.HUMAN else None)
-        if not phases:
+        res = run.result or {}
+        lines, actions_log = self._actions(job, flow["out_dir"])
+        if actions_log:
+            evidence.append(Evidence.file(f"actions.jsonl: {len(lines)} action(s) and waiting "
+                                          f"period(s)", os.path.join(flow["out_dir"], ACTIONS_LOG),
+                                          job.run_dir, phase="run"))
+        for line in lines:
+            shot = ((line.get("screenshots") or {}).get("post") or {})
+            if shot.get("path") and os.path.isfile(shot["path"]):
+                evidence.append(Evidence.screenshot(
+                    f"{line.get('phase')}: {line.get('intent') or line.get('action')}",
+                    shot["path"], job.run_dir, phase=line.get("phase")))
+        handoffs = [{k: h.get(k) for k in _HANDOFF_KEYS if k in h}
+                    for h in redact.scrub(res.get("login_handoffs") or [])]
+        for handoff in handoffs:
+            evidence.append(Evidence("observation",
+                                     f"waited for a person to log in ({handoff.get('reason')}) at "
+                                     f"{handoff.get('url')}: {handoff.get('outcome') or 'open'}",
+                                     phase=handoff.get("phase") or "session", data=handoff))
+        status_text = res.get("status_text") or res.get("status_before")
+        if status_text:
+            evidence.append(Evidence.console_text("status text", status_text, phase="verify"))
+        found = res.get("found_game")
+        game_id = res.get("game_id") or (found or {}).get("id") or None
+        common = dict(
+            draft_id=game_id, found_existing=bool(found) and (found or {}).get("source") != "title",
+            evidence=evidence, found_game=found, created_ids=res.get("created_ids") or {},
+            uploaded=bool(res.get("uploaded")), saved=bool(res.get("saved")),
+            status_text=status_text, login_handoffs=handoffs, actions_log=actions_log,
+            phase_reached=res.get("phase_reached"))
+        if not res:
             tail = run.process.tail(8) if hasattr(run.process, "tail") else ""
             return Publication(outcomes.RETRYABLE_FAILURE,
-                               f"{self.platform_id}: the console run produced no result "
-                               f"({run.process.status}): {tail}", evidence=evidence)
-        verify = phases.get("verify") or {}
-        status_text = str(verify.get("status_text") or "").strip()
-        submitted_phase = phases.get("submit") or {}
-        clicked = submitted_phase.get("outcome") == "ok"
-        observed = self._classify(status_text, self.submission.get("status") or {})
-        verified_state = {"observed": status_text or "(no status text)", "at": utc_now(),
-                          "source": f"console status text ({self.selectors().get('status_text')})",
-                          **({"url": verify["url"]} if verify.get("url") else {})}
+                               f"{pid}: the console run produced no result "
+                               f"({getattr(run.process, 'status', '?')}): {tail}", **common)
+        outcome = res.get("outcome")
+        stop = res.get("stop") or {}
+        code = stop.get("code")
+        reason = stop.get("reason") or ""
+        where = stop.get("phase") or res.get("phase_reached") or "?"
+        waiting = "wgf decide <run-id> done|abandon"
+
+        def human(outcome_, reason_, message, resume=waiting):
+            return Publication(outcome_, f"{pid}: {message}", human_reason=reason_,
+                               resume_with=resume, **common)
+
+        if outcome in ("login_timeout", "login_abandoned"):
+            why = {"captcha": "captcha", "two-factor": "two-factor", "anti-bot": "anti-bot"}.get(
+                code, "login")
+            return human(outcomes.AUTH_REQUIRED, why,
+                         f"{where}: {reason}: nobody logged in in the window the step opened; "
+                         f"`wgf resume <run-id>` opens it again for a person to log in",
+                         resume="wgf resume <run-id>")
+        if outcome == "drift":
+            if stop.get("class") == "irreversible":
+                return human(outcomes.UNKNOWN, "drift-irreversible",
+                             f"{where}: drift on the irreversible intent {stop.get('intent')}: "
+                             f"{reason}; it is never resolved adaptively - a person corrects the "
+                             f"profile or requests review by hand")
+            return human(outcomes.UNKNOWN, "ambiguous-portal-state",
+                         f"{where}: drift on {stop.get('intent')}: {reason}; the console no "
+                         f"longer matches the profile (resolution: {stop.get('resolution')})")
+        if outcome == "stopped":
+            if code == "dry-run":
+                return Publication(outcomes.DRY_RUN, f"{pid}: dry run: {reason}; would upload "
+                                   f"{flow['plan'].get('package')} ({flow['plan'].get('package_sha256')}), "
+                                   f"fill {len(flow['plan'].get('fields') or [])} field(s), upload "
+                                   f"{len(flow['plan'].get('media') or [])} media file(s); nothing "
+                                   f"changed on the portal", **common)
+            if code == "ids-issued":
+                return Publication(outcomes.IDS_ISSUED, f"{pid}: {reason}", **common)
+            if code == "portal-error":
+                return Publication(outcomes.PLATFORM_ERROR, f"{pid}: {where}: {reason}", **common)
+            if code == "invalid-media":
+                return Publication(outcomes.INVALID_METADATA, f"{pid}: {where}: {reason}", **common)
+            if code in ("manual-create", "manual-upload", "manual-request"):
+                return human(outcomes.HUMAN_REQUIRED, "manual-submission", f"{where}: {reason}")
+            if code in ("duplicate-candidate", "review-pending"):
+                return human(outcomes.UNKNOWN, code, f"{where}: {reason}")
+            if code == "action-failed" and not res.get("request_attempted"):
+                return Publication(outcomes.RETRYABLE_FAILURE, f"{pid}: {where}: {reason}", **common)
+            return human(outcomes.UNKNOWN, "ambiguous-portal-state", f"{where}: {reason}")
+        if outcome != "completed":
+            if res.get("request_attempted"):
+                return human(outcomes.UNKNOWN, "ambiguous-portal-state",
+                             f"{where}: the run ended ({reason or outcome}) after the review "
+                             f"request was attempted: a person reads the portal")
+            return Publication(outcomes.RETRYABLE_FAILURE,
+                               f"{pid}: {where}: the console run ended: {reason or outcome}",
+                               **common)
+        pending = [h for h in res.get("human_fields") or [] if not h.get("done")]
+        pending_text = "; ".join(f"{h.get('id')} ({h.get('note') or 'a person does it'}"
+                                 + (f", {h['url']}" if h.get("url") else "") + ")"
+                                 for h in pending)
         if not job.submit:
             return Publication(outcomes.DRY_RUN,
-                               f"{self.platform_id}: dry run: draft {draft_id or '(none)'} "
-                               f"{'found' if found else 'prepared'}, status {status_text!r}; "
-                               f"nothing submitted", draft_id=draft_id, found_existing=found,
-                               verified_state=verified_state, evidence=evidence)
-        if observed == "submitted" or observed == "live":
-            state = "submitted" if observed == "submitted" else "live"
-            return Publication(outcomes.VERIFIED,
-                               f"{self.platform_id}: the console shows {status_text!r} for draft "
-                               f"{draft_id or '?'}: {state}", state=state, draft_id=draft_id,
-                               found_existing=found, verified_state=verified_state,
-                               evidence=evidence, submitted=True)
-        if observed == "rejected":
-            return Publication(outcomes.REJECTED,
-                               f"{self.platform_id}: the console shows {status_text!r}: rejected; "
-                               f"a person records the compliance finding", state=None,
-                               draft_id=draft_id, verified_state=verified_state,
-                               evidence=evidence)
-        if clicked:
-            # Clicked, acknowledged, but the state read back is not one the profile knows.
-            return Publication(outcomes.UNKNOWN,
-                               f"{self.platform_id}: submit was clicked but the console shows "
-                               f"{status_text!r}, which the publication profile does not map; "
-                               f"a person reads the portal before anything else happens",
-                               draft_id=draft_id, verified_state=verified_state,
-                               evidence=evidence, human_reason="ambiguous-portal-state",
-                               resume_with="wgf decide <run-id> done|abandon")
-        return Publication(outcomes.PLATFORM_ERROR,
-                           f"{self.platform_id}: nothing was submitted and the console shows "
-                           f"{status_text!r}", draft_id=draft_id, verified_state=verified_state,
-                           evidence=evidence)
+                               f"{pid}: dry run: game {game_id or '(none)'} "
+                               f"{'found' if common['found_existing'] else 'prepared'}, build "
+                               f"{'uploaded' if res.get('uploaded') else 'not uploaded'}, draft "
+                               f"{'saved' if res.get('saved') else 'not saved'}, status "
+                               f"{status_text!r}; nothing submitted"
+                               + (f"; a person must still: {pending_text}" if pending else ""),
+                               **common)
+        if pending:
+            legal = any(LEGAL.search(f"{h.get('id')} {h.get('note') or ''}") for h in pending)
+            return human(outcomes.HUMAN_REQUIRED, "legal" if legal else "declaration",
+                         f"a person must complete in the console: {pending_text}; then "
+                         f"`wgf decide <run-id> done` (nothing is requested before)")
+        verified_state = {"observed": status_text or "(no status text)", "at": utc_now(),
+                          "source": "console status text (profile status.read)"}
+        if flow["submit_confirmed"]:
+            observed = self._classify(status_text or "", self.submission.get("status") or {})
+            clicked = bool(res.get("requested"))
+            if observed == "rejected":
+                return Publication(outcomes.REJECTED,
+                                   f"{pid}: the console shows {status_text!r}: rejected; a person "
+                                   f"records the compliance finding",
+                                   verified_state=verified_state, **common)
+            if observed in ("live", "approved"):
+                return Publication(outcomes.VERIFIED,
+                                   f"{pid}: the console shows {status_text!r} for game {game_id}",
+                                   state="live" if observed == "live" else "submitted",
+                                   verified_state=verified_state, submitted=clicked, **common)
+            if observed == "submitted":
+                return Publication(outcomes.SUBMITTED,
+                                   f"{pid}: review "
+                                   f"{'requested once' if clicked else 'already requested'}; the "
+                                   f"console shows {status_text!r} for game {game_id}",
+                                   state="submitted", verified_state=verified_state,
+                                   submitted=clicked, **common)
+            return human(outcomes.UNKNOWN, "ambiguous-portal-state",
+                         f"the console shows {status_text!r}, which the publication profile "
+                         f"does not map"
+                         + (" after the review request" if clicked else "")
+                         + "; a person reads the portal before anything else happens")
+        no_save = not any(i.get("phase") == "save_draft" for i in flow["intents"])
+        if res.get("uploaded") and (res.get("saved") or no_save):
+            return Publication(outcomes.UPLOAD_COMPLETE,
+                               f"{pid}: the build {flow['plan'].get('package')} is on game "
+                               f"{game_id} and the draft is saved (status {status_text!r}); "
+                               f"nothing was submitted. A person reads the draft and decides: "
+                               f"`wgf decide <run-id> submit|hold|abandon`",
+                               human_reason="submit-confirmation",
+                               resume_with="wgf decide <run-id> submit|hold|abandon",
+                               verified_state=verified_state, **common)
+        return human(outcomes.UNKNOWN, "ambiguous-portal-state",
+                     f"the visit ended without a saved draft holding the build (uploaded "
+                     f"{bool(res.get('uploaded'))}, saved {bool(res.get('saved'))})")
 
     @staticmethod
     def _classify(status_text, status):
-        text = status_text.casefold()
-        for kind in ("rejected", "live", "submitted"):
+        text = status_text.strip().casefold()
+        for kind in ("rejected", "live", "approved", "submitted"):
             for word in status.get(f"{kind}_states") or []:
-                if str(word).casefold() == text:
+                if str(word).strip().casefold() == text:
                     return kind
         return None

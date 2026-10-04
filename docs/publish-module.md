@@ -127,36 +127,46 @@ In order, before anything is contacted:
    `READY` is BLOCKED.
 5. **The package** is re-read from the checkout and its sha256 compared with the manifest:
    a mismatch is `INVALID_BUILD`, FAILED, not retryable.
-6. **The credential and the terms** are checked again against the installation's
-   configuration (below). A missing credential, unconfirmed terms, or a method only a person
-   performs is HUMAN_REQUIRED.
+6. **The terms** are checked again against the installation's configuration (below).
+   Unconfirmed terms, or a method only a person performs, is HUMAN_REQUIRED. A console needs
+   no credential in advance: a person logs in, live, in the window the executor opens.
 
 Then the adapter runs, and the record is written from what it observed:
 
 | Outcome | The step returns | `state` |
 |---|---|---|
-| `VERIFIED` / `SUBMITTED` | SUCCESS, route `submitted` | `submitted` (or `live`), from the portal's status text |
+| `VERIFIED` / `SUBMITTED` | SUCCESS, route `submitted` | `submitted` (or `live`), from the portal's status text - only after a confirmed `request_review` |
 | `DRY_RUN` | SUCCESS, route `dry-run` | unchanged (`validated`) |
-| `AUTH_REQUIRED`, `CAPTCHA_REQUIRED`, `HUMAN_REQUIRED` | WAITING_FOR_HUMAN; choices `done`, `abandon` | unchanged |
-| `UNKNOWN` (a submit was clicked and the state read back is one the profile does not map, or could not be read) | WAITING_FOR_HUMAN, reason `ambiguous-portal-state` | unchanged |
-| `REJECTED`, `PLATFORM_ERROR`, `INVALID_BUILD`, `RETRYABLE_FAILURE`, `BLOCKED` | FAILED, not retryable | unchanged |
+| `UPLOAD_COMPLETE` (live: the build is on the draft and saved, nothing requested) | WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION; choices `submit`, `hold`, `abandon` | unchanged |
+| `IDS_ISSUED` (the portal issued ids on create the build does not carry) | SUCCESS, route `platform-ids` | unchanged |
+| `AUTH_REQUIRED` (nobody logged in in the window, or it was closed) | WAITING_FOR_HUMAN_LOGIN; `wgf resume` opens the window again | unchanged |
+| `HUMAN_REQUIRED` (`declaration`, `legal`, `manual-submission`, ...) | WAITING_FOR_HUMAN; choices `done`, `abandon` | unchanged |
+| `UNKNOWN` (`duplicate-candidate`, `review-pending`, `drift-irreversible`, `ambiguous-portal-state`) | WAITING_FOR_HUMAN | unchanged |
+| `REJECTED`, `PLATFORM_ERROR`, `INVALID_BUILD`, `INVALID_METADATA`, `RETRYABLE_FAILURE`, `BLOCKED` | FAILED, not retryable | unchanged |
 
-**Nothing retries the submit.** The step's `retry` is `max_attempts: 1` in the workflow,
-every failure it returns is `retryable=False`, and `max_visits: 3` bounds how often a person
-may re-enter it. A re-entry after a crash finds the draft it already made: the idempotency
-key (`wgf-<platform>-<16 hex>`, from the run id, the manifest hash and the platform) is
-written into the draft's name and looked up before any upload, and the draft id is recorded
-in the artifact. Browser interaction never makes the step pass: `SUBMITTED` and `VERIFIED`
-require the portal's own status text, read back after the action and mapped through the
-profile's `verification` lists.
+**Nothing retries an irreversible action, and the upload and the request never share a
+visit.** The step's `retry` is `max_attempts: 1` in the workflow, every failure it returns is
+`retryable=False`, and `max_visits: 3` bounds how often a person may re-enter it. A live
+visit uploads and saves, then stops `UPLOAD_COMPLETE`; only a later visit whose job carries
+`submit_confirmed` (the step sets it after a person's `wgf decide <run> submit`) runs the
+profile's `request_review` intent - once, on a profile locator, and not at all when the
+game's status already says it was requested. A re-entry finds the game it already made:
+`find_game` tries the recorded portal id, the config ids, the idempotency key
+(`wgf-<platform>-<16 hex>`, from the run id, the manifest hash and the platform) and the
+exact title before anything is created, and an unrecorded match stops
+(`duplicate-candidate`). Browser interaction never makes the step pass: `SUBMITTED` and
+`VERIFIED` require the portal's own status text, read back after the request and mapped
+through the profile's `status` lists.
 
 ### Modes
 
-`factory.publish.mode` is `dry-run` by default: the session is checked, the draft found or
-made, the listing filled, the portal state read back, and the submit is **not** made; the
-record says `DRY_RUN`. `live` makes the submit, once - and only when the Factory's
-environment also has `WGF_PUBLISH_LIVE=1`. Production submission is opted into twice, never
-by one edit.
+`factory.publish.mode` is `dry-run` by default. On a real portal a dry run logs in (a
+person), finds the game and reads its status, then stops before its first change and says
+what it would create, upload and fill; the record says `DRY_RUN`. Only the fixture portal's
+dry run creates, uploads and saves a draft (nothing ever requests review there). `live`
+uploads and saves - and only when the Factory's environment also has `WGF_PUBLISH_LIVE=1`;
+production is opted into twice, never by one edit - and the review request waits for a
+person's `submit` in a later visit.
 
 ## Adapters: where everything platform-specific lives
 
@@ -168,7 +178,7 @@ names a portal, a selector or a URL.
 | Method | Adapter | What happens |
 |---|---|---|
 | `api` / `cli` | `ManualAdapter` | The portal's own documented tool is the supported way in (Poki's CLI). No adapter drives one yet: HUMAN_REQUIRED, the person runs the tool with the packaged release |
-| `console` | `ConsoleAdapter` subclass with the portal's selector map (`crazygames`, `yandex`, the test fixture) | A deterministic browser run of the developer console, below. A console platform with no selector map of its own (`y8`, `gamedistribution`, `gamemonetize`) is HUMAN_REQUIRED |
+| `console` | `ConsoleAdapter` (the profile's flow; `crazygames` and `yandex` subclasses add nothing yet; `FixturePortalAdapter` for the tests) | The intent runner over the publication profile's flow, below. A console profile without a flow is HUMAN_REQUIRED |
 | `email` | `ManualAdapter` | GameVui: the person emails the package; HUMAN_REQUIRED |
 | `manual` | `ManualAdapter` | generic-web: nothing to submit; HUMAN_REQUIRED |
 
@@ -177,47 +187,87 @@ names a portal, a selector or a URL.
 likewise). The console path exists because that is the only path those portals offer; an
 adapter never invents an API.
 
-### The console executor: direct Playwright, not Playwright MCP
+### The console executor: a profile-driven intent runner, not Playwright MCP
 
-`scripts/wgf_publish/browser.py` + `browser/console.spec.ts`. One `pnpm exec playwright
-test` run under `wgflib.procs` in the game checkout (its Playwright, its Chromium - as every
-other browser harness here), from a flow file the adapter writes: console url, allowed
-origins, the storage-state path, the package path, the listing fields, the selector map, the
-timeouts, `submit: true|false`. Fixed phases:
+`scripts/wgf_publish/adapters/console.py` + `browser.py` + `browser/console.spec.ts`. One
+`pnpm exec playwright test` run under `wgflib.procs` in the game checkout (its Playwright,
+its Chromium - as every other browser harness here). No selector lives in code: the adapter
+resolves the publication profile's `submission.flow` against the job - every value an
+intent names (`listing.title`, `listing.text.<locale>.<field>`, `listing.media.<key>` from
+the store metadata, `package.file`, `identity.title`), `<locale>` substituted in per-locale
+intents, which run once per locale - and writes a flow file the runner executes without
+deciding anything. A non-optional intent whose value the job does not hold is BLOCKED
+before anything is contacted; an optional one is left out and named. Phases:
 
 ```
-authenticate    open the console with the captured session: logged in | login form | CAPTCHA | 2FA
-find_existing   a draft carrying the idempotency key?            -> found, draft id
-upload          none found: new draft, setInputFiles, wait for the acknowledgement or the error
-configure       fill every listing field, read each back, save, read each back again
-submit          only when the flow says so: click once, wait for the acknowledgement
-verify          read the portal's own status text back
+session         open the console in a headed, fresh, ephemeral browser; not logged in ->
+                WAITING_FOR_HUMAN_LOGIN until a person logs in in that window (below)
+find_game       recorded id > config game_id/app_id > idempotency key > exact title, in the
+                profile's identity.portal_id_from order; an unrecorded match stops
+                (duplicate-candidate); a recorded id not in the list stops (ambiguous)
+status_gate     the game's status: a pending_states word stops (review-pending) - nothing
+                uploads over a pending review, nothing cancels it
+create_game     only when nothing matched and the job allows it; then identity.
+                issued_on_create is read (Y8's Game ID and App ID): an id the build does
+                not carry yet stops before any upload (IDS_ISSUED)
+upload_build    the one package
+fill_metadata   listing fields; per-locale intents once per locale
+upload_media    icon, cover, screenshots: the input's `accept` and `multiple` are checked
+                first (INVALID_METADATA otherwise)
+human_fields    the profile's `human` intents: reported with their note and url, never
+                acted on; one whose `expect` is met on the page counts as done
+save_draft      save; the post-condition read back
+request_review  only when the job carries submit_confirmed, live, every human field done,
+                not already requested: once, profile locator only, never adaptive
+verify          the portal's own status text
 ```
 
-**The listing fields** (`ConsoleAdapter.listing_fields`). A console fills a field when its
-selector map names `field_<name>` for one of `title`, `short_description`, `description`
-(the long description), `controls`, `tags`, `categories`; a selector containing `{locale}`
-is a per-locale field, filled once per locale. The locales are the platform profile's
-`store_listing.locales`, `metadata_requirements.descriptions_locales` and
-`requirements.locales_required` (these are required), then every other locale the listing
-carries. Values come from the shipped store listing - the platform's rendition,
-`release/<id>/listing/platforms/<pid>/listing.json`, its `text.<locale>` - and fall back to
-the store metadata (`title`, `descriptions.<locale>`); tags and categories are joined with
-`, `. Nothing is invented. A field is required when the platform profile's `store_listing`
-block marks it `required` (in the required locales), when it is a description in
-`descriptions_locales`, or when it is the title. A required field with no value, one the
-selector map does not name, or a per-language field the console has once while two locales
-require it, is a problem: the step returns BLOCKED with the list before anything is
-contacted. In the browser, a required field missing from the page, or a value the console
-does not keep after saving, ends `configure` as an error (PLATFORM_ERROR); an optional
-field without a value, or without a field on the page, is named in the record's evidence,
-never silently skipped.
+**Locators.** Each intent has a ladder, tried in order: role + accessible name, label,
+placeholder, exact text, stable attribute (`testid`), css, xpath. The first rung that
+resolves to exactly one visible element (an attached one for a file input) wins and is
+recorded with its rung; never coordinates. Every action's post-condition (`expect`: url,
+value read back, an element shown, text, a status word) is checked after it. A ladder that
+matches nothing or several elements, or a failed post-condition, ends the visit with a
+`drift` result naming the intent: `UNKNOWN` (`ambiguous-portal-state`) on a reversible
+intent, `drift-irreversible` on the request. `resolveDrift(intent, snapshot)` in the spec is
+the hook the bounded adaptive mode (`docs/portal-publishing-architecture.md` 2.6) will fill;
+today it returns `stop`. A failed post-condition after the irreversible click is never
+retried: a person reads the portal. A profile `status.error` shown after an action is
+`PLATFORM_ERROR` with its text.
 
-Every wait has a timeout from the profile; every request to an origin outside
-`allowed_origins` is aborted at the browser; screenshots are taken only on console pages
-after a known navigation (never on a login page or a challenge), hashed and cited by
-run-relative path. The spec decides nothing - no model, no heuristics - and the irreversible
-click is one line that runs once or not at all.
+**The live login handoff.** The browser is headed (headless only for the tests' fixture
+portal) and its context is fresh: no storage state in, none out, no persistent profile; the
+session lives only while that window is open. When the console is not logged in - the
+profile's `session` markers (`logged_in`, `login`, `captcha`, `two_factor`, `anti_bot`,
+`authenticated_url`), and whatever they say, a page off the allowed origins or showing a
+password, CAPTCHA or one-time-code field - the runner writes
+
+```
+{state: WAITING_FOR_HUMAN_LOGIN, portal, step, url (origin + path), reason,
+ action: "log in in the opened browser window; handle CAPTCHA/2FA yourself",
+ resume: "the console's authenticated page is detected", at}
+```
+
+to its state file and stdout, and polls until the authenticated console is detected or
+`factory.publish.login_timeout_s` (default 900) runs out. The adapter relays each state
+change (`WAITING_FOR_HUMAN_LOGIN`, `AUTHENTICATED`, `LOGIN_TIMEOUT`, `LOGIN_ABANDONED`,
+`ENDED`) as step progress, so `wgf status` shows it while the browser waits, and records each
+period in `Publication.login_handoffs`. Detected: the visit continues in the same browser.
+Timeout or a closed window: `AUTH_REQUIRED`, waiting, never a failure. A CAPTCHA, second
+factor or anti-bot check shown mid-flow waits for the person the same way. While a person
+drives the window, requests to other origins (an identity provider) are let through;
+otherwise every request outside `allowed_origins` is aborted. The Factory never asks for,
+types or stores a password or one-time code, never answers a challenge, and never takes a
+screenshot on a page that is not the logged-in console.
+
+**`actions.jsonl`.** One JSON line per browser action and per waiting period in
+`<run>/<step>/<visit>-<attempt>/actions.jsonl` (`Publication.actions_log`, run-relative):
+portal, phase, intent id, class, action, the locator used, its rung and `source: profile`,
+the element's role and name, the value's sha256 (the value itself only for public listing
+copy; files by name and sha256), the result and the post-condition's, `adaptive: false`,
+`human_intervention` (true for login waits), timestamps, and pre/post screenshot paths with
+their hashes. The adapter scrubs every line with `wgflib.redact` after the run; no
+password, token, cookie or one-time code is ever written.
 
 **Playwright MCP is not the submission executor.** It stays what it was: the QA and
 self-playtest tool pinned in `workspace/config/mcp-playwright-localhost.json`, localhost
@@ -261,24 +311,25 @@ withdraws, deletes, removes or unpublishes anything; every irreversible intent h
 ladder and no adaptive `names`; every `request_review` intent is irreversible; every intent
 has a class; adaptive `names` and `dismissable` stay outside the deny vocabulary
 (`DENY_VOCABULARY` plus the profile's `deny`); every `*_states` word is a `states` word, and a
-flow that requests review names its `pending_states`. Today the executor still runs the
-adapter's selector map (above); running the profile's `flow` is workstream 3 of the
-architecture. The shipped console profiles were written from public pages only - no locator
-is `observed`, every one stays `status: unverified`.
+flow that requests review names its `pending_states`; a console's credential is
+`human-login` (2.1.0: `storage-state` is refused); `session.authenticated_url` is a regular
+expression; `identity.issued_on_create` names each id once. The executor runs the profile's
+`flow` (above). The shipped console profiles were written from public pages only - no
+locator is `observed`, every one stays `status: unverified`.
 
 ## Authentication and secrets
 
-The automation never logs in. A person captures the portal session once, in a headed
-browser - `python scripts/wgf-publish.py capture <platform> --out <path> --checkout <game>`
-runs `playwright open --save-storage` - and keeps the Playwright storage state where the
-installation keeps secrets. The profile names the variable (`WGF_PUBLISH_<PLATFORM>_STORAGE_STATE`)
-that holds its path (or the JSON), and the installation lists that name in
-`factory.publish.env_passthrough`: a **third** allowlist beside `factory.agents.env_passthrough`
-(agents) and `game_env_passthrough` (game code), so a portal session never reaches an agent
-or a build. The step reads it only for the platform whose profile names it, writes a
-private copy for the one browser run, registers every cookie and token value with
-`wgflib.redact`, and overwrites and deletes the copy when the run ends. An expired session
-is `AUTH_REQUIRED`; a CAPTCHA or second factor stops the step; nothing is bypassed.
+The automation never logs in and keeps no session. Every console profile's credential is
+`{kind: human-login}` (publication profile 2.1.0): a person logs in, live, in the headed
+browser window the `submit` step opens, and handles any CAPTCHA, second factor or anti-bot
+check there; the executor waits (WAITING_FOR_HUMAN_LOGIN) and continues in the same browser.
+No storage state is captured, loaded or saved, no cookie is read, no persistent browser
+profile is used: the session ends with the window, and the next visit asks again. The
+former `wgf-publish.py capture` command, the `WGF_PUBLISH_<PLATFORM>_STORAGE_STATE`
+variables and their `factory.publish.env_passthrough` entries are retired; a profile that
+still names `storage-state` is refused by `check-integrity.py` and BLOCKED by the adapter.
+`factory.publish.env_passthrough` remains only for a tool's `token` credential (a CLI's
+login), which no shipped adapter uses yet.
 
 **Redaction** (`scripts/wgflib/redact.py`) is the last line, applied in the kernel: every
 record on the workflow event bus - messages, log lines, errors, progress - is scrubbed before
@@ -394,7 +445,8 @@ it is the next step (`docs/portal-publishing-architecture.md`, 2.5).
 factory:
   publish:
     mode: dry-run                     # live also needs WGF_PUBLISH_LIVE=1
-    env_passthrough: []               # [WGF_PUBLISH_CRAZYGAMES_STORAGE_STATE]
+    login_timeout_s: 900              # how long a visit waits for a person to log in
+    env_passthrough: []               # a tool's token only; no console session exists
     platforms: {}                     # crazygames: {terms_confirmed: true}
     # profiles_extra: []              # more publication profiles (tests)
     # timeouts: {}                    # action / navigation / upload, ms
@@ -406,16 +458,25 @@ every step uses, `docs/checkouts.md`).
 ## Tests
 
 `scripts/tests/test_publish_module.py` (RELEASE category): redaction; every guard; adapter
-resolution and the session's private copy; `platform-validate` on a drafted release (undecided,
-blocked, human-required, ready, a tampered package); `submit` with a fake console executor
-(G6 refusals, dry-run, live needing both switches, an existing draft reused, idempotent
-re-entry, login / CAPTCHA / second factor, an ambiguous state, a rejection, an upload error,
-a crash, no browser, a person's `done` and `abandon`, a changed package, the session never
-reaching a record or the event log); the whole group through the real engine; and, with
-`WGF_PUBLISH_BROWSER_TEST=1`, real Chromium against `scripts/tests/fixtures/publish/portal.py`
-(dry run uploads and never submits, live finds the draft by key and submits once, a second
-live run submits nothing again, expired session / CAPTCHA / ambiguous state stop for a
-person, a refused upload is a platform error). `scripts/tests/test_publish_registry.py`
+resolution and that no console session is captured, loaded or kept; `platform-validate` on a
+drafted release (undecided, blocked, human-required, ready, a tampered package); `submit`
+with a fake runner (G6 refusals, dry-run, live needing both switches and stopping
+`UPLOAD_COMPLETE`, a recorded game used and an unrecorded one stopping, ids issued on
+create, idempotent re-entry, no login in the window, an unsaved draft, an upload error, a
+crash, no browser, a person's `done` and `abandon`, a changed package, no session in the
+flow); the whole group through the real engine; and, with `WGF_PUBLISH_BROWSER_TEST=1`, a dry
+run through the step in real Chromium. `scripts/tests/test_publish_executor.py` (RELEASE):
+the flow resolved from the job, every runner result mapped to its outcome and interface
+fields, the state relay, the scrubbed `actions.jsonl`; and, with `WGF_PUBLISH_BROWSER_TEST=1`,
+headless Chromium against `scripts/tests/fixtures/publish/portal.py`, driven only by the
+fixture profile's flow, the test playing the person: the login handoff (waiting recorded,
+then the visit continues), a login timeout (`AUTH_REQUIRED`), a CAPTCHA and a second factor
+mid-flow, a duplicate by title, a pending review (nothing uploaded), the dry run, a live
+upload (`UPLOAD_COMPLETE`, nothing requested) and a confirmed visit requesting review once
+(`SUBMITTED` from the status text; a third visit clicks nothing), ids issued on create
+(`IDS_ISSUED`, then the rebuilt visit uploads to the same game), drift on a reversible and on
+the irreversible intent, a refused upload, pending declarations, `actions.jsonl` complete
+and free of secrets, and no storage-state file anywhere. `scripts/tests/test_publish_registry.py`
 (RELEASE) covers the portal registry. `scripts/tests/test_publish_observe.py`
 (RELEASE): the observer's scrubbing, summary and exit codes around a stand-in browser, its
 spec's source (no action call, no session kept), and - with `WGF_PUBLISH_BROWSER_TEST=1` -
@@ -426,7 +487,8 @@ portal; the acceptance job holds no portal credential.
 
 ## What stays with a person
 
-Capturing and rotating the session; every login challenge; confirming a portal's terms;
+Every login, live, in the window the step opens, and every challenge; the `submit`
+decision after an upload; every declaration and legal field; confirming a portal's terms;
 G5 and G6; the submission itself wherever the method is `api`, `cli`, `email` or `manual`,
 or the console flow is unverified; `accept_partial` and `withdraw`; transcribing the
 moderation verdict and writing the compliance finding on a rejection

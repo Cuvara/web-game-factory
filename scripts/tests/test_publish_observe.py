@@ -255,6 +255,7 @@ class Run(unittest.TestCase):
             self.assertNotIn("someone@example.org", handle.read())
 
     def test_a_login_timeout_exits_3_and_a_missing_browser_is_blocked(self):
+        self.profile["submission"]["session"].pop("authenticated_url", None)
         code, state = self.run_with(FakeObserver(status="LOGIN_TIMEOUT"))
         self.assertEqual((code, state["status"]), (observe.EXIT_LOGIN_TIMEOUT, "LOGIN_TIMEOUT"))
         self.assertTrue(any("no authenticated_url" in l for l in self.lines))

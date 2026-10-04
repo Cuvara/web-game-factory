@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/shared/publication-profile.schema.json",
   "title": "Publication Profile",
-  "description": "Validates files in core/reference/publication/. How a release reaches one portal: the submission method the portal supports, the console a deterministic browser run drives when it supports no API, what only a person can do there, and whether automated use of the console is permitted by the portal's terms.\n\nDATA, not integration code: the publish step's adapters read it, and the pipeline never names a portal. Kept apart from core/reference/platforms/<id>.yaml on purpose - a platform profile is pinned by content hash by every game built against it and changes only with the portal's compliance rules; this changes with the portal's console and is pinned by a publication record, never by a game.\n\n2.0.0 (docs/portal-publishing-architecture.md, Part 2.4) makes the console flow data: an ordered `flow` of named intents, each with a phase and a class (reversible | irreversible | human), the `session` and `identity` locators the executor reads before acting, the `status` words including the `pending_states` it never uploads over, the `fields` the console asks for, the portal's `content_policy` on generated text and assets, and the bounds of the agent's drift resolution (`adaptive`, `adaptive_bounds`, `dismissable`, `deny`). Breaking against 1.x: `verification` is now `status`, and `console.upload_max_mb` is now `constraints.upload_max_mb`. scripts/check-integrity.py adds what a schema cannot say: no cancel, withdraw or delete intent in a flow; every irreversible intent carries a profile ladder; every intent has a class.\n\nNothing here is a credential. Credentials are named (an environment variable the installation sets) and never written.",
+  "description": "Validates files in core/reference/publication/. How a release reaches one portal: the submission method the portal supports, the console a deterministic browser run drives when it supports no API, what only a person can do there, and whether automated use of the console is permitted by the portal's terms.\n\nDATA, not integration code: the publish step's adapters read it, and the pipeline never names a portal. Kept apart from core/reference/platforms/<id>.yaml on purpose - a platform profile is pinned by content hash by every game built against it and changes only with the portal's compliance rules; this changes with the portal's console and is pinned by a publication record, never by a game.\n\n2.0.0 (docs/portal-publishing-architecture.md, Part 2.4) makes the console flow data: an ordered `flow` of named intents, each with a phase and a class (reversible | irreversible | human), the `session` and `identity` locators the executor reads before acting, the `status` words including the `pending_states` it never uploads over, the `fields` the console asks for, the portal's `content_policy` on generated text and assets, and the bounds of the agent's drift resolution (`adaptive`, `adaptive_bounds`, `dismissable`, `deny`). Breaking against 1.x: `verification` is now `status`, and `console.upload_max_mb` is now `constraints.upload_max_mb`. scripts/check-integrity.py adds what a schema cannot say: no cancel, withdraw or delete intent in a flow; every irreversible intent carries a profile ladder; every intent has a class.\n\n2.1.0 (additive): a person logs in, live, in the browser window the executor opens (`credential.kind: human-login`); no session is captured, loaded or saved, so `storage-state` is deprecated and check-integrity.py refuses it. Added: `session.authenticated_url`, `identity.page_id` and `identity.issued_on_create` (the ids a create-before-build portal issues), `status.error`, and the `multiple` flag of an upload intent.\n\nNothing here is a credential. A token is named (an environment variable the installation sets) and never written; a console login is a person's, in the open window.",
 
   "x-wgf": {
     "id": "publication-profile",
     "kind": "reference",
     "format": "yaml",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "instance_path": "core/reference/publication/*.yaml",
     "consumers": ["release:validating", "release:submitting"]
   },
@@ -92,14 +92,24 @@
         },
         "credential": {
           "type": "object",
-          "description": "The credential the adapter needs and where the installation keeps it - by variable NAME only. A storage state is a Playwright storageState JSON a person captured by logging in once; the step never types a password.",
-          "required": ["kind", "env"],
+          "description": "How the adapter is authenticated. human-login (since 2.1.0; every console): a person logs in, live, in the headed browser window the executor opens, and handles any CAPTCHA or second factor there; the Factory never asks for, types or stores a password or one-time code, and never saves the session - it ends with the window. token: a tool's credential, by variable NAME only. storage-state: deprecated in 2.1.0 - a captured session is never loaded, and check-integrity.py refuses it in a profile.",
+          "required": ["kind"],
           "properties": {
-            "kind": { "enum": ["storage-state", "token", "none"] },
+            "kind": { "enum": ["human-login", "token", "none", "storage-state"] },
             "env": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
-            "capture": { "type": "string", "description": "How a person captures or rotates it." }
+            "capture": { "type": "string", "description": "How a person captures or rotates a token." }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": { "properties": { "kind": { "enum": ["token", "storage-state"] } }, "required": ["kind"] },
+              "then": { "required": ["env"] }
+            },
+            {
+              "if": { "properties": { "kind": { "const": "human-login" } }, "required": ["kind"] },
+              "then": { "not": { "anyOf": [{ "required": ["env"] }, { "required": ["capture"] }] } }
+            }
+          ]
         },
         "human_required": {
           "type": "array",
@@ -148,8 +158,9 @@
 
         "session": {
           "type": "object",
-          "description": "Since 2.0.0. How the executor tells, on the console url, whether the captured session is live and what stops it. Every challenge stops the step for a person (WAITING_FOR_HUMAN); no screenshot or snapshot is ever taken on a login, CAPTCHA, second-factor or anti-bot page.",
+          "description": "Since 2.0.0. How the executor tells, on the console url, whether the person is logged in and what asks them to act. Not logged in, or a challenge before or during the flow, puts the visit in WAITING_FOR_HUMAN_LOGIN: the person acts in the open window and the executor continues when the authenticated console is detected. Whatever the markers say, a page off the allowed origins or showing a password, CAPTCHA or one-time-code field is not logged in. No screenshot or snapshot is ever taken on a login, CAPTCHA, second-factor or anti-bot page.",
           "properties": {
+            "authenticated_url": { "type": "string", "minLength": 1, "description": "Since 2.1.0. A regular expression the console's url (origin + path) matches once the person is logged in." },
             "logged_in": { "$ref": "#/$defs/ladder" },
             "login": { "$ref": "#/$defs/ladder" },
             "captcha": { "$ref": "#/$defs/ladder" },
@@ -182,6 +193,22 @@
               },
               "additionalProperties": false
             },
+            "page_id": { "$ref": "#/$defs/ladder", "description": "Since 2.1.0. On a game's own page, the element whose text is the portal's game id: read after create_game or upload_build made a new game." },
+            "issued_on_create": {
+              "type": "array",
+              "description": "Since 2.1.0. Ids the portal issues only when a game is created and the BUILD must carry (a create-before-build portal: Y8's Game ID and App ID). After create_game the executor reads each; one the build does not carry yet stops the visit IDS_ISSUED before any upload: rebuild with them, validate, decide G6 again.",
+              "items": {
+                "type": "object",
+                "required": ["key", "read"],
+                "properties": {
+                  "key": { "enum": ["external_game_id", "app_id"], "description": "external_game_id is game.config.yaml's game_id; app_id its app_id." },
+                  "read": { "$ref": "#/$defs/ladder" },
+                  "attr": { "type": "string", "description": "Read this attribute of the element instead of its text." },
+                  "note": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            },
             "title_match": { "enum": ["exact-casefold"], "description": "Title comparison is exact after case folding; never fuzzy." },
             "basis": { "$ref": "#/$defs/basis" }
           },
@@ -199,6 +226,7 @@
           "description": "Since 2.0.0 (1.x: `verification`). How the portal's own state is read back: the words its console shows, and which of them mean what. Every word in a *_states list is one of `states`.",
           "properties": {
             "read": { "$ref": "#/$defs/ladder" },
+            "error": { "$ref": "#/$defs/ladder", "description": "Since 2.1.0. Where the console shows an error after an action (an upload refused): visible after an action, the visit stops PLATFORM_ERROR with its text - never a drift." },
             "states": { "type": "array", "items": { "type": "string" } },
             "submitted_states": { "type": "array", "items": { "type": "string" }, "description": "The portal holds the submission: under review or moderation." },
             "approved_states": { "type": "array", "items": { "type": "string" }, "description": "Moderation passed but the game is not live (Yandex's Verified with Postpone publication): neither submitted nor live." },
@@ -327,6 +355,7 @@
           "description": "fill, select, upload: a path into the shipped store listing, the release manifest, the package or the game identity - never free text. <locale> stands for each locale of a per_locale intent."
         },
         "per_locale": { "type": "boolean", "description": "Run once per locale the listing carries and the console asks for." },
+        "multiple": { "type": "boolean", "description": "Since 2.1.0. upload: every file the value names goes into the one input (screenshots); the input must accept several." },
         "optional": { "type": "boolean", "description": "The element may be absent (a field the console shows only sometimes); absence is recorded, not a drift." },
         "expect": {
           "type": "object",

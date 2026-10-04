@@ -88,10 +88,9 @@ bin/wgf decide <run-id> approve [--note TEXT]   # answer a waiting checkpoint
 bin/wgf publish --run <run-id>            # the `publish` group in the run that drafted the release:
                                           # platform-validate, G5 (approve|reject), G6 (publish|
                                           # reject, a person only), submit (docs/publish-module.md)
-python3 scripts/wgf-publish.py profiles   # every portal's submission method, terms, credential name
-python3 scripts/wgf-publish.py capture crazygames --out ~/secrets/cg.json --checkout ../my-game
-                                          # a person logs in once; the session is what the submit
-                                          # step acts with (never a typed password)
+python3 scripts/wgf-publish.py profiles   # every portal's submission method, terms, credential kind
+                                          # (consoles: human-login - a person logs in, live, in the
+                                          # window the submit step opens; no session is ever kept)
 bin/wgf runs --waiting [--json]           # runs waiting for a decision: step, gate, choices,
                                           # timeout eligibility (reported; `resume` applies it)
 bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; exits as the run
@@ -142,9 +141,9 @@ validate against.
 
 Release artifacts (`release-manifest`, `qa-report`, `platform-publication`) belong in the game
 repository under `release/<release-id>/`, not in `workspace/`. So does the store metadata the
-publication guards read (`release/<release-id>/store-metadata.json`). A portal session a
-person captured for the `submit` step lives where the installation keeps secrets - never in
-any repository (`docs/publish-module.md`).
+publication guards read (`release/<release-id>/store-metadata.json`). No portal session is
+captured or stored anywhere: a person logs in, live, in the browser window the `submit` step
+opens, and the session ends with it (`docs/publish-module.md`).
 
 ## Lifecycle — two tiers, not one chain
 
@@ -425,8 +424,9 @@ seen by the engine — validate what you write there with ajv.
 - `docs/publish-module.md` — the `publish` group: `platform-validate` (the publication guards,
   readiness), G5/G6 in the run, `submit` (platform adapters: the portal's API or CLI where
   one exists, a deterministic direct-Playwright run of its console where none does, a person
-  otherwise), the idempotency key, the captured session, redaction, dry-run vs live, the
-  fixture portal; Playwright MCP is not the submission executor
+  otherwise), the profile-driven intent runner, the live login handoff, `actions.jsonl`,
+  the idempotency key, redaction, dry-run vs live, the fixture portal; Playwright MCP is not
+  the submission executor
 - `docs/portal-publishing-architecture.md` — DESIGN, not implemented (2026-10-04): publishing
   leaves CI; the agent-owned portal publisher (profile-driven Playwright flows, bounded
   adaptive mode, no duplicates, human intents), the audit behind it, the four portals'

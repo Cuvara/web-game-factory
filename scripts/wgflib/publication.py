@@ -22,7 +22,7 @@ Readiness is derived, not asserted:
     UNKNOWN         a guard UNKNOWN (not RED): the data was not there to decide
     HUMAN_REQUIRED  every guard GREEN, but publishing here is a person's act: no automated
                     submission method, automated console use not permitted or not verified,
-                    the credential nobody captured
+                    a tool token the installation has not set
     READY           every guard GREEN and an adapter may act
 """
 
@@ -175,7 +175,10 @@ def flow_problems(profile):
         offer it;
       * every *_states word is one of `status.states`; a flow with an irreversible intent
         names its `pending_states`, so status_gate can stop before an upload over a pending
-        review; an `expect.status_in` names a list the profile fills.
+        review; an `expect.status_in` names a list the profile fills;
+      * 2.1.0: a console is reached through a person's live login (credential human-login,
+        never a captured storage-state); `session.authenticated_url` compiles; each
+        `identity.issued_on_create` key appears once; `multiple` only on an upload.
     """
     submission = (profile or {}).get("submission") or {}
     flow = submission.get("flow") or []
@@ -224,6 +227,9 @@ def flow_problems(profile):
         listed = (intent.get("expect") or {}).get("status_in")
         if listed and not status.get(listed):
             problems.append(f"intent {iid}: expect.status_in {listed} is empty or missing")
+        if intent.get("multiple") and intent.get("action") != "upload":
+            problems.append(f"intent {iid}: `multiple` is for an upload intent only")
+    problems.extend(_login_problems(submission))
     for name in submission.get("dismissable") or []:
         hit = _vocabulary_hit(name, deny)
         if hit:
@@ -236,6 +242,31 @@ def flow_problems(profile):
     if irreversible and not status.get("pending_states"):
         problems.append("the flow requests review but status.pending_states is empty: "
                         "status_gate could not stop before an upload over a pending review")
+    return problems
+
+
+def _login_problems(submission):
+    """2.1.0: a console is reached through a person's live login, never a captured session;
+    the session markers and the ids issued on create are usable as written."""
+    problems = []
+    credential = submission.get("credential") or {}
+    kind = credential.get("kind")
+    if kind == "storage-state":
+        problems.append("credential.kind storage-state is deprecated (2.1.0): a captured session "
+                        "is never loaded; a person logs in live (kind: human-login)")
+    elif submission.get("method") == "console" and kind not in (None, "human-login"):
+        problems.append(f"credential.kind {kind} on a console: a console is reached through a "
+                        f"person's live login (kind: human-login)")
+    pattern = (submission.get("session") or {}).get("authenticated_url")
+    if pattern is not None:
+        try:
+            re.compile(str(pattern))
+        except re.error as exc:
+            problems.append(f"session.authenticated_url is not a regular expression: {exc}")
+    keys = [entry.get("key") for entry in ((submission.get("identity") or {}).get(
+        "issued_on_create") or []) if isinstance(entry, dict)]
+    for key in sorted({k for k in keys if keys.count(k) > 1}):
+        problems.append(f"identity.issued_on_create names {key} twice")
     return problems
 
 
@@ -455,9 +486,14 @@ def human_reason(profile, settings=None, credential_present=None):
                                        f"is the supported way in; no adapter drives it here, "
                                        f"so a person runs it with the packaged release")
     credential = submission.get("credential") or {}
-    if credential.get("kind", "none") != "none" and credential_present is False:
-        return ("credential-missing", f"{credential.get('env')} is not set: capture the "
-                                      f"session first ({credential.get('capture') or 'see the publication profile'})")
+    if credential.get("kind") == "storage-state":
+        return ("credential-missing", "the publication profile names a captured session "
+                                      "(storage-state), which is never loaded: a person logs in "
+                                      "live (credential.kind human-login)")
+    # human-login needs nothing in advance: a person logs in, live, in the window the step opens.
+    if credential.get("kind") == "token" and credential_present is False:
+        return ("credential-missing", f"{credential.get('env')} is not set "
+                                      f"({credential.get('capture') or 'see the publication profile'})")
     return None
 
 

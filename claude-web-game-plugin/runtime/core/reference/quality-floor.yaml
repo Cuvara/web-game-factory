@@ -1,0 +1,880 @@
+# Quality floor: the minimum every game the Factory finishes is held to, as data.
+#
+# The quality benchmark (core/reference/quality-benchmark.yaml) says what a release-tier game
+# measurably carries. The producers each judge one side of a build: playability plays it,
+# production-quality checks its assets and UI, visual-qa reads its frames, content-sufficiency
+# counts its content, verify builds and checks it, review reads its code. Each passes on its
+# own bar, and nothing held the build to all of them at once - a build whose UI broke on one
+# viewport while every other side scored high still reached G4 looking finished. This file is
+# the contract the `quality-gate` step (scripts/wgf_quality, docs/quality-gate-module.md)
+# scores a build against, on the reports those producers wrote ABOUT THE SAME BUILD:
+#
+#   LAYER A  `universal`: what every game carries, whatever its genre - a functional core
+#            loop, reliable controls, a meaningful win and loss, no blocking defects, no
+#            broken UI on mobile or desktop, no placeholder content, no missing required
+#            asset, content enough for the designed session, meaningful progression, a
+#            stable runtime, a valid package, no critical QA finding.
+#   LAYER B  `genres`: what a game of a genre family carries on top (core/reference/
+#            genre-models.yaml families), and `dimensions`: what a 3D game carries on top
+#            (camera and spatial readability, environment, lighting). A game's contract is
+#            derived from its design's `genre` and its dimension. A family this file does not
+#            list falls back to the contract of the family that owns the nearest ancestor of
+#            the design's genre node (core/reference/research-vocabulary.yaml `parent`), and
+#            always to the universal floor - never to nothing.
+#
+# Each criterion: the quality `dimension` it scores, the `metric`, how it is measured
+# (`evaluate`: which report, which checks or fields - an evaluator kind, never a game or a
+# family branch in code), its `minimum` and `preferred` target, its `severity` per quality
+# tier (`blocker`: below the minimum the dimension is below its floor; `warning`: a finding,
+# not a floor; a tier the criterion names no severity for does not apply it), the discipline
+# that `owner`s it, the `route` its finding goes back to, the `evidence` it reads and how a
+# `regression` of it is detected. A minimum may be a number or a reference to a benchmark bar
+# (`quality-benchmark:<dotted path>` reads that bar's value at the tier; `visual-qa-rubric:
+# <key>` reads the rubric's own bar), so a bar is stated once.
+#
+# Scores. A criterion scores 0-100 (the share of what it measures that met its minimum); a
+# dimension scores the mean of its applied criteria. A dimension is at or above its floor
+# only when its score reaches `min_score` at the tier AND every blocker criterion of it met
+# its minimum: no average may carry a dimension past a blocker, and no dimension's score
+# carries another's. A criterion that measured nothing is UNMEASURED - never a pass; a blocker
+# that measured nothing holds its dimension below the floor.
+#
+# Calibration (`basis`), as in the benchmark: measured-2 (both calibration releases meet it),
+# measured-1, proposed (a defensible default no release has been measured against). A
+# criterion that reads a benchmark bar carries that bar's basis. Never lower a bar here to let
+# one build pass: a new version recalibrates, and docs/factory-quality-benchmark.md says how.
+#
+# Read by: scripts/wgf_quality (the quality-gate step). A run pins this file, the benchmark
+# and the visual-qa rubric when it starts (new-game `pinned_references`): an edit made during
+# a run applies to the next run, never to the one in flight.
+
+version: 1.0.0
+
+references:
+  quality-benchmark: core/reference/quality-benchmark.yaml
+  visual-qa-rubric: core/reference/visual-qa-rubric.yaml
+
+# The scored dimensions. `min_score` is the dimension's floor per tier; `preferred` is the
+# target a release aims at (reported, never required). `phase: listing` - the store - is
+# measured once the store listing exists, after G4; before it, the dimension is DEFERRED to
+# listing-validation, which release requires separately (docs/quality-gate-module.md).
+dimensions:
+  gameplay:     {label: Gameplay,               owner: gameplay,     min_score: {mvp: 60, release: 75}, preferred: 95, basis: proposed}
+  content:      {label: Content sufficiency,    owner: level-design, min_score: {mvp: 60, release: 75}, preferred: 95, basis: proposed}
+  variety:      {label: Variety,                owner: level-design, min_score: {mvp: 50, release: 75}, preferred: 90, basis: proposed}
+  progression:  {label: Progression,            owner: game-design,  min_score: {mvp: 50, release: 75}, preferred: 90, basis: proposed}
+  visual:       {label: Visual,                 owner: art,          min_score: {mvp: 60, release: 75}, preferred: 90, basis: proposed}
+  ui:           {label: UI,                     owner: ui,           min_score: {mvp: 60, release: 75}, preferred: 95, basis: proposed}
+  audio:        {label: Audio,                  owner: audio,        min_score: {mvp: 50, release: 75}, preferred: 90, basis: proposed}
+  consistency:  {label: Consistency,            owner: art,          min_score: {mvp: 50, release: 75}, preferred: 90, basis: proposed}
+  polish:       {label: Polish,                 owner: gameplay,     min_score: {mvp: 50, release: 75}, preferred: 90, basis: proposed}
+  technical:    {label: Technical/performance,  owner: engineering,  min_score: {mvp: 60, release: 75}, preferred: 95, basis: proposed}
+  platform:     {label: Platform readiness,     owner: engineering,  min_score: {mvp: 50, release: 75}, preferred: 95, basis: proposed}
+  store:        {label: Store,                  owner: release,      min_score: {mvp: 50, release: 75}, preferred: 95, basis: proposed, phase: listing}
+
+# Which report must describe which commit of the build. `development` is the commit develop
+# made (the prototype-report's, the sdk-report's base): the gates that play and judge the
+# build before sdk commits on top of it name it. `shipped` is the verified commit release
+# would ship (qa-report, verification-report, sdk-report). A report about another commit is
+# STALE evidence: the step is BLOCKED, never scored on it.
+build_evidence:
+  playability-report:          {commit: commit,                  of: development}
+  production-quality-report:   {commit: commit,                  of: development}
+  visual-qa-report:            {commit: commit,                  of: development}
+  content-sufficiency-report:  {commit: commit,                  of: development}
+  prototype-report:            {commit: build_ref.commit_sha,    of: development}
+  sdk-report:                  {commit: build_ref.commit_sha,    of: shipped}
+  qa-report:                   {commit: build_ref.commit_sha,    of: shipped}
+  verification-report:         {commit: commit.sha,              of: shipped}
+  review-report:               {commit: reviewed_commit,         of: shipped}
+  listing-validation-report:   {commit: commit,                  of: shipped}
+
+# Evaluator kinds (scripts/wgf_quality/scoring.py), read generically:
+#   checks    `report`'s `checks[]` whose id is listed (a trailing `*` is a prefix); with
+#             `projects`, each viewport is measured on its own and the lowest share counts;
+#             `required_only: false` counts optional checks too. Observed: the share of PASS.
+#   verdict   `report`'s `field` (default verdict) is one of `pass`. Observed: the value.
+#   scores    `report`'s `field` map, the `keys` listed, aggregated by `aggregate` (min|mean).
+#   count     the length of `report`'s `field` list, filtered by `where` (a value, a list of
+#             values, a trailing `*` a prefix); held to `maximum` or `minimum`. A manifest
+#             count reads the asset-manifest the same way.
+#   all       the share of `report`'s `field` list items (filtered by `where`) whose `key`
+#             equals `equals`. An empty list measured nothing.
+universal:
+  - id: floor.core_loop
+    dimension: gameplay
+    metric: share of the core-loop checks (start, objective, win, loss, retry) that pass on every viewport
+    evaluate: {kind: checks, report: playability-report, checks: [probe.present, start.playable, start.objective, win.reachable, lose.reachable, restart.works]}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: blocker, release: blocker}
+    owner: gameplay
+    route: develop
+    evidence: playability-report checks
+    regression: a listed check FAILs, or is no longer reported, on a newer build
+    basis: measured-2
+  - id: floor.controls
+    dimension: gameplay
+    metric: share of viewports on which every action is acknowledged and the opening grace holds
+    evaluate: {kind: checks, report: playability-report, checks: [act.acknowledged, idle.grace], projects: [desktop, mobile]}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: gameplay
+    route: develop
+    evidence: playability-report act.acknowledged and idle.grace per viewport
+    regression: either check FAILs on a viewport on a newer build
+    basis: measured-2
+  - id: floor.win_lose
+    dimension: gameplay
+    metric: share of the outcome checks that pass - a reachable win and loss, per unit where the family asks
+    evaluate: {kind: checks, report: playability-report, checks: [win.reachable, lose.reachable, content.win_lose_per_unit]}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: blocker, release: blocker}
+    owner: gameplay
+    route: develop
+    evidence: playability-report checks
+    regression: a listed check FAILs on a newer build
+    basis: measured-2
+  - id: floor.no_blocking_defects
+    dimension: technical
+    metric: blocking defects the QA report lists
+    evaluate: {kind: count, report: qa-report, field: blocking_defects}
+    maximum: 0
+    preferred: 0
+    severity: {mvp: blocker, release: blocker}
+    owner: engineering
+    route: develop
+    evidence: qa-report blocking_defects
+    regression: the count rises above zero on a newer build
+    basis: measured-2
+  - id: floor.review_blockers
+    dimension: technical
+    metric: blockers the newest code review left on the shipped commit
+    evaluate: {kind: count, report: review-report, field: blockers}
+    maximum: 0
+    preferred: 0
+    severity: {mvp: warning, release: blocker}
+    owner: engineering
+    route: develop
+    evidence: review-report blockers
+    regression: a blocker on a newer build
+    basis: measured-2
+  - id: floor.review_approved
+    dimension: technical
+    metric: the newest code review's verdict on the shipped commit
+    evaluate: {kind: verdict, report: review-report, pass: [approve]}
+    minimum: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: engineering
+    route: develop
+    evidence: review-report verdict
+    regression: anything but approve on a newer build
+    basis: measured-2
+  - id: floor.ui_layout
+    dimension: ui
+    metric: share of the UI layout checks (text, touch targets, overlap, styling, states) that pass, on the worse of the two viewports
+    evaluate: {kind: checks, report: production-quality-report, checks: ["ui.*"], projects: [desktop, mobile], required_only: false}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: ui
+    route: develop
+    evidence: production-quality-report ui.* per viewport
+    regression: a ui check FAILs on either viewport on a newer build
+    basis: measured-2
+  - id: floor.ui_verdict
+    dimension: ui
+    metric: the production-quality verdict (assets and UI on both viewports)
+    evaluate: {kind: verdict, report: production-quality-report, pass: [PASS]}
+    minimum: 1.0
+    severity: {mvp: blocker, release: blocker}
+    owner: ui
+    route: develop
+    evidence: production-quality-report verdict
+    regression: anything but PASS on a newer build
+    basis: measured-2
+  - id: floor.no_placeholders
+    dimension: visual
+    metric: share of the placeholder checks that pass - delivered assets, no primitives standing in for entities
+    evaluate: {kind: checks, report: production-quality-report, checks: [assets.present, scene.no_primitives]}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: art
+    route: assets
+    evidence: production-quality-report checks
+    regression: a check FAILs on a newer build
+    basis: measured-2
+  - id: floor.no_critical_visual_findings
+    dimension: visual
+    metric: blocker findings the visual judge raised (placeholder, missing asset, browser UI, debug output, unreadable or cropped frame)
+    evaluate: {kind: count, report: visual-qa-report, field: findings, where: {severity: blocker}}
+    maximum: 0
+    preferred: 0
+    severity: {mvp: blocker, release: blocker}
+    owner: art
+    route: assets
+    evidence: visual-qa-report findings
+    regression: a blocker finding on a newer build
+    basis: measured-2
+  - id: floor.required_assets
+    dimension: visual
+    metric: share of the asset delivery checks that pass - present, in the runtime manifest, loaded, used
+    evaluate: {kind: checks, report: production-quality-report, checks: [assets.present, assets.runtime, assets.loaded, assets.used]}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: art
+    route: assets
+    evidence: production-quality-report checks
+    regression: a check FAILs on a newer build
+    basis: measured-2
+  - id: floor.content_sufficient
+    dimension: content
+    metric: the content sufficiency verdict at the design's tier
+    evaluate: {kind: verdict, report: content-sufficiency-report, pass: [PASS]}
+    minimum: 1.0
+    severity: {mvp: blocker, release: blocker}
+    owner: level-design
+    route: develop
+    evidence: content-sufficiency-report verdict
+    regression: anything but PASS on a newer build
+    basis: measured-2
+  - id: floor.session_content
+    dimension: content
+    metric: share of the session checks that pass - every unit shipped, the designed playtime, the first session's length
+    evaluate: {kind: checks, report: content-sufficiency-report, checks: [content.units_shipped, content.playtime]}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: level-design
+    route: develop
+    evidence: content-sufficiency-report checks
+    regression: a check FAILs on a newer build
+    basis: measured-2
+  - id: floor.progression
+    dimension: progression
+    metric: share of the progression checks that pass - every unit reachable, gated unlocks, records that persist
+    evaluate: {kind: checks, report: content-sufficiency-report, checks: [content.units_reachable, content.progression]}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: game-design
+    route: develop
+    evidence: content-sufficiency-report checks
+    regression: a check FAILs on a newer build
+    basis: measured-2
+  - id: floor.progression_persists
+    dimension: progression
+    metric: share of viewports on which progress survives a reload
+    evaluate: {kind: checks, report: playability-report, checks: [progression.persists], required_only: false}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: gameplay
+    route: develop
+    evidence: playability-report progression.persists (quality-benchmark progression.per_unit_records_persist)
+    regression: the check FAILs on a newer build
+    basis: measured-2
+  - id: floor.stable_runtime
+    dimension: technical
+    metric: share of the runtime checks that pass - no page error while played, the game boots
+    evaluate: {kind: checks, report: playability-report, checks: [page.errors], required_only: false}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: engineering
+    route: develop
+    evidence: playability-report page.errors
+    regression: a page error on a newer build
+    basis: measured-2
+  - id: floor.valid_package
+    dimension: technical
+    metric: the verification verdict on the shipped commit (build, bundle, code, assets, platform checks)
+    evaluate: {kind: verdict, report: verification-report, pass: [PASS]}
+    minimum: 1.0
+    severity: {mvp: blocker, release: blocker}
+    owner: engineering
+    route: develop
+    evidence: verification-report verdict
+    regression: anything but PASS on a newer build
+    basis: measured-2
+  - id: floor.qa_pass
+    dimension: technical
+    metric: the QA report's verdict on the shipped commit
+    evaluate: {kind: verdict, report: qa-report, pass: [pass]}
+    minimum: 1.0
+    severity: {mvp: blocker, release: blocker}
+    owner: qa
+    route: develop
+    evidence: qa-report verdict
+    regression: anything but pass on a newer build
+    basis: measured-2
+  - id: floor.performance
+    dimension: technical
+    metric: share of the measured device classes within the performance budget
+    evaluate: {kind: all, report: qa-report, field: perf_results, key: within_budget, equals: true}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: engineering
+    route: develop
+    evidence: qa-report perf_results
+    regression: a device class over budget on a newer build
+    basis: proposed
+  - id: floor.platform_ready
+    dimension: platform
+    metric: share of the required platforms the verification found ready
+    evaluate: {kind: all, report: verification-report, field: platform_readiness, where: {role: required}, key: readiness, equals: ready}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: engineering
+    route: develop
+    evidence: verification-report platform_readiness
+    regression: a required platform not ready on a newer build
+    basis: measured-2
+  - id: floor.platform_sdk
+    dimension: platform
+    metric: share of the integrated platforms whose SDK works
+    evaluate: {kind: all, report: sdk-report, field: platforms, key: status, equals: working}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: engineering
+    route: develop
+    evidence: sdk-report platforms
+    regression: a platform no longer working on a newer build
+    basis: measured-2
+  - id: floor.visual_verdict
+    dimension: visual
+    metric: the visual-qa verdict on the rubric's own bars
+    evaluate: {kind: verdict, report: visual-qa-report, pass: [PASS]}
+    minimum: 1.0
+    severity: {mvp: blocker, release: blocker}
+    owner: art
+    route: assets
+    evidence: visual-qa-report verdict
+    regression: anything but PASS on a newer build
+    basis: measured-2
+
+  # The release tier's presentation bars (quality-benchmark `presentation`), counted here
+  # because no producer holds a build to them: the rubric's own pass bars stay the visual-qa
+  # gate, and a build can pass them below what a release carries.
+  - id: floor.visual_min_dimension
+    dimension: visual
+    metric: the lowest visual-qa rubric score
+    evaluate: {kind: scores, report: visual-qa-report, field: scores, aggregate: min, keys: [art_completeness, character_readability, environment, ui_polish, typography, composition, consistency, no_debug]}
+    minimum: {mvp: "visual-qa-rubric:pass_bar", release: "quality-benchmark:presentation.visual_qa.min_dimension"}
+    preferred: 4
+    severity: {mvp: warning, release: blocker}
+    owner: art
+    route: assets
+    evidence: visual-qa-report scores
+    regression: the lowest score drops below the minimum on a newer build
+    basis: measured-2
+  - id: floor.visual_mean
+    dimension: visual
+    metric: the mean visual-qa rubric score
+    evaluate: {kind: scores, report: visual-qa-report, field: scores, aggregate: mean, keys: [art_completeness, character_readability, environment, ui_polish, typography, composition, consistency, no_debug]}
+    minimum: {mvp: "visual-qa-rubric:mean_pass_bar", release: "quality-benchmark:presentation.visual_qa.min_mean"}
+    preferred: 4.5
+    severity: {mvp: warning, release: blocker}
+    owner: art
+    route: assets
+    evidence: visual-qa-report scores
+    regression: the mean drops below the minimum on a newer build
+    basis: measured-2
+  - id: floor.visual_major_findings
+    dimension: polish
+    metric: major findings the visual judge raised
+    evaluate: {kind: count, report: visual-qa-report, field: findings, where: {severity: major}}
+    maximum: {release: "quality-benchmark:presentation.visual_qa.max_major_findings"}
+    preferred: 0
+    severity: {release: blocker}
+    owner: art
+    route: assets
+    evidence: visual-qa-report findings
+    regression: the count rises above the maximum on a newer build
+    basis: measured-2
+  - id: floor.visual_minor_findings
+    dimension: polish
+    metric: minor findings the visual judge raised
+    evaluate: {kind: count, report: visual-qa-report, field: findings, where: {severity: minor}}
+    maximum: {release: "quality-benchmark:presentation.visual_qa.max_minor_findings"}
+    preferred: 0
+    severity: {release: warning}
+    owner: art
+    route: assets
+    evidence: visual-qa-report findings
+    regression: the count rises above the maximum on a newer build
+    basis: measured-2
+  - id: floor.ui_scores
+    dimension: ui
+    metric: the lowest of the UI rubric scores (UI polish, typography, composition)
+    evaluate: {kind: scores, report: visual-qa-report, field: scores, aggregate: min, keys: [ui_polish, typography, composition]}
+    minimum: {mvp: "visual-qa-rubric:pass_bar", release: "quality-benchmark:presentation.visual_qa.min_dimension"}
+    preferred: 4
+    severity: {mvp: warning, release: blocker}
+    owner: ui
+    route: develop
+    evidence: visual-qa-report scores
+    regression: the score drops below the minimum on a newer build
+    basis: measured-2
+  - id: floor.all_production_checks
+    dimension: polish
+    metric: share of every production-quality check, required or not, that passes on both viewports
+    evaluate: {kind: checks, report: production-quality-report, checks: ["*"], required_only: false}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: ui
+    route: develop
+    evidence: production-quality-report checks (quality-benchmark presentation.production_quality.all_checks_pass)
+    regression: a check below PASS on a newer build
+    basis: measured-2
+  - id: floor.no_debug
+    dimension: polish
+    metric: the visual-qa no_debug score - nothing a developer left on screen
+    evaluate: {kind: scores, report: visual-qa-report, field: scores, aggregate: min, keys: [no_debug]}
+    minimum: {mvp: "visual-qa-rubric:pass_bar", release: 5}
+    preferred: 5
+    severity: {mvp: warning, release: blocker}
+    owner: gameplay
+    route: develop
+    evidence: visual-qa-report scores.no_debug
+    regression: the score drops on a newer build
+    basis: proposed
+  - id: floor.consistency_score
+    dimension: consistency
+    metric: the visual-qa consistency score - one palette, shape language and rendering style
+    evaluate: {kind: scores, report: visual-qa-report, field: scores, aggregate: min, keys: [consistency]}
+    minimum: {mvp: "visual-qa-rubric:pass_bar", release: "quality-benchmark:presentation.visual_qa.min_dimension"}
+    preferred: 4
+    severity: {mvp: warning, release: blocker}
+    owner: art
+    route: assets
+    evidence: visual-qa-report scores.consistency
+    regression: the score drops below the minimum on a newer build
+    basis: measured-2
+  - id: floor.design_build_drift
+    dimension: consistency
+    metric: the build ships what the design states (no drift between the design's units and the build's)
+    evaluate: {kind: checks, report: content-sufficiency-report, checks: [content.drift], required_only: false}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: level-design
+    route: develop
+    evidence: content-sufficiency-report content.drift
+    regression: the check FAILs on a newer build
+    basis: measured-2
+  - id: floor.music
+    dimension: audio
+    metric: music tracks delivered
+    evaluate: {kind: count, report: asset-manifest, field: items, where: {type: music, status: [delivered, integrated]}}
+    minimum: {release: "quality-benchmark:presentation.assets.min_music_tracks"}
+    preferred: 2
+    severity: {release: blocker}
+    owner: audio
+    route: assets
+    evidence: asset-manifest items
+    regression: fewer delivered tracks on a newer build
+    basis: measured-2
+  - id: floor.sfx
+    dimension: audio
+    metric: sound effects delivered
+    evaluate: {kind: count, report: asset-manifest, field: items, where: {type: sfx, status: [delivered, integrated]}}
+    minimum: {release: "quality-benchmark:presentation.assets.min_sfx"}
+    preferred: 12
+    severity: {release: blocker}
+    owner: audio
+    route: assets
+    evidence: asset-manifest items
+    regression: fewer delivered effects on a newer build
+    basis: measured-2
+  - id: floor.audio_plays
+    dimension: audio
+    metric: share of viewports on which the music plays at a measured level and mutes on blur
+    evaluate: {kind: checks, report: production-quality-report, checks: [audio.plays], required_only: false}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: audio
+    route: develop
+    evidence: production-quality-report audio.plays
+    regression: the check FAILs on a newer build
+    basis: measured-2
+  - id: floor.content_checks_measured
+    dimension: content
+    metric: content, difficulty and variety checks the playability bot skipped
+    evaluate: {kind: count, report: playability-report, field: skipped_checks, where: {id: ["content.*", "difficulty.*", "depth.*", "progression.*"]}}
+    maximum: {release: "quality-benchmark:presentation.playability.content_checks_skipped"}
+    preferred: 0
+    severity: {release: blocker}
+    owner: level-design
+    route: develop
+    evidence: playability-report skipped_checks
+    regression: a skipped check on a newer build
+    basis: measured-1
+  - id: floor.sufficiency_measured
+    dimension: content
+    metric: content-sufficiency checks that measured nothing
+    evaluate: {kind: count, report: content-sufficiency-report, field: skipped_checks}
+    maximum: {release: 0}
+    preferred: 0
+    severity: {release: blocker}
+    owner: level-design
+    route: develop
+    evidence: content-sufficiency-report skipped_checks
+    regression: a skipped check on a newer build
+    basis: measured-1
+  - id: floor.variety
+    dimension: variety
+    metric: share of the variety checks that pass - elements, combinations, structure kinds, objective kinds, entity kinds
+    evaluate: {kind: checks, report: content-sufficiency-report, checks: [content.elements, content.combinations, content.structure, content.objectives, content.entity_kinds], required_only: false}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: level-design
+    route: develop
+    evidence: content-sufficiency-report checks
+    regression: a check FAILs on a newer build
+    basis: measured-2
+  - id: floor.played_variety
+    dimension: variety
+    metric: share of viewports on which the played units showed the variety the design claims
+    evaluate: {kind: checks, report: playability-report, checks: [content.variety], required_only: false}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: level-design
+    route: develop
+    evidence: playability-report content.variety
+    regression: the check FAILs on a newer build
+    basis: measured-2
+  - id: floor.difficulty
+    dimension: progression
+    metric: share of the difficulty checks that pass - axes that escalate as reported, relief, climax per group
+    evaluate: {kind: checks, report: content-sufficiency-report, checks: [content.difficulty, content.groups, content.climax], required_only: false}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: level-design
+    route: develop
+    evidence: content-sufficiency-report checks
+    regression: a check FAILs on a newer build
+    basis: measured-2
+  - id: floor.store_listing
+    dimension: store
+    metric: the listing-validation verdict on the shipped commit's listing
+    evaluate: {kind: verdict, report: listing-validation-report, pass: [PASS]}
+    minimum: 1.0
+    severity: {mvp: warning, release: blocker}
+    owner: release
+    route: listing
+    evidence: listing-validation-report verdict
+    regression: anything but PASS on a newer listing
+    basis: measured-2
+
+# LAYER B, per genre family (core/reference/genre-models.yaml `families`). Each entry adds
+# criteria in the shape above; none removes or lowers a universal one. Every value is data:
+# no consumer branches on a family id.
+genres:
+  arcade:
+    contract: feedback, responsiveness and replay - the loop is short, so how it answers is the game
+    criteria:
+      - id: genre.feedback
+        dimension: polish
+        metric: share of viewports on which every action is visibly acknowledged
+        evaluate: {kind: checks, report: playability-report, checks: [act.acknowledged], projects: [desktop, mobile]}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: gameplay
+        route: develop
+        evidence: playability-report act.acknowledged
+        regression: the check FAILs on a viewport on a newer build
+        basis: measured-2
+      - id: genre.responsiveness
+        dimension: gameplay
+        metric: share of viewports on which play starts at once and the opening grace holds
+        evaluate: {kind: checks, report: playability-report, checks: [start.playable, idle.grace], projects: [desktop, mobile]}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: gameplay
+        route: develop
+        evidence: playability-report checks
+        regression: a check FAILs on a viewport on a newer build
+        basis: measured-2
+      - id: genre.replay
+        dimension: gameplay
+        metric: share of viewports on which a retry restarts a clean run
+        evaluate: {kind: checks, report: playability-report, checks: [restart.works], projects: [desktop, mobile]}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: gameplay
+        route: develop
+        evidence: playability-report restart.works
+        regression: the check FAILs on a viewport on a newer build
+        basis: measured-2
+  puzzle:
+    contract: mechanic combinations and escalation - each level asks for a new reading of the board
+    criteria:
+      - id: genre.mechanic_combinations
+        dimension: variety
+        metric: share of the combination checks that pass - distinct element combinations, elements introduced through the levels
+        evaluate: {kind: checks, report: content-sufficiency-report, checks: [content.combinations, content.elements], required_only: false}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: level-design
+        route: develop
+        evidence: content-sufficiency-report checks
+        regression: a check FAILs on a newer build
+        basis: measured-2
+      - id: genre.escalation
+        dimension: progression
+        metric: share of the escalation checks that pass - difficulty that asks for new skills, axes reported rising
+        evaluate: {kind: checks, report: content-sufficiency-report, checks: [content.difficulty], required_only: false}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: level-design
+        route: develop
+        evidence: content-sufficiency-report content.difficulty
+        regression: the check FAILs on a newer build
+        basis: measured-2
+      - id: genre.escalation_played
+        dimension: progression
+        metric: share of viewports on which the played levels' axes progress as designed
+        evaluate: {kind: checks, report: playability-report, checks: [difficulty.axes_progress], required_only: false}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: level-design
+        route: develop
+        evidence: playability-report difficulty.axes_progress
+        regression: the check FAILs on a newer build
+        basis: measured-2
+  platformer:
+    contract: movement and encounter variety - the controls carry the game, and the levels give them something new
+    criteria:
+      - id: genre.movement
+        dimension: gameplay
+        metric: share of viewports on which every movement input is acknowledged and the opening grace holds
+        evaluate: {kind: checks, report: playability-report, checks: [act.acknowledged, idle.grace], projects: [desktop, mobile]}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: gameplay
+        route: develop
+        evidence: playability-report checks
+        regression: a check FAILs on a viewport on a newer build
+        basis: measured-2
+      - id: genre.encounter_variety
+        dimension: variety
+        metric: share of the encounter checks that pass - distinct elements and structural kinds of level
+        evaluate: {kind: checks, report: content-sufficiency-report, checks: [content.elements, content.structure], required_only: false}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: level-design
+        route: develop
+        evidence: content-sufficiency-report checks
+        regression: a check FAILs on a newer build
+        basis: measured-2
+  shooter:
+    contract: readable threats and projectiles, feedback on every shot, enemy variety
+    criteria:
+      - id: genre.projectiles_readable
+        dimension: visual
+        metric: share of viewports on which projectiles read at their size
+        evaluate: {kind: checks, report: playability-report, checks: [entities.projectile], required_only: false}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: art
+        route: assets
+        evidence: playability-report entities.projectile
+        regression: the check FAILs on a newer build
+        basis: proposed
+      - id: genre.feedback
+        dimension: polish
+        metric: share of viewports on which every action is visibly acknowledged
+        evaluate: {kind: checks, report: playability-report, checks: [act.acknowledged], projects: [desktop, mobile]}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: gameplay
+        route: develop
+        evidence: playability-report act.acknowledged
+        regression: the check FAILs on a viewport on a newer build
+        basis: measured-2
+      - id: genre.enemy_variety
+        dimension: variety
+        metric: share of the element checks that pass - distinct enemy and hazard kinds
+        evaluate: {kind: checks, report: content-sufficiency-report, checks: [content.elements, content.entity_kinds], required_only: false}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: level-design
+        route: develop
+        evidence: content-sufficiency-report checks
+        regression: a check FAILs on a newer build
+        basis: measured-2
+  racing:
+    contract: track variety and a readable course at speed
+    criteria:
+      - id: genre.track_variety
+        dimension: variety
+        metric: share of the structure checks that pass - distinct track structures, no repeated layout
+        evaluate: {kind: checks, report: content-sufficiency-report, checks: [content.structure], required_only: false}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: level-design
+        route: develop
+        evidence: content-sufficiency-report content.structure
+        regression: the check FAILs on a newer build
+        basis: measured-2
+      - id: genre.course_readable
+        dimension: visual
+        metric: the lowest of the readability scores (entities, composition)
+        evaluate: {kind: scores, report: visual-qa-report, field: scores, aggregate: min, keys: [character_readability, composition]}
+        minimum: {mvp: "visual-qa-rubric:pass_bar", release: "quality-benchmark:presentation.visual_qa.min_dimension"}
+        preferred: 4
+        severity: {mvp: warning, release: blocker}
+        owner: art
+        route: assets
+        evidence: visual-qa-report scores
+        regression: the score drops below the minimum on a newer build
+        basis: measured-2
+  strategy:
+    contract: decisions - each unit asks for a different plan, and choices compound across the run
+    criteria:
+      - id: genre.decisions
+        dimension: variety
+        metric: share of the decision checks that pass - distinct element combinations and objective kinds
+        evaluate: {kind: checks, report: content-sufficiency-report, checks: [content.combinations, content.objectives], required_only: false}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: level-design
+        route: develop
+        evidence: content-sufficiency-report checks
+        regression: a check FAILs on a newer build
+        basis: measured-2
+      - id: genre.compounding_progression
+        dimension: progression
+        metric: share of the progression checks that pass - gated unlocks and difficulty that asks for new skills
+        evaluate: {kind: checks, report: content-sufficiency-report, checks: [content.progression, content.difficulty], required_only: false}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: game-design
+        route: develop
+        evidence: content-sufficiency-report checks
+        regression: a check FAILs on a newer build
+        basis: measured-2
+  survival:
+    contract: escalating pressure and a loss the player understands
+    criteria:
+      - id: genre.pressure
+        dimension: progression
+        metric: share of viewports on which the pressure axes progress as designed
+        evaluate: {kind: checks, report: playability-report, checks: [difficulty.axes_progress, depth.ramp], required_only: false}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: level-design
+        route: develop
+        evidence: playability-report checks
+        regression: a check FAILs on a newer build
+        basis: proposed
+      - id: genre.loss_understood
+        dimension: gameplay
+        metric: share of viewports on which the loss is reached and shown
+        evaluate: {kind: checks, report: playability-report, checks: [lose.reachable], projects: [desktop, mobile]}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: gameplay
+        route: develop
+        evidence: playability-report lose.reachable
+        regression: the check FAILs on a viewport on a newer build
+        basis: measured-2
+  simulation:
+    contract: a meta that persists and grows
+    criteria:
+      - id: genre.persistent_meta
+        dimension: progression
+        metric: share of the persistence and progression checks that pass
+        evaluate: {kind: checks, report: playability-report, checks: [progression.persists, depth.session_length], required_only: false}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: game-design
+        route: develop
+        evidence: playability-report checks
+        regression: a check FAILs on a newer build
+        basis: proposed
+
+# LAYER B, per rendering dimension of the game (2d | 3d: the design's engine and assets,
+# scripts/wgf_assets/requirements.py game_dimension). 2D adds nothing beyond the universal floor.
+dimensions_contracts:
+  3d:
+    contract: camera and spatial readability, an environment with a sense of place, lit frames
+    criteria:
+      - id: render.spatial_readability
+        dimension: visual
+        metric: the lowest of the spatial readability scores (entities, composition) under the chase camera
+        evaluate: {kind: scores, report: visual-qa-report, field: scores, aggregate: min, keys: [character_readability, composition]}
+        minimum: {mvp: "visual-qa-rubric:pass_bar", release: "quality-benchmark:presentation.visual_qa.min_dimension"}
+        preferred: 4
+        severity: {mvp: warning, release: blocker}
+        owner: art
+        route: assets
+        evidence: visual-qa-report scores
+        regression: the score drops below the minimum on a newer build
+        basis: measured-2
+      - id: render.environment
+        dimension: visual
+        metric: the visual-qa environment score - ground, sky, fog, set dressing
+        evaluate: {kind: scores, report: visual-qa-report, field: scores, aggregate: min, keys: [environment]}
+        minimum: {mvp: "visual-qa-rubric:pass_bar", release: "quality-benchmark:presentation.visual_qa.min_dimension"}
+        preferred: 4
+        severity: {mvp: warning, release: blocker}
+        owner: art
+        route: assets
+        evidence: visual-qa-report scores.environment
+        regression: the score drops below the minimum on a newer build
+        basis: measured-2
+      - id: render.lighting
+        dimension: visual
+        metric: share of the lighting checks that pass - lit, readable frames and scene contrast
+        evaluate: {kind: checks, report: playability-report, checks: [frames.readable], required_only: false}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: art
+        route: assets
+        evidence: playability-report frames.readable
+        regression: the check FAILs on a newer build
+        basis: measured-2
+      - id: render.scene_contrast
+        dimension: visual
+        metric: share of viewports on which the scene's contrast meets the production bar
+        evaluate: {kind: checks, report: production-quality-report, checks: [scene.contrast], required_only: false}
+        minimum: 1.0
+        preferred: 1.0
+        severity: {mvp: warning, release: blocker}
+        owner: art
+        route: assets
+        evidence: production-quality-report scene.contrast
+        regression: the check FAILs on a newer build
+        basis: measured-2

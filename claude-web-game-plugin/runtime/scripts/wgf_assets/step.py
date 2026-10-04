@@ -91,7 +91,7 @@ MANIFEST_SCHEMA_VERSION = provenance.version_of("asset-manifest")
 READABLE_DESIGN_MAJOR = 1
 DEFAULT_BACKENDS = ["2d-assets-mcp", "procedural"]
 # Reports that can route a run back to this step, and so name what to rebuild.
-REENTRY_REPORTS = ("production-quality-report", "visual-qa-report")
+REENTRY_REPORTS = ("production-quality-report", "visual-qa-report", "quality-report")
 
 
 def _config_section(config, name):

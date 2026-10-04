@@ -138,8 +138,8 @@ workflow:
 # held by the run and listed as its inputs. `strategy` produces every type any gate these
 # tests name requires, so each test exercises the gate rule it is about, not a missing input.
 GATE_EVIDENCE = ("[title-strategy, game-design, tech-plan, qa-report, verification-report, "
-                 "prototype-report, playability-report, review-report, release-manifest, "
-                 "performance-review]")
+                 "prototype-report, playability-report, review-report, quality-report, "
+                 "release-manifest, performance-review]")
 
 CHECKPOINT = f"""
 workflow:

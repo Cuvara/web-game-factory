@@ -1305,7 +1305,7 @@ class PrototypeReviewGate(_MockNewGame):
         api, state = self.start()
         self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"))
         executed = self.executed(state)
-        self.assertEqual(executed[-2:], ["verify", "prototype-review"])
+        self.assertEqual(executed[-3:], ["verify", "quality-gate", "prototype-review"])
         self.assertNotIn("release", executed)
         self.assertIsNone(state.latest_artifact("release-manifest"))
         # G2 and G3 are reversible and a mock run approves them itself; G4 it never does.
@@ -1364,7 +1364,7 @@ class PrototypeReviewGate(_MockNewGame):
         self.assertEqual(executed[at:], ["prototype-review", "prototype-review", "develop",
                                          "playability", "production-quality", "visual-qa", "content-sufficiency",
                                          "review", "sdk", "sdk-review",
-                                         "verify", "prototype-review"])
+                                         "verify", "quality-gate", "prototype-review"])
         self.assertEqual(state.steps["prototype-review"].visits, 2)
         # The iterate answered visit 1; visit 2 needs a decision of its own.
         self.assertEqual(state.decisions["prototype-review"]["visit"], 1)
@@ -1535,10 +1535,11 @@ class GateAnsweredWithoutPassing(EngineCase):
         self.assertEqual(checkpoint.required_artifacts("G4"),
                          ["qa-report", "verification-report", "prototype-report",
                           "title-strategy", "game-design", "playability-report",
-                          "review-report"])
+                          "review-report", "quality-report"])
         self.assertNotIn("asset-manifest", checkpoint.required_artifacts("G3"))
         ids = definition.step_ids
-        self.assertEqual(ids[ids.index("verify") + 1], "prototype-review")
+        self.assertEqual(ids[ids.index("verify") + 1], "quality-gate")
+        self.assertEqual(ids[ids.index("quality-gate") + 1], "prototype-review")
         # The store listing is made only after G4 passes, and release ships it.
         self.assertEqual(ids[ids.index("prototype-review") + 1], "store-listing")
         self.assertEqual(ids[ids.index("store-listing") + 1], "listing-validation")

@@ -87,6 +87,12 @@ when its preconditions held is what makes a draft mean something. The refusals a
 | `listing-not-validated` | BLOCKED | no listing-validation-report in the run, or the newest judged another listing (by content hash) |
 | `listing-not-passed` | FAILED | the newest listing-validation-report's verdict is not PASS |
 | `listing-package-missing` | BLOCKED | the listing's package directory is gone from the run directory |
+| `no-quality-report` | BLOCKED | the step's `required_quality` (default true) and the run holds no quality-report: run `quality-gate` first ([quality-gate-module.md](quality-gate-module.md)) |
+| `quality-not-passed` | FAILED | the newest quality-report's verdict is not PASS: a dimension is below its floor, or its evidence was stale |
+| `quality-commit-mismatch` | FAILED | the newest quality-report scored another commit, or another development commit, than the build shipped |
+| `stale-quality-report` | FAILED | the newest quality-report did not pin the run's newest qa, verification, prototype, production-quality or visual-qa report: work came after it |
+| `quality-not-release` | FAILED | the newest quality-report decided `not-release` |
+| `quality-development-tier` | FAILED | the newest quality-report decided `development` (a run at tier mvp) and `factory.release.allow_development_tier` is not true |
 | `verified-dirty-tree` | BLOCKED | verification ran on uncommitted changes, which no commit reproduces |
 | `dirty-checkout` | BLOCKED | the checkout has uncommitted or untracked changes |
 | `bundle-not-verified` | BLOCKED | the build output on disk is not the bundle verification digested |
@@ -193,6 +199,7 @@ test seam, when set, is used as given.
 | `timeouts` | git 30, package 900, manifest 300 | seconds |
 | `required_reports` | `[production-quality-report, visual-qa-report]` | Production gate reports that must be `PASS` for the shipped build's development commit. **`with:` only**, like `required_gates`. A workflow without the production gates says so: `required_reports: []` |
 | `required_listing` | `true` | Whether the release ships only with the run's validated store listing (`listing_refusals`). **`with:` only**. A workflow without the listing steps says so: `required_listing: false` |
+| `required_quality` | `true` | Whether the release ships only a build its quality-report passed (`quality_refusals`). **`with:` only**. A workflow without the quality gate says so: `required_quality: false` |
 | `required_gates` | `[G4]` | Gates the run must have passed, current (`context.gates_passed`). **`with:` only** - never read from `factory.release`, so an installation cannot loosen what the workflow requires. A workflow with no G4 checkpoint (a test workflow) says so: `required_gates: []` |
 
 And one key read **only** from `factory.release`, never from `with:` - an installation's
@@ -201,6 +208,7 @@ decision, not a workflow's:
 | Key | Default | |
 |---|---|---|
 | `allow_unreviewed` | `false` | `true` drafts a build whose newest review is `skipped` or absent, recorded as **UNREVIEWED** in `evidence.review.note` and the step's message. It never waives a review of another commit, a request for changes, or a gate |
+| `allow_development_tier` | `false` | `true` drafts a build whose quality-report decided `development` (a run at quality tier mvp; the golden runs set it), recorded in `evidence.quality.decision` (release-manifest 1.4.0). It never waives a quality-report that failed, scored another build or decided `not-release` |
 
 ### Why the release step checks G4 itself
 

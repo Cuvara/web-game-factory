@@ -264,7 +264,8 @@ class DevelopStep(WorkflowStep):
                                                 "review-report", "playability-report",
                                                 "production-quality-report",
                                                 "visual-qa-report",
-                                                "content-sufficiency-report"):
+                                                "content-sufficiency-report",
+                                                "quality-report"):
             ref = inputs.refs.get(artifact_type)
             version = getattr(ref, "schema_version", None) or ""
             if ref is not None and version and version.split(".")[0] != SUPPORTED_MAJOR:
@@ -287,6 +288,7 @@ class DevelopStep(WorkflowStep):
         visual_qa = inputs.load("visual-qa-report") if "visual-qa-report" in inputs else None
         sufficiency = (inputs.load("content-sufficiency-report")
                        if "content-sufficiency-report" in inputs else None)
+        quality = inputs.load("quality-report") if "quality-report" in inputs else None
         # A qa-report on the first visit is a leftover from an earlier release, not feedback
         # on this build; only a loop back from verify carries defects to fix.
         if qa is not None and (context.visit <= 1 or qa.get("verdict") == "pass"):
@@ -349,6 +351,10 @@ class DevelopStep(WorkflowStep):
                 context.visit > 1 and sufficiency.get("verdict") == "FAIL"
                 and sufficiency.get("commit") == git.head()):
             sufficiency = None
+        if quality is not None and not (
+                context.visit > 1 and quality.get("verdict") == "FAIL"
+                and (quality.get("build") or {}).get("commit") == git.head()):
+            quality = None
 
         key = context.idempotency_key
         brief_dir = os.path.join(checkout, briefs.BRIEF_DIR)
@@ -401,6 +407,7 @@ class DevelopStep(WorkflowStep):
                 refs=inputs.refs, skills=settings.skills, review=review,
                 playability=playability, frames_root=getattr(context, "run_dir", None),
                 production=production, visual_qa=visual_qa, sufficiency=sufficiency,
+                quality=quality,
                 phase=phase, greybox_commit=greybox_commit, review_baseline=review_baseline,
                 tech_plan=tech_plan, self_playtest=settings.self_playtest,
                 mobile_test=bool((game_config.get("verification") or {}).get("mobile_test",

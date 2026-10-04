@@ -46,8 +46,9 @@ from wgf_verification.checks.platform import same_commit
 from wgf_verification.session import locate_checkout
 
 from .lineage import (BLOCKED, DEFAULT_REQUIRED_GATES, DEFAULT_REQUIRED_LISTING,
-                      DEFAULT_REQUIRED_REPORTS, FAILED, Refusal, checkout_lineage,
-                      commit_lineage, evidence_refusals, review_status)
+                      DEFAULT_REQUIRED_QUALITY, DEFAULT_REQUIRED_REPORTS, FAILED, Refusal,
+                      checkout_lineage, commit_lineage, evidence_refusals, quality_evidence,
+                      review_status)
 from .package import RULES, audit_package, file_sha256
 from .runner import ReleaseRunner, describe
 
@@ -61,7 +62,7 @@ SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 DEFAULT_TIMEOUTS = {"git": 30, "package": 900, "manifest": 300}
 INPUTS = ("qa-report", "verification-report", "sdk-report", "prototype-report",
           "scaffold-record", "review-report", "production-quality-report", "visual-qa-report",
-          "store-listing", "listing-validation-report")
+          "store-listing", "listing-validation-report", "quality-report")
 LISTING_DIR = "listing"
 
 
@@ -192,17 +193,31 @@ class ReleaseStep(WorkflowStep):
         if not isinstance(required_listing, bool):
             return StepResult.failed("release `with: required_listing` must be true or false, "
                                      f"not {required_listing!r}", retryable=False)
+        # And whether a release ships only a build its quality-report passed: the workflow's
+        # (`with: required_quality`, default true).
+        required_quality = (self.params or {}).get("required_quality", DEFAULT_REQUIRED_QUALITY)
+        if not isinstance(required_quality, bool):
+            return StepResult.failed("release `with: required_quality` must be true or false, "
+                                     f"not {required_quality!r}", retryable=False)
         allow_unreviewed = ((context.config or {}).get("release") or {}).get(
             "allow_unreviewed", False)
         if not isinstance(allow_unreviewed, bool):
             return StepResult.failed("factory.release.allow_unreviewed must be true or false, "
                                      f"not {allow_unreviewed!r}", retryable=False)
+        # Whether a development build (quality tier mvp) may be drafted: the installation's
+        # (factory.release.allow_development_tier, default false - never a workflow's `with:`).
+        allow_development = ((context.config or {}).get("release") or {}).get(
+            "allow_development_tier", False)
+        if not isinstance(allow_development, bool):
+            return StepResult.failed("factory.release.allow_development_tier must be true or "
+                                     f"false, not {allow_development!r}", retryable=False)
         try:
             refusals = evidence_refusals(
                 inputs.refs, loaded, getattr(context, "run_id", None),
                 gates_passed=getattr(context, "gates_passed", None) or (),
                 required_gates=required_gates, allow_unreviewed=allow_unreviewed,
-                required_reports=required_reports, required_listing=required_listing)
+                required_reports=required_reports, required_listing=required_listing,
+                required_quality=required_quality, allow_development=allow_development)
             if refusals:
                 raise _Refused(refusals)
             # The step's own `with:` only: a factory.release key is not a checkout path.
@@ -721,6 +736,9 @@ class ReleaseStep(WorkflowStep):
             artifact["store_metadata"] = store_metadata
         if listing_evidence:
             artifact["evidence"]["store_listing"] = listing_evidence
+        quality = quality_evidence(refs, loaded)
+        if quality:
+            artifact["evidence"]["quality"] = quality
         if workflow.get("run_id"):
             artifact["workflow"] = workflow
         template = self._template(root, loaded.get("scaffold-record"))

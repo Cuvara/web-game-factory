@@ -10,6 +10,9 @@ back here (core/workflows/new-game.workflow.yaml). `plan` turns it into
                         through the playability-report the gate judged
     visual-qa           every finding routed `assets` (any severity), every failing score,
                         per-state answer and look whose rubric entry routes `assets`
+    quality-gate        every open finding routed `assets` in a dimension below its floor:
+                        the ids in its `assets`, else the ids and role words its summary and
+                        criterion name (scripts/wgf_quality)
 
 A failure concerns the requirements whose id (or variant id) it names, those of a role whose
 word it names, those whose runtime asset the play probe reported drawing an entity of that
@@ -235,6 +238,23 @@ def _production(report, resolver, collect, run_dir, playability):
         collect.add(named, reason, frames)
 
 
+def _quality(report, resolver, collect):
+    """A quality-report's open findings routed to assets: the asset ids they name, else the
+    requirements their text names (a role word, an id)."""
+    below = set(report.get("failed") or [])
+    for finding in report.get("findings") or []:
+        if not isinstance(finding, dict) or finding.get("route") != "assets" \
+                or finding.get("status") != "open" or finding.get("dimension") not in below:
+            continue
+        named = resolver.names(finding.get("assets")) or resolver.text(
+            finding.get("summary"), finding.get("criterion"))
+        reason = (f"{finding.get('criterion')} ({finding.get('dimension')} below its floor): "
+                  f"{finding.get('summary')}")
+        if finding.get("expected"):
+            reason += f" Expected: {_inline(finding['expected'])}."
+        collect.add(named, reason, [])
+
+
 def _overview(report, run_dir):
     """One frame per viewport for each overview state: what a failure about every frame
     is shown with."""
@@ -343,6 +363,8 @@ def plan(reports, requirements, *, rules=None, run_dir=None, entered_by=None,
     for kind, report in selected:
         if kind == "production-quality-report":
             _production(report, resolver, collect, run_dir, playability)
+        elif kind == "quality-report":
+            _quality(report, resolver, collect)
         else:
             _visual_qa(report, rules, visual, collect, run_dir)
     reentry = any(_failing(r) for _k, r in selected)

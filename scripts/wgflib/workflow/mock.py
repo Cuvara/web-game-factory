@@ -338,6 +338,61 @@ class MockContentSufficiencyStep(MockStep):
             body["routes"] = [route]
 
 
+class MockQualityGateStep(MockStep):
+    """`design-gap`, `assets` and `develop` (or `fail`) in a mock plan are a quality gate
+    failure routed there: FAILED with that route and not retryable, a dimension below its
+    floor and a finding naming it in the report - the shape the real step (scripts/
+    wgf_quality) returns. Nothing is scored: the mock scorecard is a development build."""
+
+    type, role = "quality-gate", "qa"
+    ROUTES = ("design-gap", "assets", "develop")
+    DIMENSION = {"design-gap": "content", "assets": "visual", "develop": "ui"}
+
+    def execute(self, inputs, context):
+        result = super().execute(inputs, context)
+        route = "develop" if result.route == "fail" else result.route
+        if route in self.ROUTES:
+            return StepResult("FAILED", route=route, artifacts=result.artifacts,
+                              retryable=False,
+                              error=f"{self.id} found {self.DIMENSION[route]} below its floor "
+                                    "(mock)")
+        return result
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type != "quality-report":
+            return
+        route = "develop" if entry == "fail" else entry
+        if route not in self.ROUTES:
+            return
+        dimension = self.DIMENSION[route]
+        finding = {"id": f"quality:mock.{dimension}", "criterion": f"mock.{dimension}",
+                   "dimension": dimension, "layer": "universal", "severity": "blocker",
+                   "summary": "scripted quality shortfall (mock)", "evidence": [],
+                   "build": {"commit": body["build"]["commit"], "digest": None},
+                   "expected": {"minimum": 1.0}, "observed": 0.0,
+                   "owner": "game-design" if route == "design-gap" else
+                   ("art" if route == "assets" else "ui"),
+                   "route": route, "status": "open", "first_seen": body["build"]["commit"],
+                   "closed_on": None, "regressed": False}
+        if route == "design-gap":
+            finding["design_gap"] = {"field": "build_spec.content.units",
+                                     "question": "Which units does the design add? (mock)",
+                                     "assumed": None, "severity": "blocking"}
+        body["findings"] = [finding]
+        for entry_ in body["dimensions"]:
+            if entry_["id"] == dimension:
+                entry_.update(status="BELOW_FLOOR", regression=True,
+                              blockers_failed=[f"mock.{dimension}"],
+                              open_findings=[finding["id"]],
+                              reason="scripted quality shortfall (mock)")
+        body["failed"] = [dimension]
+        body["routes"] = [route]
+        body["regression"]["below_floor"] = [dimension]
+        body["release_decision"] = {"decision": "not-release",
+                                    "reasons": [f"{dimension} below its floor (mock)"]}
+        body["verdict"] = "FAIL"
+
+
 class MockStoreListingStep(MockStep):
     """`incomplete` in a mock plan is a listing with a problem recorded (status incomplete,
     still SUCCESS, as the real step returns one); otherwise the placeholder package."""
@@ -444,6 +499,7 @@ MOCK_STEPS = (
     MockProductionQualityStep,
     MockVisualQAStep,
     MockContentSufficiencyStep,
+    MockQualityGateStep,
     MockReviewStep,
     MockSDKStep,
     MockVerificationStep,

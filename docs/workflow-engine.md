@@ -54,10 +54,12 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
 
   research → strategy → [G2] → design → tech-plan → [G3] → init → greybox → greybox-playability
     → assets → develop → playability → production-quality → visual-qa → content-sufficiency
-    → review → sdk → sdk-review → verify → [G4] → store-listing → listing-validation → release
+    → review → sdk → sdk-review → verify → quality-gate → [G4] → store-listing
+    → listing-validation → release
 
   greybox, develop     design-gap       → design (then tech-plan, [G3], greybox again)
   content-sufficiency  develop / design-gap → develop / design (as above)
+  quality-gate         design-gap / assets / develop → design / assets / develop
   greybox-playability  fail             → greybox
   listing-validation   listing          → store-listing
   playability          fail             → develop
@@ -515,6 +517,19 @@ Workflow 9 adds `content-sufficiency` after visual-qa, with a route into each:
 `content-sufficiency.develop: 2` on develop and `content-sufficiency.design-gap: 1` on design
 (docs/content-sufficiency-module.md). The bounds grow by the same rule: design 4, greybox 6
 (three returns), develop 24, and 24 for every step after develop.
+Workflow 10 adds `quality-gate` after verify, with a route into three:
+`quality-gate.develop: 2` on develop, `quality-gate.assets: 2` on assets and
+`quality-gate.design-gap: 1` on design (docs/quality-gate-module.md). The bounds grow by the
+same rule: design 5, greybox 7 (four returns), assets 7, develop 29, and 29 for every step
+after develop.
+
+A workflow may list Factory files under `pinned_references`: when a run starts, the engine
+copies each into the run directory (`references/<path>`) and records its digest in the run's
+params (`pinned_references`, corroborated by WORKFLOW_STARTED like every param;
+`scripts/wgflib/workflow/references.py`). A step reads the run's copy through
+`references.read`, which refuses one edited after the start. `new-game` pins the quality
+floor, the quality benchmark and the visual-qa rubric, so a run is scored against the
+contract it started under.
 A reviewer that never approves blocks the run on its own
 third request for changes; a verification that always fails, on its third failure; a third
 G4 iterate stops for a person too; none spends another's budget. What a whole run may spend

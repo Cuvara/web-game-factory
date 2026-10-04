@@ -359,6 +359,7 @@ def review_report(prototype, sdk=None, verdict="approve", reviewed_commit=None):
 def step(**params):
     # These tests predate the store listing; the ones about it set this themselves.
     params.setdefault("required_listing", False)
+    params.setdefault("required_quality", False)
     definition = StepDefinition({
         "id": "release", "type": "release",
         "inputs": ["qa-report", "verification-report", "sdk-report", "prototype-report",
@@ -378,6 +379,7 @@ class ReleaseCase(unittest.TestCase):
         params.setdefault("repo_dir", self.game.root)
         # These tests predate the store listing; the ones about it set this themselves.
         params.setdefault("required_listing", False)
+        params.setdefault("required_quality", False)
         instance = step(**{k: v for k, v in params.items() if v is not None})
         instance.environ = self.game.environ(flags)
         instance.clock = staticmethod(lambda: NOW)
@@ -647,6 +649,7 @@ class ThroughTheEngine(ReleaseCase):
                         repo_dir: %s
                         required_gates: []    # this workflow has no G4 checkpoint
                         required_listing: false   # nor the store-listing steps
+                        required_quality: false   # nor the quality gate
                       next: $end
                 """ % json.dumps(self.game.root)))
         return path

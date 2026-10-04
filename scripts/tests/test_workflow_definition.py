@@ -61,8 +61,9 @@ class ParsesValidDefinitions(unittest.TestCase):
             ["research", "strategy", "strategy-review", "design", "tech-plan",
              "tech-plan-review", "init", "greybox", "greybox-playability", "assets", "develop",
              "playability", "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
-             "sdk-review", "verify", "prototype-review", "store-listing", "listing-validation",
-             "release", "platform-validate", "release-review", "publish-review", "submit"],
+             "sdk-review", "verify", "quality-gate", "prototype-review", "store-listing",
+             "listing-validation", "release", "platform-validate", "release-review",
+             "publish-review", "submit"],
         )
         # The store listing is made after G4 passes and before release ships it; a failed
         # validation goes back to the listing step, and release reads both.
@@ -118,7 +119,7 @@ class ParsesValidDefinitions(unittest.TestCase):
         self.assertEqual(g4.on, {"iterate": "develop", "kill": "$end"})
         self.assertEqual(g4.inputs, ["qa-report", "verification-report", "prototype-report",
                                      "title-strategy", "game-design", "playability-report",
-                                     "review-report"])
+                                     "review-report", "quality-report"])
         self.assertEqual(definition.step("design").on, {"descope": "$fail"})
         self.assertEqual(definition.resolve_scope("plan"),
                          ["strategy", "strategy-review", "design", "tech-plan",
@@ -299,13 +300,14 @@ class RouteScopedVisitLimits(unittest.TestCase):
         self.assertEqual(develop.max_visits_by_route,
                          {"playability.fail": 2, "production-quality.develop": 2,
                           "visual-qa.develop": 2, "content-sufficiency.develop": 2,
-                          "review.request-changes": 2,
+                          "quality-gate.develop": 2, "review.request-changes": 2,
                           "sdk-review.request-changes": 2, "verify.fail": 2, "iterate": 2})
         # The production gates' asset failures are bounded on assets, which continues to
         # develop: each pass through assets enters develop once more.
         assets = definition.step("assets")
         self.assertEqual(assets.max_visits_by_route,
-                         {"production-quality.assets": 2, "visual-qa.assets": 2})
+                         {"production-quality.assets": 2, "visual-qa.assets": 2,
+                          "quality-gate.assets": 2})
         self.assertEqual(assets.max_visits, 1 + sum(assets.max_visits_by_route.values()))
         # develop's own limit never cuts a loop short of its route budget (its own, and the
         # passes through assets), and every step of the loop after develop is visited at
@@ -315,7 +317,8 @@ class RouteScopedVisitLimits(unittest.TestCase):
         design = definition.step("design")
         self.assertEqual(design.max_visits_by_route,
                          {"greybox.design-gap": 1, "develop.design-gap": 1,
-                          "content-sufficiency.design-gap": 1})
+                          "content-sufficiency.design-gap": 1,
+                          "quality-gate.design-gap": 1})
         self.assertEqual(design.max_visits, 1 + sum(design.max_visits_by_route.values()))
         self.assertEqual(develop.max_visits, 1 + sum(develop.max_visits_by_route.values())
                          + sum(assets.max_visits_by_route.values())
@@ -324,8 +327,8 @@ class RouteScopedVisitLimits(unittest.TestCase):
         self.assertEqual(greybox.max_visits, 1 + sum(greybox.max_visits_by_route.values())
                          + sum(design.max_visits_by_route.values()))
         for step_id in ("playability", "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
-                        "sdk-review", "verify", "prototype-review", "store-listing",
-                        "listing-validation"):
+                        "sdk-review", "verify", "quality-gate", "prototype-review",
+                        "store-listing", "listing-validation"):
             self.assertGreaterEqual(definition.step(step_id).max_visits, develop.max_visits,
                                     step_id)
 

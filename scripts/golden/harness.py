@@ -45,6 +45,11 @@ The overrides, and why each is legitimate:
                                  port at MVP tier. At `release` the design is held to the
                                  quality benchmark's content bars (content.tier_*), which the
                                  built-in design authors do not write to (docs/golden-runs.md).
+    release.allow_development_tier
+                                 true: at tier mvp the quality gate's decision is
+                                 `development`, never release, and release refuses it
+                                 without this explicit, recorded exception (the manifest's
+                                 evidence.quality says `development`).
 
 And one decision, not an override: G4 (prototype-review) is irreversible, so nothing in the
 configuration can approve it. The harness resumes the waiting run with `pass` through the
@@ -317,6 +322,9 @@ def build_config(game, workdir, template_dir=None, python=None, with_library=Tru
         # A pipeline regression at MVP tier: the built-in design author does not write a
         # release-tier design (content.tier_*), and a golden run measures the pipeline.
         "strategy": {"quality_tier": "mvp"},
+        # ...so the quality gate decides `development`, which release drafts only where the
+        # installation says so (docs/quality-gate-module.md).
+        "release": {"allow_development_tier": True},
     }
     return _merge(config, overrides)
 

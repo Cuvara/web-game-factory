@@ -170,7 +170,9 @@ class Cli(Scratch):
         self.wgf("new-game", "--mock", "--hold-gates", "--quiet", idea=GOALKEEPER, expect=3)
         state = self.only_run()
         self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "strategy-review"))
-        self.assertEqual(state.params, {"mock": True, "idea": GOALKEEPER})
+        # ...and the reference files the workflow pins at its start (pinned_references).
+        self.assertEqual({k: v for k, v in state.params.items() if k != "pinned_references"},
+                         {"mock": True, "idea": GOALKEEPER})
         for artifact_type in ("research-report", "opportunity", "title-strategy"):
             self.assertEqual(brief_of(artifact_type, self.artifact(state, artifact_type)),
                              GOALKEEPER)
@@ -221,9 +223,11 @@ class Cli(Scratch):
     def test_no_argument_is_the_blank_scan_it_always_was(self):
         self.wgf("new-game", "--mock", "--quiet", expect=3)
         state = self.only_run()
-        # A mock run without --hold-gates records exactly these, and nothing about an idea.
-        self.assertEqual(sorted(state.params), ["auto_approve", "mock"])
-        self.assertEqual(sorted(self.started_params(state.run_id)), ["auto_approve", "mock"])
+        # A mock run without --hold-gates records exactly these, and nothing about an idea
+        # (pinned_references: the reference files the workflow pins at its start).
+        self.assertEqual(sorted(state.params), ["auto_approve", "mock", "pinned_references"])
+        self.assertEqual(sorted(self.started_params(state.run_id)),
+                         ["auto_approve", "mock", "pinned_references"])
         report = self.artifact(state, "research-report")
         self.assertNotIn("brief", report["scope"])
         for artifact_type in ("opportunity", "title-strategy", "game-design"):

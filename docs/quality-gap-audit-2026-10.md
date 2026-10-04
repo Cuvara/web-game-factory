@@ -247,8 +247,12 @@ WS-1 -> WS-2 -> WS-3 / WS-4 -> WS-7 -> WS-8, then WS-9.
 holds the release-tier bars, which are genre-neutral and name no game. WS-10 wired
 `presentation.assets.distinct_climax_art` (the assets step, 1.2.0). WS-4 wired `content` and
 `progression` on the built content (the `content-sufficiency` step, 1.4.0,
-[content-sufficiency-module.md](content-sufficiency-module.md)). WS-2, WS-7 and WS-9 wire the
-rest.
+[content-sufficiency-module.md](content-sufficiency-module.md)). WS-7 wired `presentation`
+into the quality gate (1.6.0): the release tier's visual-qa scores and finding counts, every
+production-quality check, the skipped content checks and the audio counts are criteria of the
+Factory quality floor (`core/reference/quality-floor.yaml`), scored on one build with every
+other dimension before G4 ([quality-gate-module.md](quality-gate-module.md),
+[factory-quality-benchmark.md](factory-quality-benchmark.md)). WS-2 and WS-9 wire the rest.
 
 ### 5.1 Sources and measurements per bar
 

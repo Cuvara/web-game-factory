@@ -217,7 +217,14 @@ again) to `assets` and `develop` to `develop`, and `release` refuses unless both
 development commit it ships (`docs/production-architecture.md`). Workflow 9 then counts the
 built content against the design's quality tier: `content-sufficiency` routes `develop` (the
 build is short of the design) or `design-gap` (the design is short of the tier)
-(`docs/content-sufficiency-module.md`). Workflow 7 adds the **store listing** after G4
+(`docs/content-sufficiency-module.md`). Workflow 10 adds the **quality gate** after verify:
+`quality-gate` scores one build on every quality dimension from the reports the producers
+wrote about it, against `core/reference/quality-floor.yaml` (the universal floor, the genre
+family's contract, the 3D contract) and the benchmark's release bars at the run's tier, as
+pinned when the run started; a dimension below its floor - whatever the others score -
+routes `design-gap`, `assets` or `develop`, stale evidence blocks, a tier-mvp run is
+`development`, never release. G4 is decided on the quality-report, and release refuses a
+build whose quality-report did not pass it (`docs/quality-gate-module.md`). Workflow 7 adds the **store listing** after G4
 (`docs/store-listing-module.md`): `store-listing` captures the verified build's package -
 screenshots and a gameplay recording of real play through the probe, branding from the
 game's own assets and identity, copy grounded in the design, one rendition per targeted
@@ -290,7 +297,7 @@ every step type in `new-game` has one: `wgf_discovery` (research), `wgf_strategy
 `wgf_design`, `wgf_techplan`, `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_review`,
 `wgf_sdk`, `wgf_verification`, `wgf_release`, `wgf_playability`, `wgf_production`
 (production-quality), `wgf_visualqa` (visual-qa), `wgf_sufficiency` (content-sufficiency),
-`wgf_listing` (store-listing and listing-validation) and `wgf_publish` (platform-validate and
+`wgf_quality` (quality-gate), `wgf_listing` (store-listing and listing-validation) and `wgf_publish` (platform-validate and
 publish). `--mock` still
 replaces all of them with placeholders for a run. Discovery reads evidence snapshots from
 `workspace/research/snapshots/` and teardown records from `workspace/research/games/`, codes
@@ -417,6 +424,11 @@ seen by the engine — validate what you write there with ajv.
   (the played commit's `public/content/units.json`, the traverse and the survey of every unit
   through the probe's unit link) counted against `core/reference/quality-benchmark.yaml` at
   the design's tier; typed findings routing `develop` or `design-gap`
+- `docs/quality-gate-module.md` — the `quality-gate` step: one build scored on every quality
+  dimension from the same build's reports, hard floors per dimension (no averaging past a
+  blocker), stale evidence, the finding lifecycle, the release decision, routing, pinning
+- `docs/factory-quality-benchmark.md` — the Factory quality benchmark as a system: the
+  benchmark and the two-layer floor (universal + genre/3D), calibration and how to version it
 - `docs/store-listing-module.md` — the `store-listing` and `listing-validation` steps: the
   store package captured from the verified build (branding, screenshots, trailer, grounded
   copy, per-platform renditions under `core/reference/store-listing.yaml` and the profiles'

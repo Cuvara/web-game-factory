@@ -1,0 +1,816 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/quality-report.schema.json",
+  "title": "Quality report",
+  "description": "The Factory quality gate's scorecard of ONE build: every quality dimension (gameplay, content sufficiency, variety, progression, visual, UI, audio, consistency, polish, technical/performance, platform readiness, store) scored from the reports the producing steps wrote about that same build - playability, production-quality, visual-qa, content-sufficiency, verify, review, sdk, and the store listing's validation once it exists - against the versioned quality contract (core/reference/quality-floor.yaml: the universal floor every game carries, the genre family's contract and the 3D contract) and the release bars of core/reference/quality-benchmark.yaml at the run's quality tier, as the run pinned them when it started. A dimension passes only at or above its floor: no average carries a dimension past a failed blocker criterion, and no dimension's score carries another's. Evidence about another commit than the build's is stale and blocks the report. Each failing criterion is a typed finding with its owner discipline and route, carried open across builds and closed only by a re-measurement on a newer build. The release decision is `release` only at the release tier with every dimension at its floor; a run at tier mvp is `development`, never release. Added in Factory 2.8.0 (WS-7).",
+  "x-wgf": {
+    "id": "quality-report",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.0.0",
+    "producer": "title:prototype",
+    "consumers": [
+      "title:design",
+      "title:prototype",
+      "title:prototype-review",
+      "release:draft"
+    ],
+    "repo_path": "<game-repo>/qa/quality/<commit>.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/quality-report/v<n>.json",
+    "required_for_gates": [
+      "G4"
+    ]
+  },
+  "type": "object",
+  "required": [
+    "provenance",
+    "title_id",
+    "build",
+    "quality_tier",
+    "benchmark",
+    "contract",
+    "evidence",
+    "dimensions",
+    "criteria",
+    "findings",
+    "regression",
+    "release_decision",
+    "failed",
+    "routes",
+    "verdict"
+  ],
+  "$defs": {
+    "evidenceRef": {
+      "type": "object",
+      "required": [
+        "artifact_type"
+      ],
+      "properties": {
+        "artifact_type": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "pin": {
+      "type": "object",
+      "required": [
+        "path",
+        "version",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "expected": {
+      "type": "object",
+      "properties": {
+        "minimum": {},
+        "maximum": {},
+        "preferred": {}
+      },
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "provenance": {
+      "$ref": "shared/provenance.schema.json#/$defs/provenance"
+    },
+    "title_id": {
+      "type": "string"
+    },
+    "build": {
+      "type": "object",
+      "description": "The build every score is about: the shipped (verified) commit, the development commit it sits on (the one the play and judgement gates name), and the digest of the verified bundle (verification-report build_artifact.content_hash).",
+      "required": [
+        "commit",
+        "development_commit",
+        "digest"
+      ],
+      "properties": {
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "development_commit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "quality_tier": {
+      "enum": [
+        "mvp",
+        "release",
+        null
+      ],
+      "description": "The tier the build was held to: the design's build_spec.content.quality_tier, else the strategy's concept.content_model.quality_tier; null when neither states one, which is held as mvp."
+    },
+    "benchmark": {
+      "type": "object",
+      "description": "The versioned contract the scores were computed against, as the run pinned it when it started (`pinned` false: a run started before its workflow pinned references, which read the live files).",
+      "required": [
+        "floor",
+        "quality_benchmark",
+        "visual_qa_rubric",
+        "pinned"
+      ],
+      "properties": {
+        "floor": {
+          "$ref": "#/$defs/pin"
+        },
+        "quality_benchmark": {
+          "$ref": "#/$defs/pin"
+        },
+        "visual_qa_rubric": {
+          "$ref": "#/$defs/pin"
+        },
+        "pinned": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "contract": {
+      "type": "object",
+      "description": "The contract derived for this game: the universal floor, the genre family's (or the family of its genre node's nearest ancestor) and the rendering dimension's.",
+      "required": [
+        "universal",
+        "family",
+        "genre",
+        "resolved_by",
+        "render"
+      ],
+      "properties": {
+        "universal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "family": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The design's genre.family."
+        },
+        "genre": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The family whose contract applied; null when none could be resolved (the universal floor alone)."
+        },
+        "resolved_by": {
+          "enum": [
+            "family",
+            "ancestor",
+            "none"
+          ]
+        },
+        "via_node": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "render": {
+          "enum": [
+            "2d",
+            "3d",
+            null
+          ]
+        },
+        "criteria": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Every report the scores read, the commit it describes and the commit it had to describe. `stale`: another build's, which BLOCKS the report.",
+      "items": {
+        "type": "object",
+        "required": [
+          "artifact_type",
+          "status"
+        ],
+        "properties": {
+          "artifact_type": {
+            "type": "string"
+          },
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content_hash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expected_commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "of": {
+            "enum": [
+              "development",
+              "shipped",
+              null
+            ]
+          },
+          "status": {
+            "enum": [
+              "current",
+              "stale",
+              "absent"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "dimensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "score",
+          "min_score",
+          "status",
+          "regression",
+          "criteria",
+          "owner"
+        ],
+        "properties": {
+          "id": {
+            "enum": [
+              "gameplay",
+              "content",
+              "variety",
+              "progression",
+              "visual",
+              "ui",
+              "audio",
+              "consistency",
+              "polish",
+              "technical",
+              "platform",
+              "store"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "score": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "min_score": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "preferred": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "status": {
+            "enum": [
+              "PASS",
+              "BELOW_FLOOR",
+              "UNMEASURED",
+              "DEFERRED"
+            ]
+          },
+          "regression": {
+            "type": "boolean",
+            "description": "QUALITY REGRESSION: the dimension is below its floor under the pinned benchmark."
+          },
+          "previous_score": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "blockers_failed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "open_findings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "criteria": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "owner": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "layer",
+          "dimension",
+          "severity",
+          "status",
+          "score",
+          "owner",
+          "route",
+          "summary"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "layer": {
+            "enum": [
+              "universal",
+              "genre",
+              "render"
+            ]
+          },
+          "dimension": {
+            "enum": [
+              "gameplay",
+              "content",
+              "variety",
+              "progression",
+              "visual",
+              "ui",
+              "audio",
+              "consistency",
+              "polish",
+              "technical",
+              "platform",
+              "store"
+            ]
+          },
+          "severity": {
+            "enum": [
+              "blocker",
+              "warning"
+            ]
+          },
+          "status": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "UNMEASURED",
+              "DEFERRED"
+            ]
+          },
+          "observed": {},
+          "expected": {
+            "$ref": "#/$defs/expected"
+          },
+          "score": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/evidenceRef"
+            }
+          },
+          "owner": {
+            "type": "string"
+          },
+          "route": {
+            "enum": [
+              "design-gap",
+              "assets",
+              "develop",
+              "listing"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "basis": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "findings": {
+      "type": "array",
+      "description": "One typed finding per criterion below its minimum, and per earlier finding not yet closed: the record specialist routing reads - id, dimension, severity, evidence, the build it was measured on (commit and digest), expected threshold, observed value, owner discipline, route and status. A finding is closed only when a newer build's re-measurement meets the minimum; one that passes again on the build it was raised on stays open.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "criterion",
+          "dimension",
+          "severity",
+          "summary",
+          "evidence",
+          "build",
+          "expected",
+          "observed",
+          "owner",
+          "route",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "criterion": {
+            "type": "string"
+          },
+          "dimension": {
+            "enum": [
+              "gameplay",
+              "content",
+              "variety",
+              "progression",
+              "visual",
+              "ui",
+              "audio",
+              "consistency",
+              "polish",
+              "technical",
+              "platform",
+              "store"
+            ]
+          },
+          "layer": {
+            "enum": [
+              "universal",
+              "genre",
+              "render"
+            ]
+          },
+          "severity": {
+            "enum": [
+              "blocker",
+              "major",
+              "minor"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/evidenceRef"
+            }
+          },
+          "build": {
+            "type": "object",
+            "required": [
+              "commit",
+              "digest"
+            ],
+            "properties": {
+              "commit": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "digest": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "expected": {
+            "$ref": "#/$defs/expected"
+          },
+          "observed": {},
+          "owner": {
+            "type": "string"
+          },
+          "route": {
+            "enum": [
+              "design-gap",
+              "assets",
+              "develop",
+              "listing"
+            ]
+          },
+          "status": {
+            "enum": [
+              "open",
+              "closed"
+            ]
+          },
+          "first_seen": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The commit the finding was first measured on."
+          },
+          "closed_on": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "commit": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "digest": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "regressed": {
+            "type": "boolean",
+            "description": "It met its minimum on the previous build of this run and does not on this one."
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "design_gap": {
+            "type": "object",
+            "required": [
+              "field",
+              "question",
+              "severity"
+            ],
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "question": {
+                "type": "string"
+              },
+              "assumed": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "severity": {
+                "enum": [
+                  "blocking",
+                  "minor"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "regression": {
+      "type": "object",
+      "description": "Regression against the pinned benchmark (a dimension below its floor is a QUALITY REGRESSION) and against the previous quality-report of this run.",
+      "required": [
+        "benchmark_version",
+        "below_floor",
+        "previous",
+        "dropped"
+      ],
+      "properties": {
+        "benchmark_version": {
+          "type": "string"
+        },
+        "below_floor": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "previous": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "artifact_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "commit": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "benchmark_version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "dropped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "dimension",
+              "from",
+              "to"
+            ],
+            "properties": {
+              "dimension": {
+                "type": "string"
+              },
+              "from": {
+                "type": "number"
+              },
+              "to": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "regressed_criteria": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "overall_score": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "The mean of the measured dimension scores. Reported only: it decides nothing."
+    },
+    "release_decision": {
+      "type": "object",
+      "required": [
+        "decision",
+        "reasons"
+      ],
+      "properties": {
+        "decision": {
+          "enum": [
+            "release",
+            "not-release",
+            "development"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "failed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The dimensions below their floor."
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "design-gap",
+          "assets",
+          "develop",
+          "listing"
+        ]
+      },
+      "description": "Where the findings that hold a dimension below its floor go back to; the step returns the first (design-gap, assets, develop, listing)."
+    },
+    "deferred": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Dimensions measured later in the run: the store, once its listing exists."
+    },
+    "blocked_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "BLOCKED"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

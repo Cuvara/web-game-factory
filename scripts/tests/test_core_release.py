@@ -396,11 +396,17 @@ class ContinueIn(ReleaseCase):
     from one that failed, nor from an earlier passing one that newer work superseded."""
 
     # G4 between verify and release, as in new-game (only for the G4 tests below).
-    G4 = ("    - id: prototype-review\n"
+    # G4 is decided on the quality-report too (gates.yaml 1.5.0): a mock quality gate scores
+    # the verified build first.
+    G4 = ("    - id: quality-gate\n"
+          "      type: test.quality\n"
+          "      stage: title:prototype\n"
+          "      outputs: [quality-report]\n"
+          "    - id: prototype-review\n"
           "      type: human-checkpoint\n"
           "      stage: title:prototype-review\n"
           "      inputs: [qa-report, verification-report, prototype-report, title-strategy,"
-          " game-design, playability-report, review-report]\n"
+          " game-design, playability-report, review-report, quality-report]\n"
           "      with: {gate: G4, choices: [pass, iterate, kill]}\n"
           "      on: {iterate: verify, kill: $end}\n")
 
@@ -431,6 +437,7 @@ class ContinueIn(ReleaseCase):
             # G4 is also decided on the terms of the bet (gates.yaml): a mock plan step puts
             # a title-strategy and a game-design in the run ahead of verification.
             registry.register("test.plan", mock.MockDesignStep)
+            registry.register("test.quality", mock.MockQualityGateStep)
 
         module.register = register
         sys.modules[module.__name__] = module
@@ -463,6 +470,7 @@ class ContinueIn(ReleaseCase):
                         repo_dir: %s
                         required_gates: []
                         required_listing: false
+                        required_quality: false
                       next: $end
                 """ % json.dumps(game.root))
             if g4:

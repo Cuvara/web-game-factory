@@ -605,7 +605,7 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                 review=None, mobile_test=True, tech_plan=None, self_playtest=False,
                 writable_paths=None, package_changes=None, loop=None, sessions=None,
                 playability=None, frames_root=None, phase=None, greybox_commit=None,
-                production=None, visual_qa=None, sufficiency=None,
+                production=None, visual_qa=None, sufficiency=None, quality=None,
                 review_baseline=None, developer=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
@@ -677,6 +677,16 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
     visual_qa_failures = _visual_qa_failures(visual_qa, frames_root)
     # The content-sufficiency step's findings on the commit this visit starts from that the
     # build owes (route `develop`): the design meets its tier's bar, the build does not.
+    # The quality gate's open findings on the build this visit starts from that the build owes
+    # (route `develop`): a quality dimension below the Factory's floor, whatever the others
+    # scored (core/reference/quality-floor.yaml).
+    quality_failures = [
+        {k: f.get(k) for k in ("criterion", "dimension", "severity", "owner", "summary",
+                               "observed", "expected") if f.get(k) is not None}
+        for f in (quality or {}).get("findings") or []
+        if isinstance(f, dict) and f.get("route") == "develop" and f.get("status") == "open"
+        and f.get("dimension") in ((quality or {}).get("failed") or [])
+    ]
     sufficiency_failures = [
         {k: f.get(k) for k in ("check", "severity", "owner", "summary", "observed", "bar")
          if f.get(k) is not None}
@@ -721,7 +731,8 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                          ("review-report", review), ("playability-report", playability),
                          ("production-quality-report", production),
                          ("visual-qa-report", visual_qa),
-                         ("content-sufficiency-report", sufficiency))
+                         ("content-sufficiency-report", sufficiency),
+                         ("quality-report", quality))
             if c
         ],
         "design": {
@@ -798,6 +809,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "production_failures": production_failures,
         "visual_qa_failures": visual_qa_failures,
         "sufficiency_failures": sufficiency_failures,
+        "quality_failures": quality_failures,
+        "quality_commit": ((quality or {}).get("build") or {}).get("commit")
+        if quality_failures else None,
         "sufficiency_commit": (sufficiency or {}).get("commit") if sufficiency_failures else None,
         "gated_commit": ((production if production_failures else None)
                          or (visual_qa if visual_qa_failures else None) or {}).get("commit"),
@@ -1874,7 +1888,7 @@ def render_markdown(brief):
         elif brief.get("qa_defects") or brief.get("review_blockers") or \
                 brief.get("previous_failures") or brief.get("playability_failures") or \
                 brief.get("production_failures") or brief.get("visual_qa_failures") or \
-                brief.get("sufficiency_failures"):
+                brief.get("sufficiency_failures") or brief.get("quality_failures"):
             add("Fix what sent it back first (below); a pass that does not fix it is one "
                 "fewer left.")
         else:
@@ -1972,6 +1986,23 @@ def render_markdown(brief):
                     f"{failure.get('summary')}")
             if failure.get("bar") is not None:
                 line += f" Bar: {_inline(failure['bar'])}."
+            add(line)
+        add("")
+
+    if brief.get("quality_failures"):
+        add("## Fix first: quality dimensions below the floor\n")
+        add(f"The quality gate scored `{(brief.get('quality_commit') or '')[:12]}` on every "
+            "quality dimension from the reports the other gates wrote about it, against the "
+            "Factory's quality floor (core/reference/quality-floor.yaml) at the run's quality "
+            "tier. A dimension below its floor fails the build whatever the others score: "
+            "raise each one named here to its minimum. A finding closes only when the next "
+            "build is measured at the minimum, so fix what the gate measured - never the "
+            "report.\n")
+        for failure in brief["quality_failures"]:
+            line = (f"- `{failure.get('criterion')}` ({failure.get('dimension')}, "
+                    f"{failure.get('severity')}): {failure.get('summary')}")
+            if failure.get("expected"):
+                line += f" Expected: {_inline(failure['expected'])}."
             add(line)
         add("")
 

@@ -197,21 +197,50 @@ class _Collector:
                     entry["frames"].append(frame)
 
 
+def _routes(report):
+    """Where a report sends its failures. A triage-report routes one group: its selected
+    group's route, while it routes one (docs/specialist-routing.md)."""
+    if "selected" in report and "routes" not in report:
+        selected = report.get("selected") or {}
+        return [selected["route"]] if report.get("verdict") == "routed" and isinstance(
+            selected, dict) and selected.get("route") else []
+    return report.get("routes") or []
+
+
 def _failing(report):
-    return "assets" in (report.get("routes") or []) and report.get("verdict") != "PASS"
+    return "assets" in _routes(report) and report.get("verdict") != "PASS"
 
 
 def _select(reports, entered_by):
-    """The reports to read: the one of the gate named by `entered_by` (`<step>.<route>`),
-    when it is among them, else every report routed to assets."""
+    """The reports to read: the one of the step named by `entered_by` (`<step>.<route>`),
+    when it is among them, else every gate report routed to assets. A triage-report is read
+    only when the triage step itself routed the run here."""
     routed = [(kind, report) for kind, report in reports if isinstance(report, dict)
-              and "assets" in (report.get("routes") or [])]
+              and "assets" in _routes(report)]
     if entered_by:
         source = str(entered_by).split(".", 1)[0]
         named = [(k, r) for k, r in routed if k == f"{source}-report"]
         if named:
             return named
-    return routed
+    return [(k, r) for k, r in routed if k != "triage-report"]
+
+
+def _triage(report, resolver, collect):
+    """The selected findings of a triage-report that routed `assets`: each one's assets (or
+    the requirements its words name), with what to change and the frames that show it."""
+    by_id = {f.get("id"): f for f in report.get("findings") or [] if isinstance(f, dict)}
+    for fid in (report.get("selected") or {}).get("findings") or []:
+        finding = by_id.get(fid)
+        if not finding:
+            continue
+        task = finding.get("task") or {}
+        named = resolver.names(finding.get("assets")) or resolver.text(
+            finding.get("summary"), task.get("change"))
+        reason = f"{fid}: {finding.get('summary')} Change: {task.get('change')}"
+        frames = [ref for ref in finding.get("evidence_refs") or []
+                  if isinstance(ref, str) and ref.lower().endswith((".png", ".jpg", ".jpeg",
+                                                                    ".webp"))]
+        collect.add(named, reason, frames)
 
 
 def _production(report, resolver, collect, run_dir, playability):
@@ -343,6 +372,8 @@ def plan(reports, requirements, *, rules=None, run_dir=None, entered_by=None,
     for kind, report in selected:
         if kind == "production-quality-report":
             _production(report, resolver, collect, run_dir, playability)
+        elif kind == "triage-report":
+            _triage(report, resolver, collect)
         else:
             _visual_qa(report, rules, visual, collect, run_dir)
     reentry = any(_failing(r) for _k, r in selected)

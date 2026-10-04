@@ -59,7 +59,7 @@ class ParsesValidDefinitions(unittest.TestCase):
         self.assertEqual(
             definition.step_ids,
             ["research", "strategy", "strategy-review", "design", "tech-plan",
-             "tech-plan-review", "init", "greybox", "greybox-playability", "assets", "develop",
+             "tech-plan-review", "init", "greybox", "greybox-playability", "assets", "triage", "develop",
              "playability", "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
              "sdk-review", "verify", "prototype-review", "store-listing", "listing-validation",
              "release", "platform-validate", "release-review", "publish-review", "submit"],
@@ -85,11 +85,12 @@ class ParsesValidDefinitions(unittest.TestCase):
         self.assertEqual(publish.retry.max_attempts, 1)  # the irreversible submit: once
         self.assertEqual(publish.inputs, ["release-manifest", "platform-publication",
                                           "decision-record", "scaffold-record"])
-        self.assertEqual(definition.step("verify").on, {"fail": "develop"})
-        # The production gates route by what failed: an asset to assets, the game to develop.
+        self.assertEqual(definition.step("verify").on, {"fail": "triage"})
+        # The production gates route by what failed: an asset to assets, the game to develop
+        # - through triage, which routes it to the specialist that owns it.
         for step_id in ("production-quality", "visual-qa"):
             self.assertEqual(definition.step(step_id).on,
-                             {"assets": "assets", "develop": "develop"})
+                             {"assets": "assets", "develop": "triage"})
         # Release reads both gates' reports and refuses unless they passed (wgf_release).
         self.assertTrue({"production-quality-report", "visual-qa-report"}
                         <= set(definition.step("release").inputs))
@@ -97,12 +98,12 @@ class ParsesValidDefinitions(unittest.TestCase):
             self.assertTrue({"production-quality-report", "visual-qa-report"}
                             <= set(definition.step(step_id).inputs), step_id)
         # A build that cannot be played from outside goes back to develop before review.
-        self.assertEqual(definition.step("playability").on, {"fail": "develop"})
+        self.assertEqual(definition.step("playability").on, {"fail": "triage"})
         # The commit that ships (sdk's) is reviewed like develop's, and a request for
         # changes goes back to develop - never on to verify.
         for step_id in ("review", "sdk-review"):
             self.assertEqual(definition.step(step_id).type, "review")
-            self.assertEqual(definition.step(step_id).on, {"request-changes": "develop"})
+            self.assertEqual(definition.step(step_id).on, {"request-changes": "triage"})
             self.assertEqual(definition.step(step_id).outputs, ["review-report"])
         sdk_review = definition.step("sdk-review")
         self.assertEqual(sdk_review.params.get("subject"), "sdk-report")
@@ -115,7 +116,7 @@ class ParsesValidDefinitions(unittest.TestCase):
         g4 = definition.step("prototype-review")
         self.assertEqual((g4.type, g4.params["gate"], g4.params["choices"]),
                          ("human-checkpoint", "G4", ["pass", "iterate", "kill"]))
-        self.assertEqual(g4.on, {"iterate": "develop", "kill": "$end"})
+        self.assertEqual(g4.on, {"iterate": "triage", "kill": "$end"})
         self.assertEqual(g4.inputs, ["qa-report", "verification-report", "prototype-report",
                                      "title-strategy", "game-design", "playability-report",
                                      "review-report"])
@@ -295,17 +296,27 @@ class RouteScopedVisitLimits(unittest.TestCase):
         definition = load_definition("new-game")
         develop = definition.step("develop")
         # Each reviewer's requests for changes, and each step's failures, are bounded
-        # separately.
-        self.assertEqual(develop.max_visits_by_route,
+        # separately - on triage, which every route sending the build back goes through
+        # (workflow 10, docs/specialist-routing.md).
+        triage = definition.step("triage")
+        self.assertEqual(triage.max_visits_by_route,
                          {"playability.fail": 2, "production-quality.develop": 2,
                           "visual-qa.develop": 2, "content-sufficiency.develop": 2,
-                          "review.request-changes": 2,
+                          "content-sufficiency.design-gap": 1, "review.request-changes": 2,
                           "sdk-review.request-changes": 2, "verify.fail": 2, "iterate": 2})
+        # What triage routes on to develop is bounded per specialist.
+        self.assertEqual(develop.max_visits_by_route["triage.gameplay"], 16)
+        self.assertEqual({k for k, v in develop.max_visits_by_route.items() if v == 4},
+                         {"triage.level-designer", "triage.systems-designer",
+                          "triage.encounter-designer", "triage.environment-artist",
+                          "triage.artist-2d", "triage.ui", "triage.audio-designer",
+                          "triage.sdk"})
         # The production gates' asset failures are bounded on assets, which continues to
         # develop: each pass through assets enters develop once more.
         assets = definition.step("assets")
         self.assertEqual(assets.max_visits_by_route,
-                         {"production-quality.assets": 2, "visual-qa.assets": 2})
+                         {"production-quality.assets": 2, "visual-qa.assets": 2,
+                          "triage.assets": 2})
         self.assertEqual(assets.max_visits, 1 + sum(assets.max_visits_by_route.values()))
         # develop's own limit never cuts a loop short of its route budget (its own, and the
         # passes through assets), and every step of the loop after develop is visited at
@@ -315,7 +326,7 @@ class RouteScopedVisitLimits(unittest.TestCase):
         design = definition.step("design")
         self.assertEqual(design.max_visits_by_route,
                          {"greybox.design-gap": 1, "develop.design-gap": 1,
-                          "content-sufficiency.design-gap": 1})
+                          "triage.design": 2})
         self.assertEqual(design.max_visits, 1 + sum(design.max_visits_by_route.values()))
         self.assertEqual(develop.max_visits, 1 + sum(develop.max_visits_by_route.values())
                          + sum(assets.max_visits_by_route.values())

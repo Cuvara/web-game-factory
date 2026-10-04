@@ -1,0 +1,427 @@
+"""Normalize a producer's failures into quality findings.
+
+Every gate reports what fell short in its own shape: playability and production-quality
+checks, visual-qa findings, scores, state answers and a look, review blockers, verification
+defects, listing-validation checks, and a person's typed findings at G4. `normalize(kind,
+report, ...)` turns one of them into quality findings
+(core/artifacts/shared/quality-finding.schema.json); the dimension each failure concerns
+comes from core/reference/specialist-routing.yaml `producers`, and its owner and route from
+the same file's `specialists` (routing.py). Nothing here knows a game or an engine name:
+the only branch is the design's own `engine.dimension` (2d | 3d), through
+`by_engine_dimension`.
+
+A finding's id is `<producer>:<check>[@<project>]`, stable across measurements: the next
+report of the same producer either fails the same id again or does not, which is how a
+specialist visit's findings are said to be resolved (triage's ledger).
+
+The quality scorecard (WS-7) emits findings in this shape directly; `normalize` accepts its
+`findings` list as the `quality-scorecard` producer.
+"""
+
+import json
+import re
+
+__all__ = ["normalize", "from_requests", "NormalizeError", "PRODUCERS", "finding_id"]
+
+# The artifact types a finding can be read from, in the order a build's reports are read.
+PRODUCERS = ("playability-report", "production-quality-report", "visual-qa-report",
+             "content-sufficiency-report", "review-report", "qa-report",
+             "listing-validation-report", "quality-scorecard")
+
+_ID_SAFE = re.compile(r"[^a-z0-9._:/@-]+")
+
+
+class NormalizeError(ValueError):
+    """A report or a typed finding that cannot be normalized."""
+
+
+def finding_id(producer, check, project=None):
+    """`<producer>:<check>[@<project>]`, lower-cased into the schema's id alphabet."""
+    raw = f"{producer}:{check}" + (f"@{project}" if project else "")
+    return _ID_SAFE.sub("-", raw.lower()).strip("-") or "finding"
+
+
+def _inline(value, limit=300):
+    if value is None:
+        return None
+    text = value if isinstance(value, str) else json.dumps(value, sort_keys=True,
+                                                          ensure_ascii=False)
+    return text if len(text) <= limit else text[:limit] + " ..."
+
+
+class _Context:
+    """What a producer's table resolves against: the routing data, the design's engine
+    dimension, the source report's identity, and the run directory frames resolve under."""
+
+    def __init__(self, routing, kind, report, ref=None, dimension_3d=False, rubric=None):
+        self.routing = routing
+        self.kind = kind
+        self.table = routing.producer(kind)
+        self.report = report if isinstance(report, dict) else {}
+        self.ref = ref
+        self.engine_dimension = "3d" if dimension_3d else "2d"
+        self.rubric = rubric or {}
+
+    def dimension(self, word):
+        """A table's value - a dimension, or a word resolved by the engine dimension - as a
+        dimension; the producer's default, then the routing default, when it is neither."""
+        resolved = self.routing.resolve_word(word, self.engine_dimension)
+        if resolved is None:
+            resolved = self.routing.resolve_word(self.table.get("default"),
+                                                 self.engine_dimension)
+        return resolved or self.routing.default_dimension
+
+    def by_check(self, check_id):
+        """The dimension of a check id from the producer's `checks` table: the exact id,
+        else the longest prefix ending in '.' that starts it."""
+        table = self.table.get("checks") or {}
+        if check_id in table:
+            return self.dimension(table[check_id])
+        best = None
+        for key in table:
+            if key.endswith(".") and check_id.startswith(key) and (
+                    best is None or len(key) > len(best)):
+                best = key
+        return self.dimension(table[best] if best else None)
+
+    def source(self, check, project=None):
+        provenance = self.report.get("provenance") or {}
+        return {
+            "producer": self.kind,
+            "step": self.table.get("step"),
+            "check": str(check),
+            "project": project,
+            "artifact_id": provenance.get("artifact_id"),
+            "content_hash": (getattr(self.ref, "content_hash", None)
+                             or provenance.get("content_hash")),
+        }
+
+    def acceptance(self, check, bar=None):
+        template = self.table.get("acceptance") or "{check} no longer fails when measured again."
+        clause = f" (bar: {_inline(bar, 200)})" if bar is not None else ""
+        return template.replace("{check}", str(check)).replace("{bar_clause}", clause)
+
+    def make(self, *, check, dimension, severity, summary, route, project=None,
+             measured=None, bar=None, evidence=(), change=None, assets=None):
+        owner = self.routing.owner(dimension)
+        finding = {
+            "id": finding_id(self.kind, check, project),
+            "dimension": dimension,
+            "severity": severity,
+            "source": self.source(check, project),
+            "summary": summary or str(check),
+            "evidence_refs": [e for e in evidence if isinstance(e, str) and e],
+            "owner": owner,
+            "task": {"change": change or f"Make `{check}` pass: {summary or check}",
+                     "acceptance": [self.acceptance(check, bar)]},
+            "route": route or self.routing.route_of(owner),
+        }
+        if self.ref is not None and getattr(self.ref, "id", None):
+            finding["evidence_refs"].append(f"artifact:{self.ref.id}")
+        if measured is not None:
+            finding["measured"] = measured
+        if bar is not None:
+            finding["bar"] = bar
+        if assets:
+            finding["assets"] = sorted({str(a) for a in assets})
+        return finding
+
+
+def _frames(report, project, frame_ids):
+    """Frame paths (run-relative, as the playability-report records them) for frame ids."""
+    paths = {(f.get("project"), f.get("id")): f.get("path")
+             for f in (report or {}).get("frames") or [] if isinstance(f, dict)}
+    return [paths.get((project, f)) or f for f in frame_ids or [] if f]
+
+
+def _playability(ctx):
+    out = []
+    for check in ctx.report.get("checks") or []:
+        if not isinstance(check, dict) or not check.get("required") \
+                or check.get("status") != "FAIL":
+            continue
+        cid, project = check.get("id") or "check", check.get("project")
+        out.append(ctx.make(
+            check=cid, project=project, dimension=ctx.by_check(cid), severity="blocker",
+            summary=check.get("summary"), route=ctx.table.get("route") or "develop",
+            measured=check.get("measured"), bar=check.get("expected"),
+            evidence=_frames(ctx.report, project, check.get("frames"))))
+    return out
+
+
+def _production(ctx, playability=None):
+    out = []
+    for check in ctx.report.get("checks") or []:
+        if not isinstance(check, dict) or not check.get("required") \
+                or check.get("status") != "FAIL":
+            continue
+        cid, project = check.get("id") or "check", check.get("project")
+        out.append(ctx.make(
+            check=cid, project=project, dimension=ctx.by_check(cid), severity="blocker",
+            summary=check.get("summary"), route=check.get("route") or "develop",
+            measured=check.get("measured"), bar=check.get("expected"),
+            evidence=_frames(playability, project, check.get("frames")),
+            assets=check.get("assets")))
+    return out
+
+
+def _visual_qa(ctx):
+    report, table, rubric = ctx.report, ctx.table, ctx.rubric
+    failed = [str(f) for f in report.get("failed") or []]
+    dimensions = rubric.get("dimensions") or {}
+    questions = {q.get("id"): q for q in rubric.get("state_questions") or []
+                 if isinstance(q, dict)}
+    pass_bar = (report.get("rubric") or {}).get("pass_bar", rubric.get("pass_bar"))
+    scores = report.get("scores") or {}
+    reasons = report.get("score_reasons") or {}
+    states = {(s.get("viewport"), s.get("state")): s for s in report.get("states") or []
+              if isinstance(s, dict)}
+    out, seen = [], set()
+
+    def add(finding):
+        if finding["id"] not in seen:
+            seen.add(finding["id"])
+            out.append(finding)
+
+    findings = {f.get("id"): f for f in report.get("findings") or [] if isinstance(f, dict)}
+    # The judge's own findings: blockers failed the build; majors and minors travel with them.
+    for fid, item in findings.items():
+        add(ctx.make(
+            check=f"finding:{fid}", dimension=ctx.dimension(
+                (table.get("findings") or {}).get(item.get("category"))),
+            severity=item.get("severity") if item.get("severity") in (
+                "blocker", "major", "minor") else "major",
+            summary=item.get("summary"), route=item.get("route") or "develop",
+            evidence=[item.get("frame")] if item.get("frame") else ()))
+    for entry in failed:
+        kind, _, rest = entry.partition(":")
+        if kind == "score" and rest in scores:
+            dim = dimensions.get(rest) or {}
+            bar = dim.get("pass_bar", pass_bar)
+            add(ctx.make(
+                check=entry, dimension=ctx.dimension((table.get("scores") or {}).get(rest)),
+                severity="blocker", route=dim.get("route") or "develop",
+                summary=f"{rest} scored {scores[rest]}"
+                        + (f": {reasons[rest]}" if reasons.get(rest) else ""),
+                measured=scores[rest], bar=bar))
+        elif kind == "state":
+            where, _, qid = rest.rpartition(":")
+            viewport, _, state = where.partition("/")
+            question = questions.get(qid) or {}
+            answered = states.get((viewport, state)) or {}
+            summary = (f"{question.get('ask') or qid} - answered "
+                       f"{(answered.get('answers') or {}).get(qid)!r} on {viewport}/{state}")
+            if answered.get("comment"):
+                summary += f": {answered['comment']}"
+            add(ctx.make(
+                check=f"state:{state}:{qid}", project=viewport,
+                dimension=ctx.dimension((table.get("states") or {}).get(qid)),
+                severity="blocker", route=question.get("route") or "develop",
+                summary=summary, measured=(answered.get("answers") or {}).get(qid),
+                bar={"fail_when": question.get("fail_when")} if question else None,
+                evidence=answered.get("frames") or ()))
+        elif kind == "mean":
+            # The mean failed: every dimension below 4 is what dragged it down (the rubric's
+            # own rule for the routes a mean failure contributes).
+            for name, score in sorted(scores.items()):
+                if isinstance(score, (int, float)) and score < 4 \
+                        and f"score:{name}" not in failed:
+                    dim = dimensions.get(name) or {}
+                    add(ctx.make(
+                        check=f"score:{name}",
+                        dimension=ctx.dimension((table.get("scores") or {}).get(name)),
+                        severity="major", route=dim.get("route") or "develop",
+                        summary=(f"{name} scored {score}, below 4, and the mean failed "
+                                 f"({rest})"
+                                 + (f": {reasons[name]}" if reasons.get(name) else "")),
+                        measured=score, bar={"mean_pass_bar": rubric.get("mean_pass_bar"),
+                                             "dimension": 4}))
+        elif kind == "look":
+            look = report.get("look") or {}
+            add(ctx.make(
+                check="look", dimension=ctx.dimension(table.get("look")), severity="blocker",
+                route=(rubric.get("look") or {}).get("route") or "assets",
+                summary=f"the build looks like a {rest}"
+                        + (f": {look.get('reason')}" if look.get("reason") else ""),
+                measured=rest, bar={"fail_on": (rubric.get("look") or {}).get("fail_on")}))
+        elif kind == "finding":
+            continue  # the judge's findings are above
+        elif entry not in seen:
+            add(ctx.make(check=entry, dimension=ctx.dimension(table.get("default")),
+                         severity="blocker", route="develop",
+                         summary=f"visual-qa failed `{entry}`"))
+    return out
+
+
+def _review(ctx):
+    out = []
+    for blocker in ctx.report.get("blockers") or []:
+        if not isinstance(blocker, dict):
+            continue
+        where = blocker.get("file") or "(whole build)"
+        if blocker.get("file") and blocker.get("line"):
+            where += f":{blocker['line']}"
+        severity = blocker.get("severity")
+        out.append(ctx.make(
+            check=blocker.get("id") or "blocker", dimension=ctx.dimension(None),
+            severity="blocker" if severity in ("blocker", "critical") else (
+                "minor" if severity == "minor" else "major"),
+            summary=f"{where}: {blocker.get('summary')}", route=ctx.table.get("route"),
+            evidence=[blocker["file"]] if blocker.get("file") else ()))
+    return out
+
+
+def _qa(ctx):
+    out = []
+    for defect in ctx.report.get("blocking_defects") or []:
+        if not isinstance(defect, dict):
+            continue
+        word = ctx.table.get("platform_defect") if defect.get("platform_id") else None
+        out.append(ctx.make(
+            check=defect.get("id") or "defect", dimension=ctx.dimension(word),
+            severity="blocker", summary=defect.get("summary"), route=ctx.table.get("route"),
+            change=(f"Fix `{defect.get('id')}`: {defect.get('summary')}"
+                    + (f" Repro: {defect['repro']}" if defect.get("repro") else ""))))
+    for suite in ctx.report.get("suites") or []:
+        if isinstance(suite, dict) and (suite.get("failed") or 0) > 0:
+            out.append(ctx.make(
+                check=f"suite:{suite.get('name')}", dimension=ctx.dimension(None),
+                severity="blocker", route=ctx.table.get("route"),
+                summary=f"the {suite.get('name')} suite failed {suite.get('failed')} test(s)",
+                measured={"failed": suite.get("failed"), "passed": suite.get("passed")},
+                bar={"failed": 0}))
+    if not out and ctx.report.get("verdict") not in (None, "pass"):
+        out.append(ctx.make(check="verdict", dimension=ctx.dimension(None), severity="blocker",
+                            route=ctx.table.get("route"),
+                            summary=f"verification's verdict was {ctx.report.get('verdict')}"))
+    return out
+
+
+def _listing(ctx):
+    out = []
+    sections = ctx.table.get("sections") or {}
+    for check in ctx.report.get("checks") or []:
+        if not isinstance(check, dict) or not check.get("required") \
+                or check.get("status") != "FAIL":
+            continue
+        cid = check.get("id") or "check"
+        project = "/".join(p for p in (check.get("platform_id"), check.get("locale")) if p)
+        out.append(ctx.make(
+            check=cid, project=project or None,
+            dimension=ctx.dimension(sections.get(check.get("section"))), severity="blocker",
+            summary=check.get("summary"), route=ctx.table.get("route") or "listing",
+            measured=check.get("measured"), bar=check.get("expected"),
+            evidence=check.get("files") or ()))
+    return out
+
+
+def _sufficiency(ctx):
+    """A content-sufficiency-report's typed findings (FAIL and WARNING checks), kept as the
+    gate stated them - observed against the bar, its evidence - with the owner recomputed
+    from the routing data. A `design-gap` finding routes `design`: the design itself is
+    short of the tier's bar, and its `design_gap` is what the design step repairs."""
+    out = []
+    for item in ctx.report.get("findings") or []:
+        if not isinstance(item, dict):
+            continue
+        check = item.get("id") or item.get("check") or "content"
+        word = item.get("dimension") if item.get("dimension") in ctx.routing.dimensions \
+            else (ctx.table.get("checks") or {}).get(item.get("check"))
+        dimension = ctx.dimension(word)
+        gap = item.get("design_gap") if isinstance(item.get("design_gap"), dict) else None
+        design = item.get("route") == "design-gap"
+        finding = ctx.make(
+            check=check, dimension=dimension,
+            severity=item.get("severity") if item.get("severity") in (
+                "blocker", "major", "minor") else "major",
+            summary=item.get("summary"),
+            route="design" if design else None,
+            measured=item.get("observed"), bar=item.get("bar"),
+            evidence=item.get("evidence") or (),
+            change=((gap or {}).get("question") if design else None))
+        if design and gap and gap.get("field"):
+            finding["task"]["design_field"] = gap["field"]
+        out.append(finding)
+    return out
+
+
+def _scorecard(ctx):
+    """A quality scorecard's findings are already in this shape: kept, owner and route
+    recomputed from the routing data so the scorecard cannot disagree with it."""
+    out = []
+    for item in ctx.report.get("findings") or []:
+        if not isinstance(item, dict) or item.get("dimension") not in ctx.routing.dimensions:
+            continue
+        finding = dict(item)
+        finding["owner"] = ctx.routing.owner(item["dimension"])
+        if finding.get("route") != "design":
+            finding["route"] = ctx.routing.route_of(finding["owner"])
+        out.append(finding)
+    return out
+
+
+_READERS = {
+    "playability-report": _playability,
+    "visual-qa-report": _visual_qa,
+    "content-sufficiency-report": _sufficiency,
+    "review-report": _review,
+    "qa-report": _qa,
+    "listing-validation-report": _listing,
+    "quality-scorecard": _scorecard,
+}
+
+
+def normalize(kind, report, routing, *, ref=None, dimension_3d=False, playability=None,
+              rubric=None):
+    """The quality findings of one producer's report. `routing` is a routing.Routing;
+    `playability` resolves production-quality's frame ids; `rubric` is the visual-qa
+    rubric (scores' and state questions' routes)."""
+    if kind not in PRODUCERS:
+        raise NormalizeError(f"no producer table for {kind!r}")
+    ctx = _Context(routing, kind, report, ref=ref, dimension_3d=dimension_3d, rubric=rubric)
+    if kind == "production-quality-report":
+        return _production(ctx, playability)
+    return _READERS[kind](ctx)
+
+
+def from_requests(requests, routing, *, source_ref=None, decision=None, dimension_3d=False):
+    """A person's typed findings (quality-finding `request`s) at G4, as findings: owner and
+    route from the routing data (`design` or `assets` only when the person asks for it)."""
+    ctx = _Context(routing, "decision-record", {"provenance": {}}, ref=None,
+                   dimension_3d=dimension_3d)
+    out = []
+    for index, request in enumerate(requests, 1):
+        if not isinstance(request, dict) or request.get("dimension") not in routing.dimensions:
+            raise NormalizeError(f"typed finding {index}: dimension must be one of "
+                                 f"{', '.join(routing.dimensions)}")
+        task = request.get("task") or {}
+        if not task.get("change") or not task.get("acceptance"):
+            raise NormalizeError(f"typed finding {index}: task needs `change` and "
+                                 f"`acceptance`")
+        check = request.get("id") or f"g4-{index}"
+        owner = routing.owner(request["dimension"])
+        finding = {
+            "id": finding_id("decision-record", check),
+            "dimension": request["dimension"],
+            "severity": request.get("severity") or "major",
+            "source": {"producer": "decision-record", "step": ctx.table.get("step"),
+                       "check": str(check), "project": None,
+                       "artifact_id": (decision or {}).get("artifact_id"),
+                       "content_hash": source_ref},
+            "summary": request.get("summary") or str(check),
+            "evidence_refs": [e for e in request.get("evidence_refs") or [] if e],
+            "owner": owner,
+            "task": {k: v for k, v in task.items() if k in ("change", "acceptance",
+                                                             "design_field")},
+            # A person may ask for the design to change first, or for an asset to be made
+            # again; anything else goes where the owner's work is done.
+            "route": (request["route"] if request.get("route") in ("design", "assets")
+                      else routing.route_of(owner)),
+        }
+        for key in ("measured", "bar"):
+            if key in request:
+                finding[key] = request[key]
+        if request.get("assets"):
+            finding["assets"] = sorted({str(a) for a in request["assets"]})
+        out.append(finding)
+    return out

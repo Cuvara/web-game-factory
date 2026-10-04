@@ -67,6 +67,7 @@ EXPECTED_STEPS = (
     ("greybox", "SUCCESS"),            # the loop with primitives, before any asset
     ("greybox-playability", "SUCCESS"),
     ("assets", "SUCCESS"),
+    ("triage", "SUCCESS"),             # nothing failed yet: the first build goes on to develop
     ("develop", "SUCCESS"),
     ("playability", "SUCCESS"),        # played from outside through the port's play probe
     ("production-quality", "SUCCESS"), # the port's library art delivered, loaded, drawn

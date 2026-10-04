@@ -145,7 +145,8 @@ def _summary(checks):
 
 
 def build_report(*, title_id, brief, checks, dev_report, commit_sha, built_at, build_url,
-                 iteration, strategy, pinned_inputs, artifact_seq, produced_at):
+                 iteration, strategy, pinned_inputs, artifact_seq, produced_at,
+                 specialist=None):
     green = all(not c.failed for c in checks)
     smoke = next((c for c in checks if c.id == "smoke"), None)
     evidence = (f"Built at {commit_sha[:12]}; automated checks: {_summary(checks)}. "
@@ -247,4 +248,8 @@ def build_report(*, title_id, brief, checks, dev_report, commit_sha, built_at, b
         artifact["content_coverage"] = coverage
     if gaps:
         artifact["design_gaps"] = gaps
+    if specialist:
+        # The specialist this visit was briefed as (triage routed it): which findings it was
+        # given and what its sessions cost. Whether they were resolved is the gates' to say.
+        artifact["specialist"] = specialist
     return provenance.seal(artifact)

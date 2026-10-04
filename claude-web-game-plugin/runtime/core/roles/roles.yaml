@@ -14,7 +14,14 @@
 # These are provider-independent. Adapters bind them to whatever surface their runtime
 # offers — a subagent, a prompt file, something else; nothing here names an AI provider.
 
-version: 1.0.0
+# Specialists (1.1.0). An implementer that a quality finding can be routed to carries
+# `focus` - what its brief is about - `reads` - the craft playbooks its brief points at
+# (core/craft/) - and `writes` - its writable scope in the game repository, which the develop
+# step intersects with the installation's factory.develop.writable_paths (never widens it).
+# Which specialist owns which quality dimension is reference data, not a role property:
+# core/reference/specialist-routing.yaml. Charter: specialists.md.
+
+version: 1.1.0
 
 roles:
   # ---------------------------------------------------------------- owners
@@ -133,6 +140,16 @@ roles:
     charter: implementers.md
     works_in: [title:prototype, title:production]
     responsibility: Core mechanics, game loop, systems, progression, and their tests.
+    focus: >
+      The loop's code: rules, states, input, win and loss, restart, the play probe, and the
+      feel of every action. The generalist: it owns any finding no specialist does.
+    reads:
+      - core/craft/core-loop-and-difficulty.md
+      - core/craft/game-feel.md
+      - core/craft/juice.md
+      - core/craft/gameplay-review.md
+      - core/craft/web-performance.md
+    writes: [src/, tests/, public/, docs/development/, index.html]
 
   ui:
     kind: implementer
@@ -140,6 +157,16 @@ roles:
     charter: implementers.md
     works_in: [title:prototype, title:production]
     responsibility: Interface, HUD, menus, onboarding flow, and platform UI constraints.
+    focus: >
+      UI and UX: the HUD, menus, title, pause, result and retry screens, typography,
+      buttons, touch targets, the objective on screen and the first thirty seconds.
+    reads:
+      - core/craft/game-ui-kit.md
+      - core/craft/ui-hud-mobile.md
+      - core/craft/onboarding-and-portal-ux.md
+      - core/craft/accessibility.md
+      - core/craft/production-art-and-ui.md
+    writes: [src/, public/, index.html, tests/, docs/development/]
 
   asset:
     kind: implementer
@@ -162,6 +189,143 @@ roles:
     responsibility: >
       Platform SDK, ads, analytics and cloud-save integration through the template's
       platform abstraction. Game code never calls a portal SDK directly.
+    focus: >
+      Platform integration: the portal behaviour the profiles require - mute through ads,
+      rewarded grants on close, pause on visibility, the context menu - wired through the
+      platform abstraction, never a portal SDK called from game code.
+    reads:
+      - core/craft/onboarding-and-portal-ux.md
+      - core/craft/web-performance.md
+    writes: [src/, index.html, tests/, docs/development/]
+
+  # ----------------------------------------------------------- specialists
+  # Implementers a quality finding is routed to (core/reference/specialist-routing.yaml).
+  # Each is a develop visit briefed as that discipline - not a separate process or host.
+  level-designer:
+    kind: implementer
+    label: Level designer
+    charter: specialists.md
+    works_in: [title:prototype, title:production]
+    responsibility: >
+      The content the build ships: units, their structure, element introductions and
+      combinations, variety between units, and that every unit of the design is built and
+      reachable.
+    focus: >
+      Content and level design: what each unit asks of the player, how it differs from the
+      one before, where each element is introduced and combined, and the count and variety
+      the bar asks for - built in the content data, not hard-coded.
+    reads:
+      - core/craft/content-and-level-design.md
+      - core/craft/core-loop-and-difficulty.md
+      - core/craft/retention-and-progression.md
+    writes: [public/content/, src/, tests/, docs/development/]
+
+  systems-designer:
+    kind: implementer
+    label: Systems and progression designer
+    charter: specialists.md
+    works_in: [title:prototype, title:production]
+    responsibility: >
+      Progression and the systems around the loop: unlocks, persistence, meta rewards,
+      economy, and the reason to play the next session.
+    focus: >
+      Progression: what is unlocked, kept and earned across units and sessions, that it
+      persists, and that its pacing matches the design's session and retention targets.
+    reads:
+      - core/craft/retention-and-progression.md
+      - core/craft/core-loop-and-difficulty.md
+      - core/craft/feature-evaluation.md
+    writes: [public/content/, src/, tests/, docs/development/]
+
+  encounter-designer:
+    kind: implementer
+    label: Encounter designer
+    charter: specialists.md
+    works_in: [title:prototype, title:production]
+    responsibility: >
+      Difficulty: the grace before the first threat, the axes that rise across units, relief
+      beats, and threats a player can read and answer.
+    focus: >
+      Difficulty and encounters: tuning as data, a ramp that rises on the design's axes with
+      relief, a fair opening grace, and threats telegraphed before they hit.
+    reads:
+      - core/craft/core-loop-and-difficulty.md
+      - core/craft/content-and-level-design.md
+      - core/craft/game-feel.md
+    writes: [public/content/, src/, tests/, docs/development/]
+
+  environment-artist:
+    kind: implementer
+    label: Environment and lighting artist (3D)
+    charter: specialists.md
+    works_in: [title:prototype, title:production]
+    responsibility: >
+      The 3D world as a player sees it: models placed and dressed, materials, the lighting
+      rig, fog, sky, colour grade, and the camera's framing on both viewports.
+    focus: >
+      The 3D scene: a dressed world rather than an empty plane, one material language, a
+      lighting rig and grade that keep the readable entities readable, and camera framing
+      that shows the play on desktop and portrait mobile.
+    reads:
+      - core/craft/production-art-3d.md
+      - core/craft/3d-scene-and-physics.md
+      - core/craft/3d-assets-and-animation.md
+      - core/craft/3d-diagnostics.md
+      - core/craft/art-direction.md
+      - core/craft/production-wiring.md
+    writes: [src/, public/, tests/, docs/development/]
+
+  artist-2d:
+    kind: implementer
+    label: 2D artist
+    charter: specialists.md
+    works_in: [title:prototype, title:production]
+    responsibility: >
+      2D production art in the build: sprites, backgrounds, VFX, palette roles, silhouettes
+      distinct per entity and variant, and their use on screen.
+    focus: >
+      2D art on screen: every readable entity a finished sprite with its own silhouette,
+      backgrounds and effects in the art direction's palette, nothing a primitive or a
+      placeholder, and the art used as the runtime asset manifest lists it.
+    reads:
+      - core/craft/production-art-2d.md
+      - core/craft/2d-assets.md
+      - core/craft/art-direction.md
+      - core/craft/production-wiring.md
+    writes: [src/, public/, tests/, docs/development/]
+
+  audio-designer:
+    kind: implementer
+    label: Audio designer
+    charter: specialists.md
+    works_in: [title:prototype, title:production]
+    responsibility: >
+      Sound in the build: music, effects timed to the actions they acknowledge, mixing,
+      unlock on first gesture, mute, pause and silence during ads.
+    focus: >
+      Audio: every cue the design lists plays at its moment, music loops cleanly, levels
+      are mixed and ducked, and sound unlocks, mutes and stops when it must.
+    reads:
+      - core/craft/game-audio.md
+      - core/craft/production-wiring.md
+    writes: [src/, public/, tests/, docs/development/]
+
+  copywriter:
+    kind: implementer
+    label: Copywriter
+    charter: specialists.md
+    works_in: [release:store-listing]
+    responsibility: >
+      Store copy grounded in the shipped build: every number equals the build's, controls
+      match the design's actions, and every required locale is complete.
+    focus: >
+      Store copy: a title, short and long descriptions and controls text that state only
+      what the build does, with the build's own counts, in every required locale.
+    reads:
+      - core/craft/store-listing.md
+      - core/craft/onboarding-and-portal-ux.md
+    # The copy is the store-listing step's output, not the game repository's.
+    writes: []
 
   # ----------------------------------------------------------------- human
   portfolio-owner:

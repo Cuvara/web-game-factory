@@ -53,19 +53,23 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
                └─► CLI progress, and later a UI / monitor / agent host
 
   research → strategy → [G2] → design → tech-plan → [G3] → init → greybox → greybox-playability
-    → assets → develop → playability → production-quality → visual-qa → content-sufficiency
-    → review → sdk → sdk-review → verify → [G4] → store-listing → listing-validation → release
+    → assets → triage → develop → playability → production-quality → visual-qa
+    → content-sufficiency → review → sdk → sdk-review → verify → [G4] → store-listing
+    → listing-validation → release
 
   greybox, develop     design-gap       → design (then tech-plan, [G3], greybox again)
-  content-sufficiency  develop / design-gap → develop / design (as above)
+  content-sufficiency  develop / design-gap → triage (design-gap findings route `design`)
   greybox-playability  fail             → greybox
   listing-validation   listing          → store-listing
-  playability          fail             → develop
-  production-quality   assets / develop → assets (which continues to develop) / develop
-  visual-qa            assets / develop → assets (which continues to develop) / develop
-  review, sdk-review   request-changes  → develop
-  verify               fail             → develop
-  [G4]                 iterate → develop · kill → $end · pass → store-listing
+  playability          fail             → triage
+  production-quality   assets / develop → assets (which continues to triage) / triage
+  visual-qa            assets / develop → assets (which continues to triage) / triage
+  review, sdk-review   request-changes  → triage
+  verify               fail             → triage
+  [G4]                 iterate → triage · kill → $end · pass → store-listing
+  triage               <specialist>     → develop, briefed as that specialist
+                       design / assets  → design / assets
+  develop              next-specialist  → triage (the next specialist, same build)
 
   release (refuses unless G4 passed, the shipped commit was reviewed, production-quality
   and visual-qa passed its development commit, and the store listing of the shipped
@@ -496,28 +500,40 @@ refills that limit alone (the person granting that loop more passes); `--from` r
 every one. The engine names no route: every one comes from the workflow file, and the
 definition refuses a key that is no route into the step.
 
-new-game bounds develop's seven loops this way: `playability.fail: 2`,
-`production-quality.develop: 2`, `visual-qa.develop: 2`, `review.request-changes: 2`,
-`sdk-review.request-changes: 2`, `verify.fail: 2` and `iterate: 2` (G4) - and the production
-gates' asset failures on `assets`: `production-quality.assets: 2`, `visual-qa.assets: 2`
-(assets' `max_visits` 5). Workflow 8 adds an eighth route out of the build, and the only one
+new-game bounds the routes that send the build back this way, on `triage` since
+workflow 10 (they all go through it, [specialist-routing.md](specialist-routing.md)):
+`playability.fail: 2`, `production-quality.develop: 2`, `visual-qa.develop: 2`,
+`content-sufficiency.develop: 2`, `content-sufficiency.design-gap: 1`,
+`review.request-changes: 2`, `sdk-review.request-changes: 2`, `verify.fail: 2` and
+`iterate: 2` (G4) - and the production gates' asset failures on `assets`:
+`production-quality.assets: 2`, `visual-qa.assets: 2`, plus triage's own `triage.assets: 2`
+(assets' `max_visits` 7). What triage routes on to develop is bounded per specialist on
+develop: `triage.gameplay: 16` (the generalist, which takes review's, sdk-review's and
+verify's blockers and anything nobody else owns) and `triage.<role>: 4` for every other
+specialist - a specialist that never resolves what it owns stops the run named
+(`blocked_reason.limit_key: triage.environment-artist`), without spending the others'
+passes. Several specialists' findings of one build are worked in turn: develop returns
+`next-specialist`, triage routes the next pending group, and only then do the gates
+measure the build again. A specialist chain has no budget of its own on triage: each link
+enters develop through a specialist's limit, which is what ends it. Workflow 8 adds an eighth route out of the build, and the only one
 that leads back before init: `design-gap`, from `greybox` and from `develop` to `design`,
 taken when a developer reports a blocking design gap - the design does not say enough to build
 what was asked, and inventing the answer would carry a decision nobody made into the build.
 It is bounded on `design`, one pass from each source: `greybox.design-gap: 1`,
 `develop.design-gap: 1` (design's `max_visits` 3). A design repair re-runs `tech-plan` and
 G3 on the repaired design, and the build starts again at `greybox`, so each return costs a
-greybox visit and a develop visit: `greybox`'s `max_visits` is 5 (the first visit, two
-playability passes, two returns) and develop's is 21 - the first visit, its own route budgets,
-assets' (each pass through assets enters develop once more) and the two returns - and it is
-never what a loop meets first; every step after develop (playability, production-quality,
-visual-qa, review, sdk, sdk-review, verify, prototype-review), each visited at most once per
-develop visit, carries 21 as well, and so do store-listing and listing-validation, which add
-listing-validation's own route back into store-listing (`listing-validation.listing: 2`).
-Workflow 9 adds `content-sufficiency` after visual-qa, with a route into each:
-`content-sufficiency.develop: 2` on develop and `content-sufficiency.design-gap: 1` on design
-(docs/content-sufficiency-module.md). The bounds grow by the same rule: design 4, greybox 6
-(three returns), develop 24, and 24 for every step after develop.
+greybox visit and a develop visit. Workflow 9 adds `content-sufficiency` after visual-qa
+(docs/content-sufficiency-module.md); since workflow 10 both of its routes go through
+triage, and a design gap it finds reaches design as triage's `design` - a finding that asks
+for more content or scope than the design states (`triage.design: 2`, design's
+`max_visits` 5). `greybox`'s `max_visits` is 7 (the first visit, two playability passes,
+four returns) and develop's is 59 - the first visit, the specialists' budgets, assets' (each
+pass through assets enters develop once more) and the four design returns - and it is never
+what a loop meets first; every step after develop (playability, production-quality,
+visual-qa, content-sufficiency, review, sdk, sdk-review, verify, prototype-review), each
+visited at most once per develop visit, carries 59 as well, and so do store-listing and
+listing-validation, which add listing-validation's own route back into store-listing
+(`listing-validation.listing: 2`).
 A reviewer that never approves blocks the run on its own
 third request for changes; a verification that always fails, on its third failure; a third
 G4 iterate stops for a person too; none spends another's budget. What a whole run may spend
@@ -603,7 +619,7 @@ the run has passed and no later upstream work has superseded.
   inputs: [qa-report, verification-report, prototype-report, title-strategy, game-design,
            playability-report, review-report]
   with: {gate: G4, choices: [pass, iterate, kill]}
-  on: {iterate: develop, kill: $end}
+  on: {iterate: triage, kill: $end}
 ```
 
 While it waits, `wgf status`, and the output of `new-game`, `decide` and `resume`, print
@@ -621,8 +637,11 @@ design-fidelity blocker. Since game-design 1.10.0 it also prints the features th
 and deferred (`features[].evaluation`), each with its source and reason, and a warning naming
 any feature the brief asked for that the build does not have. It decides nothing.
 
-`pass` continues to `release`. `iterate` goes back to `develop` (a new visit of each step of
-the loop; every artifact is a new version and the old ones stay, so the run's lineage is
+`pass` continues to `release`. `iterate` goes back through `triage` to `develop` - with
+typed findings (`wgf decide <run> iterate --findings FILE`, a JSON list of quality-finding
+requests) routed to the specialists that own them like a gate's, or, without them, the note
+as the generalist's one finding ([specialist-routing.md](specialist-routing.md)) - (a new
+visit of each step of the loop; every artifact is a new version and the old ones stay, so the run's lineage is
 untouched) and ends at G4 again, whose new visit needs a new decision. `kill` (gates.yaml's
 `abandon` outcome) ends the run for good, audibly: a `DECISION_RECORDED` event, a
 `STEP_BLOCKED` at `prototype-review`, `WORKFLOW_COMPLETED` with `exit.route: kill`, and
@@ -1079,6 +1098,7 @@ python -m unittest discover scripts/tests
 | `fixtures/workflows/` | The acceptance workflows: `verify-loop`, `human-checkpoint`, `retry` |
 | `test_core_workflow.py` | Core v1 acceptance, one named scenario per class: happy path, failure, retry, resume, pause, cancel (between steps, and mid child process), human gate, max_visits, verify→develop loop, stale-run resume, concurrent-run lock refusal, determinism; input contracts, continue_in, liveness, `wgf status` and `wgf test-core`; G4 (`PrototypeReviewGate`: pass, iterate, kill, resume at G4, stale evidence, release refused), gates decided on their required artifacts, and timeout approval (`TimeoutApproval*`: before, exactly at, after, disabled, irreversible/unknown gates, per visit, upstream change, tampering, status vs resume) |
 | `test_decisions.py` | Gate decision-records: the workflow-to-lifecycle vocabulary, records from a mock run, the lifecycle bridge and its evidence guards |
+| `test_triage.py` | Specialist routing (workflow 9): every producer's failures normalized into quality findings, each audit case routed to its owner, visit order and pending chains, held and design routes, G4 typed findings (and a file altered after the decision refused), the finding lifecycle (verified only on the raising gate's re-measurement, never past a regression), the specialist's brief and writable scope through the real develop step with a mock developer, and a specialist that never resolves its findings stopped at its own limit |
 | `test_checkout.py` | The one checkout resolver: precedence, legacy keys, the recorded path, the lock, and every step that reaches the game repository |
 | `test_core_persistence.py` | Interrupted writes (rename/fsync failing), unreadable state, torn and duplicated event logs, a crash between an artifact write and the state save, lock takeover races, hostile run/artifact ids, decisions and definitions |
 | `core_suite.py` | The Core Acceptance Suite mapping `wgf test-core` runs (data, not tests) |

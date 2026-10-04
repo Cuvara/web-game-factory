@@ -339,6 +339,44 @@ step's `features.*` checks, and G4 shown the cut and deferred lists.
 No agent, command, workflow, role, machine or gate was added or removed; the manifest goes to
 1.9.0 for the new reads.
 
+## The portal publisher as built (binding manifest 1.10.0)
+
+The publish surfaces follow the portal publisher as it landed
+(`docs/portal-publishing-architecture.md` Part 0, `docs/publish-module.md`) rather than the
+earlier "authorize and prepare submissions" wording.
+
+- **`/wgf-publish`** gains a generated section, "The portal publisher (as built)", emitted
+  from `command_extra` in `scripts/gen-adapters.sh`; the binding's `publish` command gains
+  `must_read` (the two publisher documents, `core/reference/publication/`, the portal
+  registry and publication profile schemas) and a `note`. It drives
+  `wgf publish --run <run-id> [--platform P] [--track]`; it reports
+  WAITING_FOR_HUMAN_LOGIN as a person logging in in the opened window (never a password,
+  one-time code, cookie or token given to the agent) and
+  WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION as the person's own
+  `wgf decide <run-id> submit|hold|abandon|done`; it never runs `decide` for G5, G6, a
+  submit confirmation or a declaration. It points at the real-console observer
+  (`wgf-publish.py observe`, `observe-summary`: profile corrections from observed or
+  documented facts only), `registry show|associate` and `drift-review`, and reports
+  readiness in the publisher's vocabulary (IMPLEMENTED, FIXTURE_VALIDATED,
+  DRY_RUN_VALIDATED, REAL_CONSOLE_VERIFIED, REAL_UPLOAD_VALIDATED, SUBMITTED, PUBLISHED,
+  UNVERIFIED, HUMAN_ACTION_REQUIRED), never as "supported". Its summary is now "Continue the
+  run that drafted a release through platform validation, G5, G6 and the portal submit
+  step; a person logs in and decides."
+- **The `release` agent** reads the same documents, profiles and schemas, and its notes
+  carry the browsing rule: it never operates a portal page itself - the submit step's
+  executor is the only browser actor - and answers a drifted step only through the adaptive
+  resolver. The `release` skill reads the publication profiles, the registry schema and
+  `docs/publish-module.md`.
+- **`/new-game publish <run-id>`** says the submission waits for the person's login and,
+  after an upload, for the person's submit confirmation, and its gate rule gains the two
+  waiting states of the `publish` group. It still answers no gate.
+- **Runtime.** Claude surfaces name the Factory's CLIs (`scripts/wgf-*.py`) inside the
+  plugin's runtime, as they already did `scripts/wgf.py`, and the runtime closure
+  (`scripts/build-plugin-runtime.py`) now ships `docs/publish-module.md` and
+  `docs/portal-publishing-architecture.md`.
+No agent, command, workflow, role, machine or gate was added or removed; the manifest goes to
+1.10.0 for the new reads and the publish command's `must_read`.
+
 ## Not covered, deliberately
 
 - **`workflows/` tree** — removed. A per-provider copy of a workflow duplicates

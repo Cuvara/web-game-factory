@@ -144,6 +144,7 @@ bin/wgf test-core --only SECURITY --json
 | CONTRACTS | `test_core_contracts`, `test_core_lineage`, `test_core_template`, `test_golden_fast` | full schema validation, lineage pins, malformed/missing/tampered artifacts |
 | VERIFY | `test_core_verify` | PASS only from evidence; stale/missing/mocked evidence never PASS |
 | RELEASE | `test_core_release` | release gated by verify, commit lineage, package hygiene, hashes |
+| QUALITY | `test_quality_consistency` | an intentionally bad game cannot pass new-game: six genres held to one floor, eleven degradations each detected, blocking, typed and routed to its owner, recovery only by re-measurement, anti-gaming ([quality-consistency-tests.md](quality-consistency-tests.md)) |
 | 2D GOLDEN | `test_golden_2d` | the whole pipeline on a real PixiJS game |
 | 3D GOLDEN | `test_golden_3d` | the same workflow on a real Three.js game |
 | PROCESS CLEANUP | `test_core_process` | no survivor on any exit path |

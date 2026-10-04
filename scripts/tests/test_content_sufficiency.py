@@ -36,7 +36,7 @@ SCRIPTS = os.path.dirname(HERE)
 sys.path.insert(0, SCRIPTS)
 
 from wgf_sufficiency import audit as auditing  # noqa: E402
-from wgf_sufficiency.step import ContentSufficiencyStep  # noqa: E402
+from wgf_sufficiency.step import BENCHMARK, ContentSufficiencyStep  # noqa: E402
 from wgf_playability.step import PlayabilityStep  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
 from wgflib.workflow.model import StepOutcome  # noqa: E402
@@ -398,7 +398,7 @@ class Step(unittest.TestCase):
                 json.dump(data, handle)
         return records_dir
 
-    def run_step(self, docs):
+    def run_step(self, docs, environment=None):
         class Inputs:
             refs = {k: types.SimpleNamespace(content_hash=None) for k in docs}
 
@@ -413,7 +413,7 @@ class Step(unittest.TestCase):
                 return lambda *a, **k: None
 
         context = types.SimpleNamespace(config={}, run_dir=self.base, logger=Log(), visit=1,
-                                        attempt=1, execution=1)
+                                        attempt=1, execution=1, environment=environment or {})
         result = ContentSufficiencyStep(types.SimpleNamespace(
             params={}, id="content-sufficiency")).execute(Inputs(), context)
         for artifact in result.artifacts:
@@ -460,6 +460,43 @@ class Step(unittest.TestCase):
         result = self.run_step(self.docs(design_of(units), records_dir))
         report = result.artifacts[0].content
         self.assertIn("content.data_present", report["failed"])
+
+    def pin(self, text):
+        """The run's environment after it pinned `text` as its quality benchmark."""
+        from wgflib.workflow import references
+        pins = references.pin({BENCHMARK: text.encode("utf-8")}, self.base)
+        return {references.PARAM: pins}
+
+    def live_benchmark(self):
+        with open(os.path.join(SCRIPTS, "..", *BENCHMARK.split("/")), encoding="utf-8") as h:
+            return h.read()
+
+    def test_the_bars_are_the_benchmark_the_run_pinned(self):
+        """A run started under a benchmark asking for 20 units is held to 20, whatever the
+        live file says now (WS-13: a mid-run edit applies to the next run)."""
+        units = varied_units()
+        records_dir = self.write(survey_of(units), data_of(units))
+        live = self.live_benchmark()
+        raised = live.replace("min_total: {release: 12", "min_total: {release: 20")
+        self.assertNotEqual(raised, live)
+        result = self.run_step(self.docs(design_of(units), records_dir),
+                               environment=self.pin(raised))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertIn("content.units_shipped", result.artifacts[0].content["failed"])
+        passed = self.run_step(self.docs(design_of(units), records_dir),
+                               environment=self.pin(live))
+        self.assertEqual(passed.outcome, StepOutcome.SUCCESS)
+
+    def test_a_pinned_benchmark_edited_after_the_start_blocks(self):
+        units = varied_units()
+        records_dir = self.write(survey_of(units), data_of(units))
+        environment = self.pin(self.live_benchmark())
+        with open(os.path.join(self.base, "references", *BENCHMARK.split("/")), "a",
+                  encoding="utf-8") as handle:
+            handle.write("\n# lowered in the run\n")
+        result = self.run_step(self.docs(design_of(units), records_dir), environment)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("edited after the start", result.artifacts[0].content["blocked_reason"])
 
     def test_nothing_recorded_is_blocked(self):
         result = self.run_step(self.docs(design_of(varied_units()), None))

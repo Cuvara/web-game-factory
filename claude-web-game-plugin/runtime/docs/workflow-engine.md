@@ -845,8 +845,8 @@ ended, else `null`). `RunState.from_dict` ignores the extra keys.
 ### `wgf test-core`
 
 Runs the Core Acceptance Suite category by category — `WORKFLOW`, `AGENTS`, `CONTRACTS`,
-`VERIFY`, `RELEASE`, `2D GOLDEN`, `3D GOLDEN`, `PROCESS CLEANUP`, `SECURITY` — and prints a
-table of results and counts. The category → test-module mapping is data, in
+`VERIFY`, `RELEASE`, `QUALITY`, `2D GOLDEN`, `3D GOLDEN`, `PROCESS CLEANUP`, `SECURITY` — and
+prints a table of results and counts. The category → test-module mapping is data, in
 `scripts/tests/core_suite.py`.
 
 | Result | When |

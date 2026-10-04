@@ -111,21 +111,38 @@ check a declaration rather than a run.
 | Milestone | Phase | Tasks |
 |---|---|---|
 | `M1` Playable core loop | prototype | `CORE-001` (boot on the template with the engine) + one `GAME-nnn` per `mvp` feature + one `CONTENT-nnn` per batch of MVP content units |
-| `M2` Production scope | production | one `GAME-nnn` per `post-mvp` feature; omitted if none |
+| `M2` Production scope (at `release`: "Release scope, built before G4") | production | one `GAME-nnn` per `post-mvp` feature + - when the run's tier builds the post-mvp tier - one `CONTENT-nnn` per batch of post-mvp content units; omitted if none |
 | `M3` Platform integration and hardening | hardening | one `SDK-nnn` per target platform + `QA-001` (verify suite green) |
 
-A feature task's acceptance criteria are the feature's own. `optional` features get no task.
+A feature task's acceptance criteria are the feature's own. `optional` features get no task,
+and neither does a feature whose evaluation (game-design 1.10.0) is `later` or `cut`.
 A design with no `features` (an older schema) falls back to `scope.tiers.mvp` and
 `scope.tiers.production`; those carry no criteria, and the generated criterion says so —
 which is what the reviewer at G3 should see.
 
-**Content tasks.** The design's MVP content units (`build_spec.content.units`, game-design
-1.9.0) are planned as work, not left implicit in the feature tasks: one `CONTENT-nnn` per
-batch of `implementation.task_batch` units (3, from `core/reference/genre-models.yaml`), in
-the design's index order — the order *is* the difficulty curve. Each task carries every unit's
+**What the run builds before G4: the quality tier** (tech-plan 1.1.0 `dev_plan.build_scope`).
+The run's quality tier is the design's `build_spec.content.quality_tier`, else the strategy's
+`concept.content_model.quality_tier`, else `mvp` (a strategy before title-strategy 1.5.0
+states none, and is planned as it always was). What a tier builds is data,
+`core/reference/quality-benchmark.yaml` `tiers[].builds`: at `mvp` the `mvp` design tier and
+the prototype phase (M1); at `release` the `mvp` and `post-mvp` design tiers and the prototype
+and production phases (M1 and M2). In `new-game` the step after G4 is the store listing and
+then release - nothing is built after G4 - so at `release` every feature the design includes
+and every unit the release ships is planned **and built** before G4: the developer's brief
+carries M1 and M2 (`docs/development-module.md`). Before WS-3 the plan kept only `tier: mvp`
+units, and `M2` was planned but never built in `new-game`, so a release was the MVP by
+construction (`docs/quality-gap-audit-2026-10.md`, finding 1).
+
+**Content tasks.** The design's content units of the tiers the run builds
+(`build_spec.content.units`, game-design 1.9.0) are planned as work, not left implicit in the
+feature tasks: one `CONTENT-nnn` per batch of `implementation.task_batch` units (3, from
+`core/reference/genre-models.yaml`) - MVP units batched into M1, a release's post-mvp units
+into M2, so a batch never mixes them - in the design's index order — the order *is* the difficulty curve. Each task carries every unit's
 own `acceptance` lines plus two generated ones per unit: that the unit is in
 `public/content/units.json` with the design's difficulty values, and that it is reachable from
-the unit before it in play (or, for the first, that it is where play starts). Its tests are
+the unit before it in play (or, for the first, that it is where play starts); where the unit
+states them (game-design 1.12.0), the first also names its `group`, `structure`, `elements` and
+`objective_kind`, which the develop checks compare. Its tests are
 `tests/unit/content.test.ts`, and it depends on `CORE-001` and on the `GAME-nnn` tasks of the
 mechanics its units ask for — a level cannot be built before the verb it is made of. Estimated
 at `implementation.content_unit_hours` (1.5) per unit, so the content is in the timebox total
@@ -154,12 +171,45 @@ technical risk when it overruns — but **never adjusted to fit**. `plan_fits_ti
 G3's question; estimates that sum neatly to the budget were fitted
 (`core/lifecycle/stages/tech-plan.md`).
 
+## The develop budget: derived from the plan
+
+The plan derives the developer-session budget its own tasks need (`dev_plan.develop_budget`,
+tech-plan 1.1.0, `scripts/wgf_techplan/budget.py`), from `core/reference/quality-benchmark.yaml`
+`develop` - values with their calibration basis, never a number in code:
+
+| | |
+|---|---|
+| build hours | the `est_hours` of every task in a phase the tier builds (CORE, GAME, CONTENT; a CONTENT task is `content_unit_hours` per unit) |
+| sessions | `ceil(build hours / session_task_hours) + rework_sessions` (8 h a session, 6 sessions of greybox pass and routed returns; both `proposed`) |
+| cost | `sessions x session_cost` (3.5, `measured-2`: the two validation runs' US$62.86 / 18 and US$29.25 / 9) |
+
+The record carries its `basis` (the hours, the task ids, the content tasks and hours, the
+values and their calibration, the formula and the benchmark version), so G3 sees why the number
+is what it is. A 32-unit release design with a handful of features derives about 23 sessions,
+where the 2D validation run was given a fixed 14 and needed a person to raise it to 18 mid-run.
+
+**The installation caps it lower, never substitutes for it.** `factory.develop.budget` is the
+installation's consent to spend: the run's snapshot of it (and any raise a person recorded) is
+read when the plan is made and recorded as `develop_budget.cap`. Where the cap is below the
+plan's need, `develop_budget.shortfall` says by how much, the plan carries a `high` technical
+risk beginning "Planned shortfall", `metadata.budget_shortfall` is set, the step's message ends
+`PLANNED SHORTFALL: ...` and a warning is logged - all before G3, so the shortfall is decided at
+G3 (raise the budget, cut scope in a superseding design, or reject), not discovered as a
+`BUDGET_RAISED` in the middle of the build. The develop step enforces the lower of the two from
+the first session (`docs/development-module.md#budget`). With no cap at all the plan still
+records the need, and no command developer starts.
+
 ## G3
 
 `tech-plan-review` is a `human-checkpoint` with `gate: G3`. G3 is reversible, so an
 installation may list it under `factory.checkpoints.auto_approve`; otherwise the run waits
 for `--decision approve`. A rejection is unrouted and blocks the run for a person.
 `wgf plan` runs strategy → G2 → design → tech-plan → G3.
+
+What G3 sees of the budget: `dev_plan.develop_budget` with its basis and the cap, and - when the
+cap is below the need - the planned-shortfall risk. An installation that auto-approves G3 (the
+autonomous profile does) records the risk without a person reading it; the run then stops
+`BLOCKED` when the cap is spent, never reporting the tier achieved.
 
 What G3 sees of the content, beside the plan: the design's `consistency.rule_results`
 include the `content.*` rules and `consistency.content_model` names the genre model by id and
@@ -183,7 +233,8 @@ no asset manifest; the lifecycle transition through `wgf-state.py` still evaluat
 | No engine can be established, or the design contradicts itself | `FAILED`, not retryable |
 | Pinned profile missing or moved | `BLOCKED` |
 | `factory.techplan` invalid | `BLOCKED` |
-| Otherwise — including a plan that overruns the timebox | `SUCCESS` |
+| `quality-benchmark.yaml` states no `tiers[].builds` or `develop` basis for the run's tier | `BLOCKED` |
+| Otherwise — including a plan that overruns the timebox, and a planned budget shortfall | `SUCCESS` |
 
 No side effect outside the run: the same inputs, settings and clock give the same content
 hash.

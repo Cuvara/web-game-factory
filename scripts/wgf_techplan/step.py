@@ -13,21 +13,32 @@ Outcomes, per docs/workflow-module-contract.md §7:
     mismatch, no engine, engine/dimension contradiction),
     or a `with: {physics: ...}` this Factory does not plan
     for
+    quality-benchmark.yaml states no build scope or        BLOCKED
+    budget basis for the run's quality tier
     otherwise                                              SUCCESS - including a plan that
                                                            does not fit the timebox: that is
                                                            G3's call (plan_fits_timebox), not
-                                                           a reason to fit the estimates
+                                                           a reason to fit the estimates -
+                                                           and a plan whose derived develop
+                                                           budget the installation caps
+                                                           lower: a planned shortfall G3
+                                                           sees, not a mid-run surprise
+
+The plan builds what the run's quality tier ships before G4, and derives the develop budget
+from those tasks (budget.py, dev_plan.build_scope and dev_plan.develop_budget).
 """
 
 import datetime
 import os
 
-from wgflib import paths, provenance
+from wgflib import budget as run_budget
+from wgflib import genre_models, paths, provenance
 from wgflib import template as template_pin
 from wgflib import template_contract as contract
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.yamllite import YamlError, load_file
 
+from . import budget as plan_budget
 from .devplan import Estimates, build_dev_plan
 from .registration import RegistrationError, load_registrations, registered_entry
 from .selection import (DIMENSION_FOR_ENGINE, EngineError, PhysicsError, PlatformError,
@@ -128,6 +139,25 @@ class TechPlanSettings:
         return cls(estimates, [dict(d) for d in devices], build, template_ref, tolerance)
 
 
+def _shortfall_text(develop_budget):
+    """One sentence: what the plan needs, what the installation allows, what is short."""
+    cap = develop_budget.get("cap") or {}
+    short = develop_budget.get("shortfall") or {}
+    parts = []
+    if "sessions" in short:
+        parts.append(f"{develop_budget['sessions']} developer sessions planned, "
+                     f"factory.develop.budget.max_sessions caps it at {cap.get('max_sessions')} "
+                     f"({short['sessions']} short)")
+    if "cost" in short:
+        parts.append(f"cost {develop_budget['cost']:g} planned, max_cost caps it at "
+                     f"{cap.get('max_cost'):g} ({short['cost']:g} short)")
+    basis = develop_budget.get("basis") or {}
+    return ("; ".join(parts) + f". The plan's need comes from {basis.get('build_hours')} build "
+            f"hours over {len(basis.get('tasks') or [])} tasks the tier builds before G4 "
+            f"({basis.get('content_tasks')} CONTENT). The tier's content will not be built "
+            f"within the cap.")
+
+
 def _title_name(title_id):
     """The display name bootstrap would derive from the repository name."""
     return " ".join(part[:1].upper() + part[1:] for part in title_id.split("-") if part)
@@ -141,6 +171,8 @@ class TechPlanStep(WorkflowStep):
     platforms_dir = None
     asset_kinds = None
     titles_dir = None  # where portals.yaml registrations live; a real run reads workspace/
+
+    benchmark = None  # core/reference/quality-benchmark.yaml; a seam for tests
 
     def execute(self, inputs, context):
         missing = [t for t in ("game-design", "title-strategy") if t in inputs.missing]
@@ -192,33 +224,70 @@ class TechPlanStep(WorkflowStep):
         except RegistrationError as exc:
             return StepResult.blocked(str(exc))
 
+        benchmark = (self.benchmark if self.benchmark is not None
+                     else plan_budget.load_benchmark())
+        tier, where = plan_budget.quality_tier(design, strategy)
+        try:
+            scope = dict(plan_budget.builds(tier, benchmark), quality_tier=tier, where=where)
+        except plan_budget.BudgetBasisError as exc:
+            return StepResult.blocked(str(exc))
+        cap = self._budget_cap(context)
+
         now = self.clock()
-        plan = self._plan(design, strategy, title_id, engine, rationale, platforms, settings,
-                          entries, physics_text)
+        try:
+            plan = self._plan(design, strategy, title_id, engine, rationale, platforms,
+                              settings, entries, physics_text, scope=scope,
+                              benchmark=benchmark, cap=cap)
+        except plan_budget.BudgetBasisError as exc:
+            return StepResult.blocked(str(exc))
         artifact = self._with_provenance(plan, inputs, title_id, now, context)
 
         total = plan["dev_plan"]["est_days"]
         budget = strategy.get("timebox_days")
         allowed = budget * settings.overrun_tolerance if isinstance(budget, (int, float)) else None
         fits = None if allowed is None else total <= allowed
+        develop_budget = plan["dev_plan"]["develop_budget"]
+        shortfall = develop_budget.get("shortfall")
         metadata = {"engine": engine, "engine_source": engine_source, "physics": physics,
                     "platforms": [p.pin for p in platforms], "est_days": total,
-                    "timebox_days": budget, "fits_timebox": fits}
+                    "timebox_days": budget, "fits_timebox": fits, "quality_tier": tier,
+                    "develop_sessions": develop_budget["sessions"],
+                    "develop_cost": develop_budget["cost"],
+                    "budget_shortfall": shortfall}
         metadata = {k: v for k, v in metadata.items() if v is not None}
         if fits is False:
             context.logger.warning("plan exceeds the timebox; G3 decides", est_days=total,
                                    allowed_days=allowed)
+        if shortfall:
+            context.logger.warning(
+                "the installation caps the develop budget below what the plan needs; G3 "
+                "decides", quality_tier=tier, planned_sessions=develop_budget["sessions"],
+                planned_cost=develop_budget["cost"], cap=develop_budget.get("cap"),
+                shortfall=shortfall)
         context.logger.info("tech plan composed", engine=engine, engine_source=engine_source,
-                            platforms=[p.pin for p in platforms], est_days=total)
+                            platforms=[p.pin for p in platforms], est_days=total,
+                            quality_tier=tier, develop_sessions=develop_budget["sessions"])
         return StepResult.success(
             [ArtifactOutput("tech-plan", artifact, metadata=metadata)],
             message=f"{engine}, {len(platforms)} platform(s), {total} estimated days"
-                    + ("" if fits is None else f" vs {allowed:g} allowed"))
+                    + ("" if fits is None else f" vs {allowed:g} allowed")
+                    + f"; {tier} tier, develop budget {develop_budget['sessions']} sessions"
+                    + (f" - PLANNED SHORTFALL: {_shortfall_text(develop_budget)}"
+                       if shortfall else ""))
+
+    @staticmethod
+    def _budget_cap(context):
+        """The run's develop budget in force (the snapshot of factory.develop.budget, or the
+        one a person's resume adopted, with every raise), or None: the installation's cap."""
+        params = getattr(context, "environment", None)
+        reader = getattr(context, "read_events", None)
+        events = list(reader()) if callable(reader) else []
+        return run_budget.effective(params if isinstance(params, dict) else {}, events)
 
     # -- composition --------------------------------------------------------------------
 
     def _plan(self, design, strategy, title_id, engine, rationale, platforms, settings,
-              entries=None, physics_text=None):
+              entries=None, physics_text=None, scope=None, benchmark=None, cap=None):
         placements = (design.get("monetization") or {}).get("placements") or []
         kinds = [p.get("kind") for p in placements if isinstance(p, dict)]
         ad_kinds = [k for k in AD_KINDS if k in kinds]
@@ -273,7 +342,15 @@ class TechPlanStep(WorkflowStep):
             "agent_responsibility": ["dev_plan tasks, against their acceptance criteria"],
             "ci_responsibility": ["ci_green (ci.yml)", "verify_suite_green (verify.yml)"],
         }
-        dev_plan = build_dev_plan(design, engine, platforms, settings.estimates)
+        models = genre_models.load()
+        dev_plan = build_dev_plan(design, engine, platforms, settings.estimates, models=models,
+                                  scope=scope)
+        if benchmark is None:
+            benchmark = plan_budget.load_benchmark()
+        dev_plan["develop_budget"] = plan_budget.derive_budget(
+            dev_plan, dev_plan["build_scope"]["plan_phases"], benchmark, cap=cap,
+            content_unit_hours=((models or {}).get("implementation") or {}).get(
+                "content_unit_hours"))
 
         risks = []
         budget = strategy.get("timebox_days")
@@ -284,6 +361,17 @@ class TechPlanStep(WorkflowStep):
                                          f"{settings.overrun_tolerance:g}).",
                           "severity": "high",
                           "mitigation": "Cut mvp scope in a superseding design, or reject at G3."})
+        develop_budget = dev_plan["develop_budget"]
+        if develop_budget.get("shortfall"):
+            risks.append({"description": "Planned shortfall: "
+                                         + _shortfall_text(develop_budget),
+                          "severity": "high",
+                          "mitigation": "Raise factory.develop.budget to the plan's need "
+                                        "before the build (or a person raises the run's "
+                                        "budget: wgf resume <run> --budget-sessions N), cut "
+                                        "scope in a superseding design, or reject at G3. "
+                                        "Approved as is, the build stops BLOCKED when the "
+                                        "cap is spent, with the tier's content unbuilt."})
         if bundle is not None:
             risks.append({"description": f"The tightest required bundle limit is {bundle:g} MB.",
                           "severity": "medium" if bundle <= 50 else "low",

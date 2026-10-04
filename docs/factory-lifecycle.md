@@ -102,6 +102,30 @@ not a game" (`docs/quality-gap-audit-2026-10.md`, findings 1 and 5). A run meant
 at G4 - a prototype to test the bet - sets `quality_tier: mvp`, and its budget is the MVP's
 units. The tier changes what the strategy commits to, never a gate's bar.
 
+**The design is held to the tier.** The design states the same tier
+(`build_spec.content.quality_tier`, game-design 1.12.0; never lower than the strategy's) and
+the design step holds `build_spec.content` to the budget and to the quality benchmark's
+`content` bars at the tier, the larger of the two (`scripts/wgf_design/content.py`, rules
+`content.tier_*`): distinct elements, introduction points, combinations, structure kinds,
+objective kinds, the family's groups and their milestones, designed play, and difficulty
+that asks for new skills rather than bigger numbers. A design short of its tier fails with a
+finding naming what is short - the design step's own repair loop, and its exit guard. The
+built-in design authors write MVP-sized content, so a run without an agent author fails at
+`release`; such a run (the golden runs among them) sets `quality_tier: mvp`.
+
+**The plan builds the tier before G4, and budgets the build from it.** In `new-game` nothing
+is built after G4 - its next steps are the store listing and release - so `post-mvp`, which
+the design schema reads as "after G4 passes", is built before G4 at `release`. The tech plan
+plans every unit and every included feature of the tier (`dev_plan.build_scope`, from
+`core/reference/quality-benchmark.yaml` `tiers[].builds`: `mvp` builds M1, `release` M1 and
+M2) and the developer's brief carries exactly those milestones; the develop checks fail a
+release build that ships only the MVP's units. The developer-session budget is derived from
+the same tasks (`dev_plan.develop_budget`, with its basis); `factory.develop.budget` may only
+cap it lower, and a cap below the plan's need is a planned shortfall in the tech plan, which
+G3 decides - not a `BUDGET_RAISED` in the middle of the build. A run that spends its budget
+stops `BLOCKED`, its tier not achieved (`docs/techplan-module.md`,
+`docs/development-module.md#budget`).
+
 **`design` has no gate of its own.** Design and tech-plan approve together at G3. Splitting
 them adds a gate to a cycle that already has too many, and approving a design whose plan does
 not fit the timebox decides nothing.

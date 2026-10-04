@@ -69,7 +69,10 @@ has too many, and they are not independently actionable. Approving a design whos
 does not fit the timebox decides nothing.
 
 Present the consistency result including rules that nearly failed, milestone estimates
-against the timebox, and how much asset cost is not yet sourced.
+against the timebox, the develop budget the plan derives from the tasks its quality tier
+builds before G4 against the installation's cap (a cap below the need is a planned
+shortfall, decided here rather than discovered mid-build), and how much asset cost is not
+yet sourced.
 
 ## Failure modes
 

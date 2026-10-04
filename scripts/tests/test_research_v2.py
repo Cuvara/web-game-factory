@@ -844,7 +844,9 @@ class Handoff(unittest.TestCase):
         os.makedirs(os.path.join(cls.project, "workspace", "config"))
         with open(os.path.join(cls.project, "workspace", "config", "factory.yaml"), "w",
                   encoding="utf-8") as handle:
+            # The built-in design author runs at tier mvp (content.tier_* at release).
             handle.write("factory:\n  checkpoints:\n    auto_approve: [G2, G3]\n"
+                         "  strategy:\n    quality_tier: mvp\n"
                          f"  discovery:\n    corpus: {json.dumps(V2)}\n"
                          f"    as_of: \"{AS_OF}\"\n    platforms: [poki, crazygames]\n"
                          f"    backlog: {json.dumps(os.path.join(cls.project, 'none'))}\n")
@@ -924,7 +926,10 @@ class Handoff(unittest.TestCase):
 
 def design_from(opportunity, title_id="fx-title", params=None):
     """plan_strategy then the design step, offline, on one opportunity."""
-    body = plan_strategy(opportunity, load_profiles(), title_id, None, load_vocabulary())
+    # The built-in design author writes MVP-sized content: at tier release the design is
+    # held to the quality benchmark's content bars (content.tier_*), so it runs at tier mvp.
+    body = plan_strategy(opportunity, load_profiles(), title_id, None, load_vocabulary(),
+                         quality_tier="mvp")
     strategy = dict(body, provenance={"artifact_id": f"wgf:title-strategy:{title_id}:1",
                                       "artifact_type": "title-strategy",
                                       "schema_version": "1.3.0", "inputs": [],
@@ -993,7 +998,7 @@ class DesignFallbacks(unittest.TestCase):
     def test_an_author_that_drops_the_research_cannot_lose_it(self):
         report = outputs(scan())
         body = plan_strategy(report["opportunity"], load_profiles(), "fx-title", None,
-                             load_vocabulary())
+                             load_vocabulary(), quality_tier="mvp")    # the built-in author
         strategy = dict(body, provenance={"artifact_id": "wgf:title-strategy:fx-title:1",
                                           "artifact_type": "title-strategy",
                                           "schema_version": "1.3.0", "inputs": [],

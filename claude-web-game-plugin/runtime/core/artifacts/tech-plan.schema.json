@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/tech-plan.schema.json",
   "title": "Technical Plan",
-  "description": "Engine selection, architecture, performance budgets, repository parameters, and the development plan.\n\nEngine selection lives here rather than in a state of its own because `engine.type` is a repository-creation parameter: decide the engine, then create the repo. That ordering is load-bearing.\n\nThe development plan matters more than anything else in this artifact. A coding agent handed only a GDD will invent scope — it has to, because a GDD does not say what to build first. The plan supplies milestones, tasks, dependencies, acceptance criteria and tests, which is what makes agent output reviewable against something other than taste.",
+  "description": "Engine selection, architecture, performance budgets, repository parameters, and the development plan.\n\nEngine selection lives here rather than in a state of its own because `engine.type` is a repository-creation parameter: decide the engine, then create the repo. That ordering is load-bearing.\n\nThe development plan matters more than anything else in this artifact. A coding agent handed only a GDD will invent scope — it has to, because a GDD does not say what to build first. The plan supplies milestones, tasks, dependencies, acceptance criteria and tests, which is what makes agent output reviewable against something other than taste.\n\nSchema 1.1.0 adds `dev_plan.build_scope` (what the run's quality tier builds before G4: the design tiers whose features and content units get tasks, and the plan phases the developer builds) and `dev_plan.develop_budget` (the developer-session budget derived from those tasks, its basis, the installation's cap and any planned shortfall, which G3 sees). Both optional, so 1.0.0 artifacts stay valid.",
 
   "x-wgf": {
     "id": "tech-plan",
     "kind": "artifact",
     "format": "json",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "template": "templates/tech-plan.md",
     "producer": "title:tech-plan",
     "consumers": ["title:tech-plan", "title:scaffolding", "title:prototype", "title:production", "release:qa", "release:draft"],
@@ -217,6 +217,69 @@
       "required": ["milestones", "tasks", "est_days"],
       "properties": {
         "est_days": { "type": "number" },
+        "build_scope": {
+          "type": "object",
+          "description": "What the run builds before G4: its quality tier (the design's build_spec.content.quality_tier, else the strategy's concept.content_model.quality_tier, else mvp) and what that tier builds (core/reference/quality-benchmark.yaml tiers[].builds). At `release` the post-mvp features and content units are built before G4: in new-game nothing is built after it. Added in 1.1.0.",
+          "required": ["quality_tier", "design_tiers", "plan_phases"],
+          "properties": {
+            "quality_tier": { "type": "string" },
+            "design_tiers": { "type": "array", "minItems": 1, "items": { "enum": ["mvp", "post-mvp", "optional"] } },
+            "plan_phases": { "type": "array", "minItems": 1, "items": { "enum": ["prototype", "production", "hardening"] } },
+            "where": { "type": "string", "description": "Where the tier was stated." }
+          },
+          "additionalProperties": false
+        },
+        "develop_budget": {
+          "type": "object",
+          "description": "The developer-session budget the plan derives from its own tasks in the phases build_scope builds (core/reference/quality-benchmark.yaml develop): sessions = ceil(build hours / session_task_hours) + rework_sessions, cost = sessions x session_cost. The installation's factory.develop.budget may cap it lower; `shortfall` is what the cap leaves unfunded, reported at G3 as a high-severity risk. The develop step enforces the lower of the two from the first session. Added in 1.1.0.",
+          "required": ["sessions", "cost", "basis"],
+          "properties": {
+            "sessions": { "type": "integer", "minimum": 0 },
+            "cost": { "type": "number", "minimum": 0 },
+            "basis": {
+              "type": "object",
+              "required": ["build_hours", "tasks", "session_task_hours", "rework_sessions", "session_cost"],
+              "properties": {
+                "build_hours": { "type": "number", "minimum": 0 },
+                "tasks": { "type": "array", "items": { "type": "string" } },
+                "content_tasks": { "type": "integer", "minimum": 0 },
+                "content_hours": { "type": "number", "minimum": 0 },
+                "content_unit_hours": { "type": ["number", "null"] },
+                "session_task_hours": { "type": "number", "exclusiveMinimum": 0 },
+                "build_sessions": { "type": "integer", "minimum": 0 },
+                "rework_sessions": { "type": "number", "minimum": 0 },
+                "session_cost": { "type": "number", "minimum": 0 },
+                "calibration": {
+                  "type": "object",
+                  "additionalProperties": { "type": ["string", "null"] }
+                },
+                "source": { "type": "string" },
+                "formula": { "type": "string" }
+              },
+              "additionalProperties": false
+            },
+            "cap": {
+              "type": ["object", "null"],
+              "description": "The installation's cap in force when the plan was made (the run's factory.develop.budget snapshot and any raise a person recorded), or null: no cap, and then no command developer starts.",
+              "properties": {
+                "max_sessions": { "type": "integer", "minimum": 1 },
+                "max_cost": { "type": "number", "exclusiveMinimum": 0 },
+                "source": { "type": "string" }
+              },
+              "additionalProperties": false
+            },
+            "shortfall": {
+              "type": ["object", "null"],
+              "description": "What the cap leaves unfunded of the plan's need, or null.",
+              "properties": {
+                "sessions": { "type": "integer", "minimum": 1 },
+                "cost": { "type": "number", "exclusiveMinimum": 0 }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
         "milestones": {
           "type": "array",
           "minItems": 1,

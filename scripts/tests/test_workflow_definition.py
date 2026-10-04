@@ -60,7 +60,7 @@ class ParsesValidDefinitions(unittest.TestCase):
             definition.step_ids,
             ["research", "strategy", "strategy-review", "design", "tech-plan",
              "tech-plan-review", "init", "greybox", "greybox-playability", "assets", "develop",
-             "playability", "production-quality", "visual-qa", "review", "sdk",
+             "playability", "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
              "sdk-review", "verify", "prototype-review", "store-listing", "listing-validation",
              "release", "platform-validate", "release-review", "publish-review", "submit"],
         )
@@ -302,7 +302,8 @@ class RouteScopedVisitLimits(unittest.TestCase):
         # separately.
         self.assertEqual(develop.max_visits_by_route,
                          {"playability.fail": 2, "production-quality.develop": 2,
-                          "visual-qa.develop": 2, "review.request-changes": 2,
+                          "visual-qa.develop": 2, "content-sufficiency.develop": 2,
+                          "review.request-changes": 2,
                           "sdk-review.request-changes": 2, "verify.fail": 2, "iterate": 2})
         # The production gates' asset failures are bounded on assets, which continues to
         # develop: each pass through assets enters develop once more.
@@ -317,7 +318,8 @@ class RouteScopedVisitLimits(unittest.TestCase):
         # per pass, from either source.
         design = definition.step("design")
         self.assertEqual(design.max_visits_by_route,
-                         {"greybox.design-gap": 1, "develop.design-gap": 1})
+                         {"greybox.design-gap": 1, "develop.design-gap": 1,
+                          "content-sufficiency.design-gap": 1})
         self.assertEqual(design.max_visits, 1 + sum(design.max_visits_by_route.values()))
         self.assertEqual(develop.max_visits, 1 + sum(develop.max_visits_by_route.values())
                          + sum(assets.max_visits_by_route.values())
@@ -325,7 +327,7 @@ class RouteScopedVisitLimits(unittest.TestCase):
         greybox = definition.step("greybox")
         self.assertEqual(greybox.max_visits, 1 + sum(greybox.max_visits_by_route.values())
                          + sum(design.max_visits_by_route.values()))
-        for step_id in ("playability", "production-quality", "visual-qa", "review", "sdk",
+        for step_id in ("playability", "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
                         "sdk-review", "verify", "prototype-review", "store-listing",
                         "listing-validation"):
             self.assertGreaterEqual(definition.step(step_id).max_visits, develop.max_visits,

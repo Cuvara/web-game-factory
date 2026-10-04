@@ -156,17 +156,18 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `research` | `research` | — | `research-report`, `opportunity` |
 | `strategy` | `strategy` | `opportunity` | `title-strategy` |
 | `strategy-review` | `human-checkpoint` | `title-strategy` | `decision-record` |
-| `design` | `design` | `title-strategy`, `prototype-report` | `game-design` |
+| `design` | `design` | `title-strategy`, `prototype-report`, `content-sufficiency-report` | `game-design` |
 | `tech-plan` | `tech-plan` | `game-design`, `title-strategy` | `tech-plan` |
 | `tech-plan-review` | `human-checkpoint` | `game-design`, `tech-plan` | `decision-record` |
 | `init` | `init` | `game-design`, `tech-plan` | `scaffold-record` |
 | `greybox` | `develop` | `game-design`, `scaffold-record`, `title-strategy`, `tech-plan`, `playability-report` | `prototype-report` |
 | `greybox-playability` | `playability` | `prototype-report`, `game-design`, `scaffold-record` | `playability-report` |
 | `assets` | `assets` | `game-design`, `scaffold-record`, `production-quality-report`, `visual-qa-report`, `playability-report` | `asset-manifest` |
-| `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `tech-plan`, `qa-report`, `review-report`, `playability-report`, `production-quality-report`, `visual-qa-report` | `prototype-report` |
+| `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `tech-plan`, `qa-report`, `review-report`, `playability-report`, `production-quality-report`, `visual-qa-report`, `content-sufficiency-report` | `prototype-report` |
 | `playability` | `playability` | `prototype-report`, `game-design`, `scaffold-record` | `playability-report` |
 | `production-quality` | `production-quality` | `playability-report`, `asset-manifest`, `game-design`, `scaffold-record` | `production-quality-report` |
 | `visual-qa` | `visual-qa` | `playability-report`, `game-design`, `asset-manifest`, `production-quality-report` | `visual-qa-report` |
+| `content-sufficiency` | `content-sufficiency` | `game-design`, `title-strategy`, `scaffold-record`, `playability-report`, `visual-qa-report` | `content-sufficiency-report` |
 | `review` | `review` | `prototype-report`, `game-design`, `scaffold-record`, `qa-report` | `review-report` |
 | `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report`, `tech-plan` | `sdk-report` |
 | `sdk-review` | `review` | `sdk-report`, `prototype-report`, `game-design`, `scaffold-record`, `qa-report` | `review-report` |

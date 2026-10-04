@@ -95,6 +95,23 @@ frame of each staged state (`docs/playability-module.md`); production-quality's
 (`docs/production-quality-module.md`). A game without a showcase is played and judged
 exactly as before; no Factory step requires one.
 
+## The play probe unit link and entity kinds
+
+Two more parts of the probe serve the content-sufficiency step
+([content-sufficiency-module.md](content-sufficiency-module.md)), both only with
+`wgf-probe=1`, and both stated in the probe schema:
+
+- **The unit link.** A page URL that also carries `wgf-unit=<unit id>` (a
+  `build_spec.content.units` id) starts play in that unit, as a level select would. The
+  playability bot's survey enters every unit this way, so units past the first few the
+  traverse reaches are measured. A build that cannot enter a unit starts as it otherwise
+  would, and the survey records the unit as not entered; for a game that authors its units,
+  that is a `content.units_reachable` failure.
+- **Entity kinds.** While a content unit is in play (`content.unit_id` is a string), every
+  entity of a content role - threat, goal, target, projectile, collectible, hazard - carries
+  its `kind`, in the game's own vocabulary. The schema requires it (`probe.valid` reads it),
+  and the content audit counts elements on the build by it.
+
 ## How drift is caught
 
 `scripts/tests/test_template_contract.py` holds every entry against a checkout of the pinned

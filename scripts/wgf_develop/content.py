@@ -9,8 +9,13 @@ developer the table, the developer writes it as data, and `checks.conformance` c
 data with the design.
 
 The contract applies when the design's `build_spec.content` has
-`generation.mode == "authored"` and at least one MVP unit: every unit the tier ships is
-listed, so every unit can be compared one for one. A `parametric` or `procedural` design
+`generation.mode == "authored"` and at least one unit of the tiers the run builds: every unit
+the tier ships is listed, so every unit can be compared one for one. Which design tiers the
+run builds is the approved tech plan's `dev_plan.build_scope` (tech-plan 1.1.0, from the run's
+quality tier, core/reference/quality-benchmark.yaml `tiers[].builds`): the MVP units at
+`mvp`, every mvp and post-mvp unit at `release` - in `new-game` nothing is built after G4, so
+a release build that ships only the MVP subset fails here. A run without a tech plan, or
+with a tech-plan 1.0.0, builds the MVP units, as before. A `parametric` or `procedural` design
 generates its units from `generation.parameters` and lists only representative segments -
 the brief still carries the table, but there is nothing to compare a data file against, so
 no data file is owed.
@@ -27,7 +32,8 @@ boot and by this module:
       "unit_kind": "level",
       "generation": {"mode": "authored"},
       "units": [
-        {"id": "l-01", "index": 1, "tier": "mvp",
+        {"id": "l-01", "index": 1, "tier": "mvp", "group": "w1",
+         "structure": "static-field", "elements": ["spikes"], "objective_kind": "reach",
          "objective": "Reach the exit without falling",
          "mechanics": ["run", "jump"], "introduces": ["jump"],
          "difficulty": {"precision": 0.1, "timing": 0.1},
@@ -38,8 +44,10 @@ boot and by this module:
       "tuning": {"jump": {"height_px": 96, "coyote_ms": 90}}
     }
 
-`units` is the design's MVP units, by the design's ids, in the design's index order, with
-the design's values. `tuning` carries every `build_spec.mechanics[].parameters` key as data,
+`units` is the design's units of the tiers built, by the design's ids, in the design's index
+order, with the design's values - including, where the design states them (game-design
+1.12.0), each unit's `group`, `structure`, `elements` and `objective_kind`, which is what the
+release tier is counted on. `tuning` carries every `build_spec.mechanics[].parameters` key as data,
 so a playtest changes a number rather than the code. Nothing here is the developer's to
 invent: where the design is silent, the gap goes in the development report's `design_gaps`
 and the unit is `partial` or `cut`.
@@ -50,8 +58,9 @@ name one:
     content.file_missing              the data file is absent or unreadable
     content.design_pin                its `design.content_hash` is not the brief's pin
     content.unit_missing:<id>         a design unit is not in the file
-    content.unit_extra:<id>           the file carries a unit the MVP tier does not
-    content.unit_field:<id>.<field>   index, objective, mechanics, success or failure differ
+    content.unit_extra:<id>           the file carries a unit the tiers built do not
+    content.unit_field:<id>.<field>   index, objective, mechanics, success, failure, group,
+                                      structure, elements or objective_kind differ
     content.difficulty:<id>.<axis>    the value is further than the tolerance from the design
     content.tuning:<mechanic>.<param> a mechanic parameter is not in `tuning`
     content.test_missing              the unit test over the data file was not written
@@ -64,8 +73,8 @@ import os
 from wgflib import genre_models
 
 __all__ = ["CONTENT_PATH", "TEST_PATH", "SCHEMA", "MVP_TIERS", "GENRE_MODELS_PATH",
-           "implementation", "applies", "expected_units", "read_content",
-           "content_findings", "table_rows", "codes"]
+           "UNIT_FIELDS", "implementation", "applies", "expected_units", "built_tiers",
+           "read_content", "content_findings", "table_rows", "codes"]
 
 # The data file the developer writes and the game loads, and the unit test over it. Both are
 # inside the paths a developer may write (scope.DEFAULT_WRITABLE: public/, tests/).
@@ -76,6 +85,9 @@ SCHEMA = "wgf-content/1"
 # The tiers the MVP build covers. Kept equal to wgf_develop.brief.BUILD_TIERS (a test checks
 # it; importing it here would make brief's import of this module circular).
 MVP_TIERS = (None, "mvp")
+# The game-design 1.12.0 unit fields a built unit carries as the design states them: what the
+# release tier's bars are counted on (core/reference/quality-benchmark.yaml `content`).
+UNIT_FIELDS = ("group", "structure", "elements", "objective_kind")
 
 # core/reference/genre-models.yaml, read through the one loader every judging step uses.
 GENRE_MODELS_PATH = genre_models.PATH
@@ -98,19 +110,32 @@ def _content(design):
     return content if isinstance(content, dict) else {}
 
 
-def expected_units(design):
-    """The design's MVP content units, in index order. The units a build owes."""
+def built_tiers(tech_plan):
+    """The design tiers a build covers: the approved tech plan's `dev_plan.build_scope`
+    `design_tiers` (an untiered entry counts as mvp), else MVP_TIERS."""
+    scope = (((tech_plan or {}).get("dev_plan") or {}).get("build_scope") or {})
+    tiers = scope.get("design_tiers") if isinstance(scope, dict) else None
+    if not isinstance(tiers, list) or not tiers:
+        return MVP_TIERS
+    tiers = tuple(str(t) for t in tiers)
+    return ((None,) + tiers) if "mvp" in tiers else tiers
+
+
+def expected_units(design, tiers=MVP_TIERS):
+    """The design's content units of `tiers` (the MVP by default), in index order. The units
+    a build owes."""
     units = [u for u in _content(design).get("units") or []
-             if isinstance(u, dict) and u.get("tier") in MVP_TIERS]
+             if isinstance(u, dict) and u.get("tier") in tiers]
     return sorted(units, key=lambda u: (u.get("index") if isinstance(u.get("index"), int)
                                         else 10 ** 6, str(u.get("id"))))
 
 
-def applies(design):
-    """Whether the content contract applies: an authored design with at least one MVP unit."""
+def applies(design, tiers=MVP_TIERS):
+    """Whether the content contract applies: an authored design with at least one unit of
+    `tiers`."""
     content = _content(design)
     mode = (content.get("generation") or {}).get("mode")
-    return mode == "authored" and bool(expected_units(design))
+    return mode == "authored" and bool(expected_units(design, tiers))
 
 
 def read_content(root):
@@ -141,24 +166,34 @@ def table_rows(units, axes):
     One column per difficulty axis, because the axes are what a unit's difficulty is stated
     on and a table with a single `difficulty` column hides whether they move."""
     axis_ids = [a.get("id") for a in axes or [] if isinstance(a, dict) and a.get("id")]
-    header = (["#", "id", "purpose", "objective", "introduces", "mechanics"]
+    # The game-design 1.12.0 fields, a column each when any unit states one; a design that
+    # states none renders the table it always did.
+    stated = [f for f in UNIT_FIELDS if any(u.get(f) for u in units or [])]
+    header = (["#", "id"] + (["tier"] if any(u.get("tier") not in MVP_TIERS
+                                              for u in units or []) else [])
+              + ["purpose", "objective", "introduces", "mechanics"]
+              + [field.replace("_", " ") for field in stated]
               + [f"d:{axis}" for axis in axis_ids]
               + ["duration s", "success", "failure"])
     rows = []
     for unit in units or []:
         difficulty = unit.get("difficulty") or {}
-        rows.append([unit.get("index"), unit.get("id"), unit.get("purpose"),
-                     unit.get("objective"),
-                     ", ".join(unit.get("introduces") or []) or "-",
-                     ", ".join(unit.get("mechanics") or [])]
+        rows.append([unit.get("index"), unit.get("id")]
+                    + ([unit.get("tier") or "mvp"] if "tier" in header else [])
+                    + [unit.get("purpose"), unit.get("objective"),
+                       ", ".join(unit.get("introduces") or []) or "-",
+                       ", ".join(unit.get("mechanics") or [])]
+                    + [(", ".join(unit.get(f) or []) or "-") if f == "elements"
+                       else (unit.get(f) or "-") for f in stated]
                     + [difficulty.get(axis, "-") for axis in axis_ids]
                     + [unit.get("expected_duration_s"), unit.get("success"),
                        unit.get("failure")])
     return header, rows
 
 
-def _selection(brief_or_design):
-    """What the findings are computed from, whether given a brief or a game-design.
+def _selection(brief_or_design, tiers=MVP_TIERS):
+    """What the findings are computed from, whether given a brief or a game-design (held to
+    `tiers`, the MVP by default).
 
     A brief carries the selection the developer was handed (`content`, `build_spec.sections`
     and the input pins); a design is selected from directly, so the module can be used on one
@@ -180,11 +215,11 @@ def _selection(brief_or_design):
     spec = design.get("build_spec") or {}
     provenance = design.get("provenance") or {}
     return {
-        "applies": applies(design),
-        "units": expected_units(design),
+        "applies": applies(design, tiers),
+        "units": expected_units(design, tiers),
         "axes": list((spec.get("difficulty") or {}).get("axes") or []),
         "mechanics": [m for m in spec.get("mechanics") or []
-                      if isinstance(m, dict) and m.get("tier") in MVP_TIERS],
+                      if isinstance(m, dict) and m.get("tier") in tiers],
         "pin": {"artifact_id": provenance.get("artifact_id"),
                 "content_hash": provenance.get("content_hash")},
     }
@@ -216,7 +251,8 @@ def _unit_findings(unit, built, tolerance):
     """One design unit against the one the data file carries."""
     uid = unit.get("id")
     findings = []
-    for field in ("index", "objective", "success", "failure"):
+    for field in ("index", "objective", "success", "failure", "group", "structure",
+                  "objective_kind"):
         if field not in unit:
             continue
         if built.get(field) != unit.get(field):
@@ -227,6 +263,11 @@ def _unit_findings(unit, built, tolerance):
         findings.append(f"content.unit_field:{uid}.mechanics: the design asks for "
                         f"{sorted(designed)}, {CONTENT_PATH} carries "
                         f"{sorted(set(built.get('mechanics') or []))}")
+    elements = [e for e in unit.get("elements") or [] if isinstance(e, str)]
+    if elements and set(built.get("elements") or []) != set(elements):
+        findings.append(f"content.unit_field:{uid}.elements: the design names "
+                        f"{sorted(elements)}, {CONTENT_PATH} carries "
+                        f"{sorted(set(built.get('elements') or []))}")
     difficulty = built.get("difficulty") if isinstance(built.get("difficulty"), dict) else {}
     for axis, value in sorted((unit.get("difficulty") or {}).items()):
         if not _number(value):
@@ -258,12 +299,15 @@ def _same_pin(written, pinned):
     return len(w) >= 12 and p.startswith(w)
 
 
-def content_findings(root, brief_or_design, models=None):
+def content_findings(root, brief_or_design, models=None, tiers=MVP_TIERS):
     """Every way the checkout's content data disagrees with the design it was built from.
+
+    Given a brief, the units are the ones it handed the developer; given a design, those of
+    `tiers` (built_tiers of the run's tech plan; the MVP by default).
 
     Empty when the content contract does not apply: a parametric or procedural design owes
     no data file, and a design that states no content units owes nothing at all."""
-    selection = _selection(brief_or_design)
+    selection = _selection(brief_or_design, tiers)
     if not selection["applies"]:
         return []
     tolerance = implementation(models).get("difficulty_tolerance")
@@ -271,7 +315,7 @@ def content_findings(root, brief_or_design, models=None):
     findings = []
     data, problem = read_content(root)
     if problem:
-        findings.append(f"content.file_missing: {problem} - every MVP content unit of the "
+        findings.append(f"content.file_missing: {problem} - every content unit of the "
                         f"brief's table belongs in it")
     else:
         pinned = selection["pin"].get("content_hash")
@@ -291,7 +335,7 @@ def content_findings(root, brief_or_design, models=None):
         designed = {u.get("id") for u in selection["units"]}
         for uid in sorted(i for i in built if i not in designed):
             findings.append(f"content.unit_extra:{uid}: {CONTENT_PATH} carries a unit the "
-                            f"design's MVP tier does not name")
+                            f"design's tiers built in this run do not name")
         tuning = data.get("tuning") if isinstance(data.get("tuning"), dict) else {}
         for mechanic in selection["mechanics"]:
             parameters = mechanic.get("parameters")

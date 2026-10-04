@@ -380,7 +380,8 @@ class TheBlockIsPresent(ContentCase):
                           "content.mvp_mechanics_reused", "content.consecutive_units_differ",
                           "content.axes_declared", "content.axes_monotone_with_relief",
                           "content.objectives_vary", "content.win_lose_stated",
-                          "content.acceptance_specific", "content.scope_count_agrees"})
+                          "content.acceptance_specific", "content.scope_count_agrees"}
+                         | set(content.TIER_RULES) - {"content.tier_stated"})
 
     def test_a_family_that_requires_mastery_without_it(self):
         design = self.design()
@@ -982,6 +983,380 @@ class TheStep(unittest.TestCase):
         self.assertIn("the design does not specify its content", result.error)
         self.assertIn("build_spec.content is missing", result.error)
         self.assertEqual(result.artifacts, [])
+
+
+# -- the quality tier (game-design 1.12.0; core/reference/quality-benchmark.yaml) ---------
+
+BENCHMARK = content.load_benchmark()
+STRUCTURES = ("static-field", "moving-field", "path-with-turns", "arena")
+OBJECTIVE_KINDS = ("clear-all", "survive", "reach-exit", "collect")
+
+
+def release_strategy(family="arcade", **budget):
+    """A strategy at tier release, its budget the benchmark's bars (WS-1's planner commits the
+    larger of these and the family's own; a test that needs more passes it)."""
+    bars = content.tier_bars(BENCHMARK, "release")
+    fam = MODELS["families"][family]
+    shape = fam.get("budget") or {}
+    committed = {"units": max(int(bars[("units", "min_total")]), fam["units"]["min_total"]),
+                 "elements": {"count": int(bars[("elements", "min_distinct")]),
+                              "kinds": list(shape.get("element_kinds") or []),
+                              "min_introduction_points":
+                                  int(bars[("elements", "min_introduction_points")])},
+                 "designed_play_s": int(bars[("units", "min_total_designed_s")])}
+    if shape.get("group_kind"):
+        committed["groups"] = {"kind": shape["group_kind"],
+                               "count": int(bars[("units", "min_groups")]),
+                               "min_units_per_group": int(bars[("units", "min_units_per_group")])}
+    committed.update(budget)
+    strategy = strategy_for(family)
+    strategy["concept"]["content_model"] = {"family": family, "source": "default",
+                                            "quality_tier": "release", "budget": committed}
+    return strategy
+
+
+def release_design(family="arcade", n_total=32, groups=4, n_elements=12, models=None):
+    """A design of `family` at tier release that holds against every content rule: `n_total`
+    units in `groups` groups (none when the family has none), `n_elements` declared elements
+    introduced across the post-mvp units up to the last sixth, every unit its own combination
+    of elements, four structures and four objective kinds cycled, every group closed by a
+    climax."""
+    design = authored_design(family, n_total=n_total, models=models)
+    fam = (models or MODELS)["families"][family]
+    shape = fam.get("budget") or {}
+    block = design["build_spec"]["content"]
+    units = block["units"]
+    block["quality_tier"] = "release"
+    kinds = list(shape.get("element_kinds") or ["element"])
+    block["elements"] = [{"id": f"e-{n:02d}", "kind": kinds[n % len(kinds)],
+                          "description": f"Element {n} changes what the player does"}
+                         for n in range(1, n_elements + 1)]
+    block["secondary_goals"] = [{"id": "stars", "kind": "stars",
+                                 "description": "Up to three stars for a clean clear"}]
+    grouped = bool(shape.get("group_kind"))
+    if grouped:
+        block["groups"] = [{"id": f"g-{n}", "name": f"Group {n}"} for n in range(1, groups + 1)]
+    post = [u for u in units if u["tier"] != "mvp"]
+    # Introduction points spread over the post-mvp units, the last in the final sixth.
+    span = len(post) - 1
+    at = {post[min(span, int(round(k * span * 0.95 / max(1, n_elements - 1))))]["id"]:
+          f"e-{k + 1:02d}" for k in range(n_elements)}
+    taken, available = set(), []
+    for position, unit in enumerate(units):
+        unit["structure"] = STRUCTURES[position % len(STRUCTURES)]
+        unit["objective_kind"] = OBJECTIVE_KINDS[position % len(OBJECTIVE_KINDS)]
+        if grouped:
+            unit["group"] = f"g-{position * groups // len(units) + 1}"
+            closes = position == len(units) - 1 or \
+                (position + 1) * groups // len(units) != position * groups // len(units)
+            if closes and unit["tier"] != "mvp":
+                unit["purpose"] = "climax"
+        if unit["tier"] == "mvp":
+            continue
+        new = at.get(unit["id"])
+        if new:
+            available.append(new)
+            unit["introduces"] = [new]
+        pick = None
+        for size in (2, 3):
+            for combo in __import__("itertools").combinations(sorted(available), size):
+                if (new is None or new in combo) and frozenset(combo) not in taken:
+                    pick = combo
+                    break
+            if pick:
+                break
+        if pick is None:          # before the second element: the newest one alone
+            pick = (available[-1],) if available else ()
+        taken.add(frozenset(pick))
+        unit["elements"] = list(pick)
+    return design
+
+
+def near_identical(design):
+    """Every unit the same elements, structure and objective kind: numbers only."""
+    for unit in units(design):
+        unit["mechanics"] = [units(design)[0]["mechanics"][0]]
+        unit["elements"] = ["e-01"]
+        unit["structure"] = "static-field"
+        unit["objective_kind"] = "clear-all"
+        unit["introduces"] = []
+    units(design)[0]["introduces"] = list(units(design)[0]["mechanics"]) + ["e-01"]
+    return design
+
+
+class TheQualityTier(ContentCase):
+    """WS-2 (docs/quality-gap-audit-2026-10.md section 4): the design states the tier and is
+    held to the strategy's budget and the quality benchmark's content bars at it."""
+
+    def strategy(self, via="concept", family=None):
+        return release_strategy(family or self.family)
+
+    def tier_problems(self, design, strategy=None):
+        problems, _results = self.check(design, strategy)
+        return [p for p in problems if p.startswith("[content.tier_")
+                or p.startswith("[content.unit_count_total]")]
+
+    # The audit's real cases.
+
+    def test_a_32_unit_design_in_4_groups_with_12_elements_holds_at_release(self):
+        self.holds(release_design())
+
+    def test_a_12_unit_one_element_arcade_design_fails_at_release(self):
+        """The rejected unattended 2D build's shape: 12 units meet min_total 12, but they all
+        use one element, one structure, one group."""
+        design = authored_design("arcade", n_total=12)
+        for unit in units(design):
+            unit["mechanics"] = ["m-01"]
+            unit["introduces"] = []
+        units(design)[0]["introduces"] = ["m-01"]
+        problems = self.tier_problems(design)
+        named = {p.split("]")[0] + "]" for p in problems}
+        for rule_id in ("content.tier_elements", "content.tier_structure",
+                        "content.tier_groups", "content.tier_introductions",
+                        "content.tier_combinations"):
+            self.assertIn(f"[{rule_id}]", named, problems)
+        self.assertNotIn("[content.unit_count_total]", named)
+        found = "\n".join(problems)
+        self.assertIn("use 1 distinct element(s) (m-01)", found)
+        self.assertIn("7 short", found)
+        self.assertIn("obstacle kind, target kind, power-up", found)
+        self.assertIn("0 world(s)", found)
+        self.assertIn("name no group", found)
+
+    def test_32_near_identical_units_fail_at_release(self):
+        problems = self.tier_problems(near_identical(release_design()))
+        named = {p.split("]")[0] + "]" for p in problems}
+        for rule_id in ("content.tier_elements", "content.tier_introductions",
+                        "content.tier_combinations", "content.tier_structure",
+                        "content.tier_objectives", "content.tier_difficulty"):
+            self.assertIn(f"[{rule_id}]", named, problems)
+        found = "\n".join(problems)
+        self.assertIn("ends a run of 3 units that change only their numbers", found)
+        self.assertIn("32 units use exactly", found)
+        self.assertNotIn("[content.unit_count_total]", named)
+
+    # Each bar, one at a time.
+
+    def test_the_budget_outranks_a_lower_benchmark_bar(self):
+        problems = self.tier_problems(release_design(),
+                                      release_strategy(units=40, designed_play_s=99999))
+        found = "\n".join(problems)
+        self.assertIn("the strategy's budget.units 40", found)
+        self.assertIn("8 short", found)
+        self.assertIn("budget.designed_play_s 99999", found)
+
+    def test_fewer_groups_than_the_tier(self):
+        self.breaches(release_design(groups=2), "content.tier_groups", "2 world(s)")
+
+    def test_a_group_with_no_milestone_names_the_family_s_milestone(self):
+        design = release_design()
+        for unit in units(design):
+            if unit["purpose"] == "climax" and unit["group"] == "g-2":
+                unit["purpose"] = "test"
+        milestone = MODELS["families"]["arcade"]["budget"]["milestone"]
+        self.breaches(design, "content.tier_groups", f"g-2 have no milestone")
+        self.breaches(design, "content.tier_groups", milestone)
+
+    def test_a_group_split_by_another(self):
+        design = release_design()
+        units(design)[12]["group"] = "g-1"
+        self.breaches(design, "content.tier_groups", "split by another world")
+
+    def test_a_group_that_introduces_nothing(self):
+        design = release_design()
+        for unit in units(design):
+            if unit["group"] == "g-3":
+                unit["introduces"] = []
+                unit["elements"] = ["e-01", "e-02"]
+        self.breaches(design, "content.tier_groups", "g-3 introduce no element")
+
+    def test_too_few_structure_kinds(self):
+        design = release_design()
+        for unit in units(design):
+            unit["structure"] = STRUCTURES[unit["index"] % 2]
+        self.breaches(design, "content.tier_structure", "built 2 way(s)")
+
+    def test_a_unit_without_a_structure(self):
+        design = release_design()
+        del units(design)[5]["structure"]
+        self.breaches(design, "content.tier_structure", "u-06 state no structure")
+
+    def test_one_objective_kind_on_most_units(self):
+        design = release_design()
+        for unit in units(design):
+            unit["objective_kind"] = "clear-all" if unit["index"] % 4 else "survive"
+        self.breaches(design, "content.tier_objectives", "('clear-all')")
+
+    def test_a_secondary_goal_counts_as_an_objective_kind(self):
+        design = release_design()
+        for unit in units(design):
+            unit["objective_kind"] = "clear-all"
+        problems, results = self.check(design)
+        kinds = next(r for r in results if r["criterion_id"] == "content.tier_objectives")
+        self.assertEqual(kinds["measured"], 2)     # clear-all + stars
+        design["build_spec"]["content"]["secondary_goals"] = []
+        self.breaches(design, "content.tier_objectives", "1 kind(s) of objective")
+
+    def test_the_last_element_arrives_too_early(self):
+        design = release_design(n_elements=8)
+        late = [u for u in units(design) if u["index"] > 18]
+        for unit in late:
+            unit["introduces"] = []
+            unit["elements"] = ["e-01", "e-02"] if unit["index"] % 2 else ["e-02", "e-03"]
+        self.breaches(design, "content.tier_introductions", "hold an element back")
+
+    def test_an_element_used_once(self):
+        design = release_design()
+        design["build_spec"]["content"]["elements"].append(
+            {"id": "e-99", "kind": "power-up", "description": "A one-off power-up"})
+        units(design)[-1]["elements"].append("e-99")
+        self.breaches(design, "content.tier_elements", "e-99 appear in fewer than 2 units")
+
+    def test_an_element_that_is_not_declared(self):
+        design = release_design()
+        units(design)[10]["elements"].append("e-nope")
+        self.breaches(design, "content.mechanics_resolve", "'e-nope', not a "
+                                                            "build_spec.content.elements id")
+
+    def test_difficulty_that_escalates_on_one_axis(self):
+        design = release_design()
+        first = units(design)[0]["difficulty"]
+        for unit in units(design)[1:]:
+            for axis in list(unit["difficulty"])[1:]:
+                unit["difficulty"][axis] = first[axis]
+        problems, _ = self.check(design)
+        self.assertTrue(any(p.startswith("[content.tier_difficulty] difficulty escalates on 1")
+                            for p in problems), problems)
+
+    # Tier resolution.
+
+    def test_without_a_tier_no_tier_bar_applies(self):
+        del_tier = release_design()
+        del del_tier["build_spec"]["content"]["quality_tier"]
+        problems, results = self.check(near_identical(del_tier), strategy_for("arcade"))
+        self.assertFalse([p for p in problems if p.startswith("[content.tier_")], problems)
+        for result in results:
+            if result["criterion_id"] in content.TIER_RULES:
+                self.assertFalse(result["breached"], result)
+
+    def test_tier_mvp_has_no_benchmark_bars(self):
+        design = near_identical(release_design())
+        design["build_spec"]["content"]["quality_tier"] = "mvp"
+        strategy = release_strategy()
+        strategy["concept"]["content_model"]["quality_tier"] = "mvp"
+        strategy["concept"]["content_model"]["budget"] = {"units": 3}
+        problems, results = self.check(design, strategy)
+        self.assertFalse([p for p in problems if p.startswith("[content.tier_")], problems)
+        notes = {r["criterion_id"]: r["note"] for r in results}
+        self.assertIn("tier mvp states no element bar", notes["content.tier_elements"])
+
+    def test_the_tier_comes_from_the_strategy_when_the_design_states_none(self):
+        design = near_identical(release_design())
+        del design["build_spec"]["content"]["quality_tier"]
+        self.breaches(design, "content.tier_elements")
+        self.assertEqual(content.quality_tier(design, release_strategy())[0], "release")
+
+    def test_a_design_below_the_strategy_s_tier(self):
+        design = release_design()
+        design["build_spec"]["content"]["quality_tier"] = "mvp"
+        self.breaches(design, "content.tier_stated", "the strategy commits to 'release'")
+
+    # Genre-appropriate, from the family's data.
+
+    def test_every_family_has_a_release_design_that_holds(self):
+        for family in sorted(MODELS["families"]):
+            with self.subTest(family=family):
+                self.holds(release_design(family), release_strategy(family))
+
+    def test_a_family_without_groups_is_not_asked_for_them(self):
+        family = next(f for f, v in sorted(MODELS["families"].items())
+                      if not (v.get("budget") or {}).get("group_kind"))
+        design = release_design(family)
+        self.assertNotIn("groups", design["build_spec"]["content"])
+        problems, results = self.check(design, release_strategy(family))
+        self.assertEqual(problems, [])
+        note = next(r for r in results if r["criterion_id"] == "content.tier_groups")["note"]
+        self.assertIn("no group above the unit", note)
+
+    def test_a_family_without_a_milestone_is_not_asked_for_one(self):
+        models = copy.deepcopy(MODELS)
+        models["families"]["arcade"]["budget"]["milestone"] = None
+        design = release_design(models=models)
+        for unit in units(design):
+            if unit["purpose"] == "climax" and unit["tier"] != "mvp":
+                unit["purpose"] = "test"
+        problems, _ = self.check(design, models=models)
+        self.assertFalse([p for p in problems if "milestone" in p], problems)
+
+    def test_a_generated_design_is_held_on_what_it_can_state(self):
+        """Parametric: the listed units are representative, so elements, structure kinds,
+        objective kinds, groups and designed play are held; introductions, combinations,
+        layouts and the difficulty sequence are read on the build."""
+        design = near_identical(release_design())
+        design["build_spec"]["content"]["generation"] = {"mode": "parametric",
+                                                         "expected_units": 32}
+        design["build_spec"]["content"]["secondary_goals"] = []
+        problems, results = self.check(design)
+        named = {p.split("]")[0] + "]" for p in problems}
+        for rule_id in ("content.tier_elements", "content.tier_structure",
+                        "content.tier_objectives"):
+            self.assertIn(f"[{rule_id}]", named, problems)
+        for rule_id in ("content.tier_introductions", "content.tier_combinations",
+                        "content.tier_difficulty"):
+            self.assertNotIn(f"[{rule_id}]", named, problems)
+            note = next(r for r in results if r["criterion_id"] == rule_id)["note"]
+            self.assertIn("parametric content", note)
+
+    def test_the_bars_are_data(self):
+        """A tighter benchmark fails the same design; nothing in the code holds a number."""
+        benchmark = copy.deepcopy(BENCHMARK)
+        benchmark["content"]["elements"]["min_distinct"]["release"] = 40
+        problems, _ = content.check(release_design(), release_strategy(), MODELS, VOCABULARY,
+                                    benchmark)
+        self.assertTrue(any(p.startswith("[content.tier_elements]") and "40" in p
+                            for p in problems), problems)
+
+    def test_a_release_design_validates_against_the_schema(self):
+        import json
+        with open(os.path.join(ROOT, "core", "artifacts", "game-design.schema.json"),
+                  encoding="utf-8") as handle:
+            schema = json.load(handle)
+        node = schema["properties"]["build_spec"]["properties"]["content"]
+        validator = jsonschema_lite.Validator(dict(node, **{"$defs": schema["$defs"]}))
+        errors = list(validator.iter_errors(release_design()["build_spec"]["content"]))
+        self.assertEqual(errors, [])
+
+
+class TheTierInTheStep(unittest.TestCase):
+    """The design step fails a design short of its tier with the finding, and passes the same
+    author at tier mvp: the built-in authors write MVP-sized content (the golden runs and the
+    research-to-design run declare factory.strategy.quality_tier: mvp)."""
+
+    def run_at(self, tier):
+        import test_design_module as design_tests
+        from wgflib.workflow.model import StepOutcome
+        strategy = design_tests.coherent("drop-merge")
+        concept = dict(strategy["concept"])
+        concept["content_model"] = {"family": "arcade", "source": "default",
+                                    "quality_tier": tier}
+        strategy = design_tests.variant(**{k: v for k, v in strategy.items()
+                                          if k not in ("concept", "provenance")},
+                                       concept=concept)
+        return design_tests.run_step(strategy, params={"archetype": "drop-merge"}), StepOutcome
+
+    def test_the_built_in_author_fails_at_release_with_what_is_short(self):
+        result, outcome = self.run_at("release")
+        self.assertEqual(result.outcome, outcome.FAILED, result.error)
+        self.assertIn("[content.tier_elements]", result.error)
+        self.assertIn("short", result.error)
+        self.assertEqual(result.artifacts, [])
+
+    def test_the_built_in_author_holds_at_mvp(self):
+        result, outcome = self.run_at("mvp")
+        self.assertEqual(result.outcome, outcome.SUCCESS, result.error)
+        results = {r["criterion_id"]: r for r in
+                   result.artifacts[0].content["consistency"]["rule_results"]}
+        self.assertFalse(results["content.tier_elements"]["breached"])
 
 
 if __name__ == "__main__":

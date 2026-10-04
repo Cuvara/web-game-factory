@@ -9,6 +9,27 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**The console executor runs the profile's flow, and a person logs in live** (portal
+publishing workstream 3, [docs/publish-module.md](docs/publish-module.md)). The executor is
+a generic intent runner over the publication profile's `submission.flow`: session,
+find_game, status_gate, create_game, upload_build, fill_metadata, upload_media,
+human_fields, save_draft, request_review, verify. It uses profile locator ladders only,
+checks a post-condition after every action, and stops with a `drift` result when a ladder
+or a post-condition fails. A person logs in, live, in a headed, ephemeral browser window;
+the visit waits `WAITING_FOR_HUMAN_LOGIN`, reports it as step progress and continues in
+the same window. A login timeout or a closed window is `AUTH_REQUIRED`, never a failure. A
+live visit ends `UPLOAD_COMPLETE`. The review request runs only in a later visit whose job
+carries `submit_confirmed`. Every action and waiting period is a line of `actions.jsonl`.
+The captured session is gone: `wgf-publish.py capture`, the storage-state copy and
+`WGF_PUBLISH_<PLATFORM>_STORAGE_STATE`. The adapter selector maps and
+`ConsoleAdapter.listing_fields` of the entry below are replaced by the profile's flow.
+**Publication profile 2.1.0** (additive): credential kind `human-login` (`storage-state` is
+deprecated and refused by `check-integrity.py`), `session.authenticated_url`,
+`identity.page_id` and `identity.issued_on_create`, `status.error`, and an upload intent's
+`multiple`. To bring a profile forward: set `credential: {kind: human-login}`, drop `env`
+and `capture`, and bump its version. Delete any `WGF_PUBLISH_*_STORAGE_STATE` variables and
+the session files they named.
+
 **The console fills every listing field, per locale** (portal publishing workstream 1,
 [docs/portal-publishing-architecture.md](docs/portal-publishing-architecture.md) Part 4).
 The console adapter never filled a description: it asked the store metadata for a

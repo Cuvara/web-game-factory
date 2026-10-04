@@ -2,11 +2,7 @@
 """Publication outside a workflow run: what a person does around the publish group.
 
     python3 scripts/wgf-publish.py profiles                      every publication profile:
-                                                                 method, terms, credential name
-    python3 scripts/wgf-publish.py capture <platform> --out PATH [--checkout DIR]
-                                                                 log into the portal once, in a
-                                                                 headed browser; the Playwright
-                                                                 storage state is saved to PATH
+                                                                 method, terms, credential kind
     python3 scripts/wgf-publish.py readiness --manifest FILE [--publication FILE]
                                                                  the publication guards on a
                                                                  release-manifest (and a record)
@@ -26,14 +22,9 @@
     python3 scripts/wgf-publish.py observe-summary DIR          an observation's summary and its
                                                                  field inventory as JSON
 
-`capture` is how a console platform's credential comes to exist: the publication profile
-names the variable (`submission.credential.env`) that must hold PATH, and the installation
-lists that name in `factory.publish.env_passthrough`. The browser is the game checkout's
-own Playwright (`--checkout`, default the current directory), run as `playwright open
---save-storage PATH <console url>`: a person logs in, solves whatever the portal asks, and
-closes the window; nothing here types a password or answers a challenge. The file holds a
-live session: keep it where the installation keeps secrets, never in a repository, and
-capture it again when the portal expires it (the publish step then says AUTH_REQUIRED).
+No session is ever captured or saved (profile 2.1.0, credential `human-login`): the publish
+step's console executor opens a headed browser and a person logs in there, live, each visit;
+the session ends with the window. There is no `capture` command.
 
 Standard library only; run from the repository root. See docs/publish-module.md.
 """
@@ -46,7 +37,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from wgflib import paths, procs, publication, redact  # noqa: E402
+from wgflib import paths, publication  # noqa: E402
 from wgflib.workspace import WorkspaceError, load_platform_profile  # noqa: E402
 
 
@@ -60,71 +51,16 @@ def cmd_profiles(args):
             continue
         submission = profile.get("submission") or {}
         rows.append((pid, submission.get("method", "-"), submission.get("automation_terms", "-"),
-                     (submission.get("credential") or {}).get("env") or "-",
+                     (submission.get("credential") or {}).get("kind") or "-",
                      f"{profile.get('version')} ({profile.get('status')})"))
     if args.json:
-        print(json.dumps([dict(zip(("platform", "method", "automation_terms", "credential_env",
+        print(json.dumps([dict(zip(("platform", "method", "automation_terms", "credential",
                                     "version"), row)) for row in rows], indent=2))
         return 0
     width = max(len(r[0]) for r in rows) if rows else 8
     print(f"{'platform':<{width}}  method   terms       credential                           version")
     for row in rows:
         print(f"{row[0]:<{width}}  {row[1]:<8} {row[2]:<11} {row[3]:<36} {row[4]}")
-    return 0
-
-
-def cmd_capture(args):
-    try:
-        profile = publication.load_publication_profile(args.platform, args.extra or ())
-    except ValueError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-    if profile is None:
-        print(f"error: no publication profile for {args.platform!r} "
-              f"(core/reference/publication/)", file=sys.stderr)
-        return 2
-    submission = profile.get("submission") or {}
-    console = submission.get("console") or {}
-    url = args.url or console.get("url")
-    if submission.get("method") != "console" or not url:
-        print(f"error: {args.platform} is published by {submission.get('method')}, not through "
-              f"a console; nothing to capture", file=sys.stderr)
-        return 2
-    credential = submission.get("credential") or {}
-    out = os.path.abspath(os.path.expanduser(args.out))
-    if os.path.exists(out) and not args.force:
-        print(f"error: {out} exists; --force to replace it", file=sys.stderr)
-        return 2
-    checkout = os.path.abspath(args.checkout or os.getcwd())
-    if not os.path.isfile(os.path.join(checkout, "package.json")):
-        print(f"error: {checkout} is not a game checkout (no package.json); give --checkout",
-              file=sys.stderr)
-        return 2
-    print(f"Opening {url} in a headed browser. Log in, finish every challenge the portal asks, "
-          f"then close the browser window. The session is saved to {out}; set "
-          f"{credential.get('env') or '<the profile names no variable>'} to that path and list "
-          f"it in factory.publish.env_passthrough.")
-    done = procs.run(["pnpm", "exec", "playwright", "open", f"--save-storage={out}", url],
-                     cwd=checkout, timeout=args.timeout, stderr_to_stdout=True)
-    if not done.ok:
-        print(f"error: playwright open did not succeed ({done.status}): "
-              f"{redact.scrub_text(done.tail(5))}", file=sys.stderr)
-        return 1
-    if not os.path.isfile(out):
-        print(f"error: no storage state was written to {out}", file=sys.stderr)
-        return 1
-    try:
-        with open(out, encoding="utf-8") as handle:
-            state = json.load(handle)
-        cookies = len(state.get("cookies") or [])
-    except ValueError:
-        print(f"error: {out} is not JSON", file=sys.stderr)
-        return 1
-    try:
-        os.chmod(out, 0o600)
-    except OSError:
-        pass
-    print(f"saved {out}: {cookies} cookie(s). Never commit it; never print it.")
     return 0
 
 
@@ -258,14 +194,6 @@ def main(argv=None):
     profiles = sub.add_parser("profiles")
     profiles.add_argument("--json", action="store_true")
     profiles.set_defaults(run=cmd_profiles)
-    capture = sub.add_parser("capture")
-    capture.add_argument("platform")
-    capture.add_argument("--out", required=True)
-    capture.add_argument("--checkout")
-    capture.add_argument("--url")
-    capture.add_argument("--force", action="store_true")
-    capture.add_argument("--timeout", type=int, default=1800)
-    capture.set_defaults(run=cmd_capture)
     readiness = sub.add_parser("readiness")
     readiness.add_argument("--manifest", required=True)
     readiness.add_argument("--publication")

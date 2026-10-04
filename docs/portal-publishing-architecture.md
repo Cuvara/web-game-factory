@@ -6,7 +6,13 @@ Landed: workstream 2 (publication profile 2.0.0, `platform-publication` 1.2.0, t
 rules in `check-integrity.py`; `docs/publish-module.md`, "Publication profiles"). Beyond
 the sketch in 2.4: the budget is `adaptive_bounds` beside the `adaptive` switch, the deny
 words and dismissable overlays are `submission.deny` and `submission.dismissable`, and an
-intent's adaptive vocabulary is its `names`.
+intent's adaptive vocabulary is its `names`. Landed: workstream 3, the profile-driven
+intent runner (`docs/publish-module.md`, "The console executor"), with one decision of
+2026-10-04 that supersedes the captured session everywhere below: a person logs in, live, in
+the headed browser window the executor opens (credential `human-login`, profile 2.1.0); no
+storage state is captured, loaded or saved, `wgf-publish.py capture` is gone, and a live
+visit stops `UPLOAD_COMPLETE` - the review request runs only in a later visit a person
+confirmed. Where 2.11 and 2.15 below say "capture", read "log in live in the window".
 
 ## The decision this document implements
 
@@ -570,7 +576,9 @@ contract 1 the Factory keeps packaging the required platform only (Part 1, gap 9
 
 ### 2.11 Credentials and authentication
 
-Unchanged, and binding on the adaptive mode:
+Superseded on 2026-10-04 by the live login handoff (`docs/publish-module.md`,
+"Authentication and secrets"): no session is captured; a person logs in in the window the
+executor opens, and the executor waits (WAITING_FOR_HUMAN_LOGIN). The design as written:
 
 - A person captures the session (`python scripts/wgf-publish.py capture <platform> --out
   <path> --checkout <game>`), kept where the installation keeps secrets, named by

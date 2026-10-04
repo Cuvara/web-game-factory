@@ -6,15 +6,20 @@ Two step types for two lifecycle states:
                                              the pinned profile's assertions as verify
                                              recorded them, the publication profile; writes
                                              a platform-publication with a `readiness`
-    publish             release:submitting   behind G6: the platform adapter uploads,
-                                             configures, submits ONCE and reads the portal's
-                                             state back; writes the platform-publication
-                                             advanced only from what it observed
+    publish             release:submitting   behind G6: the platform adapter finds or
+                                             creates the game, uploads and saves the draft
+                                             (UPLOAD_COMPLETE), and - only in a later visit a
+                                             person confirmed - requests review ONCE and reads
+                                             the portal's state back; writes the
+                                             platform-publication advanced only from what it
+                                             observed
 
 Platform-specific behaviour lives in `adapters/` and in core/reference/publication/<id>.yaml
 (data); neither step names a portal. Where a portal publishes no API - none of the shipped
-profiles documents one - the console adapter drives its developer console through direct
-Playwright under wgflib.procs, deterministically: fixed selectors, explicit waits, one submit.
+profiles documents one - the console adapter runs the publication profile's flow through
+direct Playwright under wgflib.procs, deterministically: profile locator ladders, explicit
+waits, post-conditions after every action, one review request. A person logs in, live, in
+the headed window it opens; no session is ever captured or kept.
 Playwright MCP is not used here and never submits anything; it stays the QA and diagnosis
 tool (workspace/config/mcp-playwright-localhost.json).
 

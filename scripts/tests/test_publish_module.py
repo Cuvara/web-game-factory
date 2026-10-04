@@ -32,7 +32,7 @@ from test_release_module import (CONTRACTS, NOW, Context, GameRepository, Inputs
 from testenv import enabled  # noqa: E402
 from wgf_publish import PlatformValidateStep, PublishStep, register  # noqa: E402
 from wgf_publish import outcomes  # noqa: E402
-from wgf_publish.adapters import ManualAdapter, resolve  # noqa: E402
+from wgf_publish.adapters import ConsoleAdapter, ManualAdapter, resolve  # noqa: E402
 from wgf_publish.adapters.fixture import FixturePortalAdapter  # noqa: E402
 from wgf_publish.session import StorageState, read_credential  # noqa: E402
 from wgflib import publication as pub  # noqa: E402
@@ -73,51 +73,62 @@ STRICT_PLATFORM = {
     "metadata_requirements": {"descriptions_locales": ["ru"]},
     "requirements": {"locales_required": ["ru"]},
 }
-# The results a Playwright console run writes, by scenario (browser/console.spec.ts).
+# The results the console intent runner writes (browser/console.spec.ts), by scenario.
+def _result(**extra):
+    base = {"outcome": "completed", "stop": None, "phase_reached": "verify", "phases": {},
+            "found_game": None, "created": True, "created_ids": {}, "game_id": "g0001",
+            "uploaded": True, "saved": True, "request_attempted": False, "requested": False,
+            "already_requested": False, "status_before": None, "status_text": "Draft",
+            "human_fields": [], "absent": [], "login_handoffs": [], "refused": [], "errors": [],
+            "actions": 0}
+    base.update(extra)
+    return base
+
+
+HANDOFF = {"at": NOW, "url": "http://127.0.0.1:1/login", "reason": "the console shows its login form",
+           "kind": "login", "phase": "session",
+           "action": "log in in the opened browser window; handle CAPTCHA/2FA yourself",
+           "resume": "the console's authenticated page is detected", "resolved_at": None,
+           "outcome": "timeout"}
 SCENARIOS = {
-    "fresh": {"authenticate": {"outcome": "ok"},
-              "find_existing": {"outcome": "ok", "found": False, "draft_id": None},
-              "upload": {"outcome": "ok", "draft_id": "d0001"},
-              "configure": {"outcome": "ok"},
-              "submit": {"outcome": "ok"},
-              "verify": {"outcome": "ok", "status_text": "Waiting for moderation",
-                         "draft_id": "d0001"}},
-    "existing": {"authenticate": {"outcome": "ok"},
-                 "find_existing": {"outcome": "ok", "found": True, "draft_id": "d0007"},
-                 "upload": {"outcome": "ok", "detail": "skipped", "draft_id": "d0007"},
-                 "configure": {"outcome": "ok"}, "submit": {"outcome": "ok"},
-                 "verify": {"outcome": "ok", "status_text": "Waiting for moderation",
-                            "draft_id": "d0007"}},
-    "login": {"authenticate": {"outcome": "login_required", "detail": "login form shown"}},
-    "captcha": {"authenticate": {"outcome": "captcha", "detail": "a CAPTCHA is shown"}},
-    "two-factor": {"authenticate": {"outcome": "two_factor", "detail": "second factor"}},
-    "upload-error": {"authenticate": {"outcome": "ok"},
-                     "find_existing": {"outcome": "ok", "found": False},
-                     "upload": {"outcome": "error", "detail": "storage unavailable"}},
-    "ambiguous": {"authenticate": {"outcome": "ok"},
-                  "find_existing": {"outcome": "ok", "found": False},
-                  "upload": {"outcome": "ok", "draft_id": "d0002"},
-                  "configure": {"outcome": "ok"}, "submit": {"outcome": "ok"},
-                  "verify": {"outcome": "ok", "status_text": "Processing", "draft_id": "d0002"}},
-    "rejected": {"authenticate": {"outcome": "ok"},
-                 "find_existing": {"outcome": "ok", "found": True, "draft_id": "d0003"},
-                 "upload": {"outcome": "ok"}, "configure": {"outcome": "ok"},
-                 "submit": {"outcome": "ok"},
-                 "verify": {"outcome": "ok", "status_text": "Rejected", "draft_id": "d0003"}},
+    "fresh": _result(),
+    "existing": _result(created=False, game_id=None, found_game={
+        "id": "g0007", "title": "Fixture Game", "status_text": "Draft", "source": "registry"}),
+    "login": _result(outcome="login_timeout", uploaded=False, saved=False, phase_reached=None,
+                     stop={"phase": "session", "code": "login", "reason": "no login"},
+                     login_handoffs=[HANDOFF]),
+    "captcha": _result(outcome="login_timeout", uploaded=False, saved=False, phase_reached="session",
+                       stop={"phase": "upload_build", "code": "captcha", "reason": "no answer"},
+                       login_handoffs=[dict(HANDOFF, kind="captcha", phase="upload_build")]),
+    "two-factor": _result(outcome="login_abandoned", uploaded=False, saved=False,
+                          stop={"phase": "session", "code": "two-factor", "reason": "closed"},
+                          login_handoffs=[dict(HANDOFF, kind="two-factor", outcome="window-closed")]),
+    "upload-error": _result(outcome="stopped", uploaded=False, saved=False,
+                            stop={"phase": "upload_build", "code": "portal-error",
+                                  "reason": "upload.start: the console reports: storage unavailable"}),
+    "unsaved": _result(saved=False),
+    "duplicate": _result(outcome="stopped", uploaded=False, saved=False, created=False, game_id=None,
+                         found_game={"id": "g0900", "title": "Fixture Game", "status_text": "Draft",
+                                     "source": "title"},
+                         stop={"phase": "find_game", "code": "duplicate-candidate",
+                               "reason": "an unrecorded game with this title"}),
+    "ids": _result(outcome="stopped", uploaded=False, saved=False, game_id="g0003",
+                   created_ids={"external_game_id": "g0003", "app_id": "app-4004"},
+                   stop={"phase": "create_game", "code": "ids-issued", "reason": "ids issued"}),
 }
 
 
 class FakeConsole:
     """Stands in for `pnpm exec playwright test`: records the flow, writes the scenario's
-    result. `crash` writes nothing and exits 1; `no_browser` prints Playwright's missing
-    executable message."""
+    runner result. `crash` writes nothing and exits 1; `no_browser` prints Playwright's
+    missing executable message."""
 
     def __init__(self, scenario="fresh", crash=False, no_browser=False):
         self.scenario, self.crash, self.no_browser = scenario, crash, no_browser
         self.flows = []
 
     def __call__(self, argv, cwd=None, timeout=None, env=None, log_path=None,
-                 stderr_to_stdout=False, **hooks):
+                 stderr_to_stdout=False, on_output=None, **hooks):
         with open(env["WGF_PUBLISH_FLOW"], encoding="utf-8") as handle:
             flow = json.load(handle)
         self.flows.append(flow)
@@ -126,22 +137,9 @@ class FakeConsole:
                                  stdout="browserType.launch: Executable doesn't exist")
         if self.crash:
             return ProcessResult(argv, returncode=1, stdout="playwright crashed")
-        phases = {}
-        for name in flow["phases"]:
-            result = SCENARIOS[self.scenario].get(name)
-            if result is None:
-                break
-            result = dict(result)
-            if name == "submit" and not flow["submit"]:
-                result = {"outcome": "skipped", "detail": "dry run"}
-            if name == "verify" and not flow["submit"] and self.scenario in ("fresh", "existing"):
-                result["status_text"] = "Created"
-            phases[name] = result
-            if result["outcome"] not in ("ok", "skipped"):
-                break
         os.makedirs(os.path.dirname(env["WGF_PUBLISH_RESULT"]), exist_ok=True)
         with open(env["WGF_PUBLISH_RESULT"], "w", encoding="utf-8") as handle:
-            json.dump({"phases": phases, "refused": [], "errors": []}, handle)
+            json.dump(SCENARIOS[self.scenario], handle)
         return ProcessResult(argv, returncode=0, stdout="1 passed")
 
 
@@ -168,9 +166,15 @@ class PublishCase(unittest.TestCase):
     # -- fixtures ---------------------------------------------------------------------------
 
     def write_metadata(self, metadata=None):
+        metadata = METADATA if metadata is None else metadata
         with open(os.path.join(self.release_dir, "store-metadata.json"), "w",
                   encoding="utf-8") as handle:
-            json.dump(METADATA if metadata is None else metadata, handle)
+            json.dump(metadata, handle)
+        for entry in metadata.values():  # the media files the console flow uploads
+            for name in [entry.get("icon")] + list(entry.get("screenshots") or []):
+                if name:
+                    with open(os.path.join(self.release_dir, name), "wb") as handle:
+                        handle.write(b"\x89PNG fixture")
 
     def write_listing(self, text=None, platform_id="generic-web"):
         """The store listing the release shipped: its rendition for `platform_id`."""
@@ -282,11 +286,11 @@ class PublishCase(unittest.TestCase):
         return result
 
     def ready(self, **environ):
-        """A validated, READY platform-publication: the fixture console, a captured session."""
+        """A validated, READY platform-publication: the fixture console. Nothing is needed in
+        advance: a person logs in live in the window the submit step opens."""
         self.write_metadata()
-        env = {"WGF_PUBLISH_FIXTURE_STORAGE_STATE": json.dumps(STORAGE_STATE)}
-        env.update(environ)
-        config = self.settings(env_passthrough=["WGF_PUBLISH_FIXTURE_STORAGE_STATE"])
+        env = dict(environ)
+        config = self.settings()
         result = self.validate(config=config, environ=env)
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
         record = result.artifacts[0].content
@@ -398,8 +402,8 @@ class Guards(unittest.TestCase):
     def test_human_reason_follows_the_publication_profile(self):
         console = pub.load_publication_profile("crazygames")
         self.assertEqual(pub.human_reason(console, {}, True)[0], "terms-unconfirmed")
-        self.assertEqual(pub.human_reason(console, {"terms_confirmed": True}, False)[0],
-                         "credential-missing")
+        # A person logs in live: no credential to be missing.
+        self.assertIsNone(pub.human_reason(console, {"terms_confirmed": True}, False))
         self.assertIsNone(pub.human_reason(console, {"terms_confirmed": True}, True))
         self.assertEqual(pub.human_reason(pub.load_publication_profile("gamevui"), {}, None)[0],
                          "manual-submission")
@@ -463,12 +467,12 @@ class Adapters(unittest.TestCase):
         crazy = resolve("crazygames", pub.load_publication_profile("crazygames"))
         self.assertEqual(crazy.__class__.__name__, "CrazyGamesAdapter")
         y8 = resolve("y8", pub.load_publication_profile("y8"))
-        self.assertIsInstance(y8, ManualAdapter)  # console method, no flow of its own
+        self.assertIs(type(y8), ConsoleAdapter)  # no adapter of its own: the profile's flow
         self.assertEqual(y8.method, "console")
+        self.assertIsInstance(resolve("y8", {"submission": {"method": "console"}}), ManualAdapter)
         fixture = resolve("generic-web", {"submission": {"method": "console"}},
                           {"adapter": "fixture-portal", "console_url": "http://127.0.0.1:1/"})
         self.assertIsInstance(fixture, FixturePortalAdapter)
-        self.assertEqual(fixture.selectors()["drafts_url"], "http://127.0.0.1:1/console")
         self.assertEqual(fixture.console_url(None), "http://127.0.0.1:1/console")
 
     def test_a_manual_adapter_contacts_nothing_and_says_what_a_person_does(self):
@@ -482,27 +486,22 @@ class Adapters(unittest.TestCase):
         self.assertEqual(result.human_reason, "manual-submission")
         self.assertIn("email the package gamevui.zip", result.message)
 
-    def test_a_storage_state_is_a_private_copy_registered_and_removed(self):
-        scratch = tempfile.mkdtemp(prefix="wgf-ss-")
-        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
-        profile = {"submission": {"credential": {"kind": "storage-state",
-                                                 "env": "WGF_PUBLISH_FIXTURE_STORAGE_STATE"}}}
-        env = {"WGF_PUBLISH_FIXTURE_STORAGE_STATE": json.dumps(STORAGE_STATE)}
-        denied = read_credential(profile, {"env_passthrough": []}, env)
-        self.assertTrue(denied.present)
-        self.assertFalse(denied.allowed)
-        self.assertIsNone(denied.value)
-        credential = read_credential(
-            profile, {"env_passthrough": ["WGF_PUBLISH_FIXTURE_STORAGE_STATE"]}, env)
-        self.assertTrue(credential.usable)
-        with StorageState(credential, scratch) as state:
-            self.assertTrue(os.path.isfile(state.path))
-            with open(state.path, encoding="utf-8") as handle:
-                self.assertEqual(json.load(handle)["cookies"][0]["value"], COOKIE)
-            self.assertEqual(redact.scrub_text(f"session={COOKIE}"),
-                             f"session={redact.REPLACEMENT}")
-            path = state.path
-        self.assertFalse(os.path.exists(path))
+    def test_a_console_session_is_never_captured_loaded_or_kept(self):
+        human = read_credential(pub.load_publication_profile("crazygames"), {}, {})
+        self.assertEqual((human.kind, human.usable, human.value), ("human-login", True, None))
+        with StorageState(human, tempfile.gettempdir()) as state:
+            self.assertIsNone(state.path)
+        old = {"submission": {"credential": {"kind": "storage-state",
+                                             "env": "WGF_PUBLISH_FIXTURE_STORAGE_STATE"}}}
+        from wgf_publish.session import CredentialError
+        with self.assertRaises(CredentialError):
+            read_credential(old, {"env_passthrough": ["WGF_PUBLISH_FIXTURE_STORAGE_STATE"]},
+                            {"WGF_PUBLISH_FIXTURE_STORAGE_STATE": json.dumps(STORAGE_STATE)})
+        import wgf_publish
+        self.assertFalse(hasattr(wgf_publish, "capture"))
+        cli = os.path.join(SCRIPTS, "wgf-publish.py")
+        with open(cli, encoding="utf-8") as handle:
+            self.assertNotIn("save-storage", handle.read())
 
     def test_outcomes_map_to_step_results(self):
         self.assertEqual(outcomes.to_result(outcomes.VERIFIED, [], "m", platform_id="p").route,
@@ -563,15 +562,11 @@ class Validate(PublishCase):
         self.assertEqual({g["verdict"] for g in record["guards"]}, {"GREEN"})
         self.assertIn("nothing published", result.message)
 
-    def test_a_console_platform_without_its_session_is_human_required_with_it_ready(self):
-        self.write_metadata()
-        result = self.validate(config=self.settings())
-        record = result.artifacts[0].content
-        self.assertEqual(record["readiness"], "HUMAN_REQUIRED")
-        self.assertEqual(record["human_required"]["reason"], "credential-missing")
+    def test_a_console_platform_is_ready_with_nothing_captured_in_advance(self):
         record, _config, _env = self.ready()
+        self.assertEqual(record["readiness"], "READY")
         self.assertEqual(record["submission"]["method"], "console")
-        self.assertNotIn(COOKIE, json.dumps(record))
+        self.assertNotIn("human_required", record)
 
     def test_a_package_whose_bytes_changed_is_not_shaped_to_the_profile(self):
         self.write_metadata()
@@ -616,57 +611,69 @@ class Publish(PublishCase):
         result = self.go(g6=self.g6(gate="G5"))
         self.assertEqual(result.data["code"], "g6-record-missing")
 
-    def test_dry_run_is_the_default_and_never_clicks_submit(self):
+    def test_dry_run_is_the_default_and_never_requests_review(self):
         console = FakeConsole("fresh")
         result = self.go(console=console)
         self.assertEqual((result.outcome, result.route), (StepOutcome.SUCCESS, "dry-run"),
                          result.error or result.message)
-        self.assertFalse(console.flows[0]["submit"])
+        flow = console.flows[0]
+        self.assertEqual((flow["mode"], flow["submit_confirmed"]), ("dry-run", False))
         record = result.artifacts[0].content
         self.assertEqual(record["outcome"], "DRY_RUN")
         self.assertEqual(record["state"], "validated")  # not advanced: nothing observed submitted
         self.assertTrue(record["submission"]["dry_run"])
-        self.assertEqual(record["submission"]["portal_draft_id"], "d0001")
-        self.assertEqual(record["submission"]["idempotency_key"], console.flows[0]["key"])
+        self.assertEqual(record["submission"]["portal_draft_id"], "g0001")
+        self.assertIn(record["submission"]["idempotency_key"],
+                      [c["id"] for c in flow["identity"]["candidates"]])
         self.assertEqual(record["submission"]["authorized_by"]["release_manifest_hash"],
                          self.manifest["provenance"]["content_hash"])
         self.assertIn("nothing submitted", result.message)
-
-    def test_live_needs_the_configuration_and_the_environment(self):
-        config = dict(self.config)
-        config["publish"] = dict(config["publish"], mode="live")
-        console = FakeConsole("fresh")
-        result = self.go(console=console, config=config)
-        self.assertEqual(result.route, "dry-run")  # WGF_PUBLISH_LIVE is not 1
-        self.assertFalse(console.flows[0]["submit"])
-        console = FakeConsole("fresh")
-        result = self.go(console=console, config=config, environ=dict(self.env, WGF_PUBLISH_LIVE="1"))
-        self.assertEqual((result.outcome, result.route), (StepOutcome.SUCCESS, "submitted"),
-                         result.error or result.message)
-        self.assertTrue(console.flows[0]["submit"])
-        record = result.artifacts[0].content
-        self.assertEqual((record["outcome"], record["state"]), ("VERIFIED", "submitted"))
-        self.assertEqual(record["verified_state"]["observed"], "Waiting for moderation")
-        self.assertEqual(record["submission"]["portal_draft_id"], "d0001")
-        self.assertEqual(record["measurement_class"], "automation-console")
-        self.assertIn("submitted_at", record["submission"])
-        self.live_config, self.live_env = config, dict(self.env, WGF_PUBLISH_LIVE="1")
 
     def live(self):
         config = dict(self.config)
         config["publish"] = dict(config["publish"], mode="live")
         return config, dict(self.env, WGF_PUBLISH_LIVE="1")
 
-    def test_an_existing_draft_with_the_key_is_reused_never_uploaded_again(self):
+    def test_live_needs_the_configuration_and_the_environment_and_stops_after_the_upload(self):
         config, env = self.live()
-        console = FakeConsole("existing")
+        console = FakeConsole("fresh")
+        result = self.go(console=console, config=config)
+        self.assertEqual(result.route, "dry-run")  # WGF_PUBLISH_LIVE is not 1
+        self.assertEqual(console.flows[0]["mode"], "dry-run")
+        console = FakeConsole("fresh")
         result = self.go(console=console, config=config, environ=env)
-        self.assertEqual(result.route, "submitted", result.error or result.message)
-        self.assertEqual(result.artifacts[0].content["submission"]["portal_draft_id"], "d0007")
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN, result.error or result.message)
+        self.assertEqual(result.data["waiting_state"], "WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION")
+        self.assertEqual(result.data["choices"], ["submit", "hold", "abandon"])
+        self.assertEqual(console.flows[0]["mode"], "live")
+        self.assertFalse(console.flows[0]["submit_confirmed"])  # the request is never automatic
+        record = result.artifacts[0].content
+        self.assertEqual((record["outcome"], record["state"]), ("UPLOAD_COMPLETE", "validated"))
+        self.assertEqual(record["human_required"]["reason"], "submit-confirmation")
+        self.assertEqual(record["submission"]["portal_draft_id"], "g0001")
+        self.assertNotIn("submitted_at", record["submission"])
+
+    def test_a_game_the_title_recorded_is_used_and_an_unrecorded_one_stops(self):
+        config, env = self.live()
+        result = self.go(console=FakeConsole("existing"), config=config, environ=env)
+        self.assertEqual(result.artifacts[0].content["outcome"], "UPLOAD_COMPLETE")
+        self.assertEqual(result.artifacts[0].content["submission"]["portal_draft_id"], "g0007")
+        result = self.go(console=FakeConsole("duplicate"), config=config, environ=env)
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN)
+        record = result.artifacts[0].content
+        self.assertEqual((record["outcome"], record["human_required"]["reason"]),
+                         ("UNKNOWN", "duplicate-candidate"))
+
+    def test_ids_issued_on_create_route_back_to_the_build(self):
+        config, env = self.live()
+        result = self.go(console=FakeConsole("ids"), config=config, environ=env)
+        self.assertEqual((result.outcome, result.route), (StepOutcome.SUCCESS, "platform-ids"),
+                         result.error or result.message)
+        self.assertEqual(result.artifacts[0].content["outcome"], "IDS_ISSUED")
 
     def test_a_submitted_record_is_returned_as_it_is_without_contacting_the_portal(self):
         config, env = self.live()
-        first = self.go(console=FakeConsole("fresh"), config=config, environ=env)
+        first = self.go(decision={"decision": "done", "decided_by": "human", "note": "by hand"})
         submitted = first.artifacts[0].content
         console = FakeConsole("fresh")
         again = self.publish(submitted, console=console, config=config, environ=env)
@@ -674,33 +681,26 @@ class Publish(PublishCase):
         self.assertEqual(console.flows, [])  # idempotent: nothing ran
         self.assertIn("nothing submitted again", again.message)
 
-    def test_login_captcha_and_second_factor_stop_for_a_person(self):
-        for scenario, outcome, reason in (("login", "AUTH_REQUIRED", "login"),
-                                          ("captcha", "CAPTCHA_REQUIRED", "captcha"),
-                                          ("two-factor", "HUMAN_REQUIRED", "two-factor")):
+    def test_no_login_in_the_window_waits_for_a_person_never_a_failure(self):
+        for scenario, reason in (("login", "login"), ("captcha", "captcha"),
+                                 ("two-factor", "two-factor")):
             with self.subTest(scenario):
                 result = self.go(console=FakeConsole(scenario))
                 self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN, result.message)
+                self.assertEqual(result.data["waiting_state"], "WAITING_FOR_HUMAN_LOGIN")
                 record = result.artifacts[0].content
-                self.assertEqual(record["outcome"], outcome)
+                self.assertEqual(record["outcome"], "AUTH_REQUIRED")
                 self.assertEqual(record["human_required"]["reason"], reason)
                 self.assertEqual(record["state"], "validated")
 
-    def test_an_ambiguous_portal_state_after_a_submit_is_never_a_success(self):
+    def test_a_live_visit_without_a_saved_draft_is_never_a_success(self):
         config, env = self.live()
-        result = self.go(console=FakeConsole("ambiguous"), config=config, environ=env)
+        result = self.go(console=FakeConsole("unsaved"), config=config, environ=env)
         self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN)
         record = result.artifacts[0].content
         self.assertEqual(record["outcome"], "UNKNOWN")
         self.assertEqual(record["human_required"]["reason"], "ambiguous-portal-state")
-        self.assertEqual(record["verified_state"]["observed"], "Processing")
         self.assertEqual(record["state"], "validated")
-
-    def test_a_rejection_read_back_is_a_failure_a_person_records(self):
-        config, env = self.live()
-        result = self.go(console=FakeConsole("rejected"), config=config, environ=env)
-        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
-        self.assertEqual(result.artifacts[0].content["outcome"], "REJECTED")
 
     def test_an_upload_error_and_a_crash_are_failures_not_retried(self):
         result = self.go(console=FakeConsole("upload-error"))
@@ -749,139 +749,31 @@ class Publish(PublishCase):
         self.assertEqual(result.artifacts[0].content["outcome"], "INVALID_BUILD")
         self.assertEqual(console.flows, [])
 
-    def test_the_session_never_reaches_the_record_the_flow_or_the_flow_s_environment(self):
+    def test_no_session_reaches_the_flow_and_the_browser_is_headed(self):
         console = FakeConsole("fresh")
         result = self.go(console=console)
-        text = json.dumps(result.artifacts[0].content) + json.dumps(result.data) + (result.message or "")
-        self.assertNotIn(COOKIE, text)
         flow = console.flows[0]
-        self.assertNotIn(COOKIE, json.dumps({k: v for k, v in flow.items() if k != "storage_state"}))
-        self.assertFalse(os.path.exists(flow["storage_state"]))  # the private copy is gone
+        self.assertNotIn("storage", json.dumps(flow).lower())
+        self.assertFalse(flow["headless"])  # a person logs in, in the window it opens
+        self.assertIsNone(flow["test_human"])
         self.assertEqual(flow["allowed_origins"], ["http://127.0.0.1:1"])
-        self.assertEqual(flow["phases"], ["authenticate", "find_existing", "upload", "configure",
-                                          "submit", "verify"])
-        self.assertTrue(flow["package"].endswith("generic-web.zip"))
+        archive = next(i for i in flow["intents"] if i["id"] == "upload.archive")
+        self.assertEqual(archive["files"][0]["name"], "generic-web.zip")
+        self.assertNotIn(COOKIE, json.dumps(result.artifacts[0].content))
 
-    def test_the_shipped_listing_reaches_the_console_field_by_field_and_locale_by_locale(self):
+    def test_the_shipped_listing_reaches_the_console_intent_by_intent_and_locale_by_locale(self):
         self.write_listing()
         console = FakeConsole("fresh")
         result = self.go(console=console)
         self.assertEqual(result.route, "dry-run", result.error or result.message)
-        fields = {f["key"]: f["value"] for f in console.flows[0]["fields"]}
-        self.assertEqual(fields["title"], "Fixture Game")
+        fills = {(i["id"], i["locale"]): i["value"] for i in console.flows[0]["intents"]
+                 if i.get("action") == "fill"}
+        self.assertEqual(fills[("field.title", None)], "Fixture Game")
         for locale in ("en", "ru"):
-            self.assertEqual(fields[f"description:{locale}"], LISTING[locale]["long_description"])
-            self.assertEqual(fields[f"short_description:{locale}"],
-                             LISTING[locale]["short_description"])
-        self.assertEqual((fields["controls"], fields["tags"], fields["categories"]),
-                         (LISTING["en"]["controls"], "merge, tower defense, casual", "Puzzle"))
+            self.assertEqual(fills[("field.description", locale)], LISTING[locale]["long_description"])
         noted = [e for e in result.artifacts[0].content["evidence"]
-                 if e.get("phase") == "prepare" and "listing fields" in e["summary"]]
-        self.assertEqual(sorted(noted[0]["data"]["fields"]), sorted(fields))
-
-
-# -- listing fields --------------------------------------------------------------------------
-
-class ListingFields(unittest.TestCase):
-    """adapters/console.py: every listing field the console has, per locale, from the shipped
-    listing; a required field with no value, or none on the console, is reported."""
-
-    def tearDown(self):
-        redact.forget()
-
-    def job(self, listing=None, metadata=None, platform=None, **kwargs):
-        from wgf_publish.adapters import Job
-        return Job(platform_id="generic-web", release_id="r1", idempotency_key="k",
-                   package_path=None, package={"filename": "generic-web.zip"},
-                   metadata=metadata or {}, checkout=None, release_dir=None, run_dir=None,
-                   scratch_dir=None, submit=False, env={}, hooks={}, listing=listing,
-                   platform_profile=platform, **kwargs)
-
-    @staticmethod
-    def fixture():
-        return FixturePortalAdapter("generic-web", {"submission": {"method": "console"}},
-                                    {"console_url": "http://127.0.0.1:1/"})
-
-    def test_every_field_is_filled_per_locale_from_the_listing(self):
-        adapter = self.fixture()
-        job = self.job(LISTING, platform=STRICT_PLATFORM)
-        fields, problems, unfilled = adapter.listing_fields(job)
-        self.assertEqual((problems, unfilled), ([], []))
-        values = {f["key"]: f["value"] for f in fields}
-        self.assertEqual(sorted(values), sorted([
-            "title", "short_description:ru", "short_description:en", "description:ru",
-            "description:en", "controls", "tags", "categories"]))
-        for locale in ("en", "ru"):
-            self.assertEqual(values[f"short_description:{locale}"],
-                             LISTING[locale]["short_description"])
-            self.assertEqual(values[f"description:{locale}"], LISTING[locale]["long_description"])
-        # Language-neutral and single fields come from the platform's first required locale.
-        self.assertEqual(values["controls"], LISTING["ru"]["controls"])
-        self.assertEqual(values["tags"], "слияние, башни")
-        self.assertEqual(values["categories"], "Головоломки")
-        by_key = {f["key"]: f for f in fields}
-        self.assertEqual(by_key["description:ru"]["selector"], 'textarea[name="description[ru]"]')
-        self.assertTrue(by_key["description:ru"]["required"])
-        self.assertFalse(by_key["description:en"]["required"])
-        self.assertEqual(adapter.metadata(job), values)
-
-    def test_descriptions_fall_back_to_the_store_metadata_by_locale(self):
-        # The bug this replaces: store metadata carries `descriptions` keyed by locale, and the
-        # console was handed only a `description` key nothing wrote, so no description was filled.
-        metadata = {"title": "Fixture Game", "descriptions": {"en": "A fixture.", "ru": "Фикстура."},
-                    "locales_included": ["en", "ru"]}
-        platform = {"metadata_requirements": {"descriptions_locales": ["en", "ru"]}}
-        fields, problems, unfilled = self.fixture().listing_fields(self.job(metadata=metadata,
-                                                                            platform=platform))
-        self.assertEqual(problems, [])
-        values = {f["key"]: f["value"] for f in fields}
-        self.assertEqual(values, {"title": "Fixture Game", "description:en": "A fixture.",
-                                  "description:ru": "Фикстура."})
-        self.assertIn("short_description:en", unfilled)  # optional and absent: said, not hidden
-
-    def test_a_missing_required_field_is_reported_and_nothing_is_contacted(self):
-        text = json.loads(json.dumps(LISTING))
-        del text["ru"]["short_description"]
-        text["ru"]["categories"] = text["en"]["categories"] = []  # in no locale at all
-        adapter = self.fixture()
-        job = self.job(text, platform=STRICT_PLATFORM)
-        problems = adapter.listing_fields(job)[1]
-        self.assertIn("the shipped listing has no short_description (ru), which generic-web "
-                      "requires", problems)
-        self.assertIn("the shipped listing has no categories, which generic-web requires",
-                      problems)
-        calls = []
-        job.run_process = lambda *a, **k: calls.append(a)
-        result = adapter.publish(job)
-        self.assertEqual(result.outcome, outcomes.BLOCKED)
-        self.assertIn("short_description (ru)", result.message)
-        self.assertEqual(calls, [])
-        # The title is required wherever there is a console field for it; it is one field,
-        # so any locale of the listing that has it serves.
-        problems = adapter.listing_fields(self.job({"en": {"short_description": "x"}}))[1]
-        self.assertIn("the shipped listing has no title, which generic-web requires", problems)
-        fields = adapter.listing_fields(self.job({"en": {"title": "Fixture Game"}},
-                                                 platform=STRICT_PLATFORM))[0]
-        self.assertEqual(fields[0]["value"], "Fixture Game")
-
-    def test_a_required_field_the_console_map_lacks_is_reported(self):
-        from wgf_publish import common
-        from wgf_publish.adapters.crazygames import CrazyGamesAdapter
-        from wgf_publish.adapters.yandex import YandexAdapter
-        yandex = YandexAdapter("yandex", pub.load_publication_profile("yandex"))
-        job = self.job(LISTING, platform=common.profile_for("yandex"))
-        problems = yandex.listing_fields(job)[1]
-        for name in ("short_description", "categories"):
-            self.assertIn(f"the yandex console map names no field for the required listing "
-                          f"field {name}", problems)
-        self.assertEqual({f["key"] for f in yandex.listing_fields(job)[0]}, {"title", "description"})
-        self.assertEqual(yandex.metadata(job)["description"], LISTING["ru"]["long_description"])
-        # One description field, two required locales: it cannot take both.
-        crazy = CrazyGamesAdapter("crazygames", pub.load_publication_profile("crazygames"))
-        problems = crazy.listing_fields(self.job(LISTING, platform={
-            "metadata_requirements": {"descriptions_locales": ["en", "ru"]}}))[1]
-        self.assertIn("the crazygames console map has one description field but description is "
-                      "required in en, ru", problems)
+                 if e.get("phase") == "prepare" and "flow for the console" in e["summary"]]
+        self.assertIn("field.description", noted[0]["data"]["intents"])
 
 
 # -- through the engine ----------------------------------------------------------------------
@@ -987,7 +879,7 @@ class ThroughTheEngine(PublishCase):
             (ReleaseStep.environ, ReleaseStep.clock, PlatformValidateStep.environ,
              PublishStep.environ, PublishStep.run_process) = originals
         self.addCleanup(restore)
-        env = dict(self.game.environ(()), WGF_PUBLISH_FIXTURE_STORAGE_STATE=json.dumps(STORAGE_STATE))
+        env = dict(self.game.environ(()))
         ReleaseStep.environ = env
         ReleaseStep.clock = staticmethod(lambda: NOW)
         PlatformValidateStep.environ = env
@@ -1003,7 +895,7 @@ class ThroughTheEngine(PublishCase):
         from wgflib.workflow.model import RunStatus
         self.write_metadata()
         console = FakeConsole("fresh")
-        api = self.api(console, dict(self.settings(env_passthrough=["WGF_PUBLISH_FIXTURE_STORAGE_STATE"])["publish"]))
+        api = self.api(console, dict(self.settings()["publish"]))
         state = api.run(RunRequest(project_id="fixture-game"))
         self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "release-review"),
                          state.message)
@@ -1025,7 +917,7 @@ class ThroughTheEngine(PublishCase):
         stored = api.store.load(state.run_id)
         record = api.store.read_artifact(state.run_id, stored.latest_artifact("platform-publication-generic-web"))
         self.assertEqual(record["outcome"], "DRY_RUN")
-        self.assertFalse(console.flows[0]["submit"])
+        self.assertEqual(console.flows[0]["mode"], "dry-run")
         # The G6 record pins the manifest the submit step was given.
         g6 = api.store.read_artifact(state.run_id, stored.latest_artifact("decision-record-publish-review"))
         manifest = api.store.read_artifact(state.run_id, stored.latest_artifact("release-manifest"))
@@ -1065,20 +957,18 @@ class ThroughTheEngine(PublishCase):
 @unittest.skipUnless(enabled("WGF_PUBLISH_BROWSER_TEST"),
                      "set WGF_PUBLISH_BROWSER_TEST=1 to drive the fixture portal with Chromium")
 class Browser(PublishCase):
-    """The real console executor, in the pinned template's checkout (its Playwright and
-    Chromium), against portal.py. Nothing leaves 127.0.0.1."""
+    """The real console executor through the step, in the pinned template's checkout (its
+    Playwright and Chromium), headless, against portal.py. Nothing leaves 127.0.0.1. Every
+    other browser scenario is test_publish_executor.py's."""
 
     @classmethod
     def setUpClass(cls):
         from wgflib import template
         cls.template = template.checkout()
-        if template.ensure_dependencies(cls.template) is not None:
-            pass
+        template.ensure_dependencies(cls.template)
 
-    def portal(self, mode="", locales=None):
-        env = dict(os.environ, PORTAL_MODE=mode)
-        if locales:
-            env["PORTAL_LOCALES"] = locales
+    def portal(self, mode="open"):
+        env = dict(os.environ, PORTAL_MODE=mode, PORTAL_LOCALES="en")
         process = subprocess.Popen([sys.executable, PORTAL, "--port", "0"], stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, text=True, env=env)
 
@@ -1096,122 +986,35 @@ class Browser(PublishCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/state.json") as response:
             return json.load(response)
 
-    def console_publish(self, port, record, *, live, decision=None):
-        config = self.settings(env_passthrough=["WGF_PUBLISH_FIXTURE_STORAGE_STATE"])
-        config["publish"]["platforms"]["generic-web"]["console_url"] = f"http://127.0.0.1:{port}/"
-        if live:
-            config["publish"]["mode"] = "live"
+    def test_a_dry_run_through_the_step_reaches_save_draft_and_requests_nothing(self):
+        port = self.portal()
+        self.write_metadata()
+        config = self.settings(timeouts={"action": 2500, "navigation": 8000, "upload": 20000})
+        config["publish"]["platforms"]["generic-web"].update(
+            console_url=f"http://127.0.0.1:{port}/", test_headless=True, poll_ms=250)
+        record = self.validate(config=config).artifacts[0].content
+        self.assertEqual(record["readiness"], "READY", record.get("guards"))
         # The real pnpm and Playwright, not the fixture game's fake pnpm shim.
-        env = {"WGF_PUBLISH_FIXTURE_STORAGE_STATE": json.dumps(STORAGE_STATE),
-               "PATH": os.environ.get("PATH", "")}
-        if live:
-            env["WGF_PUBLISH_LIVE"] = "1"
-        # The template checkout lends its Playwright; the release directory stays the game's.
         import wgf_publish.browser as browser
 
         def run_in_template(argv, cwd=None, **kwargs):
             return browser.procs.run(argv, cwd=self.template, **kwargs)
-        return self.publish(record, console=run_in_template, config=config, environ=env,
-                            decision=decision)
-
-    def ready_for(self, port):
-        self.write_metadata()
-        config = self.settings(env_passthrough=["WGF_PUBLISH_FIXTURE_STORAGE_STATE"])
-        config["publish"]["platforms"]["generic-web"]["console_url"] = f"http://127.0.0.1:{port}/"
-        env = {"WGF_PUBLISH_FIXTURE_STORAGE_STATE": json.dumps(STORAGE_STATE)}
-        result = self.validate(config=config, environ=env)
-        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
-        return result.artifacts[0].content
-
-    def test_dry_run_uploads_fills_and_never_submits_then_live_submits_once(self):
-        port = self.portal()
-        record = self.ready_for(port)
-        result = self.console_publish(port, record, live=False)
+        result = self.publish(record, console=run_in_template, config=config,
+                              environ={"PATH": os.environ.get("PATH", "")})
         self.assertEqual((result.outcome, result.route), (StepOutcome.SUCCESS, "dry-run"),
                          result.error or result.message)
         state = self.state_of(port)
-        self.assertEqual(len(state["drafts"]), 1)
-        self.assertFalse(state["drafts"][0]["submitted"])
-        self.assertEqual(state["drafts"][0]["archive"], "generic-web.zip")
-        self.assertIn(result.artifacts[0].content["submission"]["idempotency_key"],
-                      state["drafts"][0]["name"])
-        # Live: the draft with the key is found, not uploaded again, and submitted once.
-        result = self.console_publish(port, result.artifacts[0].content, live=True)
-        self.assertEqual((result.outcome, result.route), (StepOutcome.SUCCESS, "submitted"),
-                         result.error or result.message)
-        state = self.state_of(port)
-        self.assertEqual((len(state["drafts"]), state["uploads"], state["double_submits"]),
-                         (1, 1, 0))
-        self.assertTrue(state["drafts"][0]["submitted"])
+        self.assertEqual((state["creates"], state["uploads"], state["saves"], state["requests"]),
+                         (1, 1, 1, 0))
         content = result.artifacts[0].content
-        self.assertEqual((content["outcome"], content["state"]), ("VERIFIED", "submitted"))
+        self.assertEqual(content["outcome"], "DRY_RUN")
         shots = [e for e in content["evidence"] if e["kind"] == "screenshot"]
         self.assertTrue(shots)
         for shot in shots:
             self.assertTrue(os.path.isfile(os.path.join(self.run_dir, shot["path"])), shot)
             self.assertTrue(shot["content_hash"].startswith("sha256:"))
-        # A second live run finds the submitted draft and submits nothing again.
-        again = self.console_publish(port, content, live=True)
-        self.assertEqual(again.route, "submitted")
-        self.assertEqual(self.state_of(port)["double_submits"], 0)
-
-    def test_an_expired_session_a_captcha_and_an_ambiguous_state_stop_for_a_person(self):
-        for mode, outcome in (("expired", "AUTH_REQUIRED"), ("captcha", "CAPTCHA_REQUIRED")):
-            with self.subTest(mode):
-                port = self.portal(mode)
-                record = self.ready_for(port)
-                result = self.console_publish(port, record, live=True)
-                self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN, result.message)
-                self.assertEqual(result.artifacts[0].content["outcome"], outcome)
-                self.assertEqual(self.state_of(port)["uploads"], 0)
-        port = self.portal("ambiguous")
-        record = self.ready_for(port)
-        result = self.console_publish(port, record, live=True)
-        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN, result.message)
-        self.assertEqual(result.artifacts[0].content["outcome"], "UNKNOWN")
-
-    def test_every_listing_field_is_filled_and_kept_and_a_missing_one_is_reported(self):
-        self.write_listing()
-        port = self.portal()
-        record = self.ready_for(port)
-        result = self.console_publish(port, record, live=False)
-        self.assertEqual(result.route, "dry-run", result.error or result.message)
-        listing = self.state_of(port)["drafts"][0]["listing"]
-        expected = {"title": "Fixture Game", "controls": LISTING["en"]["controls"],
-                    "tags": "merge, tower defense, casual", "categories": "Puzzle"}
-        for locale in ("en", "ru"):
-            expected[f"short_description[{locale}]"] = LISTING[locale]["short_description"]
-            expected[f"description[{locale}]"] = LISTING[locale]["long_description"]
-        self.assertEqual(listing, expected)
-        filled = [e for e in result.artifacts[0].content["evidence"]
-                  if e.get("phase") == "configure" and (e.get("data") or {}).get("filled")]
-        self.assertEqual(len(filled[0]["data"]["filled"]), len(expected))
-        # The page lacks the ru description, which generic-web does not require: reported as
-        # skipped in the record, not hidden.
-        port = self.portal("missing-field")
-        record = self.ready_for(port)
-        result = self.console_publish(port, record, live=False)
-        self.assertEqual(result.route, "dry-run", result.error or result.message)
-        evidence = [e for e in result.artifacts[0].content["evidence"]
-                    if e.get("phase") == "configure" and (e.get("data") or {}).get("skipped")]
-        self.assertEqual(evidence[0]["data"]["skipped"], ["description:ru"])
-        # A required field the page lacks (generic-web requires the en description) stops
-        # the run at configure, before anything is saved.
-        port = self.portal("missing-field", locales="en")
-        record = self.ready_for(port)
-        result = self.console_publish(port, record, live=False)
-        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
-        self.assertEqual(result.artifacts[0].content["outcome"], "PLATFORM_ERROR")
-        self.assertIn("required listing field description:en", result.error)
-        self.assertNotIn("listing", self.state_of(port)["drafts"][0])
-
-    def test_an_upload_the_portal_refuses_is_a_platform_error(self):
-        port = self.portal("upload-fail")
-        record = self.ready_for(port)
-        result = self.console_publish(port, record, live=True)
-        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
-        self.assertEqual(result.artifacts[0].content["outcome"], "PLATFORM_ERROR")
-        self.assertEqual(self.state_of(port)["drafts"], [])
+        actions = [e for e in content["evidence"] if e.get("path", "").endswith("actions.jsonl")]
+        self.assertEqual(len(actions), 1)
 
 
 if __name__ == "__main__":

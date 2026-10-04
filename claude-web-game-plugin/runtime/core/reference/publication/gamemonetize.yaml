@@ -11,7 +11,7 @@
 # `unknowns`.
 
 id: gamemonetize
-version: 2.0.0
+version: 2.1.0
 status: unverified
 docs: https://gamemonetize.com/
 
@@ -35,8 +35,9 @@ submission:
     allowed_origins: [https://gamemonetize.com]
     upload_timeout_s: 900
   credential:
-    kind: storage-state
-    env: WGF_PUBLISH_GAMEMONETIZE_STORAGE_STATE
+    # A person logs in, live, in the browser window the publish step opens, and
+    # handles any CAPTCHA or second factor there. Nothing of the session is kept.
+    kind: human-login
   human_required: [login, terms, review, console-switch]
   adaptive: forbidden
   flow:

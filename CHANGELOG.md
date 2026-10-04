@@ -7,6 +7,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Fac
 released as a whole (`v1.0.0` is Core v1, frozen); schemas still carry their own versions,
 and `core/` is still the contract.
 
+## [Unreleased]
+
+**One build, one package and one publication per target platform** on the pinned template
+(contract 1, v1.2.0), with no template release and no game migration. For a title with more
+than one target, `verify` builds each platform against `build/platforms/<id>/game.config.json`
+(that platform alone) through the template's own `WGF_GAME_CONFIG` override, judges each
+bundle (`build.platform:<id>`, `platform.build-target:<id>`, requirements and profile
+assertions on its own bundle) and requires every target - an `optional` platform that is not
+ready now fails the verdict. `release` packages each with `release:package --platform <id>`
+from its own verified bundle (`packages[].bundle_hash`) and refuses a target without one
+(`platform-not-verified`); `store-listing` renders for the verified build's platforms;
+`platform-validate` writes one publication per package. A repository on template contract 2
+(`build:platforms`) is recognized and builds its platforms itself. A single-platform title is
+built and released exactly as before. **Retargeting a finished title** no longer re-runs
+develop: the `sdk` step (new input: `tech-plan`) writes the G3-approved platforms and their
+profiles into its keyed commit when they differ from the checkout. Schemas:
+verification-report 1.2.0 (`build_artifact.platforms`), release-manifest 1.4.0
+(`packages[].bundle_hash`), both additive; template contract 2.0.0 (entries recorded, version
+unchanged). Docs: [platform-targets-2026-10.md](docs/platform-targets-2026-10.md) Part 2,
+[verification-module.md](docs/verification-module.md#one-bundle-per-platform),
+[release-module.md](docs/release-module.md#one-package-per-target-platform).
+
 ## [2.7.0] - 2026-10-03
 
 Research that proposes several opportunities from a coded game corpus, and designs that say

@@ -64,7 +64,7 @@ cursor, so the two never disagree:
 |---|---|---|
 | `candidate_frozen` | the manifest | a commit, packages, a sha256 checksum on each |
 | `store_metadata_complete` | the manifest and `release/<id>/store-metadata.json` | every **required** platform has its descriptions, screenshots, icon, age rating and required locales, per its pinned platform profile |
-| `package_shaped_to_profile` | the package file in the checkout | the file exists, its sha256 equals the manifest's checksum, its size is within the profile's `max_bundle_mb` |
+| `package_shaped_to_profile` | the package file in the checkout | the file exists, its sha256 equals the manifest's checksum, its size is within the profile's `max_bundle_mb`. Since 2.8.0 each target's package is made from that platform's own bundle (`packages[].bundle_hash`, [release-module.md](release-module.md#one-package-per-target-platform)), so the SDK wiring it carries is its own |
 | `assertions_pass` | the verification-report's `policy.assertions:<platform>` evidence for this commit | no blocking assertion breached |
 | `metadata_and_locales_present` | as `store_metadata_complete`, for this platform | as above |
 
@@ -84,9 +84,16 @@ Readiness is derived from the verdicts and from the publication profile
 | `HUMAN_REQUIRED` | every guard GREEN, but publishing here is a person's act | SUCCESS; `submit` stops for the person |
 | `READY` | every guard GREEN and an adapter may act | SUCCESS |
 
-A **required** target with no package (the pinned template contract builds one bundle for
-one platform; the release step packages only that one) is BLOCKED: the release can never be
-live there. An optional unpackaged target is reported and skipped.
+One `platform-publication` per target: since 2.8.0 a release of a title with several
+targets packages every one of them from its own verified bundle, or is not drafted, so
+`platform-validate` judges each - its package, its profile's assertions on its own bundle,
+its listing rendition - and a portal can be BLOCKED while another is READY. A **required**
+target with no package (a release drafted from one bundle by an earlier verification, which
+packaged only the platform that bundle boots) is BLOCKED: the release can never be live
+there; re-run verify and release. An optional unpackaged target is reported and skipped.
+A store-listing requirement a profile leaves `null` (all of Y8's `store_listing`) stays
+UNKNOWN in the listing validation and is never passed; it does not block the release
+([store-listing-module.md](store-listing-module.md)).
 
 ## G5 and G6
 

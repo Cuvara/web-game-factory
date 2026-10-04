@@ -5,10 +5,12 @@ import re
 import shlex
 from urllib.parse import unquote
 
+from wgflib import template_contract as contract
 from wgflib.template_contract import SCRIPT_BUILD
 
 from ..model import BLOCKED, FAIL, PASS, WARNING, Check, Evidence
 from ..lineage import CODE, lineage_problems
+from .. import platform_builds
 
 __all__ = ["check_source", "check_build"]
 
@@ -145,8 +147,17 @@ def _upstream_commits(session):
 
 def check_build(session):
     out = [_install(session)]
+    how = session.platform_build_mode
     if session.passed("build.install"):
-        out.append(session.record(_build(session)))
+        if how == platform_builds.FACTORY:
+            # Contract 1, several targets: the build IS one build per platform, the target
+            # last, so the ordinary output directory ends holding the target's bundle.
+            out.append(session.record(_build_each(session)))
+        else:
+            out.append(session.record(_build(session)))
+            if how == platform_builds.REPOSITORY and session.passed("build.build"):
+                _record_builds(session, platform_builds.build_platforms(
+                    session, platform_builds.REPOSITORY))
     else:
         out.append(session.record(session.blocked_by(
             "build.install", id="build.build", category="build", title="Production build")))
@@ -158,7 +169,86 @@ def check_build(session):
                            ("build.asset-resolution", "Bundle references resolve")):
             out.append(session.record(session.blocked_by(
                 "build.build", id=cid, category="build", title=title)))
+    if how is not None:
+        for platform in session.platforms:
+            out.append(session.record(_platform_bundle(session, platform["id"])))
     return out
+
+
+def _record_builds(session, builds):
+    session.platform_builds = {b.platform_id: b for b in builds}
+    return builds
+
+
+def _build_each(session):
+    """build.build for contract 1 with several targets: every platform built, each against
+    a config naming only that platform (platform_builds)."""
+    builds = _record_builds(session, platform_builds.build_platforms(
+        session, platform_builds.FACTORY))
+    evidence = [Evidence.of_command(r, f"{b.platform_id}: {r.describe()}")
+                for b in builds for r in b.results]
+    failed = [b for b in builds if not b.built]
+    unavailable = any(r.unavailable for b in failed for r in b.results)
+    if failed:
+        return Check("build.build", "build", "Production build",
+                     BLOCKED if unavailable else FAIL,
+                     message="; ".join(f"{b.platform_id}: {b.problem}" for b in failed),
+                     evidence=evidence)
+    return Check("build.build", "build", "Production build", PASS,
+                 message="one build per platform (" + ", ".join(b.platform_id for b in builds)
+                         + f"), each against its own config through {contract.GAME_CONFIG_ENV}",
+                 evidence=evidence)
+
+
+def _platform_bundle(session, pid):
+    """build.platform:<id>: this platform's own bundle exists, has an entry point, fits the
+    platform's size limit, and is not byte-identical to another platform's - which would
+    mean the build ignored the per-platform config and boots one adapter everywhere."""
+    cid, title = f"build.platform:{pid}", "This platform's own bundle"
+    common = {"category": "build", "required": True, "platform_id": pid}
+    build = session.platform_builds.get(pid)
+    if build is None:
+        return session.blocked_by("build.build", id=cid, title=title, **common)
+    if not build.built:
+        unavailable = any(r.unavailable for r in build.results)
+        return Check(cid, title=title, status=BLOCKED if unavailable else FAIL,
+                     message=f"no {pid} bundle: {build.problem}",
+                     evidence=[Evidence.of_command(r) for r in build.results[-1:]], **common)
+    evidence = [Evidence("artifact", f"{build.path}/: {build.files} files, {build.bytes} bytes",
+                         path=build.path, content_hash=build.content_hash)]
+    if build.config:
+        evidence.append(Evidence("file", f"built with {contract.GAME_CONFIG_ENV}={build.config}",
+                                 path=build.config, content_hash=build.config_hash))
+    problems = []
+    if not session.exists(*build.path.split("/"), "index.html"):
+        problems.append(f"{build.path}/index.html is missing: a portal has no entry point")
+    size_mb = build.bytes / 1024 / 1024
+    profile, source = session.profile(pid)
+    limit = ((profile or {}).get("requirements") or {}).get("max_bundle_mb")
+    if isinstance(limit, (int, float)):
+        evidence.append(Evidence("reference", f"{pid} max_bundle_mb = {limit}", path=source))
+        if size_mb > limit:
+            problems.append(f"bundle is {size_mb:.2f} MB, over {pid}'s {limit} MB limit")
+    twins = sorted(other.platform_id for other in session.platform_builds.values()
+                   if other.platform_id != pid and other.built
+                   and _same_bytes(session, other, build))
+    if twins:
+        problems.append(f"the {pid} bundle is byte-identical to that of {', '.join(twins)}: "
+                        "the build ignored the per-platform config, so one adapter would boot "
+                        "on every portal")
+    if problems:
+        return Check(cid, title=title, status=FAIL, message="; ".join(problems),
+                     evidence=evidence, **common)
+    return Check(cid, title=title, status=PASS,
+                 message=f"{build.path}/: {build.files} files, {size_mb:.2f} MB, entry point "
+                         f"present, built for {pid} alone", evidence=evidence, **common)
+
+
+def _same_bytes(session, a, b):
+    """The two bundles hold the same files with the same contents. Their digests differ by
+    path alone, so each is digested relative to itself."""
+    return (platform_builds.digest_tree(session.path(*a.path.split("/")), ".")[0]
+            == platform_builds.digest_tree(session.path(*b.path.split("/")), ".")[0])
 
 
 def _install(session):
@@ -196,7 +286,11 @@ def _bundle(session):
         problems.append(f"{out_dir}/index.html is missing: a portal has no entry point")
 
     size_mb = size / 1024 / 1024
-    for platform in session.platforms:
+    # With a build per platform each is judged against its own limit (build.platform:<id>);
+    # the output directory holds the build target's.
+    judged = session.platforms if session.platform_build_mode is None else [
+        p for p in session.platforms if p["id"] == contract.build_target(session.platforms)]
+    for platform in judged:
         profile, source = session.profile(platform["id"])
         limit = ((profile or {}).get("requirements") or {}).get("max_bundle_mb")
         if isinstance(limit, (int, float)):

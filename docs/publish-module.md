@@ -239,6 +239,63 @@ evidence before sealing an artifact. Traces and videos are off; screenshots are 
 where the executor was told the console is. Redaction is text matching: the first line is
 the allowlist and a secret that is never printed.
 
+## Observing a real console
+
+Before an adapter is trusted for a portal, a person logs in to its real developer console
+and the Factory records what the console actually shows - a publication profile may hold
+only observed or officially documented facts:
+
+```bash
+python scripts/wgf-publish.py observe crazygames --checkout ../my-game     [--out DIR] [--login-timeout-s 900] [--max-minutes 30] [--authenticated-url REGEX]
+python scripts/wgf-publish.py observe-summary DIR     # the summary again, and the fields as JSON
+```
+
+`observe` (`scripts/wgf_publish/observe.py`, `browser/observe.spec.ts`) opens the profile's
+console url in a headed Chromium - the checkout's own Playwright, run under `wgflib.procs` -
+in a **fresh, ephemeral context**: no storage state loaded, none saved, no persistent
+profile. It prints, and writes to `<out>/state.json`:
+
+```
+WAITING_FOR_HUMAN_LOGIN portal=crazygames step=observe url=https://developer.crazygames.com/
+  reason="..." action="log in in the opened browser window; handle CAPTCHA/2FA yourself"
+  resume="the console's authenticated page is detected"
+```
+
+That is a waiting state, not a failure. The person logs in in that window and answers every
+CAPTCHA and second factor; the Factory never sees, types, asks for or stores a password or
+code. The console counts as reached when a page is on one of the profile's
+`allowed_origins`, shows no password, CAPTCHA or one-time-code field, and - when given, or
+named by the profile as `session.authenticated_url` - its origin + path matches the regex;
+state becomes `AUTHENTICATED`. No login within `--login-timeout-s` is `LOGIN_TIMEOUT`, exit 3,
+browser closed.
+
+Then the person uses the console as usual and the observer only reads: it never clicks,
+types, submits or uploads, and navigates only once, to the console url, before the login
+(`test_publish_observe.SpecSource` checks its source). On every main-frame navigation, and
+every 5 s of a page, it records - only on an allowed origin, never on a login, CAPTCHA or
+second-factor page, and once per distinct DOM hash - into `<out>/pages/NNN.json` and `.png`:
+
+- the accessibility snapshot (roles, names, states) with every input value masked;
+- the form inventory read from the DOM: for each input, textarea, select and file input its
+  role, accessible name, label, placeholder, type, required, maxlength/minlength, pattern,
+  `accept` and `multiple`, a select's option texts, its `data-testid`/`name`/`id` and the
+  nearest heading; buttons and links by accessible name; visible status-like texts (badges,
+  chips, cells under a "Status" column);
+- a screenshot with every input, and every email-shaped text, masked;
+- the url as origin + path, never a query or fragment.
+
+No cookie, storage, header, request body, trace or video is ever recorded, and every text
+passes `wgflib.redact` with email-shaped strings replaced. The observation ends when the
+person closes the window, or `--max-minutes` after the login; the context is closed and
+nothing of the session survives. `<out>/index.json` lists the pages and their hashes;
+`<out>/summary.md` gives, per page, the path, headings, forms with their fields, buttons and
+status texts. The default `--out` is `<project>/.factory/observations/<platform>/<UTC
+timestamp>/` (git-ignored). Exit codes: 0 ended, 1 the observer failed (or no Chromium:
+BLOCKED), 2 unusable arguments, 3 `LOGIN_TIMEOUT`.
+
+What an observation shows becomes a profile fact only when a person writes it into the
+profile; the observer never edits one.
+
 ## Evidence
 
 Every record carries `evidence[]` (guard verdicts, the package file with its hash, the
@@ -278,8 +335,13 @@ reaching a record or the event log); the whole group through the real engine; an
 `WGF_PUBLISH_BROWSER_TEST=1`, real Chromium against `scripts/tests/fixtures/publish/portal.py`
 (dry run uploads and never submits, live finds the draft by key and submits once, a second
 live run submits nothing again, expired session / CAPTCHA / ambiguous state stop for a
-person, a refused upload is a platform error). No test contacts a real portal; the
-acceptance job holds no portal credential.
+person, a refused upload is a platform error). `scripts/tests/test_publish_observe.py`
+(RELEASE): the observer's scrubbing, summary and exit codes around a stand-in browser, its
+spec's source (no action call, no session kept), and - with `WGF_PUBLISH_BROWSER_TEST=1` -
+headless Chromium against the fixture portal with the test playing the person: waiting,
+then authenticated, the form inventory read, nothing typed or prefilled, no password,
+cookie or email in the output, no request caused by the observer. No test contacts a real
+portal; the acceptance job holds no portal credential.
 
 ## What stays with a person
 

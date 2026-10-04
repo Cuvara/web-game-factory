@@ -741,6 +741,15 @@ class Platforms(unittest.TestCase):
                                                   {"id": "yandex", "profile": "yandex@1.2.0", "role": "optional"}]}}
         self.assertEqual(platforms.targets(scaffold), [("poki", "required", "1.1.0"), ("yandex", "optional", "1.2.0")])
         self.assertEqual(platforms.targets(scaffold, ["yandex"]), [("yandex", "optional", "1.2.0")])
+        # The verified build's targets win over a scaffold-record written before a retarget.
+        verified = [{"platform_id": "yandex", "profile": "yandex@1.2.0", "role": "required"},
+                    {"platform_id": "y8", "profile": "y8@1.2.0", "role": "optional"}]
+        self.assertEqual(platforms.targets(scaffold, verified=verified),
+                         [("yandex", "required", "1.2.0"), ("y8", "optional", "1.2.0")])
+        self.assertEqual(platforms.targets(scaffold, ["y8"], verified=verified),
+                         [("y8", "optional", "1.2.0")])
+        self.assertEqual(platforms.targets(scaffold, verified=[]),
+                         platforms.targets(scaffold))
         self.assertEqual(platforms.locales_for(platforms.load_profile("yandex")), ["ru"])
         self.assertIsNotNone(platforms.block_hash(platforms.load_profile("poki")))
         self.assertIsNone(platforms.block_hash({}))

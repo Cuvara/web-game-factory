@@ -1,0 +1,115 @@
+# Web Game Factory — Mechanic lexicon
+#
+# The ways a brief, a strategy and a design say a mechanic, normalized to one mechanic id.
+# Read by the strategy step (what the brief asks of the content, and that the strategy's own
+# statements do not contradict it) and by the design consistency rules (the mechanics the
+# brief and strategy imply against the mechanics the design builds). A paraphrase is the same
+# id: "tap hops" and "jump" are one mechanic, and renaming a mechanic to a synonym does not
+# change what it is.
+#
+# Matching. Text is lower-cased, and `-`, `_` and `/` read as spaces ("tilt/steer",
+# "seven-column", "match-3"). Phrases match whole words, the longest phrase first, and a
+# matched span is consumed: "goal gate" is an exit and never also a gate. A design mechanic
+# is read from its own `id` and `name`, and from its description only when those name no
+# mechanic here.
+#
+# kind
+#   defining  changes what the game IS. A design that builds one the brief and strategy do
+#             not imply adds a foreign mechanic; a strategy concept that names one must be
+#             carried by the design.
+#   detail    most games have it (a wall, a crash, a lock, an exit). Must be carried when the
+#             strategy's concept names it, never foreign.
+#   generic   a verb or system many games share (move, collect, upgrade). Recognized - so a
+#             player action built on it is a known mechanic, not an unrecognized one - and
+#             available to realize a pillar, but neither carried nor foreign.
+#
+# Never genre words (puzzle, arcade), feel words or platform words. Add a mechanic here with
+# the archetype or genre family that builds it: a player action whose mechanic this file does
+# not know, and whose words the brief and strategy never use, is reported as unrecognized
+# rather than waved through.
+
+version: 1.0.0
+
+mechanics:
+  drop: { kind: defining, words: [drop, drops, dropped, dropping] }
+  swap: { kind: defining, words: [swap, swaps, swapping, swapped, exchange two, trade places, switch places] }
+  # Never the bare verb: "the telegraphed zone always matches the zone the ball is struck
+  # toward" is a goalkeeper design, not a match-3 one.
+  match: { kind: defining, words: [match 3, match three, matches three, matching three, line of three, lines of three] }
+  merge: { kind: defining, words: [merge, merges, merged, merging, fuse, fuses, fusing] }
+  column: { kind: defining, words: [column, columns] }
+  lane: { kind: defining, words: [lane, lanes] }
+  steer: { kind: defining, words: [steer, steers, steering, tilt, tilts, tilting, roll, rolls, rolling] }
+  gate: { kind: defining, words: [gate, gates, checkpoint, checkpoints] }
+  clock: { kind: defining, words: [clock, timer, countdown, time limit, par time, time trial, time trials] }
+  move-limit: { kind: defining, words: [move limit, moves remaining, moves left, move budget] }
+  jump: { kind: defining, words: [jump, jumps, jumping, hop, hops, hopping, leap, leaps, leaping] }
+  shoot: { kind: defining, words: [shoot, shoots, shooting, blast, blasts, blasting] }
+  timed-tap: { kind: defining, words: [timed tap, sweep, sweeps] }
+  flip: { kind: defining, words: [gravity flip, flip, flips, flipping] }
+  # Mechanics that define the genre families' games (core/reference/genre-models.yaml).
+  tower: { kind: defining, words: [tower, towers, turret, turrets] }
+  race: { kind: defining, words: [race, races, racing, rival, rivals] }
+  aim: { kind: defining, words: [aim, aims, aiming] }
+
+  wall: { kind: detail, words: [wall, walls] }
+  crash: { kind: detail, words: [crash, crashes, crashed] }
+  lock: { kind: detail, words: [lock, locks, locked] }
+  exit: { kind: detail, words: [exit, exits, goal flag, exit door, goal gate, finish gate, finish line] }
+
+  move: { kind: generic, words: [move, moves, movement, walk, walks, run and turn, dash, dashes] }
+  slide: { kind: generic, words: [slide, slides, sliding] }
+  drive: { kind: generic, words: [drive, drives, driving, throttle, brake] }
+  drift: { kind: generic, words: [drift, drifts, drifting] }
+  place: { kind: generic, words: [place, places, placement, build, builds] }
+  upgrade: { kind: generic, words: [upgrade, upgrades, level up, perk, perks] }
+  trade: { kind: generic, words: [price, prices, pricing, stock, serve, serving, sell, sells] }
+  collect: { kind: generic, words: [collect, collects, collecting, pickup, pickups, gem, gems, coin, coins, star, stars] }
+  dodge: { kind: generic, words: [dodge, dodges, dodging, avoid, avoids] }
+  boost: { kind: generic, words: [boost, boosts, boost pad, boost pads, speed pad] }
+  multiplier: { kind: generic, words: [multiplier, multipliers, combo, combos, streak, streaks] }
+  shortcut: { kind: generic, words: [shortcut, shortcuts, risky route, optional route, alternate route] }
+  near-miss: { kind: generic, words: [near miss, near misses, graze, grazes] }
+  bank: { kind: generic, words: [bank, banks, cash out, push your luck] }
+
+# A pillar the brief, the strategy or the design names must be realized by a mechanic the
+# design builds and a content unit uses (rule `pillar_realized_by_mechanic`): "risk/reward
+# decisions" is a promise about play, and the words appearing in the design keep none of it.
+pillars:
+  risk-reward:
+    phrases: [risk reward, risk and reward, risk versus reward, risk vs reward, push your luck, greed]
+    realized_by: [collect, multiplier, shortcut, near-miss, bank, boost]
+  time-pressure:
+    phrases: [time pressure, against the clock, beat the clock, race the clock]
+    realized_by: [clock, race]
+
+# What a brief asks of the content and the rest of the game, and the strategy statements that
+# would contradict it. The strategy step shapes its text from the intents a brief carries,
+# and refuses a strategy whose own statements still contain a contradicting phrase -
+# "difficulty comes from one data-driven ramp, not hand-built levels" for a brief that asks
+# for hand-designed courses.
+#
+#   phrases             what in a brief makes the intent active
+#   difficulty_shape    the content model's difficulty shape the intent asks for, when the
+#                       genre family allows it; a content model already at that shape makes
+#                       the intent active without a brief
+#   units               the brief's own word for one unit of content, the first it uses
+#   keeps_in_scope      strategy exclusions (wgf_strategy EXCLUSIONS keys) the intent keeps
+#                       in scope, carried as a risk instead
+#   replaces_exclusion  an exclusion restated so it no longer excludes what the brief asks
+#   contradicted_by     phrases no strategy statement may contain while the intent is active
+brief_intents:
+  authored-content:
+    phrases: [hand designed, hand built, handcrafted, hand crafted, handmade, hand made, designed levels, designed courses, authored levels]
+    difficulty_shape: level-authored
+    units: [level, course, stage, track, puzzle, map, mission, world]
+    contradicted_by: [not hand built, one data driven ramp, one content set with a data driven difficulty ramp]
+  unlocks:
+    phrases: [unlock, unlocks, unlockable, unlockables, unlocked]
+    replaces_exclusion:
+      customization: "A cosmetics shop and paid customization; the unlocks the brief asks for are earned in play and stay in scope"
+    contradicted_by: [character or skin customization and a cosmetics shop]
+  modes:
+    phrases: [time trial mode, second mode, game modes, two modes]
+    keeps_in_scope: [content]
+    contradicted_by: [a second mode or content set]

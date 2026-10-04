@@ -20,6 +20,14 @@ What it decides, following core/lifecycle/stages/strategy.md:
                 coded them, else the family's own default. An opportunity that resolves to no
                 family (nothing before Research V2 did) commits to no content model, and the
                 concept reads as it always has.
+  brief         what the person's idea asks of the game, read through the brief intents of
+                core/reference/mechanic-lexicon.yaml: hand-designed content makes the content
+                shape authored and the text say so, a mode or the unlocks the brief names stay
+                in scope. The strategy's own statements are then checked against the brief
+                and the content model (`contradictions`), and a strategy that still
+                contradicts them is refused rather than handed to G2 - "difficulty comes from
+                one data-driven ramp, not hand-built levels" for a brief that asks for
+                hand-designed courses was boilerplate, not a decision.
   bet terms     prototype_must_prove, success and kill criteria as criteria-expressions
   honesty       risks carried from the opportunity plus the ones this plan introduces,
                 and the assumptions it takes on without checking
@@ -38,9 +46,10 @@ It does not approve anything. The result is a draft that waits at G2.
 import math
 import re
 
-from wgflib import genre_models
+from wgflib import genre_models, mechanics
 
-__all__ = ["Policy", "StrategyRefused", "plan_strategy", "PLANNABLE_STATES"]
+__all__ = ["Policy", "StrategyRefused", "plan_strategy", "contradictions", "brief_intents",
+           "PLANNABLE_STATES"]
 
 PLANNABLE_STATES = ("discovered", "scored", "shortlisted", "approved", "promoted")
 
@@ -226,6 +235,64 @@ def _plural(unit_kind):
     return f"{unit_kind}s"
 
 
+def brief_intents(brief, lexicon=None):
+    """The ids of the lexicon's `brief_intents` whose phrases `brief` contains."""
+    lexicon = lexicon if lexicon is not None else mechanics.load()
+    return {iid for iid, entry in (lexicon.get("brief_intents") or {}).items()
+            if mechanics.phrases_in(brief or "", (entry or {}).get("phrases"))}
+
+
+def _brief_unit(brief, intent):
+    """The brief's own word for a unit of content - the first of the intent's `units` it
+    uses - or `level`."""
+    text = mechanics.normalize(brief)
+    found = []
+    for word in intent.get("units") or []:
+        match = re.search(r"(?<![a-z0-9])" + re.escape(str(word)) + r"s?(?![a-z0-9])", text)
+        if match:
+            found.append((match.start(), str(word)))
+    return min(found)[1] if found else "level"
+
+
+def _statements(body):
+    """The strategy's own statements, by field: what it says the game is and is not. The
+    brief, and the assumptions that quote it, are the person's words and are not checked."""
+    concept = body.get("concept") or {}
+    scope = body.get("production_scope") or {}
+    out = [("one_liner", body.get("one_liner")),
+           ("concept.gameplay_direction", concept.get("gameplay_direction")),
+           ("concept.replayability", concept.get("replayability"))]
+    for field in ("mvp", "out_of_scope", "prototype_must_prove"):
+        out += [(field, item) for item in body.get(field) or []]
+    for field in ("reusable_systems", "scope_decisions"):
+        out += [(f"production_scope.{field}", item) for item in scope.get(field) or []]
+    return [(field, str(text)) for field, text in out if text]
+
+
+def contradictions(body, lexicon=None):
+    """The strategy statements that contradict what the brief, or the content model, asks.
+
+    An intent is active when the brief names one of its phrases, or when it names a
+    `difficulty_shape` and the content model resolved to it. A statement that contains one of
+    an active intent's `contradicted_by` phrases is a contradiction."""
+    lexicon = lexicon if lexicon is not None else mechanics.load()
+    intents = lexicon.get("brief_intents") or {}
+    sources = {iid: "the brief" for iid in brief_intents(body.get("brief"), lexicon)}
+    model = (body.get("concept") or {}).get("content_model") or {}
+    for iid, entry in intents.items():
+        shape = (entry or {}).get("difficulty_shape")
+        if shape and model.get("difficulty_shape") == shape:
+            sources.setdefault(iid, f"the content model ({shape})")
+    found = []
+    for iid in sorted(sources):
+        phrases = (intents[iid] or {}).get("contradicted_by")
+        for field, text in _statements(body):
+            for phrase in sorted(mechanics.phrases_in(text, phrases)):
+                found.append(f"{field} says \"{text}\" ({phrase}), which contradicts "
+                             f"{sources[iid]} ({iid})")
+    return found
+
+
 class _Plan:
     def __init__(self, opportunity, profiles, title_id, policy, vocabulary=None):
         self.opp = opportunity
@@ -242,6 +309,11 @@ class _Plan:
         self.estimates = opportunity.get("estimates") or {}
         self.text = _text(self.concept.get("genre"), self.concept.get("subgenre"),
                           self.concept.get("core_mechanic"), self.concept.get("core_loop"))
+        # What the person's idea asks of the game (core/reference/mechanic-lexicon.yaml
+        # brief_intents): read from the brief alone, and never from the catalog's words.
+        self.lexicon = mechanics.load()
+        self.intent_entries = self.lexicon.get("brief_intents") or {}
+        self.intents = brief_intents(opportunity.get("brief"), self.lexicon)
         self.risks = []
         self.assumptions = []
         self.decisions = []
@@ -484,6 +556,13 @@ class _Plan:
         shape = _first(coded("difficulty_shape"))
         if not isinstance(shape, str):
             shape = (model.get("difficulty_models") or ["level-authored"])[0]
+        for iid in sorted(self.intents):
+            asked = (self.intent_entries.get(iid) or {}).get("difficulty_shape")
+            if asked and asked != shape and asked in (model.get("difficulty_models") or []):
+                shape = asked
+                self.apply("concept.content_model", "brief",
+                           f"{shape} difficulty: the brief asks for it ({iid}), and the "
+                           f"{family} family allows it")
         axes = coded("difficulty_axes")
         if not isinstance(axes, list) or not axes:
             axes = [a["id"] for a in model.get("axes") or [] if isinstance(a, dict)
@@ -775,7 +854,18 @@ class _Plan:
 
         replay = self._replayability()
         content = self.content_model
-        if content is None:
+        # Hand-designed content the brief asks for, with no genre family to shape it: said in
+        # the brief's own unit, never as one generated ramp.
+        authored = next((self.intent_entries[i] for i in sorted(self.intents)
+                         if (self.intent_entries.get(i) or {}).get("difficulty_shape")), None)
+        brief_unit = _brief_unit(opp.get("brief"), authored) if authored else None
+        authored_model = content is not None and any(
+            content["difficulty_shape"] == (e or {}).get("difficulty_shape")
+            for e in self.intent_entries.values())
+        if content is None and authored:
+            content_direction = (f"Content: hand-designed {_plural(brief_unit)}, as the brief "
+                                 f"asks, with difficulty authored per {brief_unit}.")
+        elif content is None:
             content_direction = ("Difficulty comes from one data-driven ramp, not hand-built "
                                  "levels.")
         else:
@@ -863,7 +953,9 @@ class _Plan:
             (f"The brief, built in full: {concept['core_mechanic']}"
              if getattr(self, "idea_concept", None) else
              f"A single {self.control_scheme} control: {concept['core_mechanic']}"),
-            "One content set with a data-driven difficulty ramp" if content is None else
+            (f"Hand-designed {_plural(brief_unit)}, as the brief asks, with difficulty "
+             f"authored per {brief_unit}" if authored else
+             "One content set with a data-driven difficulty ramp") if content is None else
             f"{content['min_units']} designed {_plural(content['unit_kind'])} with authored "
             f"difficulty on {', '.join(content['difficulty_axes'])}",
             "Score and personal best, persisted"
@@ -884,8 +976,16 @@ class _Plan:
             mvp.append(f"Localization: {', '.join(locales)}")
 
         out_of_scope = []
+        # The brief is part of the concept here: what it asks for is not excluded under it.
+        asked = _text(self.text, opp.get("brief"))
+        kept = {k for i in self.intents
+                for k in (self.intent_entries.get(i) or {}).get("keeps_in_scope") or []}
+        reworded = {}
+        for i in sorted(self.intents):
+            reworded.update((self.intent_entries.get(i) or {}).get("replaces_exclusion") or {})
         for key, exclusion, keywords in EXCLUSIONS:
-            if keywords and _has(self.text, keywords):
+            exclusion = reworded.get(key, exclusion)
+            if (keywords and _has(asked, keywords)) or key in kept:
                 self.risk(f"The concept depends on something rapid production would exclude "
                           f"({key}); it stays in scope and carries the cost", "medium",
                           "Design keeps the smallest version of it that serves the core loop")
@@ -986,7 +1086,9 @@ class _Plan:
             "Template platform SDK adapter: one interface, one implementation per platform",
             f"Input handler for the {self.control_scheme} scheme only",
             "Score and personal-best persistence",
-            "Data-driven difficulty ramp",
+            (f"Content as data: every designed {(content or {}).get('unit_kind') or brief_unit}"
+             f" with its difficulty values" if authored or authored_model
+             else "Data-driven difficulty ramp"),
         ]
         if self.placements:
             systems.append("Ad-break service honouring the strictest interstitial interval, "
@@ -1170,4 +1272,9 @@ def plan_strategy(opportunity, profiles, title_id, policy=None, vocabulary=None,
     plan.session()
     plan.content()
     plan.platforms()
-    return plan.body()
+    body = plan.body()
+    found = contradictions(body, plan.lexicon)
+    if found:
+        raise StrategyRefused("the strategy contradicts what the brief or its content model "
+                              "asks: " + "; ".join(found))
+    return body

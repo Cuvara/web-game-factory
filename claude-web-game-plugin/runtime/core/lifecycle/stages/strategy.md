@@ -78,6 +78,21 @@ each such decision, and each one that fell back to a default because research ha
    `risks` carries the opportunity's risks forward and adds the ones this plan introduces;
    `assumptions` names what the plan takes as true and what would show it false.
 
+8. **Commit the content budget for the run's quality tier** (`concept.content_model`
+   `quality_tier` and `budget`). The tier is the installation's
+   (`factory.strategy.quality_tier`: `mvp` or `release`, default `release`). At `release`
+   the budget is the content a published title carries: units, groups where the genre family
+   has them, and distinct elements, each the larger of the family's bar
+   (`core/reference/genre-models.yaml` `units.min_total`) and the quality benchmark's
+   (`core/reference/quality-benchmark.yaml` `content`), counted in the family's own kinds -
+   tracks in cups, waves, run-segments - never "levels and bosses" by default. `basis`
+   records both numbers behind each quantity, and `justification` says why the volume is
+   enough: session length, progression structure, mechanics, replayability and what the
+   target platforms expect. At `mvp` the budget is the prototype's units, for a run that
+   ends at G4. Then reconcile `out_of_scope` against it: an exclusion the brief, the MVP or
+   the progression depends on is dropped and carried as a risk, and one they partly
+   contradict (earned unlocks beside "no cosmetics") is narrowed to what stays excluded.
+
 ## Optimize for rapid production
 
 Strategy is where a title is kept small, because every later stage inherits its scope. The

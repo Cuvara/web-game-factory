@@ -336,10 +336,12 @@ class ContentModel(unittest.TestCase):
             "session_band": fv("short", refs=["claim-session"]),
         }
         body = plan(opportunity(research=research_block(constraints=constraints)))
-        self.assertEqual(body["concept"]["content_model"], {
+        model = dict(body["concept"]["content_model"])
+        self.assertEqual(model.pop("budget")["units"], 20)
+        self.assertEqual(model, {
             "family": "puzzle", "unit_kind": "level", "progression": "unlock-track",
             "difficulty_shape": "sawtooth", "difficulty_axes": ["depth", "move-limit"],
-            "min_units": 6, "source": "research"})
+            "min_units": 6, "source": "research", "quality_tier": "release"})
         applied = self.applied(body)
         self.assertEqual(applied["source"], "research")
         for claim in ("claim-family", "claim-progression", "claim-shape", "claim-axes"):
@@ -354,12 +356,14 @@ class ContentModel(unittest.TestCase):
     def test_content_model_default_names_the_family(self):
         body = plan(opportunity(research=research_block(genre="platformer",
                                                         family="platformer")))
-        self.assertEqual(body["concept"]["content_model"], {
+        model = dict(body["concept"]["content_model"])
+        model.pop("budget")
+        self.assertEqual(model, {
             "family": "platformer", "unit_kind": "level", "progression": "linear-levels",
             "difficulty_shape": "level-authored",
             "difficulty_axes": ["precision", "timing", "hazard-density",
                                 "spatial-complexity"],
-            "min_units": 5, "source": "default"})
+            "min_units": 5, "source": "default", "quality_tier": "release"})
         applied = self.applied(body)
         self.assertEqual(applied["source"], "default")
         self.assertIn("Platformer", applied["detail"])
@@ -409,7 +413,9 @@ class ContentModel(unittest.TestCase):
                       "economy-pressure, opponent-escalation, composition", body["mvp"])
         direction = body["concept"]["gameplay_direction"]
         self.assertNotIn("Difficulty comes from one data-driven ramp", direction)
-        self.assertIn("4 specified waves in the prototype, 10 in the release", direction)
+        # The release number is the release-tier budget: the strategy family's min_total
+        # (10) is below the quality benchmark's 12.
+        self.assertIn("4 specified waves in the prototype, 12 in the release", direction)
 
     def test_legacy_strategy_text_unchanged_without_family(self):
         body = plan()
@@ -427,6 +433,176 @@ class ContentModel(unittest.TestCase):
         applied = self.applied(card)
         self.assertEqual(applied["source"], "default")
         self.assertTrue(applied["detail"].startswith("none: no genre family covers"))
+
+
+class QualityTierBudget(unittest.TestCase):
+    """WS-1 (docs/quality-gap-audit-2026-10.md): the run states its quality tier, and the
+    strategy commits the content budget for it - units, groups where the family has them,
+    distinct elements - from the larger of the genre model's `min_total` and the quality
+    benchmark, in the family's own kinds, with the reasons that volume is enough. The cases
+    are the audit's: an arcade family whose `min_total` of 6 a 12-level build cleared twice
+    over, a racing family whose 6 straight courses were accepted only at 12."""
+
+    def budget(self, family, genre, tier=None, brief=None, genre_model=None):
+        opp = opportunity(research=research_block(genre=genre, family=family,
+                                                  genre_model=genre_model))
+        if brief:
+            opp["brief"] = brief
+        body = plan_strategy(opp, PROFILES, "neon-drift", None, quality_tier=tier)
+        return body, body["concept"]["content_model"]
+
+    def test_release_is_the_default_tier(self):
+        _, model = self.budget("arcade", "endless-runner")
+        self.assertEqual(model["quality_tier"], "release")
+
+    def test_arcade_release_budget_is_the_benchmark_not_the_family_floor(self):
+        # The 2D validation build had 12 levels and one brick kind; the family's 6 passed it.
+        body, model = self.budget("arcade", "endless-runner")
+        budget = model["budget"]
+        self.assertEqual(budget["units"], 12)
+        self.assertEqual(budget["groups"], {"kind": "world", "count": 3,
+                                            "min_units_per_group": 4})
+        self.assertEqual(budget["elements"]["count"], 8)
+        self.assertEqual(budget["elements"]["kinds"],
+                         ["obstacle kind", "target kind", "power-up"])
+        self.assertEqual(budget["designed_play_s"], 300)
+        units = next(b for b in budget["basis"] if b["quantity"] == "units")
+        self.assertEqual(units, {"quantity": "units", "genre_model": 6, "benchmark": 12,
+                                 "value": 12})
+        self.assertEqual(budget["references"], ["genre-models@1.1.0",
+                                                "quality-benchmark@1.1.0"])
+        self.assertTrue(any(d.startswith(f"Quality tier release: the content budget is 12 "
+                                         f"{model['unit_kind']}s, 3 worlds, 8 distinct "
+                                         f"elements")
+                            for d in body["production_scope"]["scope_decisions"]),
+                        body["production_scope"]["scope_decisions"])
+        self.assertTrue(any("release content budget" in a["statement"]
+                            for a in body["assumptions"]))
+
+    def test_the_larger_bar_wins(self):
+        # Level puzzle: the family's 20 is above the benchmark's 12, so 20 stands.
+        _, model = self.budget("puzzle", "match-3")
+        units = next(b for b in model["budget"]["basis"] if b["quantity"] == "units")
+        self.assertEqual((units["genre_model"], units["benchmark"], units["value"]),
+                         (20, 12, 20))
+
+    def test_racing_counts_tracks_in_cups(self):
+        # The 3D validation build: 6 straight courses in one group cleared the family's 8
+        # on count; the accepted release had 12 in 3 groups.
+        body, model = self.budget("racing", "racing")
+        budget = model["budget"]
+        self.assertEqual((model["unit_kind"], budget["units"]), ("track", 12))
+        self.assertEqual(budget["groups"]["kind"], "cup")
+        reasons = " ".join(budget["justification"].values())
+        self.assertIn("12 tracks", reasons)
+        self.assertNotIn("level", reasons.replace(model["progression"], ""))
+        self.assertNotIn("boss", reasons)
+        # A strategy that commits to three cups no longer excludes "a second content set".
+        self.assertFalse(any(s.startswith("A second mode or content set")
+                             for s in body["out_of_scope"]))
+        self.assertTrue(any(s.startswith("A second mode; the release's content is the "
+                                         "budget") for s in body["out_of_scope"]))
+
+    def test_a_family_without_groups_gets_none(self):
+        _, model = self.budget("survival", "arena-survivor", genre_model="survival")
+        budget = model["budget"]
+        self.assertNotIn("groups", budget)
+        self.assertEqual(budget["units"], 12)
+        self.assertEqual(model["unit_kind"], "run-segment")
+        self.assertIn("no group above the run-segment",
+                      budget["justification"]["progression_structure"])
+
+    def test_the_justification_covers_the_five_reasons(self):
+        _, model = self.budget("platformer", "platformer")
+        why = model["budget"]["justification"]
+        self.assertEqual(sorted(why), ["mechanics", "platform_expectations",
+                                       "progression_structure", "replayability",
+                                       "session_length"])
+        self.assertIn("300 s of designed play", why["session_length"])
+        self.assertIn("3 worlds of at least 4 levels", why["progression_structure"])
+        self.assertIn("8 distinct elements (hazard kind, enemy kind, traversal element)",
+                      why["mechanics"])
+        self.assertIn("Yandex Games", why["platform_expectations"])
+
+    def test_mvp_tier_commits_the_prototype_only(self):
+        body, model = self.budget("arcade", "endless-runner", tier="mvp")
+        budget = model["budget"]
+        self.assertEqual(model["quality_tier"], "mvp")
+        self.assertEqual(budget["units"], model["min_units"])
+        self.assertNotIn("groups", budget)
+        self.assertNotIn("elements", budget)
+        self.assertEqual(budget["references"], ["genre-models@1.1.0"])
+        self.assertIn("not a release", budget["justification"]["platform_expectations"])
+        kinds = model["unit_kind"] + "s"
+        self.assertIn(f"3 specified {kinds} in the prototype, 3 in the release",
+                      body["concept"]["gameplay_direction"])
+        # At mvp there is no release budget for "a second content set" to contradict.
+        self.assertTrue(any(s.startswith("A second mode or content set")
+                            for s in body["out_of_scope"]))
+
+    def test_an_unknown_tier_is_refused(self):
+        with self.assertRaises(StrategyRefused):
+            self.budget("arcade", "endless-runner", tier="premium")
+
+    def test_both_tiers_validate_against_the_schema(self):
+        research = research_block(genre="racing", family="racing")
+        research["audience"] = {key: fv("fixture") for key in (
+            "player_type", "intent", "device", "age_band", "session_behavior")}
+        for tier in ("mvp", "release"):
+            with self.subTest(tier):
+                result = step({"quality_tier": tier}).execute(
+                    fake_inputs(opportunity(research=research)), FakeContext())
+                self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+                artifact = result.artifacts[0].content
+                self.assertEqual(ArtifactContracts()("title-strategy", artifact), [])
+                self.assertEqual(artifact["concept"]["content_model"]["quality_tier"], tier)
+                self.assertEqual(result.artifacts[0].metadata["quality_tier"], tier)
+
+    def test_the_tier_comes_from_the_project_config(self):
+        context = FakeContext()
+        context.config = {"strategy": {"quality_tier": "mvp"}}
+        opp = opportunity(research=research_block(genre="racing", family="racing"))
+        result = step().execute(fake_inputs(opp), context)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(result.artifacts[0].content["concept"]["content_model"]
+                         ["quality_tier"], "mvp")
+        result = step({"quality_tier": "gold"}).execute(fake_inputs(opp), context)
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+
+    def test_no_family_records_the_tier_as_a_decision(self):
+        body = plan()
+        self.assertNotIn("content_model", body["concept"])
+        self.assertTrue(any(d.startswith("Quality tier release: no genre family")
+                            for d in body["production_scope"]["scope_decisions"]))
+
+
+class OutOfScopeReconciled(unittest.TestCase):
+    """`out_of_scope` is reconciled against the scope it sits beside (plugin dogfood F08:
+    an MVP of unlockable planes beside "no customization or cosmetics")."""
+
+    def strategy(self, brief):
+        opp = opportunity(research=research_block(genre="endless-runner", family="arcade"))
+        opp["brief"] = brief
+        return plan(opp)
+
+    def test_earned_unlocks_narrow_the_cosmetics_exclusion(self):
+        body = self.strategy("A paper plane glider where you unlock new planes by flying far")
+        self.assertNotIn("Character or skin customization and a cosmetics shop",
+                         body["out_of_scope"])
+        self.assertIn("A cosmetics shop or purchasable skins; unlocks the player earns "
+                      "through play are progression and stay in scope", body["out_of_scope"])
+        self.assertTrue(any(d.startswith("Exclusion narrowed to fit the scope (customization)")
+                            for d in body["production_scope"]["scope_decisions"]))
+
+    def test_a_brief_that_needs_an_excluded_system_keeps_it(self):
+        body = self.strategy("A runner where you dress up your character in skins")
+        self.assertFalse(any("cosmetics" in s for s in body["out_of_scope"]))
+        self.assertTrue(any("(customization)" in r["description"] for r in body["risks"]))
+
+    def test_no_unlock_keeps_the_exclusion_whole(self):
+        body = self.strategy("A runner on a neon highway")
+        self.assertIn("Character or skin customization and a cosmetics shop",
+                      body["out_of_scope"])
 
 
 # -- the step ----------------------------------------------------------------------------

@@ -1,4 +1,5 @@
-"""Platform profiles, read from core/reference/platforms/ as the binding constraints they are.
+"""Platform profiles, read from core/reference/platforms/ as the binding constraints they are,
+and the quality benchmark the release content budget is drawn from.
 
 A profile is identified by its `id` and pinned by its `version`; the strategy records both
 so a later build can be checked against the rules that were in force when it was planned.
@@ -10,7 +11,7 @@ import os
 from wgflib import paths
 from wgflib.yamllite import load
 
-__all__ = ["load_profiles", "load_vocabulary"]
+__all__ = ["load_profiles", "load_vocabulary", "load_benchmark"]
 
 
 def load_profiles(directory=None):
@@ -35,3 +36,15 @@ def load_vocabulary(path=None):
     controls = (document.get("vocabularies") or {}).get("controls") or []
     return {"control_schemes": {c["id"]: c["control_scheme"] for c in controls
                                 if c.get("control_scheme")}}
+
+
+def load_benchmark(path=None):
+    """core/reference/quality-benchmark.yaml: the genre-neutral bars a release-tier title is
+    budgeted to. Raises when the file is absent or unreadable: a budget with no bar behind it
+    would be a number nobody can defend at G2."""
+    path = path or os.path.join(paths.REFERENCE, "quality-benchmark.yaml")
+    with open(path, encoding="utf-8") as handle:
+        document = load(handle.read())
+    if not isinstance(document, dict) or not isinstance(document.get("content"), dict):
+        raise ValueError(f"{path} has no content block")
+    return document

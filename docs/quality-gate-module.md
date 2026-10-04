@@ -1,6 +1,6 @@
 # The quality-gate step
 
-`scripts/wgf_quality` (step type `quality-gate`, workflow `new-game` 10). It runs after
+`scripts/wgf_quality` (step type `quality-gate`, workflow `new-game` 11). It runs after
 `verify` and before G4 (`prototype-review`), and decides one question: **does this build hold
 the Factory's quality floor on every dimension at once?**
 
@@ -134,13 +134,16 @@ Against the run's previous quality-report (the step's own last output):
 ## Routing
 
 FAILED (not retryable) with the first of the routes of the open findings that hold a
-dimension below its floor, in this order: `design-gap` (design, with each finding's
-`design_gap`), `assets` (assets, which remakes the asset ids or roles the findings name -
-`wgf_assets/feedback.py`), `develop` (develop, whose brief lists the findings under "Fix
-first: quality dimensions below the floor"), `listing` (once the listing is measured). The
-route budgets are on the receiving steps (`quality-gate.develop: 2`, `quality-gate.assets: 2`,
-`quality-gate.design-gap: 1`). When WS-8 lands, its specialist routes take the findings'
-`owner` instead.
+dimension below its floor (`design-gap`, `assets`, `develop`; `listing` once the listing is
+measured). Since workflow 11 every one of them goes to `triage`, like every gate's failure
+(scripts/wgf_triage, docs/specialist-routing.md): triage reads the quality-report as the
+`quality-report` producer (core/reference/specialist-routing.yaml 1.2.0 maps each quality
+dimension onto a routing dimension), normalizes its open findings in the dimensions below
+the floor into quality findings, and routes them - a `design-gap` finding to design
+(triage's `design`, with its design gap), an `assets` finding to assets (with the asset ids it
+names), the rest to the specialist that owns the dimension, whose develop visit's brief
+carries them. The route budgets are on triage (`quality-gate.develop: 2`,
+`quality-gate.assets: 2`, `quality-gate.design-gap: 1`).
 
 ## Anti-gaming
 

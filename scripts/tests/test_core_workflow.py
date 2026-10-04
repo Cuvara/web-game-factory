@@ -1361,7 +1361,7 @@ class PrototypeReviewGate(_MockNewGame):
         executed = self.executed(state)
         at = executed.index("prototype-review")
         # waited, answered iterate, the loop, and waiting again
-        self.assertEqual(executed[at:], ["prototype-review", "prototype-review", "develop",
+        self.assertEqual(executed[at:], ["prototype-review", "prototype-review", "triage", "develop",
                                          "playability", "production-quality", "visual-qa", "content-sufficiency",
                                          "review", "sdk", "sdk-review",
                                          "verify", "quality-gate", "prototype-review"])
@@ -1545,7 +1545,8 @@ class GateAnsweredWithoutPassing(EngineCase):
         self.assertEqual(ids[ids.index("store-listing") + 1], "listing-validation")
         self.assertEqual(ids[ids.index("listing-validation") + 1], "release")
         g4 = definition.step("prototype-review")
-        self.assertEqual(g4.on, {"iterate": "develop", "kill": "$end"})
+        # G4's iterate goes through triage, which routes typed findings like a gate's.
+        self.assertEqual(g4.on, {"iterate": "triage", "kill": "$end"})
         self.assertEqual(definition.step("design").on, {"descope": "$fail"})
 
 
@@ -2059,8 +2060,9 @@ class WatchdogParams(EngineCase):
 
 
 class RouteScopedLoops(_MockNewGame):
-    """new-game's four loops back into develop - review's and sdk-review's request-changes,
-    verify's fail, G4's iterate - each spend their own budget (max_visits_by_route)."""
+    """new-game's four loops back through triage into develop - review's and sdk-review's
+    request-changes, verify's fail, G4's iterate - each spend their own budget on triage
+    (max_visits_by_route); the specialists' budgets are on develop."""
 
     def test_a_mock_new_game_still_stops_at_g4_and_completes_on_pass(self):
         api, state = self.start()
@@ -2071,7 +2073,7 @@ class RouteScopedLoops(_MockNewGame):
 
     def test_the_verify_loop_blocks_at_its_route_limit_with_a_structured_reason(self):
         api, state = self.start(mock_plan={"verify": ["fail"] * 4})
-        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "develop"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "triage"))
         self.assertEqual((state.blocked_reason["kind"], state.blocked_reason["route"],
                           state.blocked_reason["scope"], state.blocked_reason["from"]),
                          ("loop-limit", "fail", "route", "verify"))
@@ -2089,10 +2091,9 @@ class RouteScopedLoops(_MockNewGame):
                                          "verify": ["fail"] * 2})
         self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"),
                          state.message)
-        develop = state.steps["develop"]
-        self.assertEqual(develop.route_visits, {"assets.success": 1,
-                                                "review.request-changes": 2, "verify.fail": 2})
-        self.assertEqual(develop.visits, 5)
+        self.assertEqual(state.steps["triage"].route_visits,
+                         {"assets.success": 1, "review.request-changes": 2, "verify.fail": 2})
+        self.assertEqual(state.steps["develop"].visits, 5)
 
     def test_review_and_sdk_review_each_have_their_own_budget(self):
         # Both reviewers route request-changes back to develop; each spends its own limit.
@@ -2100,13 +2101,13 @@ class RouteScopedLoops(_MockNewGame):
                                          "sdk-review": ["request-changes"] * 2})
         self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"),
                          state.message)
-        self.assertEqual(state.steps["develop"].route_visits,
+        self.assertEqual(state.steps["triage"].route_visits,
                          {"assets.success": 1, "review.request-changes": 2,
                           "sdk-review.request-changes": 2})
         # A third request from one reviewer is that reviewer's limit, not a shared one.
         _, state = self.start(mock_plan={"review": ["request-changes"] * 3,
                                          "sdk-review": ["request-changes"] * 2})
-        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "develop"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "triage"))
         self.assertEqual((state.blocked_reason["from"], state.blocked_reason["limit_key"]),
                          ("review", "review.request-changes"))
 
@@ -2118,10 +2119,10 @@ class RouteScopedLoops(_MockNewGame):
             state = api.run(RunRequest(resume=state.run_id, decision="iterate",
                                        decided_by="human"))
             self.assertEqual(state.cursor, "prototype-review", state.message)
-        self.assertEqual(state.steps["develop"].route_visits.get("prototype-review.iterate"),
+        self.assertEqual(state.steps["triage"].route_visits.get("prototype-review.iterate"),
                          2)
         state = api.run(RunRequest(resume=state.run_id, decision="iterate", decided_by="human"))
-        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "develop"),
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "triage"),
                          state.message)
         self.assertEqual((state.blocked_reason["kind"], state.blocked_reason["limit_key"],
                           state.blocked_reason["from"]),
@@ -2130,7 +2131,7 @@ class RouteScopedLoops(_MockNewGame):
         state = api.run(RunRequest(resume=state.run_id, decided_by="human"))
         self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"),
                          state.message)
-        self.assertEqual(state.steps["develop"].route_visits.get("prototype-review.iterate"),
+        self.assertEqual(state.steps["triage"].route_visits.get("prototype-review.iterate"),
                          3)
 
     def test_a_run_blocked_before_blocked_reason_existed_still_resumes(self):

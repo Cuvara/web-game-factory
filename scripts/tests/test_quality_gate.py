@@ -617,5 +617,64 @@ class GateEvidence(unittest.TestCase):
         self.assertIn("quality:floor.ui_layout", lines)
 
 
+
+class ThroughTriage(unittest.TestCase):
+    """A quality-gate failure goes through triage like every gate's (workflow 11): its open
+    findings become quality findings routed to the specialist that owns each dimension."""
+
+    def setUp(self):
+        from wgf_triage import Routing
+        self.routing = Routing.load()
+        self.assertEqual(self.routing.problems() if hasattr(self.routing, "problems") else [],
+                         [])
+
+    def report(self, docs):
+        gate = Gate("test_a_build_holding_every_floor_at_release_is_a_release")
+        gate.base = tempfile.mkdtemp(prefix="wgf-quality-triage-")
+        self.addCleanup(shutil.rmtree, gate.base, ignore_errors=True)
+        return gate.run_step(docs).artifacts[0].content
+
+    def test_mobile_40_goes_to_the_ui_specialist(self):
+        from wgf_triage import normalize
+        report = self.report(mobile_40(release_build()))
+        found = {f["id"]: f for f in normalize("quality-report", report, self.routing)}
+        layout = found["quality-report:floor.ui_layout"]
+        self.assertEqual((layout["dimension"], layout["owner"], layout["route"]),
+                         ("ui", "ui", "develop"))
+        self.assertTrue(any(ref.startswith("artifact:") for ref in layout["evidence_refs"])
+                        or layout["evidence_refs"] == [])
+        # Only dimensions held below the floor are routed.
+        self.assertTrue(all(f["dimension"] in ("ui", "feel") for f in found.values()), found)
+
+    def test_an_asset_finding_routes_to_assets_and_a_3d_visual_to_the_environment_artist(self):
+        from wgf_triage import normalize
+        docs = release_build()
+        docs["asset-manifest"]["items"] = docs["asset-manifest"]["items"][:3]
+        found = normalize("quality-report", self.report(docs), self.routing)
+        self.assertTrue(found)
+        self.assertEqual({f["route"] for f in found}, {"assets"})
+        self.assertEqual({f["dimension"] for f in found}, {"audio"})
+        docs = release_build()
+        docs["visual-qa-report"]["scores"] = {k: 3 for k in docs["visual-qa-report"]["scores"]}
+        found = normalize("quality-report", self.report(docs), self.routing, dimension_3d=True)
+        visual = [f for f in found if f["id"] == "quality-report:floor.visual_mean"][0]
+        self.assertEqual((visual["dimension"], visual["route"]), ("environment-3d", "assets"))
+
+    def test_a_design_gap_finding_routes_design_with_its_gap(self):
+        from wgf_triage import normalize
+        report = self.report(release_build())
+        report["failed"] = ["content"]
+        report["findings"] = [{
+            "id": "quality:floor.session_content", "criterion": "floor.session_content",
+            "dimension": "content", "severity": "blocker", "summary": "short",
+            "evidence": [], "build": {"commit": SHIP, "digest": DIGEST},
+            "expected": {"minimum": 1.0}, "observed": 0.5, "owner": "level-design",
+            "route": "design-gap", "status": "open",
+            "design_gap": {"field": "build_spec.content.units", "question": "Which units?",
+                           "assumed": None, "severity": "blocking"}}]
+        found = normalize("quality-report", report, self.routing)
+        self.assertEqual(found[0]["route"], "design")
+        self.assertEqual(found[0]["task"]["design_field"], "build_spec.content.units")
+
 if __name__ == "__main__":
     unittest.main()

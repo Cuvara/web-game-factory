@@ -10,9 +10,6 @@ back here (core/workflows/new-game.workflow.yaml). `plan` turns it into
                         through the playability-report the gate judged
     visual-qa           every finding routed `assets` (any severity), every failing score,
                         per-state answer and look whose rubric entry routes `assets`
-    quality-gate        every open finding routed `assets` in a dimension below its floor:
-                        the ids in its `assets`, else the ids and role words its summary and
-                        criterion name (scripts/wgf_quality)
 
 A failure concerns the requirements whose id (or variant id) it names, those of a role whose
 word it names, those whose runtime asset the play probe reported drawing an entity of that
@@ -200,21 +197,50 @@ class _Collector:
                     entry["frames"].append(frame)
 
 
+def _routes(report):
+    """Where a report sends its failures. A triage-report routes one group: its selected
+    group's route, while it routes one (docs/specialist-routing.md)."""
+    if "selected" in report and "routes" not in report:
+        selected = report.get("selected") or {}
+        return [selected["route"]] if report.get("verdict") == "routed" and isinstance(
+            selected, dict) and selected.get("route") else []
+    return report.get("routes") or []
+
+
 def _failing(report):
-    return "assets" in (report.get("routes") or []) and report.get("verdict") != "PASS"
+    return "assets" in _routes(report) and report.get("verdict") != "PASS"
 
 
 def _select(reports, entered_by):
-    """The reports to read: the one of the gate named by `entered_by` (`<step>.<route>`),
-    when it is among them, else every report routed to assets."""
+    """The reports to read: the one of the step named by `entered_by` (`<step>.<route>`),
+    when it is among them, else every gate report routed to assets. A triage-report is read
+    only when the triage step itself routed the run here."""
     routed = [(kind, report) for kind, report in reports if isinstance(report, dict)
-              and "assets" in (report.get("routes") or [])]
+              and "assets" in _routes(report)]
     if entered_by:
         source = str(entered_by).split(".", 1)[0]
         named = [(k, r) for k, r in routed if k == f"{source}-report"]
         if named:
             return named
-    return routed
+    return [(k, r) for k, r in routed if k != "triage-report"]
+
+
+def _triage(report, resolver, collect):
+    """The selected findings of a triage-report that routed `assets`: each one's assets (or
+    the requirements its words name), with what to change and the frames that show it."""
+    by_id = {f.get("id"): f for f in report.get("findings") or [] if isinstance(f, dict)}
+    for fid in (report.get("selected") or {}).get("findings") or []:
+        finding = by_id.get(fid)
+        if not finding:
+            continue
+        task = finding.get("task") or {}
+        named = resolver.names(finding.get("assets")) or resolver.text(
+            finding.get("summary"), task.get("change"))
+        reason = f"{fid}: {finding.get('summary')} Change: {task.get('change')}"
+        frames = [ref for ref in finding.get("evidence_refs") or []
+                  if isinstance(ref, str) and ref.lower().endswith((".png", ".jpg", ".jpeg",
+                                                                    ".webp"))]
+        collect.add(named, reason, frames)
 
 
 def _production(report, resolver, collect, run_dir, playability):
@@ -236,23 +262,6 @@ def _production(report, resolver, collect, run_dir, playability):
             path = frame_paths.get((check.get("project"), frame))
             frames.append(_abs(path, run_dir) if path else None)
         collect.add(named, reason, frames)
-
-
-def _quality(report, resolver, collect):
-    """A quality-report's open findings routed to assets: the asset ids they name, else the
-    requirements their text names (a role word, an id)."""
-    below = set(report.get("failed") or [])
-    for finding in report.get("findings") or []:
-        if not isinstance(finding, dict) or finding.get("route") != "assets" \
-                or finding.get("status") != "open" or finding.get("dimension") not in below:
-            continue
-        named = resolver.names(finding.get("assets")) or resolver.text(
-            finding.get("summary"), finding.get("criterion"))
-        reason = (f"{finding.get('criterion')} ({finding.get('dimension')} below its floor): "
-                  f"{finding.get('summary')}")
-        if finding.get("expected"):
-            reason += f" Expected: {_inline(finding['expected'])}."
-        collect.add(named, reason, [])
 
 
 def _overview(report, run_dir):
@@ -363,8 +372,8 @@ def plan(reports, requirements, *, rules=None, run_dir=None, entered_by=None,
     for kind, report in selected:
         if kind == "production-quality-report":
             _production(report, resolver, collect, run_dir, playability)
-        elif kind == "quality-report":
-            _quality(report, resolver, collect)
+        elif kind == "triage-report":
+            _triage(report, resolver, collect)
         else:
             _visual_qa(report, rules, visual, collect, run_dir)
     reentry = any(_failing(r) for _k, r in selected)

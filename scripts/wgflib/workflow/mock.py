@@ -487,6 +487,52 @@ class MockPublishStep(MockStep):
                                   "idempotency_key": f"{context.run_id}:publish:mock"}
 
 
+
+class MockTriageStep(MockStep):
+    """Routes nothing by default: it reports `clear`, naming the entry that sent the build
+    back as its `source`, and the run continues to develop as a generalist visit that still
+    reads the gates' own reports - the placeholder has no findings to brief a specialist
+    with. A mock plan entry naming a label (a specialist's role id, `design`, `assets`)
+    routes one placeholder finding there, as the real step would."""
+
+    type, role = "triage", "architect"
+
+    def _label(self, context):
+        entry = self._scripted(context)
+        return None if entry in ("success", "pass") else entry
+
+    def execute(self, inputs, context):
+        result = super().execute(inputs, context)
+        label = self._label(context)
+        if result.outcome == "SUCCESS" and label and not result.route:
+            return StepResult.success(result.artifacts, route=label,
+                                      message=f"{self.id} routed {label} (mock)")
+        return result
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type != "triage-report":
+            return
+        label = self._label(context)
+        entered = getattr(context, "entered_by", None)
+        body["entered_by"] = body["source"] = entered
+        if not label:
+            return
+        route = label if label in ("design", "assets") else "develop"
+        owner = "gameplay" if route != "develop" else label
+        finding = {
+            "id": f"triage:mock-{context.execution}", "dimension": "gameplay",
+            "severity": "blocker", "summary": "Scripted finding (mock).",
+            "source": {"producer": "triage", "step": None, "check": "mock",
+                       "project": None, "artifact_id": None, "content_hash": None},
+            "evidence_refs": [], "owner": owner,
+            "task": {"change": "Nothing: the mock builds nothing.",
+                     "acceptance": ["the mock gate passes"]},
+            "route": route}
+        group = {"owner": owner, "route": route, "label": label, "findings": [finding["id"]]}
+        body.update({"mode": "fresh", "findings": [finding], "groups": [group],
+                     "selected": group, "verdict": "routed",
+                     "message": f"routed {label} (mock)"})
+
 MOCK_STEPS = (
     MockResearchStep,
     MockStrategyStep,
@@ -494,6 +540,7 @@ MOCK_STEPS = (
     MockTechPlanStep,
     MockInitStep,
     MockAssetsStep,
+    MockTriageStep,
     MockDevelopmentStep,
     MockPlayabilityStep,
     MockProductionQualityStep,

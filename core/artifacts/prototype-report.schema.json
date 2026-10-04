@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/prototype-report.schema.json",
   "title": "Prototype Report",
-  "description": "The evidence package for gate G4 — the kill gate.\n\nIts job is to make an honest kill possible. That means it must evaluate each kill criterion authored at strategy time with a MEASURED value, and it must carry playtest observations from someone who had not seen the game before. A report that only describes what was built cannot support a decision to stop.\n\nThe recommendation field is the producing role's view, not the verdict. The verdict is a decision-record.\n\n1.1.0 adds two things the gate needs in order to read the build against the design rather than against itself: `design_gaps`, every place the design did not say enough to build from and what was assumed instead, which is how a design is corrected rather than silently reinterpreted; and `content_coverage`, how many of the designed content units were built, partly built or cut - a prototype that built two of six levels is not a prototype of the design.",
+  "description": "The evidence package for gate G4 — the kill gate.\n\nIts job is to make an honest kill possible. That means it must evaluate each kill criterion authored at strategy time with a MEASURED value, and it must carry playtest observations from someone who had not seen the game before. A report that only describes what was built cannot support a decision to stop.\n\nThe recommendation field is the producing role's view, not the verdict. The verdict is a decision-record.\n\n1.1.0 adds two things the gate needs in order to read the build against the design rather than against itself: `design_gaps`, every place the design did not say enough to build from and what was assumed instead, which is how a design is corrected rather than silently reinterpreted; and `content_coverage`, how many of the designed content units were built, partly built or cut - a prototype that built two of six levels is not a prototype of the design.\n\n1.2.0 adds `specialist`: a develop visit the triage step routed to a specialist records which one, the findings it was given and what its sessions cost; the next triage records what the gates measured of them (triage-report `ledger`).",
 
   "x-wgf": {
     "id": "prototype-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "producer": "title:prototype",
     "consumers": ["title:prototype-review", "title:production", "title:prototype", "title:design", "release:qa", "release:draft", "release:store-listing"],
     "repo_path": "workspace/titles/<title-id>/prototype-report.json",
@@ -152,6 +152,22 @@
       }
     },
 
+    "specialist": {
+      "type": "object",
+      "description": "Added in 1.2.0. The specialist this visit was briefed as, when the triage step routed it (docs/specialist-routing.md): the role (core/roles/roles.yaml), the ids of the quality findings it was given - only those it owns - the triage-report that routed them, and the developer sessions this visit spent and their cost as the run's budget recorded them (null when unknown). Whether each finding was resolved is measured afterwards, by the gate that raised it, and recorded in the next triage-report's ledger.",
+      "required": ["role", "findings"],
+      "properties": {
+        "role": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "findings": { "type": "array", "items": { "type": "string" } },
+        "pending": { "type": "array", "items": { "type": "string" }, "description": "The specialists still to visit this build after this one, in order." },
+        "triage_report": { "type": ["string", "null"] },
+        "source": { "type": ["string", "null"], "description": "The gate entry the findings came from (verify.fail, visual-qa.develop, prototype-review.iterate, ...)." },
+        "writable_paths": { "type": "array", "items": { "type": "string" } },
+        "sessions": { "type": ["integer", "null"], "minimum": 0 },
+        "cost_usd": { "type": ["number", "null"], "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
     "content_coverage": {
       "type": "object",
       "description": "The designed content against the built content: how many units the design specified and how many the prototype actually carries. Added in 1.1.0. `designed` counts the units of the tier this prototype was asked for; a report where built is far below designed says the prototype is of a smaller game than the one reviewed.",

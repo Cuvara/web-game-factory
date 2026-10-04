@@ -217,12 +217,12 @@ again) to `assets` and `develop` to `develop`, and `release` refuses unless both
 development commit it ships (`docs/production-architecture.md`). Workflow 9 then counts the
 built content against the design's quality tier: `content-sufficiency` routes `develop` (the
 build is short of the design) or `design-gap` (the design is short of the tier)
-(`docs/content-sufficiency-module.md`). Workflow 10 adds the **quality gate** after verify:
+(`docs/content-sufficiency-module.md`). Workflow 11 adds the **quality gate** after verify:
 `quality-gate` scores one build on every quality dimension from the reports the producers
 wrote about it, against `core/reference/quality-floor.yaml` (the universal floor, the genre
 family's contract, the 3D contract) and the benchmark's release bars at the run's tier, as
 pinned when the run started; a dimension below its floor - whatever the others score -
-routes `design-gap`, `assets` or `develop`, stale evidence blocks, a tier-mvp run is
+goes through triage to its findings' owners, stale evidence blocks, a tier-mvp run is
 `development`, never release. G4 is decided on the quality-report, and release refuses a
 build whose quality-report did not pass it (`docs/quality-gate-module.md`). Workflow 7 adds the **store listing** after G4
 (`docs/store-listing-module.md`): `store-listing` captures the verified build's package -
@@ -297,8 +297,9 @@ every step type in `new-game` has one: `wgf_discovery` (research), `wgf_strategy
 `wgf_design`, `wgf_techplan`, `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_review`,
 `wgf_sdk`, `wgf_verification`, `wgf_release`, `wgf_playability`, `wgf_production`
 (production-quality), `wgf_visualqa` (visual-qa), `wgf_sufficiency` (content-sufficiency),
-`wgf_quality` (quality-gate), `wgf_listing` (store-listing and listing-validation) and `wgf_publish` (platform-validate and
-publish). `--mock` still
+`wgf_quality` (quality-gate), `wgf_listing` (store-listing and listing-validation),
+`wgf_publish` (platform-validate and publish) and `wgf_triage` (triage: failures as quality
+findings, routed to the specialist that owns them). `--mock` still
 replaces all of them with placeholders for a run. Discovery reads evidence snapshots from
 `workspace/research/snapshots/` and teardown records from `workspace/research/games/`, codes
 every game on `core/reference/research-vocabulary.yaml`, and proposes several opportunities
@@ -396,6 +397,10 @@ seen by the engine — validate what you write there with ajv.
 - `docs/template-contract.md` — every path, script, CLI, output and config key the Factory
   assumes of a game repository (`wgflib/template_contract.py`), and the drift test against the pin
 - `docs/workflow-engine.md` — the `wgf` engine: definitions, steps, retry, resume, routing
+- `docs/specialist-routing.md` — quality findings (`shared/quality-finding.schema.json`)
+  routed to the specialist that owns each dimension (`core/reference/specialist-routing.yaml`,
+  `core/roles/specialists.md`): the `triage` step, specialist develop visits, their loop
+  budgets and ledger, and G4's `iterate --findings`
 - `docs/plugin-runtime.md` — the installed plugin is the Factory runtime and the working
   directory the project: what the plugin ships, how `ROOT` and `PROJECT` resolve, `wgf where`
 - `docs/autonomous-runs.md` — why the shipped config is supervised, the opt-in autonomous

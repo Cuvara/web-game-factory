@@ -11,7 +11,8 @@ are files in scripts/tests/ without `.py`.
 """
 
 SUITE = {
-    "WORKFLOW": ["test_core_workflow", "test_core_persistence", "test_decisions"],
+    "WORKFLOW": ["test_core_workflow", "test_core_persistence", "test_decisions",
+                 "test_triage"],
     "AGENTS": ["test_core_agents", "test_live_loop"],
     "CONTRACTS": ["test_core_contracts", "test_core_lineage", "test_core_template", "test_golden_fast"],
     "VERIFY": ["test_core_verify"],

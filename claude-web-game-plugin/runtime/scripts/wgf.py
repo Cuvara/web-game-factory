@@ -14,7 +14,7 @@ Every command that does work is a slice of one workflow definition, executed by 
     wgf resume <run-id> --budget-sessions N [--budget-cost X]
                                          raise the run's developer-session budget, as a
                                          person (refused from inside a step's process tree)
-    wgf decide <run-id> CHOICE [--note TEXT]
+    wgf decide <run-id> CHOICE [--note TEXT] [--findings FILE]
                                          answer a run waiting at a human checkpoint
     wgf <cmd> --resume <run-id> [...]    the same as `wgf resume`, whatever <cmd> is
     wgf <cmd> --run <run-id>             run that slice inside an existing run, reusing its
@@ -485,6 +485,10 @@ def build_parser(commands):
     decide.add_argument("run", metavar="RUN_ID")
     decide.add_argument("choice", metavar="CHOICE", help="e.g. approve or reject")
     decide.add_argument("--note", metavar="TEXT", help="rationale recorded with the decision")
+    decide.add_argument("--findings", metavar="FILE",
+                        help="with iterate: typed quality findings (a JSON list of "
+                             "quality-finding requests), routed by triage to the specialists "
+                             "that own them (docs/specialist-routing.md)")
     decide.add_argument("--json", action="store_true", help="print events as JSON lines")
     decide.add_argument("--quiet", action="store_true", help="print only the final status")
     decide.set_defaults(handler=cmd_decide)
@@ -675,8 +679,46 @@ def cmd_decide(args):
     if pending["choices"] and args.choice not in pending["choices"]:
         raise UsageError(f"{args.choice!r} is not a choice at {state.cursor}: "
                          f"{', '.join(pending['choices'])}")
-    request = RunRequest(resume=args.run, decision=args.choice, note=args.note)
+    note = args.note
+    if getattr(args, "findings", None):
+        note = _attach_findings(api, args.run, args.choice, args.findings, note)
+    request = RunRequest(resume=args.run, decision=args.choice, note=note)
     return exit_code(_drive(api, args, request))
+
+
+def _attach_findings(api, run_id, choice, path, note):
+    """Store a person's typed findings in the run and name them in the decision's note.
+
+    The file is validated against the quality-finding `request` shape, copied into the run
+    directory under its content hash, and pinned in the note by that hash - the note is
+    what the decision records, and the triage step reads the findings back from it and
+    refuses a file that no longer hashes to it. Only `iterate` sends the build back to be
+    worked on, so only `iterate` takes findings."""
+    import hashlib
+    from wgf_triage.step import validate_requests
+    if choice != "iterate":
+        raise UsageError(f"--findings goes with iterate (the build goes back to be worked "
+                         f"on); {choice!r} sends nothing back")
+    try:
+        with open(path, "rb") as handle:
+            raw = handle.read()
+        requests = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError) as exc:
+        raise UsageError(f"--findings {path}: {exc}")
+    problems = validate_requests(requests.get("findings") if isinstance(requests, dict)
+                                 else requests)
+    if problems:
+        raise UsageError(f"--findings {path} is not a list of quality findings "
+                         f"(core/artifacts/shared/quality-finding.schema.json#/$defs/request): "
+                         + "; ".join(problems[:6]))
+    digest = hashlib.sha256(raw).hexdigest()
+    relative = f"findings/{digest[:16]}.json"
+    target = os.path.join(api.store.run_dir(run_id), *relative.split("/"))
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(target, "wb") as handle:
+        handle.write(raw)
+    line = f"findings: {relative} sha256:{digest}"
+    return f"{note.rstrip()}\n{line}" if note else line
 
 
 def cmd_status(args):

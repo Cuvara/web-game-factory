@@ -317,7 +317,7 @@
     "scripts/wgf_techplan/step.py": "sha256:04633cbc5acab7d7e6665fb74e5bb2e445948d18c1677ed8af42cceadd634b74",
     "scripts/wgf_verification/__init__.py": "sha256:d839c975552a91e4eacae638057938892f9cd7985fd6acb1d2905f0e2b9bf4ad",
     "scripts/wgf_verification/checks/__init__.py": "sha256:3ebe5ef9c85d07c4afa04f1d25b5b6c00491759f59e11119b54038912a9fbe98",
-    "scripts/wgf_verification/checks/assets.py": "sha256:7efbb723c7cc5310cc6c468287dc082d3613b5accb4caee3a23ab6cd24c19bea",
+    "scripts/wgf_verification/checks/assets.py": "sha256:33f951990001f827f1b650d95126d1ed21bb80ced45674a7029f2d6ca481154b",
     "scripts/wgf_verification/checks/build.py": "sha256:0d85161179f2b7831a154876b8e7895d4978bd62be1f4ae1a1a7aefdcb054e11",
     "scripts/wgf_verification/checks/code.py": "sha256:58d6720cec6f22eccaca1feac6947ad8fc51fb4521ddb1da338b8e44435210e6",
     "scripts/wgf_verification/checks/gameplay.py": "sha256:d69b0e5f1b817765859ec34b19d7418c0d2e4b2bd4f7a39de7d6a65da01a46e5",

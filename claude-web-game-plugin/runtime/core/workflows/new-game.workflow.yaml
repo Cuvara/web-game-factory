@@ -53,7 +53,12 @@ workflow:
   # the playability report, whose content and difficulty checks hold the build to the units
   # the design claims. A run records the version it started under; one resumed under a newer
   # definition is marked (WORKFLOW_RESUMED `definition_version`).
-  version: 8
+  # 9: content sufficiency - after visual-qa, the BUILT game's content is counted against its
+  # quality tier (core/reference/quality-benchmark.yaml): the content data file the played
+  # commit ships, and what its probe showed while the playability bot traversed the units and
+  # surveyed every one of them. A build short of a design that meets the bar goes back to
+  # develop; a design itself short of the bar goes back to design (route `design-gap`).
+  version: 9
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -66,10 +71,11 @@ workflow:
     # Omitted keys fall back to factory.execution in workspace/config/factory.yaml.
     max_visits: 3
 
-  # Loops. One route leads back into design: a blocking design gap reported by greybox or
-  # develop (`design-gap`), one pass from each. Seven routes lead back into develop: playability's fail, production-quality's
-  # and visual-qa's `develop`, review's and sdk-review's request-changes, verify's fail, and
-  # G4's iterate - and two into assets, production-quality's and visual-qa's `assets`, from
+  # Loops. One route leads back into design: a blocking design gap reported by greybox,
+  # develop or content-sufficiency (`design-gap`), one pass from each. Eight routes lead back
+  # into develop: playability's fail, production-quality's, visual-qa's and
+  # content-sufficiency's `develop`, review's and sdk-review's request-changes, verify's fail,
+  # and G4's iterate - and two into assets, production-quality's and visual-qa's `assets`, from
   # which the run continues to develop as on its first pass. Each has its own budget on develop
   # (max_visits_by_route; `review.request-changes` counts only review's requests), counted
   # over the whole run, so one loop cannot spend the passes another needs - and G4's
@@ -116,15 +122,20 @@ workflow:
     # Re-entered through `design-gap` from greybox or develop with the prototype-report whose
     # `design_gaps` name what the design did not decide; the design is repaired, never
     # replaced, and tech-plan and G3 run again on it. One pass per source, then a person looks.
+    # Re-entered through `design-gap` from content-sufficiency with the report whose findings
+    # carry the design gaps - where the design itself is short of its quality tier's bars on
+    # the built content - repaired the same way.
     - id: design
       type: design
       stage: title:design
-      inputs: [title-strategy, prototype-report]
+      inputs: [title-strategy, prototype-report, content-sufficiency-report]
       outputs: [game-design]
-      max_visits: 3
+      # 4 = the first design + one repair from each of the three sources.
+      max_visits: 4
       max_visits_by_route:
         greybox.design-gap: 1
         develop.design-gap: 1
+        content-sufficiency.design-gap: 1
       # A blocking design-consistency breach is FAILED with route `descope` and the design
       # kept as evidence. Nothing in this workflow can act on a descope yet - strategy does
       # not consume one - so it ends the run, explicitly: cut scope in the strategy, and
@@ -174,8 +185,8 @@ workflow:
       outputs: [prototype-report]
       with:
         phase: greybox
-      # 5 = the first visit + 2 playability passes + 2 returns after a design repair.
-      max_visits: 5
+      # 6 = the first visit + 2 playability passes + 3 returns after a design repair.
+      max_visits: 6
       max_visits_by_route:
         greybox-playability.fail: 2
       on:
@@ -217,20 +228,21 @@ workflow:
       # scaffold-record says which repository to build in; title-strategy carries the
       # questions the prototype must answer and the kill criteria its report must list;
       # tech-plan carries the approved prototype tasks and their acceptance criteria.
-      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report, playability-report, production-quality-report, visual-qa-report]
+      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report]
       outputs: [prototype-report]
       with:
         phase: production
-      # Two unplayable builds, two production-quality and two visual-qa failures of the
-      # game's own, two requests for changes from each reviewer, two failed verifications
+      # Two unplayable builds, two production-quality, two visual-qa and two content
+      # sufficiency failures of the game's own, two requests for changes from each reviewer, two failed verifications
       # and two G4 iterations before a person looks - plus the four passes through assets
       # (assets' own route budgets), each of which enters develop once more.
-      # 21 = the first visit + 2 x 7 + 4 + 2 returns after a design repair.
-      max_visits: 21
+      # 24 = the first visit + 2 x 8 + 4 + 3 returns after a design repair.
+      max_visits: 24
       max_visits_by_route:
         playability.fail: 2
         production-quality.develop: 2
         visual-qa.develop: 2
+        content-sufficiency.develop: 2
         review.request-changes: 2
         sdk-review.request-changes: 2
         verify.fail: 2
@@ -245,12 +257,19 @@ workflow:
     # entities, lit frames (the design's experience contract, core/reference/
     # visual-quality.yaml). FAIL (route `fail`) goes back to develop with the report and
     # the frames that show it; BLOCKED - it could not be built or played - stops the run.
+    #
+    # `survey`: after the traverse plays the first units in order, the bot also enters every
+    # unit the design lists directly through the probe's unit link and records what each one
+    # draws and how long it takes (core/reference/content-sufficiency.yaml `survey`), so
+    # content-sufficiency counts every unit, not the first few. The greybox is not surveyed.
     - id: playability
       type: playability
       stage: title:prototype
       inputs: [prototype-report, game-design, scaffold-record]
       outputs: [playability-report]
-      max_visits: 21
+      with:
+        survey: true
+      max_visits: 24
       on:
         fail: develop
 
@@ -266,7 +285,7 @@ workflow:
       stage: title:prototype
       inputs: [playability-report, asset-manifest, game-design, scaffold-record]
       outputs: [production-quality-report]
-      max_visits: 21
+      max_visits: 24
       on:
         assets: assets
         develop: develop
@@ -280,10 +299,31 @@ workflow:
       stage: title:prototype
       inputs: [playability-report, game-design, asset-manifest, production-quality-report]
       outputs: [visual-qa-report]
-      max_visits: 21
+      max_visits: 24
       on:
         assets: assets
         develop: develop
+
+    # Content sufficiency: the BUILT game carries the content its quality tier asks for.
+    # From what playability recorded of the same commit - the content data file it ships,
+    # the traverse and the survey of every unit through the probe - the units shipped and
+    # reached, the elements and element combinations the probe shows, structural variety and
+    # near-identical units, groups that bring something new, difficulty that asks for new
+    # skills, objective kinds, climax units with art of their own, gated unlocks, designed
+    # play and every design commitment present, against core/reference/quality-benchmark.yaml
+    # at the design's tier (core/reference/content-sufficiency.yaml says how each is
+    # measured). FAILED with route `develop` - the build is short of a design that meets the
+    # bar - goes to develop; route `design-gap` - the design itself is short of it - goes to
+    # design with the findings' design gaps. BLOCKED (nothing recorded) stops the run.
+    - id: content-sufficiency
+      type: content-sufficiency
+      stage: title:prototype
+      inputs: [playability-report, game-design, scaffold-record, title-strategy, visual-qa-report]
+      outputs: [content-sufficiency-report]
+      max_visits: 24
+      on:
+        develop: develop
+        design-gap: design
 
     # An independent reviewer reads the commit develop made; it may not change it. Approve
     # continues to sdk (whose own commit sdk-review reads in turn); request-changes (FAILED,
@@ -298,7 +338,7 @@ workflow:
       stage: title:prototype
       inputs: [prototype-report, game-design, scaffold-record, qa-report]
       outputs: [review-report]
-      max_visits: 21
+      max_visits: 24
       on:
         request-changes: develop
 
@@ -309,7 +349,7 @@ workflow:
       stage: title:prototype
       inputs: [game-design, scaffold-record, prototype-report]
       outputs: [sdk-report]
-      max_visits: 21
+      max_visits: 24
 
     # The sdk step commits integration code on top of the reviewed development commit, and
     # that sdk commit is what verify checks and release ships. So it is reviewed too, by the
@@ -324,7 +364,7 @@ workflow:
       stage: title:prototype
       inputs: [sdk-report, prototype-report, game-design, scaffold-record, qa-report]
       outputs: [review-report]
-      max_visits: 21
+      max_visits: 24
       with:
         subject: sdk-report
       on:
@@ -340,7 +380,7 @@ workflow:
       inputs: [prototype-report, sdk-report, game-design, scaffold-record, asset-manifest, playability-report]
       outputs: [verification-report, qa-report]
       retry: {max_attempts: 2}
-      max_visits: 21
+      max_visits: 24
       on:
         fail: develop
 
@@ -362,7 +402,7 @@ workflow:
         gate: G4
         prompt: Judge the verified prototype against the kill criteria set at strategy - pass to release, iterate to develop again, or kill the title?
         choices: [pass, iterate, kill]
-      max_visits: 21
+      max_visits: 24
       on:
         iterate: develop
         kill: $end
@@ -389,7 +429,7 @@ workflow:
       retry: {max_attempts: 2}
       # Once per develop visit (G4's iterate comes back through here), plus the validation
       # loop's own budget.
-      max_visits: 21
+      max_visits: 24
       max_visits_by_route:
         listing-validation.listing: 2
 
@@ -404,7 +444,7 @@ workflow:
       stage: release:store-listing
       inputs: [store-listing, game-design, sdk-report, scaffold-record]
       outputs: [listing-validation-report]
-      max_visits: 21
+      max_visits: 24
       on:
         listing: store-listing
 

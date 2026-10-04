@@ -53,10 +53,11 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
                └─► CLI progress, and later a UI / monitor / agent host
 
   research → strategy → [G2] → design → tech-plan → [G3] → init → greybox → greybox-playability
-    → assets → develop → playability → production-quality → visual-qa → review → sdk → sdk-review
-    → verify → [G4] → store-listing → listing-validation → release
+    → assets → develop → playability → production-quality → visual-qa → content-sufficiency
+    → review → sdk → sdk-review → verify → [G4] → store-listing → listing-validation → release
 
   greybox, develop     design-gap       → design (then tech-plan, [G3], greybox again)
+  content-sufficiency  develop / design-gap → develop / design (as above)
   greybox-playability  fail             → greybox
   listing-validation   listing          → store-listing
   playability          fail             → develop
@@ -513,6 +514,10 @@ never what a loop meets first; every step after develop (playability, production
 visual-qa, review, sdk, sdk-review, verify, prototype-review), each visited at most once per
 develop visit, carries 21 as well, and so do store-listing and listing-validation, which add
 listing-validation's own route back into store-listing (`listing-validation.listing: 2`).
+Workflow 9 adds `content-sufficiency` after visual-qa, with a route into each:
+`content-sufficiency.develop: 2` on develop and `content-sufficiency.design-gap: 1` on design
+(docs/content-sufficiency-module.md). The bounds grow by the same rule: design 4, greybox 6
+(three returns), develop 24, and 24 for every step after develop.
 A reviewer that never approves blocks the run on its own
 third request for changes; a verification that always fails, on its third failure; a third
 G4 iterate stops for a person too; none spends another's budget. What a whole run may spend
@@ -685,6 +690,16 @@ report** ("Timeout: G2 eligible for timeout approval since …", `pending.timeou
 An installation that wants approvals to happen unattended runs `wgf resume` on a schedule
 for the runs `wgf runs --waiting --json` lists as eligible; the scheduler is not part of the
 engine.
+
+### Evidence that holds a gate for a person
+
+A reversible gate auto-approves, or approves on a timeout, only when its evidence lets it:
+gates.yaml `hold_for_person_when` (1.5.0) names fields of the gate's required artifacts that,
+when set, make this decision a person's - G3 with a tech plan whose develop budget leaves a
+planned shortfall. The checkpoint then waits for a person whatever `auto_approve` or
+`timeout_auto_approve` say, refuses an `automation` decision, and says why;
+`pending.held_for_person` lists the reasons and the timeout eligibility is dropped
+(`checkpoint.hold_for_person`).
 
 ## 10. Events and logs
 

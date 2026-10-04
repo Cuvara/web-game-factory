@@ -26,6 +26,29 @@ number:
   * `scope.content_units` agrees with the list, and mastery is stated in hud metrics a player
     can read.
 
+At a quality tier (game-design 1.12.0 `build_spec.content.quality_tier`, else the strategy's
+`concept.content_model.quality_tier`) the content is also held to what a title of that tier
+carries: the strategy's content budget and core/reference/quality-benchmark.yaml's `content`
+bars at that tier, the larger of the two, counted on declared fields - a unit's mechanics and
+`elements`, its `structure`, `objective_kind` and `group`, the design's `secondary_goals` -
+so the count is mechanical, not interpretive (rules content.tier_*):
+
+  * distinct elements, each used in more than one unit, arriving at enough introduction
+    points and still arriving late;
+  * units whose set of elements no other unit has, distinct structure kinds and few repeated
+    layouts;
+  * objective kinds (a scored secondary goal counts as one) and no objective kind on most
+    units;
+  * groups where the family has them (genre-models `budget.group_kind`), each one introducing
+    something and closed by its milestone where the family names one (`budget.milestone`);
+  * total designed play, and difficulty that asks for different skills over every unit of
+    the release - axes that escalate, units that change more than numbers, relief.
+
+A generated design (parametric, procedural) is held on what it can state: elements, structure
+kinds, objective kinds, groups and designed play. The tier `mvp` has no benchmark bars, so a
+run that stops at G4 is held to the family's bars alone. A design short of its tier names what
+is short and by how much.
+
 A design that names no family at all - written before 1.9.0 - is not failed: the family does
 not resolve, one warning is recorded, and no bar is applied. Everything else is blocking.
 
@@ -34,17 +57,22 @@ fails a design that keeps them. Each one names the field to change and carries i
 core/craft/core-loop-and-difficulty.md is the prose behind the bars.
 """
 
+import json
 import os
 import re
 
 from wgflib import paths
 from wgflib.yamllite import load_file
 
-__all__ = ["MODELS_PATH", "VOCABULARY_PATH", "RULES", "MASTERY_MODELS", "load_models",
-           "load_vocabulary", "family_of_node", "resolve_family", "profile_of", "units_of",
-           "check", "content_model_record"]
+__all__ = ["MODELS_PATH", "VOCABULARY_PATH", "BENCHMARK_PATH", "RULES", "TIER_RULES",
+           "MASTERY_MODELS", "load_models", "load_vocabulary", "load_benchmark",
+           "family_of_node", "resolve_family", "profile_of", "units_of", "quality_tier",
+           "tier_bars", "check", "content_model_record"]
 
 MODELS_PATH = os.path.join(paths.REFERENCE, "genre-models.yaml")
+BENCHMARK_PATH = os.path.join(paths.REFERENCE, "quality-benchmark.yaml")
+# game-design 1.12.0 build_spec.content.quality_tier, lowest first.
+QUALITY_TIERS = ("mvp", "release")
 VOCABULARY_PATH = os.path.join(paths.REFERENCE, "research-vocabulary.yaml")
 
 # game-design 1.9.0 build_spec.mastery.model.
@@ -98,7 +126,29 @@ RULES = (
      "scope.content_units and scope.content_unit_kind say what build_spec.content says"),
     ("content.mastery_stated",
      "Mastery is a model, a sentence and hud metrics the MVP shows"),
+    ("content.tier_stated",
+     "The content's quality tier is the strategy's, or higher"),
+    ("content.tier_elements",
+     "At its tier the content has the distinct elements the budget commits to, each used again"),
+    ("content.tier_introductions",
+     "At its tier new elements arrive at enough points, and the last arrives late"),
+    ("content.tier_combinations",
+     "At its tier most units combine elements no other unit combines"),
+    ("content.tier_structure",
+     "At its tier the units have enough structure kinds and few repeated layouts"),
+    ("content.tier_objectives",
+     "At its tier there are enough objective kinds and no one kind on most units"),
+    ("content.tier_groups",
+     "At its tier units come in groups, each introducing something and closed by a milestone"),
+    ("content.tier_designed_play",
+     "At its tier the units carry the designed play the budget commits to"),
+    ("content.tier_difficulty",
+     "At its tier difficulty asks for different skills over every unit, not only bigger numbers"),
 )
+
+# The rules a quality tier adds. Without a tier, or at a tier the benchmark states no bar
+# for, each holds and says so.
+TIER_RULES = tuple(rule_id for rule_id, _ in RULES if rule_id.startswith("content.tier_"))
 
 # Rules that cannot be read at all without build_spec.content.
 _NEEDS_CONTENT = frozenset((
@@ -109,7 +159,7 @@ _NEEDS_CONTENT = frozenset((
     "content.consecutive_units_differ", "content.axes_declared",
     "content.axes_monotone_with_relief", "content.objectives_vary",
     "content.win_lose_stated", "content.acceptance_specific", "content.scope_count_agrees",
-))
+)) | (frozenset(TIER_RULES) - {"content.tier_stated"})
 
 # Words that carry no meaning in an acceptance line or an objective, dropped before two of
 # them are compared.
@@ -144,6 +194,36 @@ def load_vocabulary(path=None):
         hit = (stamp, load_file(key))
         _VOCABULARIES[key] = hit
     return hit[1]
+
+
+def load_benchmark(path=None):
+    """core/reference/quality-benchmark.yaml: what a title of each quality tier carries."""
+    return load_file(path or BENCHMARK_PATH)
+
+
+def quality_tier(design, strategy):
+    """(tier, where it was stated) the content is held to, or (None, why not): the design's
+    own `build_spec.content.quality_tier`, else the strategy's
+    `concept.content_model.quality_tier`."""
+    content = ((design or {}).get("build_spec") or {}).get("content")
+    stated = content.get("quality_tier") if isinstance(content, dict) else None
+    if stated in QUALITY_TIERS:
+        return stated, "build_spec.content.quality_tier"
+    committed = (((strategy or {}).get("concept") or {}).get("content_model") or {})
+    if committed.get("quality_tier") in QUALITY_TIERS:
+        return committed["quality_tier"], "the strategy's concept.content_model.quality_tier"
+    return None, "neither the design nor the strategy states a quality tier"
+
+
+def tier_bars(benchmark, tier):
+    """{(section, key): value} - every quality-benchmark `content` bar stated at `tier`."""
+    bars = {}
+    for section, block in ((benchmark or {}).get("content") or {}).items():
+        for key, entry in (block or {}).items():
+            value = entry.get(tier) if isinstance(entry, dict) and tier else None
+            if _number(value) is not None:
+                bars[(section, key)] = value
+    return bars
 
 
 def _tokens(text):
@@ -323,7 +403,7 @@ def content_model_record(models, family):
 class _Design:
     """One design, read the way every rule reads it."""
 
-    def __init__(self, design, strategy, models, family, why):
+    def __init__(self, design, strategy, models, family, why, benchmark=None):
         self.design = design or {}
         self.strategy = strategy or {}
         self.models = models
@@ -355,6 +435,57 @@ class _Design:
         mastery = self.spec.get("mastery")
         self.mastery = mastery if isinstance(mastery, dict) else None
         self.units_bars = self.fam.get("units") or {}
+        # The quality tier, its bars and the strategy's budget (content.tier_*).
+        self.tier, self.tier_where = quality_tier(self.design, self.strategy)
+        self.tier_bars = tier_bars(benchmark, self.tier)
+        committed = (self.strategy.get("concept") or {}).get("content_model") or {}
+        budget = committed.get("budget")
+        self.budget = budget if isinstance(budget, dict) else {}
+        self.shape = self.fam.get("budget") or {}
+        self.authored = self.mode == "authored"
+        self.release_units = [unit for unit in self.units if unit.get("tier") != "optional"]
+        self.catalogue = {e.get("id"): e for e in (self.content.get("elements") or [])
+                          if isinstance(e, dict) and e.get("id")}
+
+    def tbar(self, section, key):
+        """A quality-benchmark content bar at this design's tier, or None."""
+        return self.tier_bars.get((section, key))
+
+    def committed(self, *path):
+        """A number the strategy's content budget commits to, or None."""
+        value = self.budget
+        for key in path:
+            value = value.get(key) if isinstance(value, dict) else None
+        return _number(value)
+
+    def floor(self, bar, *path):
+        """The larger of a benchmark bar and the budget's number, or None when neither is."""
+        values = [v for v in (bar, self.committed(*path) if path else None) if v is not None]
+        return max(values) if values else None
+
+    def basis(self, section, key, *path):
+        """Where a tier floor comes from, for a finding: the benchmark's bar and the budget's."""
+        parts = []
+        bar = self.tbar(section, key)
+        if bar is not None:
+            parts.append(f"quality-benchmark content.{section}.{key} {bar:g}")
+        committed = self.committed(*path) if path else None
+        if committed is not None:
+            parts.append(f"the strategy's budget.{'.'.join(path)} {committed:g}")
+        return ", ".join(parts) or "no bar"
+
+    def elements_of(self, unit):
+        """A unit's set of elements: its mechanics and the content elements it names."""
+        return frozenset(str(e) for e in list(unit.get("mechanics") or [])
+                         + list(unit.get("elements") or []))
+
+    def objective_kind(self, unit):
+        """The unit's objective kind: its `objective_kind`, else its objective's words with
+        the numbers taken out - "clear 12 bricks" and "clear 14 bricks" are one kind."""
+        kind = unit.get("objective_kind")
+        if isinstance(kind, str) and kind:
+            return kind
+        return " ".join(w for w in _norm(unit.get("objective")).split() if not w.isdigit())
 
     def bar(self, key):
         """A variety bar: the family's, else the ruleset's."""
@@ -496,10 +627,14 @@ def _unit_count_mvp(d):
 
 
 def _unit_count_total(d):
-    minimum = d.units_bars.get("min_total") or 0
+    family = d.units_bars.get("min_total") or 0
+    # At a quality tier the release carries the larger of the family's bar, the benchmark's
+    # and the strategy's budget, counted over the units it ships (not `optional` ones).
+    tiered = d.floor(d.tbar("units", "min_total"), "units")
+    minimum = max(family, int(tiered or 0))
     scope_units = (d.design.get("scope") or {}).get("content_units")
     if d.mode == "authored":
-        measured = len(d.units_listed)
+        measured = len(d.release_units) if tiered is not None else len(d.units_listed)
         where = "build_spec.content.units"
     else:
         expected = d.generation.get("expected_units")
@@ -507,9 +642,19 @@ def _unit_count_total(d):
         where = "build_spec.content.generation.expected_units (or scope.content_units)"
     problems = []
     if not isinstance(measured, int) or measured < minimum:
-        problems.append(f"{where} says {measured!r} unit(s) at any tier; a {d.label} release "
-                        f"carries {minimum}: tier the rest post-mvp, but say they exist")
-    return problems, measured, f"{d.label} units at any tier: {minimum}"
+        if tiered is not None and minimum > family:
+            problems.append(f"{where} says {measured!r} unit(s); a {d.tier}-tier {d.label} "
+                            f"release carries {minimum} ({d.basis('units', 'min_total', 'units')})"
+                            f": {minimum - (measured or 0)} short - add the units, tiered "
+                            f"post-mvp where the prototype does not need them")
+        else:
+            problems.append(f"{where} says {measured!r} unit(s) at any tier; a {d.label} "
+                            f"release carries {minimum}: tier the rest post-mvp, but say they "
+                            f"exist")
+    note = f"{d.label} units at any tier: {minimum}"
+    if tiered is not None:
+        note += f" at tier {d.tier} ({d.basis('units', 'min_total', 'units')})"
+    return problems, measured, note
 
 
 def _units_fit_session(d):
@@ -568,9 +713,14 @@ def _mechanics_resolve(d):
                                 f"{d.mechanics[mechanic]}: the MVP does not build it - tier the "
                                 f"mechanic mvp, or the unit {d.mechanics[mechanic]}")
         for mechanic in unit.get("introduces") or []:
-            if mechanic not in d.mechanics and mechanic not in d.scheduled:
+            if mechanic not in d.mechanics and mechanic not in d.scheduled                     and mechanic not in d.catalogue:
                 problems.append(f"{d.where(unit, 'introduces')} names {mechanic!r}, not a "
-                                f"build_spec.mechanics or build_spec.depth.content_schedule id")
+                                f"build_spec.mechanics, build_spec.content.elements or "
+                                f"build_spec.depth.content_schedule id")
+        for element in unit.get("elements") or []:
+            if element not in d.catalogue:
+                problems.append(f"{d.where(unit, 'elements')} names {element!r}, not a "
+                                f"build_spec.content.elements id")
     return problems, len(d.mechanics), f"{len(d.mechanics)} mechanic(s) to resolve against"
 
 
@@ -862,6 +1012,358 @@ def _mastery_stated(d):
     return problems, signals, f"{len(shown)} mvp hud id(s) and metric(s) to read mastery from"
 
 
+# -- the quality tier (game-design 1.12.0) -----------------------------------------------
+# Each holds, and says so, when the design has no tier or the tier has no bar for it. Every
+# number comes from core/reference/quality-benchmark.yaml at the tier or the strategy's
+# content budget, the larger of the two; the family's genre model says what a group, an
+# element and a milestone are.
+
+
+def _no_tier(d, what):
+    if d.tier is None:
+        return f"no quality tier, so no {what} bar: {d.tier_where}"
+    return f"tier {d.tier} states no {what} bar"
+
+
+def _generated(d, what):
+    return f"{d.mode} content: {what} is read on the built content, not the representative units"
+
+
+def _ids(units, most=6):
+    named = [str(u.get("id")) for u in units[:most]]
+    return ", ".join(named) + (f" and {len(units) - most} more" if len(units) > most else "")
+
+
+def _first_appearances(d):
+    """[(unit, new elements)] in order: what each unit is the first to use or introduce."""
+    seen, out = set(), []
+    for unit in d.release_units:
+        here = set(d.elements_of(unit)) | {str(e) for e in unit.get("introduces") or []}
+        new = sorted(here - seen)
+        seen |= here
+        out.append((unit, new))
+    return out
+
+
+def _tier_stated(d):
+    committed = ((d.strategy.get("concept") or {}).get("content_model") or {}).get(
+        "quality_tier")
+    stated = d.content.get("quality_tier")
+    problems = []
+    if committed in QUALITY_TIERS and stated in QUALITY_TIERS and \
+            QUALITY_TIERS.index(stated) < QUALITY_TIERS.index(committed):
+        problems.append(f"build_spec.content.quality_tier is {stated!r} but the strategy commits "
+                        f"to {committed!r} (concept.content_model.quality_tier): design the "
+                        f"content the strategy approved at G2, or change the strategy")
+    return problems, d.tier, f"tier {d.tier}: {d.tier_where}" if d.tier else _no_tier(d, "tier")
+
+
+def _tier_elements(d):
+    floor = d.floor(d.tbar("elements", "min_distinct"), "elements", "count")
+    reuse = d.tbar("elements", "min_units_per_element")
+    if floor is None and reuse is None:
+        return [], None, _no_tier(d, "element")
+    used = {}
+    for unit in d.release_units:
+        for element in d.elements_of(unit):
+            used.setdefault(element, []).append(unit)
+    problems = []
+    kinds = ", ".join(str(k) for k in d.shape.get("element_kinds") or []) or "elements"
+    if floor is not None and len(used) < floor:
+        problems.append(
+            f"the {len(d.release_units)} units use {len(used)} distinct element(s) "
+            f"({', '.join(sorted(used)) or 'none'}); a {d.tier}-tier {d.label} release carries "
+            f"{floor:g} ({d.basis('elements', 'min_distinct', 'elements', 'count')}): "
+            f"{int(floor) - len(used)} short - declare more of the family's element kinds "
+            f"({kinds}) in build_spec.content.elements and name them in the units' elements; a "
+            f"number-only change (speed, count, width) is never an element")
+    if reuse is not None and d.authored:
+        once = sorted(e for e, units in used.items() if len(units) < reuse)
+        if once:
+            problems.append(f"the element(s) {', '.join(once)} appear in fewer than {reuse:g} "
+                            f"units (quality-benchmark content.elements.min_units_per_element): "
+                            f"an element used once is a gimmick - use it again, in a new "
+                            f"combination")
+    return problems, len(used), f"{len(used)} distinct element(s); the floor is {floor}"
+
+
+def _tier_introductions(d):
+    floor = d.floor(d.tbar("elements", "min_introduction_points"),
+                    "elements", "min_introduction_points")
+    late = d.tbar("elements", "last_introduction_min_position")
+    if floor is None and late is None:
+        return [], None, _no_tier(d, "introduction")
+    if not d.authored:
+        return [], None, _generated(d, "the order elements arrive in")
+    points = [(position, unit) for position, (unit, new) in
+              enumerate(_first_appearances(d), 1) if new]
+    count, total = len(points), len(d.release_units)
+    problems = []
+    if floor is not None and count < floor:
+        basis = d.basis("elements", "min_introduction_points",
+                        "elements", "min_introduction_points")
+        problems.append(f"new elements first appear in {count} unit(s) "
+                        f"({_ids([u for _, u in points])}); a {d.tier}-tier {d.label} release "
+                        f"introduces something new at {floor:g} points ({basis}): "
+                        f"{int(floor) - count} short - spread the elements over the units, "
+                        f"each introduced by one unit and reused after it")
+    last = points[-1][0] / float(total) if points and total else 0.0
+    if late is not None and points and last < late - 1e-9:
+        problems.append(f"the last new element arrives in {points[-1][1].get('id')} "
+                        f"({points[-1][0]} of {total}, {last:.0%} of the way); a {d.tier}-tier "
+                        f"release still introduces something at {late:.0%} or later "
+                        f"(quality-benchmark content.elements.last_introduction_min_position): "
+                        f"hold an element back for the final third")
+    return problems, count, f"{count} introduction point(s), the last at {last:.0%}"
+
+
+def _tier_combinations(d):
+    ratio = d.tbar("combinations", "min_distinct_ratio")
+    if ratio is None:
+        return [], None, _no_tier(d, "combination")
+    if not d.authored:
+        return [], None, _generated(d, "the combination of elements per unit")
+    sets = [d.elements_of(unit) for unit in d.release_units]
+    counts = {}
+    for combo in sets:
+        counts[combo] = counts.get(combo, 0) + 1
+    unique = sum(1 for combo in sets if counts[combo] == 1)
+    share = unique / float(len(sets)) if sets else 0.0
+    problems = []
+    if share < ratio - 1e-9:
+        shared, times = max(counts.items(), key=lambda item: (item[1], sorted(item[0])))
+        problems.append(f"{unique} of the {len(sets)} units ({share:.0%}) combine elements no "
+                        f"other unit combines; a {d.tier}-tier release has {ratio:.0%} "
+                        f"(quality-benchmark content.combinations.min_distinct_ratio) - "
+                        f"{times} units use exactly {', '.join(sorted(shared))}: give units "
+                        f"their own mix of elements, not the same set at higher numbers")
+    return problems, round(share, 3), f"{share:.0%} of units combine their own elements"
+
+
+def _tier_structure(d):
+    kinds_bar = d.tbar("structure", "min_structure_kinds")
+    repeat_bar = d.tbar("structure", "max_repeated_layout_ratio")
+    if kinds_bar is None and repeat_bar is None:
+        return [], None, _no_tier(d, "structure")
+    units = d.release_units
+    problems = []
+    missing = [unit for unit in units if not unit.get("structure")]
+    kinds = sorted({str(unit.get("structure")) for unit in units if unit.get("structure")})
+    if kinds_bar is not None:
+        if missing:
+            problems.append(f"{_ids(missing)} state no structure: name each unit's structural "
+                            f"kind in its `structure` (static-field, moving-field, "
+                            f"path-with-turns, arena, climax...)")
+        if len(kinds) < kinds_bar:
+            problems.append(f"the units are built {len(kinds)} way(s) "
+                            f"({', '.join(kinds) or 'none stated'}); a {d.tier}-tier "
+                            f"{d.label} release has {kinds_bar:g} structure kinds "
+                            f"(quality-benchmark content.structure.min_structure_kinds): "
+                            f"{int(kinds_bar) - len(kinds)} short - a moving field, a path, an "
+                            f"arena or a climax is a different unit to play, not a bigger one")
+    if repeat_bar is not None and d.authored and units:
+        layouts = {}
+        for unit in units:
+            key = (str(unit.get("structure")), tuple(sorted(d.elements_of(unit))),
+                   json.dumps(unit.get("parameters") or {}, sort_keys=True))
+            layouts.setdefault(key, []).append(unit)
+        repeated = [u for group in layouts.values() if len(group) > 1 for u in group]
+        share = len(repeated) / float(len(units))
+        if share > repeat_bar + 1e-9:
+            problems.append(f"{len(repeated)} of the {len(units)} units ({share:.0%}) repeat "
+                            f"another unit's layout - the same structure, elements and "
+                            f"parameters ({_ids(repeated)}); a {d.tier}-tier release repeats at "
+                            f"most {repeat_bar:.0%} (quality-benchmark "
+                            f"content.structure.max_repeated_layout_ratio)")
+    return problems, len(kinds), f"{len(kinds)} structure kind(s): {', '.join(kinds)}"
+
+
+def _tier_objectives(d):
+    kinds_bar = d.tbar("objectives", "min_kinds")
+    identical = d.tbar("objectives", "max_identical_ratio")
+    if kinds_bar is None and identical is None:
+        return [], None, _no_tier(d, "objective")
+    units = d.release_units
+    primary = [d.objective_kind(unit) for unit in units]
+    secondary = sorted({str(g.get("kind")) for g in d.content.get("secondary_goals") or []
+                        if isinstance(g, dict) and g.get("kind")})
+    kinds = len(set(primary)) + len(secondary)
+    problems = []
+    if kinds_bar is not None and kinds < kinds_bar:
+        problems.append(f"the units ask for {len(set(primary))} kind(s) of objective and the "
+                        f"design scores {len(secondary)} secondary goal(s); a {d.tier}-tier "
+                        f"release has {kinds_bar:g} objective kinds (quality-benchmark "
+                        f"content.objectives.min_kinds): give units different objective_kind "
+                        f"values, or score a secondary goal (stars, collectibles, par) in "
+                        f"build_spec.content.secondary_goals")
+    if identical is not None and d.authored and units:
+        common = max(sorted(set(primary)), key=primary.count)
+        share = primary.count(common) / float(len(units))
+        if share > identical + 1e-9:
+            problems.append(f"{primary.count(common)} of the {len(units)} units ({share:.0%}) "
+                            f"ask for the same kind of thing ({common!r}); a {d.tier}-tier "
+                            f"release asks for one kind in at most {identical:.0%} of its units "
+                            f"(quality-benchmark content.objectives.max_identical_ratio)")
+    return problems, kinds, f"{kinds} objective kind(s), {len(secondary)} of them secondary"
+
+
+def _tier_groups(d):
+    group_kind = d.shape.get("group_kind")
+    count = d.floor(d.tbar("units", "min_groups"), "groups", "count")
+    per = d.floor(d.tbar("units", "min_units_per_group"), "groups", "min_units_per_group")
+    if count is None and per is None:
+        return [], None, _no_tier(d, "group")
+    if not group_kind:
+        return [], None, (f"a {d.label} game has no group above the unit: its units are one "
+                          f"sequence (genre-models budget.group_kind)")
+    units = d.release_units
+    problems = []
+    declared = {g.get("id") for g in d.content.get("groups") or [] if isinstance(g, dict)}
+    missing = [unit for unit in units if not unit.get("group")]
+    if missing:
+        problems.append(f"{_ids(missing)} name no group: a {d.label} release presents its units "
+                        f"in {group_kind}s - name each unit's {group_kind} in `group`")
+    order, members = [], {}
+    for unit in units:
+        group = unit.get("group")
+        if not group:
+            continue
+        if group not in members:
+            order.append(group)
+        members.setdefault(group, []).append(unit)
+    if declared:
+        stray = [g for g in order if g not in declared]
+        if stray:
+            problems.append(f"the group(s) {', '.join(stray)} are not build_spec.content.groups "
+                            f"ids")
+    if count is not None and len(order) < count:
+        basis = d.basis("units", "min_groups", "groups", "count")
+        problems.append(f"the units come in {len(order)} {group_kind}(s); a {d.tier}-tier "
+                        f"{d.label} release has {count:g} ({basis}): "
+                        f"{int(count) - len(order)} short - content arrives in themed sets, "
+                        f"not one list")
+    if per is not None:
+        thin = [f"{g} ({len(members[g])})" for g in order if len(members[g]) < per]
+        if thin:
+            basis = d.basis("units", "min_units_per_group", "groups", "min_units_per_group")
+            problems.append(f"the {group_kind}(s) {', '.join(thin)} hold fewer than {per:g} "
+                            f"units ({basis})")
+    if d.authored:
+        runs, previous = [], None
+        for unit in units:
+            group = unit.get("group")
+            if group and group != previous:
+                runs.append(group)
+            previous = group or previous
+        split = sorted({g for g in runs if runs.count(g) > 1})
+        if split:
+            problems.append(f"the {group_kind}(s) {', '.join(split)} are split by another "
+                            f"{group_kind}: a group's units run one after another")
+        new_in = {}
+        for unit, new in _first_appearances(d):
+            if new and unit.get("group"):
+                new_in.setdefault(unit.get("group"), []).extend(new)
+        idle = [g for g in order if not new_in.get(g)]
+        if idle:
+            problems.append(f"the {group_kind}(s) {', '.join(idle)} introduce no element: each "
+                            f"{group_kind} brings something the player has not met (a new "
+                            f"element in build_spec.content.elements, first used there)")
+    milestone = d.shape.get("milestone")
+    climax = d.tbar("difficulty", "min_climax_per_group")
+    if milestone and climax is not None:
+        unclosed = [g for g in order
+                    if sum(1 for u in members[g] if u.get("purpose") == "climax") < climax]
+        if unclosed:
+            problems.append(f"the {group_kind}(s) {', '.join(unclosed)} have no milestone: a "
+                            f"{d.label} {group_kind} closes with {milestone} - a unit of "
+                            f"purpose 'climax' (quality-benchmark "
+                            f"content.difficulty.min_climax_per_group {climax:g})")
+    return problems, len(order), f"{len(order)} {group_kind}(s): " + ", ".join(
+        f"{g} ({len(members[g])})" for g in order)
+
+
+def _tier_designed_play(d):
+    floor = d.floor(d.tbar("units", "min_total_designed_s"), "designed_play_s")
+    if floor is None:
+        return [], None, _no_tier(d, "designed-play")
+    durations = [_number(u.get("expected_duration_s")) or 0 for u in d.release_units]
+    if d.authored:
+        total, how = sum(durations), f"the {len(durations)} units"
+    else:
+        many = d.generation.get("expected_units") or \
+            (d.design.get("scope") or {}).get("content_units") or len(durations)
+        mean = sum(durations) / float(len(durations)) if durations else 0
+        total, how = mean * many, f"{many} {d.mode} units at the listed units' mean {mean:g} s"
+    problems = []
+    if total < floor - 1e-9:
+        basis = d.basis("units", "min_total_designed_s", "designed_play_s")
+        problems.append(f"{how} carry {total:g} s of designed play; a {d.tier}-tier {d.label} "
+                        f"release carries {floor:g} s ({basis}): {floor - total:g} s short - "
+                        f"more units, not longer ones")
+    return problems, round(total, 1), f"{total:g} s designed; the floor is {floor:g} s"
+
+
+def _tier_difficulty(d):
+    axes_bar = d.tbar("difficulty", "min_escalating_axes")
+    every = d.tbar("difficulty", "relief_every_units")
+    if axes_bar is None and every is None:
+        return [], None, _no_tier(d, "difficulty")
+    if not d.authored:
+        return [], None, _generated(d, "difficulty over the units")
+    units = d.release_units
+    problems = []
+    rising = []
+    if units:
+        first, last = units[0], units[-1]
+        keys = set(first.get("difficulty") or {}) | set(last.get("difficulty") or {})
+        for axis_id in sorted(keys):
+            before, after = d.value(first, axis_id), d.value(last, axis_id)
+            if before is not None and after is not None and after > before:
+                rising.append(axis_id)
+    if axes_bar is not None and len(rising) < axes_bar:
+        problems.append(f"difficulty escalates on {len(rising)} axis/axes over the release "
+                        f"({', '.join(rising) or 'none'}, first unit to last); a {d.tier}-tier "
+                        f"release escalates on {axes_bar:g} (quality-benchmark "
+                        f"content.difficulty.min_escalating_axes): one axis turned up is one "
+                        f"skill tested harder, not new ones asked for")
+    dimensions = d.dimensions()
+    minimum = d.bar("min_dimensions_changed_between_units") or 0
+    most = d.bar("max_consecutive_scaling_only_units")
+    run, flat = 0, []
+    for position in range(1, len(units)):
+        previous, unit = units[position - 1], units[position]
+        if unit.get("tier") != "mvp" or previous.get("tier") != "mvp":
+            # The MVP's own pairs are content.consecutive_units_differ's.
+            changed = {str(x) for x in unit.get("variation_from_previous") or []} & dimensions
+            if len(changed) < minimum:
+                flat.append(unit)
+        scaling = (not unit.get("introduces")
+                   and d.objective_kind(unit) == d.objective_kind(previous)
+                   and d.elements_of(unit) == d.elements_of(previous)
+                   and unit.get("structure") == previous.get("structure"))
+        run = run + 1 if scaling else 0
+        if most is not None and run == most + 1:
+            problems.append(f"{d.where(unit)} ends a run of {run} units that change only their "
+                            f"numbers - the same objective kind, elements and structure as the "
+                            f"unit before; at most {most} may follow one another: a new skill "
+                            f"is asked for by a new element, structure or objective")
+    if flat:
+        problems.append(f"{_ids(flat)} change fewer than {minimum} of the family's variety "
+                        f"dimensions ({', '.join(sorted(dimensions))}) in "
+                        f"variation_from_previous")
+    if every is not None:
+        run = 0
+        for position, unit in enumerate(units):
+            raised = d.raised(units[position - 1], unit) if position else []
+            run = 0 if (unit.get("purpose") == "breather" or not raised) else run + 1
+            if run == int(every) + 1:
+                problems.append(f"{d.where(unit)} is unit {run} in a row that raises an axis; a "
+                                f"{d.tier}-tier release gets relief - a 'breather' unit, or one "
+                                f"that raises nothing - every {every:g} units (quality-benchmark "
+                                f"content.difficulty.relief_every_units)")
+    return problems, rising, f"{len(rising)} axis/axes escalate over {len(units)} unit(s)"
+
+
 _CHECKS = {
     "content.model_resolves": _model_resolves,
     "content.block_present": _block_present,
@@ -885,6 +1387,15 @@ _CHECKS = {
     "content.acceptance_specific": _acceptance_specific,
     "content.scope_count_agrees": _scope_count_agrees,
     "content.mastery_stated": _mastery_stated,
+    "content.tier_stated": _tier_stated,
+    "content.tier_elements": _tier_elements,
+    "content.tier_introductions": _tier_introductions,
+    "content.tier_combinations": _tier_combinations,
+    "content.tier_structure": _tier_structure,
+    "content.tier_objectives": _tier_objectives,
+    "content.tier_groups": _tier_groups,
+    "content.tier_designed_play": _tier_designed_play,
+    "content.tier_difficulty": _tier_difficulty,
 }
 
 assert set(_CHECKS) == {rule_id for rule_id, _ in RULES}
@@ -895,7 +1406,7 @@ def _result(rule_id, measured, breached, note):
     return {"criterion_id": rule_id, "measured": measured, "breached": breached, "note": note}
 
 
-def check(design, strategy=None, models=None, vocabulary=None):
+def check(design, strategy=None, models=None, vocabulary=None, benchmark=None):
     """(problems, results) for the design's content.
 
     `problems` are strings an author can repair, each naming the field to change and prefixed
@@ -903,7 +1414,9 @@ def check(design, strategy=None, models=None, vocabulary=None):
     `consistency.rule_results` beside the consistency ruleset's own.
 
     A design that names no family and whose strategy names none either is a design written
-    before game-design 1.9.0: one warning, no problems, no bars applied.
+    before game-design 1.9.0: one warning, no problems, no bars applied. `benchmark` is
+    core/reference/quality-benchmark.yaml, read when None; its bars apply only at a quality
+    tier (`quality_tier`).
     """
     models = models or load_models()
     if vocabulary is None:
@@ -926,7 +1439,9 @@ def check(design, strategy=None, models=None, vocabulary=None):
         return [], [_result("content.model_resolves", None, False,
                             f"no genre family, so no content bar is applied: {why}")]
 
-    d = _Design(design, strategy, models, family, why)
+    if benchmark is None and quality_tier(design, strategy)[0] is not None:
+        benchmark = load_benchmark()
+    d = _Design(design, strategy, models, family, why, benchmark)
     problems, results = [], []
     for rule_id, _meaning in RULES:
         if rule_id in _NEEDS_CONTENT and not d.content:

@@ -78,10 +78,14 @@ class ResearchToDesign(unittest.TestCase):
         with open(catalog, "w", encoding="utf-8") as handle:
             handle.write(self.head + "archetypes:\n"
                          + re.sub(r"(?m)^    design_archetype: .*\n", "", entry))
+        # The built-in authors design at tier mvp: a release-tier design is held to the
+        # quality benchmark's content bars (content.tier_*), which only an agent author
+        # writes to today. What this test measures is the concept reaching design.
         with open(os.path.join(project, "workspace", "config", "factory.yaml"), "w",
                   encoding="utf-8") as handle:
             handle.write("factory:\n"
                          "  checkpoints:\n    auto_approve: [G2, G3]\n"
+                         "  strategy:\n    quality_tier: mvp\n"
                          f"  discovery:\n    catalog: {json.dumps(catalog)}\n"
                          f"    corpus: {json.dumps(CORPUS)}\n    as_of: \"{AS_OF}\"\n"
                          f"    backlog: {json.dumps(os.path.join(project, 'none'))}\n")

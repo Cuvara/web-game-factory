@@ -28,6 +28,7 @@ from .model import StepOutcome, StepStatus
 __all__ = ["PARAM", "RELEASE", "DEVELOPMENT", "FLOOR", "load_policy", "snapshot",
            "effective", "run_class", "config_reasons", "floor_problems",
            "production_problems", "current", "report", "run_tier", "shipped", "downgrades",
+           "preflight_refusals",
            "PolicyError"]
 
 PARAM = "quality"
@@ -68,6 +69,7 @@ def load_policy(path=None):
         "production_only": list(data.get("production_only") or []),
         "development_when": list(data.get("development_when") or []),
         "production_only_when": list(data.get("production_only_when") or []),
+        "preflight": list(data.get("preflight") or []),
         "release_ready_at": data.get("release_ready_at"),
         "shipped_workflows_only": data.get("shipped_workflows_only") is True,
     }
@@ -107,6 +109,8 @@ def config_reasons(policy, config, key="development_when"):
         if not isinstance(condition, dict):
             continue
         value = _lookup(config, condition.get("config"))
+        if value is None:
+            value = condition.get("default")
         held = False
         if "equals" in condition:
             held = value == condition["equals"] and value is not None
@@ -179,6 +183,40 @@ def snapshot(policy, config, definition, mock=False):
     for key in _LISTS:
         taken[key] = list(policy[key])
     return taken
+
+
+def _implemented_by(implementation, step_id, module):
+    found = implementation(step_id) if implementation else None
+    return isinstance(found, str) and (found == module or found.startswith(module + "."))
+
+
+def preflight_refusals(policy, config, definition, scope_ids, mock=False,
+                       implementation=None):
+    """Rule 4: why a new run over `scope_ids` cannot be started under `config` - each
+    `preflight` entry whose tier class, step, implementing module and condition hold. []
+    for a mock run. `implementation(step_id)` names the module implementing that step in
+    the run's registry (None when unknown, which an `implemented_by` entry never matches)."""
+    if mock:
+        return []
+    tier = _tier(policy, config)
+    klass = policy["tier"]["classes"][tier]
+    refused = []
+    for entry in policy.get("preflight") or ():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("tier_class") not in (None, klass):
+            continue
+        scope = set(scope_ids or ())
+        if entry.get("step") and entry["step"] not in scope:
+            continue
+        wanted = dict(entry.get("with_steps") or {})
+        if entry.get("implemented_by"):
+            wanted[entry.get("step")] = entry["implemented_by"]
+        if not all(step_id in scope and _implemented_by(implementation, step_id, module)
+                   for step_id, module in wanted.items()):
+            continue
+        refused += config_reasons({"development_when": [entry]}, config)
+    return refused
 
 
 def effective(params, policy):

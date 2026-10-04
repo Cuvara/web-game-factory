@@ -79,7 +79,7 @@ The bot reads the game's play probe (`core/artifacts/shared/play-probe.schema.js
 The bot acts **only** through real input at the listed positions, never through the
 probe. The developer brief embeds the schema, so a developer knows how the build is judged.
 
-### The bot's nine tests, per viewport
+### The bot's ten tests, per viewport
 
 - **First session:** opens the game. If the title screen lists a begin input (`play`,
   `start`, ...), the bot presses it. Then it makes no input at all for the idle window,
@@ -127,13 +127,30 @@ probe. The developer brief embeds the schema, so a developer knows how the build
   time budget below, so a game without a showcase plays exactly as before; its record is then
   `{applies: false}`. No playability check reads it beyond `page.errors`: it exists for the
   production gate, which credits an asset in a staged frame only where the frame shows it.
+- **Survey** (only when the step is asked for it, `with: {survey: true}` - the `playability`
+  step of `new-game`, not the greybox - and the design authors its units): the traverse stops
+  after the first few units; a release carries many more. For every unit the design lists
+  (except `optional` ones), the bot opens `/?wgf-probe=1&wgf-unit=<unit id>` - the probe's unit
+  link, which starts play in that unit as a level select would - and lets the oracle play it
+  for at most `survey.unit_s` (12 s). It records which unit the probe reports, the entity
+  kinds and runtime assets drawn in it by role, how many entities of a content role carried
+  no `kind`, the difficulty in force, and whether and how fast the oracle completed it, plus a
+  frame `survey-<unit id>-1s.png`. Only the `survey.projects` viewports run it (desktop:
+  content is the same on every viewport), within `survey.total_s` (480 s); a unit it could not
+  reach in time is recorded as not entered, with the reason. Both values are
+  `core/reference/content-sufficiency.yaml`'s. No playability check reads it: the
+  content-sufficiency step counts it ([content-sufficiency-module.md](content-sufficiency-module.md)).
+  The step also keeps the played commit's `public/content/units.json` beside the records
+  (`<records_dir>/content/units.json`), so that step measures exactly the build that was
+  played.
 
 The time budget (`design-depth.yaml playability.time_budget.bot_total_s`) is a hard cap per
 viewport. What the first five tests cost is subtracted; the rest is shared between the
 traverse, persist and session windows in proportion to what they asked for, and every check
 judged from a window that was cut carries `measured.truncated: true` - and, where the
 shortfall is the budget's rather than the build's, drops to a warning. The bot's process
-timeout is `2 x (bot_total_s + SHOWCASE_S + 45) + 120` s, not a fixed number.
+timeout is `2 x (bot_total_s + SHOWCASE_S + 45) + 120` s, not a fixed number, plus the
+survey's window and a start per surveyed unit when it runs.
 
 ### What every record also carries
 

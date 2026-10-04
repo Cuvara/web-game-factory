@@ -283,6 +283,10 @@ def render_status(state, definition, live=None, pending=None, quality=None):
     timeout = render_timeout((pending or {}).get("timeout"), state.run_id)
     if timeout:
         lines.append(timeout)
+    held = (pending or {}).get("held_for_person")
+    if held:
+        lines.append(f"Held:   {pending.get('gate')} waits for a person this time - no automatic "
+                     f"or timeout approval: {'; '.join(held)}")
     evidence = gate_evidence.render((pending or {}).get("evidence"))
     if evidence:
         lines.append("")
@@ -977,6 +981,12 @@ def cmd_where(args):
         },
         "profiles": profiles,
     }
+    # What a new run would be held to (core/reference/quality-policy.yaml): its tier and
+    # class, and why a run would be refused before it starts (`refused`, empty when none).
+    try:
+        where["quality"] = WorkflowAPI(config=config, store_dir=os.devnull).preflight()
+    except (ValueError, OSError, DefinitionError, YamlError) as exc:
+        where["quality"] = {"error": str(exc)}
     if args.json:
         print(json.dumps(where, indent=2))
     else:

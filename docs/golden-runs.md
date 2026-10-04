@@ -16,7 +16,8 @@ Factory is renderer-agnostic.
 ```
 research -> strategy -> G2 -> design -> tech-plan -> G3 -> init -> greybox
          -> greybox-playability -> assets -> develop -> playability -> production-quality
-         -> visual-qa -> review -> sdk -> sdk-review -> verify -> G4 -> release
+         -> visual-qa -> content-sufficiency -> review -> sdk -> sdk-review -> verify -> G4
+         -> store-listing -> listing-validation -> release
 ```
 
 G2 and G3 are auto-approved (reversible; configured below). G4 is irreversible, so the run
@@ -24,8 +25,11 @@ stops there `WAITING`; the harness answers it `pass` through the API `wgf decide
 with `decided_by` left to `default_decider()` - `human`, because the person running the
 golden run is outside every step's process tree - and resumes. Its note says it is the
 harness operator's pass of a known-good port (`harness.G4_NOTE`). `games.EXPECTED_STEPS`
-lists all 20 steps, `greybox`, both playability steps, `production-quality`, `visual-qa`,
-`prototype-review` and `sdk-review` included. The replay developer ports the whole game in
+lists all 23 steps, `greybox`, both playability steps, `production-quality`, `visual-qa`,
+`content-sufficiency`, `prototype-review` and `sdk-review` included. A golden run is an `mvp`
+run of endless (parametric) ports, so `content-sufficiency` counts no unit list: its unit
+checks are SKIPPED with that reason and it passes
+([content-sufficiency-module.md](content-sufficiency-module.md)). The replay developer ports the whole game in
 the greybox phase - with no assets yet, each port draws its fallback primitives - and
 develop's production visit commits the assets step's files, imported from the port's art
 library, on an unchanged game that now draws them (see *The production gates*, below). Each playability step plays each port from outside through its play probe
@@ -344,6 +348,13 @@ They do **not** prove:
   `authored`. `difficulty.axes_progress`, `content.variety` and `depth.ramp` are measured from
   the endless windows and the in-run content schedule. A level game — the authored path, a data
   file compared unit for unit — has no golden run and needs its own port before it has one.
+- **the release tier.** A golden run sets `factory.strategy.quality_tier: mvp`
+  (`scripts/golden/harness.py`): it is a pipeline regression of a known-good port at MVP
+  tier. At `release` the design step holds the design to the quality benchmark's content bars
+  (`content.tier_*`, game-design 1.12.0), which the built-in design authors the golden runs
+  use do not write to - a true finding at that tier, not a fixture to loosen. So the goldens
+  do not exercise a release-tier design, the content budget or the tier rules; the unit tests
+  do (`scripts/tests/test_design_content.py`, `TheQualityTier`).
 - **the GitHub path.** `init.source: local`; creating a repository with `gh` is outward-facing
   and is not exercised.
 - **that the art suits every locale.** The ports' bundled display and body fonts are subset

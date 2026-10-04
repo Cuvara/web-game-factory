@@ -736,5 +736,158 @@ class ContentTasks(unittest.TestCase):
         self.assertEqual([t["id"] for t in plan["tasks"] if t["id"].startswith("CONTENT-")], [])
 
 
+# -- the release tier: every unit planned, the develop budget derived (WS-3) ---------------
+
+
+def tiered_unit(index, tier):
+    return dict(content_unit(index), tier=tier, group=f"w{(index - 1) // 8 + 1}",
+                structure="static-field" if index % 2 else "moving-field",
+                elements=["spikes"] if index < 16 else ["spikes", "saws"],
+                objective_kind="reach")
+
+
+def release_design(units=32, mvp=8, tier="release", base=None):
+    """The audit's 2D case: 32 units in four groups of eight, the first eight MVP."""
+    design = copy.deepcopy(base) if base is not None else {}
+    features = list(design.get("features") or copy.deepcopy(CONTENT_FEATURES))
+    features += [
+        {"id": "bosses", "name": "Bosses", "tier": "post-mvp", "description": "A boss a world",
+         "acceptance": ["Each world ends in a boss"],
+         "evaluation": {"decision": "include", "reason": "The release tier needs a climax"}},
+        {"id": "endless", "name": "Endless", "tier": "optional", "description": "Endless",
+         "evaluation": {"decision": "later", "reason": "After launch"}},
+    ]
+    design["features"] = features
+    spec = dict(design.get("build_spec") or {})
+    spec["content"] = {"unit_kind": "level", "generation": {"mode": "authored"},
+                       "quality_tier": tier,
+                       "units": [tiered_unit(i, "mvp" if i <= mvp else "post-mvp")
+                                 for i in range(1, units + 1)]}
+    design["build_spec"] = spec
+    return design
+
+
+class ReleaseTier(unittest.TestCase):
+    """WS-3: a release-tier run plans every unit it ships and derives its develop budget."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.models = genre_models.load()
+        cls.batch = cls.models["implementation"]["task_batch"]
+        cls.base = designed("pixijs")
+        cls.release = rehash(release_design(base=cls.base))
+        cls.result = plan(cls.release)
+        cls.artifact = cls.result.artifacts[0].content
+
+    def content_tasks(self, artifact):
+        return [t for t in artifact["dev_plan"]["tasks"] if t["id"].startswith("CONTENT-")]
+
+    def test_a_release_design_with_32_units_plans_32_units(self):
+        self.assertEqual(self.result.outcome, StepOutcome.SUCCESS, self.result.error)
+        tasks = self.content_tasks(self.artifact)
+        # MVP units batch into M1, the release's post-mvp units into M2: never mixed.
+        self.assertEqual(len(tasks), -(-8 // self.batch) + -(-24 // self.batch))
+        planned = " ".join(t["title"] for t in tasks)
+        for index in range(1, 33):
+            self.assertIn(f"l-{index:02d}", planned)
+        self.assertEqual({t["milestone"] for t in tasks}, {"M1", "M2"})
+        later = [t for t in tasks if t["milestone"] == "M2"]
+        self.assertTrue(all(t["phase"] == "production" for t in later))
+        # The unit's new fields are named in its criterion, so the build is held to them.
+        self.assertTrue(any("group, structure, elements, objective_kind" in c
+                            for c in tasks[0]["acceptance_criteria"]))
+        scope = self.artifact["dev_plan"]["build_scope"]
+        self.assertEqual((scope["quality_tier"], scope["design_tiers"], scope["plan_phases"]),
+                         ("release", ["mvp", "post-mvp"], ["prototype", "production"]))
+        m2 = next(m for m in self.artifact["dev_plan"]["milestones"] if m["id"] == "M2")
+        self.assertEqual(m2["label"], "Release scope, built before G4")
+        self.assertIn("Every post-mvp content unit is in public/content/units.json and "
+                      "reachable in play", m2["exit_criteria"])
+
+    def test_every_included_feature_is_a_task_and_a_later_one_is_not(self):
+        titles = [t["title"] for t in self.artifact["dev_plan"]["tasks"]]
+        self.assertIn("Implement Bosses", titles)
+        self.assertNotIn("Implement Endless", titles)
+
+    def test_the_develop_budget_is_derived_from_the_plan_with_its_basis(self):
+        budget = self.artifact["dev_plan"]["develop_budget"]
+        basis = budget["basis"]
+        # Above the fixed 14 sessions the 2D run was given and had to have raised by hand.
+        self.assertGreater(budget["sessions"], 14)
+        built = [t for t in self.artifact["dev_plan"]["tasks"]
+                 if t["phase"] in ("prototype", "production")]
+        self.assertEqual(basis["build_hours"],
+                         round(sum(t["est_hours"] for t in built), 2))
+        self.assertEqual(basis["content_tasks"], len(self.content_tasks(self.artifact)))
+        self.assertEqual(basis["content_hours"],
+                         round(32 * self.models["implementation"]["content_unit_hours"], 2))
+        self.assertEqual(budget["sessions"],
+                         -(-basis["build_hours"] // basis["session_task_hours"])
+                         + basis["rework_sessions"])
+        self.assertEqual(budget["cost"], round(budget["sessions"] * basis["session_cost"], 2))
+        self.assertIn("quality-benchmark.yaml", basis["source"])
+        self.assertIsNone(budget["cap"])
+        self.assertIsNone(budget["shortfall"])
+        metadata = self.result.artifacts[0].metadata
+        self.assertEqual(metadata["develop_sessions"], budget["sessions"])
+        self.assertEqual(metadata["quality_tier"], "release")
+
+    def test_an_mvp_tier_run_plans_only_the_mvp(self):
+        mvp = plan(rehash(release_design(base=self.base, tier="mvp"))).artifacts[0].content
+        tasks = self.content_tasks(mvp)
+        self.assertEqual(len(tasks), -(-8 // self.batch))
+        self.assertTrue(all(t["milestone"] == "M1" for t in tasks))
+        self.assertNotIn("l-09", " ".join(t["title"] for t in tasks))
+        self.assertEqual(mvp["dev_plan"]["build_scope"]["plan_phases"], ["prototype"])
+        # Its budget counts only what is built before G4: the prototype phase.
+        self.assertLess(mvp["dev_plan"]["develop_budget"]["sessions"],
+                        self.artifact["dev_plan"]["develop_budget"]["sessions"])
+
+    def test_no_stated_tier_plans_the_mvp_as_before(self):
+        design = release_design(base=self.base)
+        del design["build_spec"]["content"]["quality_tier"]
+        artifact = plan(rehash(design)).artifacts[0].content
+        self.assertEqual(artifact["dev_plan"]["build_scope"]["quality_tier"], "mvp")
+        self.assertEqual(len(self.content_tasks(artifact)), -(-8 // self.batch))
+
+    def test_a_cap_below_the_need_is_a_planned_shortfall_at_g3(self):
+        class Capped(Context):
+            environment = {"develop_budget": {"max_sessions": 12}}
+
+            @staticmethod
+            def read_events():
+                return []
+
+        context = Capped()
+        result = plan(self.release, context=context)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        artifact = result.artifacts[0].content
+        budget = artifact["dev_plan"]["develop_budget"]
+        self.assertEqual(budget["cap"]["max_sessions"], 12)
+        self.assertEqual(budget["shortfall"], {"sessions": budget["sessions"] - 12})
+        risk = [r for r in artifact["technical_risks"]
+                if r["description"].startswith("Planned shortfall")]
+        self.assertEqual(len(risk), 1)
+        self.assertEqual(risk[0]["severity"], "high")
+        self.assertIn("caps it at 12", risk[0]["description"])
+        self.assertIn("PLANNED SHORTFALL", result.message)
+        self.assertEqual(result.artifacts[0].metadata["budget_shortfall"],
+                         budget["shortfall"])
+        self.assertTrue(any(level == "warning" and "below what the plan needs" in message
+                            for level, message, _ in context.logger.lines))
+
+        # A cap at or above the need is no shortfall.
+        class Ample(Capped):
+            environment = {"develop_budget": {"max_sessions": 200}}
+
+        ample = plan(self.release, context=Ample()).artifacts[0].content
+        self.assertIsNone(ample["dev_plan"]["develop_budget"]["shortfall"])
+
+    @unittest.skipIf(_jsonschema_lite() is None, "wgflib.jsonschema_lite is not available")
+    def test_the_release_plan_validates(self):
+        from wgflib.workflow.contracts import ArtifactContracts
+        self.assertEqual(ArtifactContracts()("tech-plan", self.artifact), [])
+
+
 if __name__ == "__main__":
     unittest.main()

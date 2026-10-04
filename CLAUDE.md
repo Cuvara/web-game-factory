@@ -214,7 +214,10 @@ without an automated method stops `submit` WAITING_FOR_HUMAN (`wgf decide <run> 
 See `docs/publish-module.md`. Workflow 5 judges the production build
 before review: `production-quality` and `visual-qa` route `assets` (an asset must be made
 again) to `assets` and `develop` to `develop`, and `release` refuses unless both passed the
-development commit it ships (`docs/production-architecture.md`). Workflow 7 adds the **store listing** after G4
+development commit it ships (`docs/production-architecture.md`). Workflow 9 then counts the
+built content against the design's quality tier: `content-sufficiency` routes `develop` (the
+build is short of the design) or `design-gap` (the design is short of the tier)
+(`docs/content-sufficiency-module.md`). Workflow 7 adds the **store listing** after G4
 (`docs/store-listing-module.md`): `store-listing` captures the verified build's package -
 screenshots and a gameplay recording of real play through the probe, branding from the
 game's own assets and identity, copy grounded in the design, one rendition per targeted
@@ -286,8 +289,9 @@ Real step modules register via `factory.steps.modules` in `workspace/config/fact
 every step type in `new-game` has one: `wgf_discovery` (research), `wgf_strategy`,
 `wgf_design`, `wgf_techplan`, `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_review`,
 `wgf_sdk`, `wgf_verification`, `wgf_release`, `wgf_playability`, `wgf_production`
-(production-quality), `wgf_visualqa` (visual-qa), `wgf_listing` (store-listing and
-listing-validation) and `wgf_publish` (platform-validate and publish). `--mock` still
+(production-quality), `wgf_visualqa` (visual-qa), `wgf_sufficiency` (content-sufficiency),
+`wgf_listing` (store-listing and listing-validation) and `wgf_publish` (platform-validate and
+publish). `--mock` still
 replaces all of them with placeholders for a run. Discovery reads evidence snapshots from
 `workspace/research/snapshots/` and teardown records from `workspace/research/games/`, codes
 every game on `core/reference/research-vocabulary.yaml`, and proposes several opportunities
@@ -409,6 +413,10 @@ seen by the engine — validate what you write there with ajv.
 - `docs/visual-qa-module.md` — the `visual-qa` step: a judge reads runtime frames against
   `core/reference/visual-qa-rubric.yaml`; the `baseline` judge a golden run uses; routes
   `assets` / `develop`
+- `docs/content-sufficiency-module.md` — the `content-sufficiency` step: the BUILT content
+  (the played commit's `public/content/units.json`, the traverse and the survey of every unit
+  through the probe's unit link) counted against `core/reference/quality-benchmark.yaml` at
+  the design's tier; typed findings routing `develop` or `design-gap`
 - `docs/store-listing-module.md` — the `store-listing` and `listing-validation` steps: the
   store package captured from the verified build (branding, screenshots, trailer, grounded
   copy, per-platform renditions under `core/reference/store-listing.yaml` and the profiles'

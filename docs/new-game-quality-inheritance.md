@@ -12,7 +12,7 @@ The rules are data: [core/reference/quality-policy.yaml](../core/reference/quali
 `engine.py`); the test file is
 [scripts/tests/test_quality_inheritance.py](../scripts/tests/test_quality_inheritance.py).
 
-## The policy in four sentences
+## The policy in six sentences
 
 1. **Snapshot.** A run records, when it starts, its quality tier (`factory.strategy.quality_tier`,
    default `release`), its class (`release` or `development`) and why, and the policy and
@@ -39,10 +39,23 @@ The rules are data: [core/reference/quality-policy.yaml](../core/reference/quali
    release-class run whose `release:draft` step passed, is current, and met the floor;
    otherwise `development - never a release` or `release class, not release-ready`, with
    the reasons, and the required steps no workflow contains yet.
+5. **Preflight.** A new run the configuration cannot take to its tier is refused before it
+   starts (a `ConfigError`, exit 2, no run created), with what to change: today a built-in
+   design author (`archetype`, `genre-seed` - the shipped default) at the release tier,
+   which WS-2's `content.tier_*` rules fail at design after research and strategy have run.
+   The fix is an `agent` design author (the autonomous profile's) or tier `mvp` - which makes
+   the run development. `wgf where --json` reports it (`quality.refused`), and the plugin's
+   `/new-game` stops on it before starting anything.
+6. **A planned shortfall waits for a person.** A reversible gate whose evidence names a
+   field under gates.yaml `hold_for_person_when` (G3: the tech plan's
+   `dev_plan.develop_budget.shortfall`, WS-3) is not auto-approved, not approved on a
+   timeout, and not answered by automation: it waits for a person, as G4 does, and `wgf
+   status` says why (`Held:`; `pending.held_for_person`, with no timeout eligibility).
 
-`content-sufficiency` (WS-4) and `quality-gate` (WS-7) are listed as required and `pending`:
-the floor enforces them from the first definition that adds steps with those ids, with
-nothing else to change. Until then `wgf status` lists them as not yet enforced.
+`content-sufficiency` (WS-4) is in the workflow and enforced like every required step.
+`quality-gate` (WS-7) is listed as required and `pending`: the floor enforces it from the
+first definition that adds a step with that id, with nothing else to change. Until then
+`wgf status` lists it as not yet enforced.
 
 ## Entry points
 
@@ -62,7 +75,8 @@ release without it. Every BYPASS below is closed; the test that proves it is nam
 | 8 | `wgf resume` under a newer definition | the run's scope is widened to the new steps (`engine.py:299`) | - | ALLOWED | pending required steps are enforced as soon as the definition has them (`quality.effective`) | `LegacyRuns.test_a_pending_step_the_current_policy_enforces_is_enforced` |
 | 9 | `wgf decide ID CHOICE` (`wgf.py:652`) | answers only a run WAITING for a person at its cursor; G4/G6/G7 refuse `automation` (`checkpoint.py:189`) | - | ALLOWED | the floor runs before the checkpoint executes, so a decision cannot pass a gate whose evidence is stale | `FloorAtTheGate.*` |
 | 10 | `wgf publish --run ID` | `platform-validate`, G5, G6, `submit` in the drafting run | a run built at tier `mvp`, or under a weakening configuration, could be submitted | BYPASS | floor at `release:validating` / `release:submitting`; `production_only: [release:submitting]` refuses a development run while `factory.publish.mode` is `live` | `DevelopmentNeverRelease.test_a_development_run_is_never_submitted`, `test_a_development_run_may_rehearse_a_dry_run_submit`, `test_a_release_run_reaches_submit` |
-| 11 | `factory.checkpoints.auto_approve` / `timeout_auto_approve` | G2, G3 (and G5) approve themselves; applied on resume | never G4, G6, G7: refused at start (`api.py:118` `timeout_windows`) and by the checkpoint (`checkpoint.py:102`) | ALLOWED (reversible gates, recorded as automation) | - | existing `test_core_workflow` |
+| 11 | `factory.checkpoints.auto_approve` / `timeout_auto_approve` | G2, G3 (and G5) approve themselves; applied on resume | never G4, G6, G7: refused at start (`api.py:118` `timeout_windows`) and by the checkpoint; but **a G3 whose tech plan records a planned shortfall (WS-3) was approved by automation**, so nobody read it - the autonomous profile auto-approves G3 | BYPASS (the shortfall) / ALLOWED (the rest) | gates.yaml 1.5.0 `hold_for_person_when` (G3: `dev_plan.develop_budget.shortfall`), read by `checkpoint.hold_for_person` | `PlannedShortfallWaitsForAPerson.*` |
+| 11b | shipped config, plain `wgf new-game IDEA` / plugin `/new-game` | research, strategy, then design with the built-in `archetype` author | after WS-2 the design step fails at the release tier, hours into a run | BYPASS-adjacent (a run that cannot meet its tier started anyway) | `preflight` refuses it before any step, naming the fix; `wgf where --json` `quality.refused`; the plugin stops on it | `Preflight.*` |
 | 12 | autonomous profile (`workspace/config/profiles/autonomous.yaml`) | auto-approves G2/G3, real developer/reviewer/judge agents, a budget | nothing: it adds agents, weakens no check | ALLOWED | the class conditions would mark it development if it ever did | `test_autonomous_profile` |
 | 13 | project config overlay (`config.py:236` `load_config`: the project's `workspace/config/factory.yaml` over the shipped one), and `wgf --config PATH` | every step reads the live config | `release.allow_unreviewed: true`; `visualqa.judge.kind: baseline` (passes with zero compared frames); `visualqa.rubric` (a laxer bar); `develop.checks` subset; `sdk.run_tests: false`, `sdk.typecheck: false`, `sdk.report` (no commit check); `listing.reference`; `strategy.quality_tier: mvp`; any of them set after the start | BYPASS | `development_when` conditions, at start and at every drive (`QUALITY_DOWNGRADED`); the tier from the snapshot | `DevelopmentNeverRelease.*` |
 | 14 | `factory.workflow.default` / `wgf --workflow PATH` | a workflow file outside `core/workflows/` | its `with:` blocks can set `reviewer: {kind: none}`, `checks: []`, `required_gates: []`, `required_reports: []`, `required_listing: false`, verify `gameplay.required: []`, or drop a check | BYPASS | `shipped_workflows_only`: such a run is development; a missing required step is a reason too | `DevelopmentNeverRelease.test_a_workflow_the_factory_does_not_ship_is_development` |
@@ -77,9 +91,10 @@ release without it. Every BYPASS below is closed; the test that proves it is nam
 | Gate | Where it runs | Inherited by every run because |
 |---|---|---|
 | research | `research` step | required step; `--from` past it is a fresh run that the floor stops at G4 |
-| design validation, WS-2 design tier rules, WS-5 feature evaluation | `design` step (`wgf_design` consistency, content and features checks; a breach is `descope` -> `$fail`) | required step; a design redone after G3 makes every later step stale |
+| design validation, WS-2 design tier rules, WS-5 feature evaluation | `design` step (`wgf_design` consistency, content and features checks; a breach is `descope` -> `$fail`) | required step; a design redone after G3 makes every later step stale; a design author that cannot meet the tier is refused at start (`preflight`) |
 | WS-1 quality tier and budget | `strategy` (budget), `assets` (climax bar) | the tier is snapshotted and read from the run; `mvp` is development |
-| WS-4 content sufficiency (coming) | `content-sufficiency` | declared required and pending: enforced from the definition that adds it |
+| WS-4 content sufficiency | `content-sufficiency` (after visual-qa) | required: current at G4 and release |
+| WS-3 release plan and develop budget | `tech-plan` (`dev_plan.develop_budget`) | a planned shortfall holds G3 for a person (`hold_for_person_when`) |
 | playability, production-quality, visual-qa | their steps | required, current at G4 and release; `release` also checks they passed the commit it ships (`wgf_release/lineage.py`) |
 | review, sdk-review | `review` steps | required; `reviewer.kind: none` passes the step as `skipped`, and release refuses it unless `release.allow_unreviewed`, which makes the run development |
 | regression checks | `verify` | required, current at G4 and release |

@@ -82,6 +82,16 @@ const CFG = JSON.parse(fs.readFileSync(process.env.WGF_PLAY_CONFIG as string, "u
   reset_in_unit: boolean;
   // The showcase test's whole window, when the game's probe offers to stage states.
   showcase_ms: number;
+  // The survey (core/reference/content-sufficiency.yaml `survey`): the unit ids entered one
+  // by one through the probe's unit link, on these projects only, each for at most
+  // survey_unit_ms and all of them within survey_ms; the roles whose entities carry a kind,
+  // and the roles that are the player or the interface. Empty survey_units: no survey.
+  survey_units?: string[];
+  survey_projects?: string[];
+  survey_unit_ms?: number;
+  survey_ms?: number;
+  kind_roles?: string[];
+  not_content_roles?: string[];
 };
 const URL = "/?wgf-probe=1";
 
@@ -543,10 +553,10 @@ async function retry(page: Page, s: Snapshot | null, touch: boolean): Promise<st
 // With `screens`, the title screen's UI is measured before it is pressed; that measurement
 // (settling, styles, a frame) is the bot's time, not the game's, and is returned as
 // `observerMs` so start.playable can leave it out. `playingMs` stays the wall clock.
-async function start(page: Page, touch: boolean, watch: Watch, screens = false): Promise<{ firstSnapshotMs: number | null; playingMs: number | null; observerMs: number; samples: Snapshot[]; began: string | null }> {
+async function start(page: Page, touch: boolean, watch: Watch, screens = false, url = URL): Promise<{ firstSnapshotMs: number | null; playingMs: number | null; observerMs: number; samples: Snapshot[]; began: string | null }> {
   const t0 = Date.now();
   let observerMs = 0;
-  await page.goto(URL, { waitUntil: "domcontentloaded" });
+  await page.goto(url, { waitUntil: "domcontentloaded" });
   let firstSnapshotMs: number | null = null;
   let began: string | null = null;
   let pressedAt = 0;
@@ -1245,4 +1255,134 @@ test("showcase: the states where later assets are drawn, if the game stages them
   }
   write(project, "showcase", { ...started, applies: true, declared, visits,
                                skipped: declared.slice(SHOWCASE_MAX), ...watch.record(), frames });
+});
+
+// -- the survey -----------------------------------------------------------------------------
+
+// The traverse plays the first units in order and stops; a release carries many more. The
+// survey enters every unit the design lists directly, through the probe's unit link
+// (`?wgf-probe=1&wgf-unit=<unit id>`, play-probe.schema.json), and lets the oracle play it for
+// a bounded window: which unit the probe then reports, the entity kinds and assets drawn in
+// it by role, the difficulty in force, and how long the oracle took to complete it. Recorded
+// only; the content-sufficiency step counts it. A unit the probe never reports was not
+// entered - the build does not honour the link, or does not carry that unit.
+interface SurveyVisit {
+  asked: string;
+  entered: boolean;
+  reported: string[];
+  index: number | null;
+  kinds_by_role: Record<string, string[]>;
+  assets_by_role: Record<string, string[]>;
+  content_entities: number;
+  unkinded: number;
+  difficulty: Record<string, number>;
+  won: boolean;
+  lost: boolean;
+  duration_ms: number | null;
+  playing_ms: number | null;
+  reason?: string;
+}
+
+function addTo(map: Record<string, string[]>, key: string, value: string): void {
+  const list = (map[key] ??= []);
+  if (!list.includes(value)) list.push(value);
+}
+
+async function surveyUnit(page: Page, id: string, touch: boolean, watch: Watch, project: string,
+                          frames: string[]): Promise<SurveyVisit> {
+  const started = await start(page, touch, watch, false, `${URL}&wgf-unit=${encodeURIComponent(id)}`);
+  const visit: SurveyVisit = { asked: id, entered: false, reported: [], index: null,
+                               kinds_by_role: {}, assets_by_role: {}, content_entities: 0,
+                               unkinded: 0, difficulty: {}, won: false, lost: false,
+                               duration_ms: null, playing_ms: started.playingMs };
+  if (started.playingMs === null) {
+    visit.reason = "play never began";
+    return visit;
+  }
+  const kindRoles = new Set(CFG.kind_roles ?? []);
+  const u0 = Date.now();
+  let shot = false;
+  let samples = 0;
+  while (Date.now() - u0 < (CFG.survey_unit_ms ?? 0)) {
+    const s = watch.saw(await snap(page));
+    if (!s) break;
+    const uid = s.content?.unit_id ?? null;
+    if (uid && !visit.reported.includes(uid)) visit.reported.push(uid);
+    if (uid !== id) {
+      // Left the unit (it advanced on its own), or never in it.
+      if (visit.entered) break;
+    } else {
+      visit.entered = true;
+      visit.index = s.content?.unit_index ?? visit.index;
+      Object.assign(visit.difficulty, difficultyOf(s));
+      // A bounded number of samples count entities: the kinds and assets are a union.
+      const counting = samples < 40;
+      samples += 1;
+      for (const entity of s.entities ?? []) {
+        if (!entity.visible) continue;
+        if (entity.kind) addTo(visit.kinds_by_role, entity.role, entity.kind);
+        if (entity.asset) addTo(visit.assets_by_role, entity.role, entity.asset);
+        if (counting && kindRoles.has(entity.role)) {
+          visit.content_entities += 1;
+          if (!entity.kind) visit.unkinded += 1;
+        }
+      }
+      if (!shot && Date.now() - u0 > 1000) {
+        await frame(page, project, `survey-${id}-1s`, frames);
+        shot = true;
+      }
+    }
+    if (s.state === "won" || progressDone(s)) {
+      if (uid === id) {
+        visit.won = true;
+        visit.duration_ms = Date.now() - u0;
+      }
+      break;
+    }
+    if (s.state === "lost") {
+      visit.lost = true;
+      break;
+    }
+    if (s.oracle) {
+      await act(page, s.oracle, touch);
+      await page.waitForTimeout(120);
+    } else {
+      await page.waitForTimeout(40);
+    }
+  }
+  if (!visit.entered) {
+    visit.reason = visit.reported.length
+      ? `the probe reported ${visit.reported.join(", ")}, not ${id}`
+      : "the probe reported no unit";
+  }
+  return visit;
+}
+
+test("survey: every unit the design lists, entered through the probe's unit link", async ({ page }, info) => {
+  const project = info.project.name;
+  const units = CFG.survey_units ?? [];
+  if (!units.length || !(CFG.survey_projects ?? []).includes(project)) {
+    write(project, "survey", { applies: false, reason: units.length
+      ? `units are surveyed on ${(CFG.survey_projects ?? []).join(", ") || "no project"} only`
+      : "no survey was asked for (the step's `with: survey`, a design with authored units)" });
+    return;
+  }
+  // The survey's own window, beside the per-test timeout every other test shares.
+  test.setTimeout((CFG.survey_ms ?? 0) + units.length * (CFG.start_timeout_ms + 2000) + 60_000);
+  const frames: string[] = [];
+  const watch = new Watch(page, project, frames);
+  const touch = Boolean(info.project.use.hasTouch);
+  const visits: SurveyVisit[] = [];
+  const t0 = Date.now();
+  for (const id of units) {
+    if (Date.now() - t0 > (CFG.survey_ms ?? 0)) {
+      visits.push({ asked: id, entered: false, reported: [], index: null, kinds_by_role: {},
+                    assets_by_role: {}, content_entities: 0, unkinded: 0, difficulty: {},
+                    won: false, lost: false, duration_ms: null, playing_ms: null,
+                    reason: "survey window spent" });
+      continue;
+    }
+    visits.push(await surveyUnit(page, id, touch, watch, project, frames));
+  }
+  write(project, "survey", { applies: true, asked: units, visits, ...watch.record(), frames });
 });

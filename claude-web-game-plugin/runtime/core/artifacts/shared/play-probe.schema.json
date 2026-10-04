@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/shared/play-probe.schema.json",
   "title": "Play probe snapshot",
-  "description": "What a built game reports about itself while it runs, so it can be played and judged from outside: `window.__wgf__.play.snapshot()` returns one object of this shape. The game installs it (the template installs `window.__wgf__`; the game adds `play`). It is read-only: calling it never changes the game. The playability step drives the game with real input and reads a snapshot before and after each input; it never acts through the probe. Metric names are the ones the design's `build_spec.experience` and `hud[].metric` use, so a snapshot can be held to the design. `audio` (optional) reports the music playing and the measured output level. `oracle` is present only when the page URL carries `wgf-probe=1`: a shipped build never computes it, and a release refuses a build that would. Optional beside `snapshot()`, and only with `wgf-probe=1`: `play.showcase`, an object with `targets()` - the runtime asset ids of readable entities this build can stage, typically those that first appear after the opening unit - and `show(assetId)` - puts the running game into a real state of play in which an entity drawn from that asset is on screen (the unit it first appears in, its encounter), resolving true, or false when it cannot. The bot calls it only in a test of its own, after the fresh-save tests, to capture a frame of each staged state for the production gate, which credits an asset there only where the frame shows it; it is never used to play, and a game without it is judged as before.",
+  "description": "What a built game reports about itself while it runs, so it can be played and judged from outside: `window.__wgf__.play.snapshot()` returns one object of this shape. The game installs it (the template installs `window.__wgf__`; the game adds `play`). It is read-only: calling it never changes the game. The playability step drives the game with real input and reads a snapshot before and after each input; it never acts through the probe. Metric names are the ones the design's `build_spec.experience` and `hud[].metric` use, so a snapshot can be held to the design. `audio` (optional) reports the music playing and the measured output level. `oracle` is present only when the page URL carries `wgf-probe=1`: a shipped build never computes it, and a release refuses a build that would. Optional beside `snapshot()`, and only with `wgf-probe=1`: `play.showcase`, an object with `targets()` - the runtime asset ids of readable entities this build can stage, typically those that first appear after the opening unit - and `show(assetId)` - puts the running game into a real state of play in which an entity drawn from that asset is on screen (the unit it first appears in, its encounter), resolving true, or false when it cannot. The bot calls it only in a test of its own, after the fresh-save tests, to capture a frame of each staged state for the production gate, which credits an asset there only where the frame shows it; it is never used to play, and a game without it is judged as before. Optional too, and only with `wgf-probe=1`: the unit link - a page URL that also carries `wgf-unit=<unit id>` (a build_spec.content.units id) starts play in that unit, as a level select would, so the content-sufficiency step's survey can measure every unit a build carries, not only the first few the bot plays to in order; a build that cannot enter a unit that way starts as it otherwise would, and the survey records the unit as not entered. While a content unit is in play (`content.unit_id` is a string), every entity of a content role - threat, goal, target, projectile, collectible, hazard - carries its `kind`: kinds are how the build shows which element is on screen, and without them element variety cannot be counted on the build (required with the content-sufficiency step; both validation builds of 2026-10 lacked them).",
   "type": "object",
   "required": ["state", "metrics", "entities", "inputs"],
   "properties": {
@@ -72,13 +72,19 @@
     }
   },
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": { "required": ["content"], "properties": { "content": { "type": "object", "required": ["unit_id"], "properties": { "unit_id": { "type": "string" } } } } },
+      "then": { "properties": { "entities": { "items": { "if": { "required": ["role"], "properties": { "role": { "enum": ["threat", "goal", "target", "projectile", "collectible", "hazard"] } } }, "then": { "required": ["kind"] } } } } }
+    }
+  ],
   "$defs": {
     "entity": {
       "type": "object",
       "required": ["id", "role", "x", "y", "w", "h", "visible"],
       "properties": {
         "id": { "type": "string" },
-        "kind": { "type": "string", "description": "What the game itself calls this thing - `swarmer`, `turret`, `ice-tile`, `boost-pad`. Free text, and the game's own vocabulary; `role` stays the fixed one the checks read. A check counting distinct kinds in a unit (a wave with one enemy kind is not a composition) counts these." },
+        "kind": { "type": "string", "description": "What the game itself calls this thing - `swarmer`, `turret`, `ice-tile`, `boost-pad`. Free text, and the game's own vocabulary; `role` stays the fixed one the checks read. A check counting distinct kinds in a unit (a wave with one enemy kind is not a composition) counts these. Required of every entity of a content role while a content unit is in play (the root `allOf`)." },
         "role": {
           "enum": ["player", "threat", "goal", "target", "projectile", "collectible", "hazard", "ui"],
           "description": "What the entity is to the player. The visual gate requires every player, threat, goal, target and projectile entity to be on screen and large enough to read."

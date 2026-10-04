@@ -41,6 +41,10 @@ The overrides, and why each is legitimate:
                                  is never set: a golden run releases only an approved commit.
     checkpoints.auto_approve     [G2, G3]: both are reversible gates, which the engine lets
                                  an installation auto-approve. G4/G6/G7 never are.
+    strategy.quality_tier        mvp: a golden run is a pipeline regression of a known-good
+                                 port at MVP tier. At `release` the design is held to the
+                                 quality benchmark's content bars (content.tier_*), which the
+                                 built-in design authors do not write to (docs/golden-runs.md).
 
 And one decision, not an override: G4 (prototype-review) is irreversible, so nothing in the
 configuration can approve it. The harness resumes the waiting run with `pass` through the
@@ -310,6 +314,9 @@ def build_config(game, workdir, template_dir=None, python=None, with_library=Tru
         # harness passes G4: nothing in the run can state one.
         "listing": {"age_rating": dict(GOLDEN_AGE_RATING)},
         "checkpoints": {"auto_approve": list(AUTO_APPROVE)},
+        # A pipeline regression at MVP tier: the built-in design author does not write a
+        # release-tier design (content.tier_*), and a golden run measures the pipeline.
+        "strategy": {"quality_tier": "mvp"},
     }
     return _merge(config, overrides)
 

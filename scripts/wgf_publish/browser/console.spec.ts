@@ -31,8 +31,24 @@
 // Locators: per intent a ladder, tried in order - role+name > label > placeholder > exact
 // text > stable attribute > css > xpath; the first rung that resolves to exactly one visible
 // element wins and is recorded. Never coordinates. A ladder that matches nothing or several
-// elements, or a failed post-condition, ends the run with a `drift` result naming the intent
-// (resolveDrift is the hook the bounded adaptive mode will fill; today it says `stop`).
+// elements, or a failed post-condition, ends the run with a `drift` result naming the intent.
+//
+// Bounded adaptive mode (docs/portal-publishing-architecture.md 2.6), only when the flow
+// says `adaptive.enabled` (the profile allows it AND the installation enabled it AND a
+// resolver agent is configured), and only for a REVERSIBLE intent outside session,
+// find_game, status_gate and request_review: the run pauses, takes a redacted accessibility
+// snapshot of the logged-in console page (roles, names, labels, states; input values
+// masked; never on a login, CAPTCHA, second-factor or anti-bot page), writes it with the
+// intent to drift-request.json and waits for drift-response.json - the browser process
+// never runs a model. Every proposal (resolve | dismiss | navigate | stop) is checked HERE
+// before anything is done with it: exactly one visible enabled element; an allowed origin
+// and the intent's page; a role that fits the intent's own action; an accessible name in the
+// intent's `names`; nothing in the deny vocabulary; no value from the resolver; the budget.
+// A refused proposal stops the visit like any drift, the proposal and every check recorded.
+// After acting, the post-condition is checked exactly as for a profile locator, and a
+// failure is never adapted again. An irreversible intent never adapts: the resolver's
+// proposal is asked for only as a suggestion a person reads (drift-irreversible).
+// What worked is written to drift.json as a proposed profile change; nothing edits a profile.
 //
 // Login: when the console is not logged in - the profile's session markers, or else a page
 // off the allowed origins, a password, CAPTCHA or one-time-code field - the run writes
@@ -67,7 +83,12 @@ type Intent = {
   id: string; phase: string; class: "reversible" | "irreversible" | "human";
   action?: string; target?: Ladder; url?: string; value?: string; value_public?: boolean;
   value_sha256?: string; files?: FileRef[]; locale?: string | null; optional?: boolean;
-  multiple?: boolean; expect?: Expect; note?: string;
+  multiple?: boolean; expect?: Expect; note?: string; names?: string[]; page?: string;
+};
+type Adaptive = {
+  enabled: boolean; unavailable: string | null; request_path: string; response_path: string;
+  drift_path: string; response_timeout_ms: number; max_per_intent: number;
+  max_per_visit: number; dismissable: string[]; deny: string[];
 };
 type Candidate = { source: string; id?: string };
 type Flow = {
@@ -89,6 +110,7 @@ type Flow = {
   intents: Intent[];
   plan: Record<string, unknown>;
   timeouts: { action: number; navigation: number; upload: number };
+  adaptive?: Adaptive;
 };
 
 const flow: Flow = JSON.parse(fs.readFileSync(process.env.WGF_PUBLISH_FLOW!, "utf-8"));
@@ -132,6 +154,7 @@ const result = {
   refused: [] as string[],
   errors: [] as string[],
   actions: 0,
+  adaptive: { enabled: false, used: 0, acted: 0, refused: 0, suggestions: 0 },
 };
 
 class Stop extends Error {}
@@ -487,18 +510,431 @@ function stopVisit(phase: string, code: string, reason: string, extra: Record<st
   return finish("stopped", { phase, code, reason, ...extra });
 }
 
-// The hook the bounded adaptive mode (docs/portal-publishing-architecture.md 2.6) will fill:
-// given the drifted intent and a redacted snapshot of the page, propose a resolution under the
-// executor's checks. Today nothing adapts: the visit stops, and a person corrects the profile.
-export async function resolveDrift(_intent: Intent, _snapshot: unknown): Promise<"stop"> {
-  return "stop";
+// A drift stops the visit. On an irreversible intent, with the adaptive mode on, the resolver
+// is asked for a SUGGESTION a person reads before correcting the profile - never acted on.
+async function drift(it: Intent, reason: string, extra: Record<string, unknown> = {}): Promise<never> {
+  const suggestion = it.class === "irreversible" && ADAPT.enabled ? await suggest(it, reason) : null;
+  result.phases[it.phase] = { outcome: "drift", intent: it.id, detail: reason };
+  return finish("drift", { phase: it.phase, intent: it.id, class: it.class, reason, resolution: "stop",
+                           code: it.class === "irreversible" ? "drift-irreversible" : "drift",
+                           ...(suggestion ? { suggestion } : {}), ...extra });
 }
 
-async function drift(it: Intent, reason: string, extra: Record<string, unknown> = {}): Promise<never> {
-  const resolution = it.class === "reversible" ? await resolveDrift(it, null) : "stop";
-  result.phases[it.phase] = { outcome: "drift", intent: it.id, detail: reason };
-  return finish("drift", { phase: it.phase, intent: it.id, class: it.class, reason, resolution,
-                           code: it.class === "irreversible" ? "drift-irreversible" : "drift", ...extra });
+// -- the bounded adaptive mode ------------------------------------------------------------------
+
+const ADAPT: Adaptive = flow.adaptive ?? {
+  enabled: false, unavailable: "the flow carries no adaptive block", request_path: "", response_path: "",
+  drift_path: "", response_timeout_ms: 0, max_per_intent: 0, max_per_visit: 0, dismissable: [], deny: [],
+};
+result.adaptive.enabled = ADAPT.enabled;
+// Phases that choose the session, the game or the review request: never adaptive.
+const NEVER_ADAPTIVE = new Set(["session", "check_session", "find_game", "status_gate", "read_status",
+                                "request_review"]);
+// The roles an element may have for each action an adaptive resolution may take.
+const ROLES_FOR: Record<string, string[]> = {
+  fill: ["textbox"], select: ["combobox", "listbox"], upload: ["file"], click: ["button", "link"],
+};
+const GAME_PHASES = new Set(["upload_build", "fill_metadata", "upload_media", "save_draft"]);
+const LOC_KEYS = ["role", "name", "exact", "label", "placeholder", "text", "testid", "css", "xpath"];
+const LOC_PRIMARY = ["role", "label", "placeholder", "text", "testid", "css", "xpath"];
+const adaptiveCount: Record<string, number> = {};
+const driftEntries: Record<string, unknown>[] = [];
+let driftSeq = 0;
+
+const norm = (s: string | null | undefined) => fold(s).replace(/\s+/g, " ").replace(/[\s:*]+$/, "");
+const intentKey = (it: Intent) => (it.locale ? `${it.id}:${it.locale}` : it.id);
+
+// The first deny word that starts a word of `text`, case-folded (wgflib.publication's rule).
+function denyHit(text: string | null | undefined): string | null {
+  const t = fold(text);
+  if (!t) return null;
+  for (const w of ADAPT.deny) {
+    const word = fold(w).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (word && new RegExp(`(?<![\\p{L}\\p{N}_])${word}`, "u").test(t)) return w;
+  }
+  return null;
+}
+
+function writeDrift() {
+  if (!ADAPT.drift_path) return;
+  fs.mkdirSync(path.dirname(ADAPT.drift_path), { recursive: true });
+  const doc = { portal: flow.portal, step: flow.step, at: now(), entries: driftEntries };
+  fs.writeFileSync(ADAPT.drift_path + ".tmp", JSON.stringify(doc, null, 2));
+  fs.renameSync(ADAPT.drift_path + ".tmp", ADAPT.drift_path);
+}
+
+function adaptiveGate(it: Intent): string | null {
+  if (!ADAPT.enabled) return ADAPT.unavailable || "the adaptive mode is off";
+  if (it.class !== "reversible") return `${it.class} intents never adapt`;
+  if (NEVER_ADAPTIVE.has(it.phase)) return `the ${it.phase} phase never adapts (it chooses the session, the game or the review request)`;
+  if (!it.action || !(it.action in ROLES_FOR || it.action === "navigate")) return `a ${it.action ?? "missing"} action is never resolved adaptively`;
+  if (it.action !== "navigate" && !(it.names && it.names.length)) return "the intent has no accepted names (`names`) to check a proposal against";
+  if (result.adaptive.used >= ADAPT.max_per_visit) return `the visit's adaptive budget is spent (${ADAPT.max_per_visit})`;
+  if ((adaptiveCount[intentKey(it)] ?? 0) >= ADAPT.max_per_intent) return `the intent's adaptive budget is spent (${ADAPT.max_per_intent})`;
+  return null;
+}
+
+function pathOf(url: string): string {
+  try { return new URL(url).pathname; } catch { return ""; }
+}
+
+type Snap = { url: string; path: string; nodes: Record<string, unknown>[]; sha256: string };
+
+// Roles, names, labels and states of what the page shows. Input values are `<value>` or "";
+// hidden and password inputs are left out; no cookie, header or network traffic is read.
+// Never on a page that is not the logged-in console on an allowed origin.
+async function snapshotPage(): Promise<Snap | null> {
+  if (!allowed(page.url()) || !(await authState(page)).ok) return null;
+  let nodes: Record<string, unknown>[];
+  try {
+    nodes = await page.evaluate(() => {
+      const clean = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+      const out: Record<string, unknown>[] = [];
+      const sel = "a, button, input, textarea, select, label, h1, h2, h3, [role], dialog, [aria-label], [data-testid]";
+      for (const e of Array.from(document.querySelectorAll(sel))) {
+        if (out.length >= 300) break;
+        const el = e as HTMLElement;
+        const tag = el.tagName.toLowerCase();
+        const type = (el.getAttribute("type") || "").toLowerCase();
+        if (type === "hidden" || type === "password") continue;
+        const style = getComputedStyle(el);
+        const box = el.getBoundingClientRect();
+        const visible = box.width > 0 && box.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+        if (!visible && !(tag === "input" && type === "file")) continue;
+        const control = tag === "input" || tag === "textarea" || tag === "select";
+        const buttonInput = tag === "input" && ["submit", "button", "reset"].includes(type);
+        const role = el.getAttribute("role") || (tag === "button" || buttonInput ? "button"
+          : tag === "a" ? "link" : tag === "textarea" ? "textbox"
+          : tag === "select" ? ((el as HTMLSelectElement).multiple ? "listbox" : "combobox")
+          : tag === "input" ? (type === "file" ? "file" : type === "checkbox" ? "checkbox" : type === "radio" ? "radio" : "textbox")
+          : tag);
+        const node: Record<string, unknown> = { role, tag };
+        const aria = clean(el.getAttribute("aria-label"));
+        if (aria) node.name = aria;
+        const labels = (el as HTMLInputElement).labels;
+        if (labels && labels.length) node.labels = Array.from(labels).map((l) => clean(l.innerText)).filter(Boolean);
+        const placeholder = clean(el.getAttribute("placeholder"));
+        if (placeholder) node.placeholder = placeholder;
+        if (!control) node.text = clean(el.innerText);
+        if (buttonInput) node.text = clean((el as HTMLInputElement).value);
+        if (type) node.type = type;
+        for (const [key, attr] of [["testid", "data-testid"], ["name_attr", "name"], ["id", "id"]]) {
+          const v = clean(el.getAttribute(attr));
+          if (v) node[key] = v;
+        }
+        if (control && !buttonInput) node.value = (el as HTMLInputElement).value ? "<value>" : "";
+        if (type === "checkbox" || type === "radio") node.checked = (el as HTMLInputElement).checked;
+        if ((el as HTMLButtonElement).disabled === true || el.getAttribute("aria-disabled") === "true") node.disabled = true;
+        if (!visible) node.visible = false;
+        out.push(node);
+      }
+      return out;
+    });
+  } catch {
+    return null;
+  }
+  const url = bare(page.url());
+  return { url, path: pathOf(page.url()), nodes, sha256: sha256(JSON.stringify({ url, nodes })) };
+}
+
+function postConditionOf(it: Intent): Record<string, unknown> | null {
+  if (!it.expect) return null;
+  const e: Record<string, unknown> = { ...it.expect };
+  if (e.value_equals !== undefined) e.value_equals = "<the intent's value>";
+  return e;
+}
+
+// One request, one answer, through two files: the browser process never runs a model.
+async function askResolver(it: Intent, why: string, snap: Snap, suggestionOnly: boolean): Promise<Record<string, unknown>> {
+  driftSeq += 1;
+  const seq = driftSeq;
+  const request = {
+    seq, portal: flow.portal, at: now(), suggestion_only: suggestionOnly,
+    intent: { id: it.id, phase: it.phase, class: it.class, action: it.action ?? null, locale: it.locale ?? null,
+              expected_roles: ROLES_FOR[it.action ?? ""] ?? [], names: it.names ?? [],
+              failed_ladder: it.target ?? [], post_condition: postConditionOf(it), page: it.page ?? null },
+    why, page: { url: snap.url, path: snap.path }, snapshot: snap.nodes, snapshot_sha256: snap.sha256,
+    dismissable: ADAPT.dismissable,
+    allowed: suggestionOnly ? ["resolve", "stop"]
+      : it.action === "navigate" ? ["dismiss", "navigate", "stop"] : ["resolve", "dismiss", "navigate", "stop"],
+    budget: { intent: ADAPT.max_per_intent - (adaptiveCount[intentKey(it)] ?? 0),
+              visit: ADAPT.max_per_visit - result.adaptive.used },
+  };
+  fs.rmSync(ADAPT.response_path, { force: true });
+  fs.mkdirSync(path.dirname(ADAPT.request_path), { recursive: true });
+  fs.writeFileSync(ADAPT.request_path + ".tmp", JSON.stringify(request, null, 2));
+  fs.renameSync(ADAPT.request_path + ".tmp", ADAPT.request_path);
+  console.log(`WGF_PUBLISH_DRIFT_REQUEST seq=${seq} intent=${it.id}`);
+  const deadline = Date.now() + ADAPT.response_timeout_ms;
+  let beat = Date.now();
+  for (;;) {
+    if (fs.existsSync(ADAPT.response_path)) {
+      try {
+        const answer = JSON.parse(fs.readFileSync(ADAPT.response_path, "utf-8"));
+        if (answer && answer.seq === seq) {
+          const p = answer.proposal;
+          if (p && typeof p === "object" && !Array.isArray(p) && typeof p.kind === "string") return p;
+          return { kind: "stop", reason: "malformed resolver response" };
+        }
+      } catch { /* written as we read: read again */ }
+    }
+    if (Date.now() > deadline) {
+      return { kind: "stop", reason: `no resolver answer within ${Math.round(ADAPT.response_timeout_ms / 1000)} s` };
+    }
+    if (Date.now() - beat >= 15_000) {
+      beat = Date.now();
+      console.log(`WGF_PUBLISH_DRIFT_REQUEST still waiting seq=${seq} intent=${it.id}`);
+    }
+    await sleep(200);
+  }
+}
+
+type Info = { role: string; type: string; names: string[]; text: string; disabled: boolean };
+
+// The element's role, every name it goes by (aria-label, labels, placeholder, title, text),
+// and whether it is disabled. Never an input's value.
+async function inspect(el: Locator): Promise<Info | null> {
+  try {
+    const info = await el.evaluate((e) => {
+      const clean = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+      const tag = e.tagName.toLowerCase();
+      const type = (e.getAttribute("type") || "").toLowerCase();
+      const control = tag === "input" || tag === "textarea" || tag === "select";
+      const buttonInput = tag === "input" && ["submit", "button", "reset"].includes(type);
+      const role = e.getAttribute("role") || (tag === "button" || buttonInput ? "button"
+        : tag === "a" ? "link" : tag === "textarea" ? "textbox"
+        : tag === "select" ? ((e as HTMLSelectElement).multiple ? "listbox" : "combobox")
+        : tag === "input" ? (type === "file" ? "file" : type === "checkbox" ? "checkbox" : type === "radio" ? "radio"
+                             : type === "password" ? "password" : type === "hidden" ? "hidden" : "textbox")
+        : tag);
+      const names: string[] = [clean(e.getAttribute("aria-label"))];
+      for (const id of (e.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean)) {
+        names.push(clean(document.getElementById(id)?.textContent));
+      }
+      const labels = (e as HTMLInputElement).labels;
+      if (labels) for (const l of Array.from(labels)) names.push(clean(l.innerText));
+      names.push(clean(e.getAttribute("placeholder")), clean(e.getAttribute("title")));
+      const text = control ? (buttonInput ? clean((e as HTMLInputElement).value) : "") : clean((e as HTMLElement).innerText);
+      names.push(text);
+      const disabled = (e as HTMLButtonElement).disabled === true || e.getAttribute("aria-disabled") === "true";
+      return { role, type, names: names.filter(Boolean), text, disabled };
+    });
+    if (!info.disabled && !(await el.isEnabled())) info.disabled = true;
+    return info;
+  } catch {
+    return null;
+  }
+}
+
+function locatorProblem(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "the locator is not an object";
+  const loc = raw as Record<string, unknown>;
+  const unknown = Object.keys(loc).filter((k) => !LOC_KEYS.includes(k));
+  if (unknown.length) return `the locator carries ${unknown.join(", ")} (never an index, coordinates or a script)`;
+  const primary = LOC_PRIMARY.filter((k) => k in loc);
+  if (primary.length !== 1) return "the locator names exactly one rung";
+  if (("name" in loc || "exact" in loc) && primary[0] !== "role") return "`name` and `exact` go with `role` only";
+  for (const [k, v] of Object.entries(loc)) {
+    if (k === "exact" ? typeof v !== "boolean" : typeof v !== "string" || !v.trim()) return `locator ${k} is malformed`;
+  }
+  return null;
+}
+
+// The page the intent acts on: the profile's `page` pattern; else, on a game's own phases,
+// that game's page; else the origin check alone.
+function expectedPage(it: Intent): { ok: boolean; detail: string } {
+  const here = pathOf(page.url());
+  if (it.page) {
+    let re: RegExp;
+    try { re = new RegExp(it.page); } catch { return { ok: false, detail: `the intent's page pattern ${it.page} does not compile` }; }
+    return { ok: re.test(here), detail: `${here} against ${it.page}` };
+  }
+  const gameId = result.game_id || result.found_game?.id;
+  if (GAME_PHASES.has(it.phase) && flow.identity.game_url && gameId) {
+    const want = pathOf(absolute(flow.identity.game_url.replace("{id}", encodeURIComponent(gameId))));
+    return { ok: here === want || here.startsWith(want + "/"), detail: `${here} against the game's page ${want}` };
+  }
+  return { ok: true, detail: `${here}: no page pattern for ${it.phase}; the origin check holds` };
+}
+
+type CheckRow = { check: string; ok: boolean; detail?: string };
+type Verdict = { ok: boolean; checks: CheckRow[]; el: Locator | null; element: Record<string, unknown> | null; url: string | null };
+
+// Every check the design names, run on the live page by the executor itself; each recorded.
+async function validateProposal(it: Intent, p: Record<string, unknown>): Promise<Verdict> {
+  const checks: CheckRow[] = [];
+  const add = (check: string, ok: boolean, detail?: string) => {
+    checks.push(detail !== undefined ? { check, ok, detail } : { check, ok });
+    return ok;
+  };
+  const verdict = (el: Locator | null = null, element: Record<string, unknown> | null = null, url: string | null = null): Verdict =>
+    ({ ok: checks.every((c) => c.ok), checks, el, element, url });
+  const kind = String(p.kind);
+  const kinds = it.action === "navigate" ? ["dismiss", "navigate"] : ["resolve", "dismiss", "navigate"];
+  add("kind", kinds.includes(kind), `${kind} for a ${it.action} intent`);
+  add("no-value", !("value" in p), "value" in p ? "the resolver supplied a value: a value only ever comes from the job" : undefined);
+  add("same-action", p.action === undefined || p.action === it.action,
+      p.action === undefined ? undefined : `the intent's action is ${it.action}, the proposal's ${String(p.action)}`);
+  add("origin", allowed(page.url()), bare(page.url()) || "blank");
+  const pg = expectedPage(it);
+  add("page", pg.ok, pg.detail);
+  if (kind === "navigate") {
+    const raw = typeof p.path === "string" ? p.path : "";
+    let url = "";
+    if (/^\/(?!\/)/.test(raw) && !/[\\\s]/.test(raw)) {
+      try { url = new URL(raw, page.url()).toString(); } catch { url = ""; }
+    }
+    add("navigate-path", url !== "" && allowed(url), url ? bare(url) : `${JSON.stringify(raw)} is not a path on this console`);
+    if (it.page && url) {
+      let ok = false;
+      try { ok = new RegExp(it.page).test(pathOf(url)); } catch { ok = false; }
+      add("navigate-page", ok, `${pathOf(url)} against ${it.page}`);
+    }
+    return verdict(null, null, url || null);
+  }
+  if (!["resolve", "dismiss"].includes(kind)) return verdict();
+  const shape = locatorProblem(p.locator);
+  if (!add("locator", shape === null, shape ?? undefined)) return verdict();
+  const loc = p.locator as Loc;
+  const locTexts = Object.entries(loc).filter(([k]) => k !== "exact" && k !== "role").map(([, v]) => String(v));
+  const found = await elements(build(page, loc), !(kind === "resolve" && it.action === "upload"));
+  if (!add("unique", found.length === 1, `${found.length} element(s)`)) {
+    const hit = locTexts.map(denyHit).find((h) => h);
+    add("deny", !hit, hit ? `the locator names ${JSON.stringify(hit)} (deny vocabulary)` : undefined);
+    return verdict();
+  }
+  const el = found[0];
+  const info = await inspect(el);
+  if (!add("element", info !== null, info ? undefined : "the element could not be read")) return verdict();
+  add("enabled", !info!.disabled, info!.disabled ? "the element is disabled" : undefined);
+  if (kind === "resolve") {
+    const roles = ROLES_FOR[it.action ?? ""] ?? [];
+    add("role", roles.includes(info!.role), `${info!.role} for ${it.action} (needs ${roles.join(" or ") || "nothing adaptive"})`);
+    const vocab = (it.names ?? []).map(norm);
+    const named = info!.names.find((n) => vocab.includes(norm(n)));
+    add("names", named !== undefined, named !== undefined ? JSON.stringify(named)
+        : `none of ${JSON.stringify(info!.names)} is one of ${JSON.stringify(it.names ?? [])}`);
+  } else {
+    add("role", ["button", "link"].includes(info!.role), `${info!.role} to dismiss (needs button or link)`);
+    const vocab = ADAPT.dismissable.map(norm);
+    const named = info!.names.find((n) => vocab.includes(norm(n)));
+    add("dismissable", named !== undefined, named !== undefined ? JSON.stringify(named)
+        : `none of ${JSON.stringify(info!.names)} is dismissable (${ADAPT.dismissable.join(", ")})`);
+  }
+  const hit = [...info!.names, info!.text, ...locTexts].map(denyHit).find((h) => h);
+  add("deny", !hit, hit ? `matches the deny vocabulary (${hit})` : undefined);
+  return verdict(el, { role: info!.role, name: info!.names[0] ?? "" });
+}
+
+function ladderWhy(counts: number[]): string {
+  return counts.some((c) => c > 1) ? `the locator ladder matches several elements (${counts.join(", ")})`
+                                    : "no rung of the locator ladder matches a visible element";
+}
+
+type Adapted = Resolved & { adaptive?: Record<string, unknown> };
+
+// Ask, check, and either hand back an element for the SAME intent (resolve), or dismiss one
+// overlay / navigate within the console and try the profile's own ladder again. Ends the
+// visit (drift) on a stop, a refusal, or a spent budget. Returns "navigated" for a navigate
+// intent whose page was reached adaptively.
+async function adapt(it: Intent, why: string, counts: number[] | null): Promise<Adapted | "navigated"> {
+  let reason = why;
+  for (;;) {
+    const gate = adaptiveGate(it);
+    if (gate) return drift(it, reason, { adaptive: { used: false, reason: gate } });
+    const snap = await snapshotPage();
+    if (!snap) {
+      return drift(it, reason, { adaptive: { used: false, reason: "no snapshot: the page is not the logged-in console on an allowed origin" } });
+    }
+    adaptiveCount[intentKey(it)] = (adaptiveCount[intentKey(it)] ?? 0) + 1;
+    result.adaptive.used += 1;
+    const proposal = await askResolver(it, reason, snap, false);
+    const record: Record<string, unknown> = {
+      intent: it.id, locale: it.locale ?? null, phase: it.phase, class: it.class, action: it.action,
+      failed_ladder: it.target ?? [], ladder_counts: counts, why: reason, url: snap.url,
+      snapshot_sha256: snap.sha256, proposal, checks: [], outcome: null, worked: null, at: now(),
+    };
+    driftEntries.push(record);
+    const line: Record<string, unknown> = {
+      phase: it.phase, intent: it.id, class: it.class, locale: it.locale ?? null,
+      action: `adaptive-${String(proposal.kind)}`, adaptive: true, source: "adaptive",
+      snapshot_sha256: snap.sha256, proposal, started_at: now(),
+    };
+    if (proposal.kind === "stop") {
+      record.outcome = "stopped";
+      writeDrift();
+      logAction({ ...line, result: "stopped", acted: false, reason: proposal.reason, ended_at: now() });
+      return drift(it, `${reason}; the resolver stopped: ${String(proposal.reason)}`,
+                   { resolution: "stop", adaptive: { used: true, proposal } });
+    }
+    const v = await validateProposal(it, proposal);
+    record.checks = v.checks;
+    if (!v.ok) {
+      result.adaptive.refused += 1;
+      record.outcome = "refused";
+      writeDrift();
+      logAction({ ...line, result: "refused", acted: false, checks: v.checks, ended_at: now() });
+      const failed = v.checks.filter((c) => !c.ok).map((c) => c.check);
+      return drift(it, `${reason}; the resolver's ${String(proposal.kind)} was refused (${failed.join(", ")})`,
+                   { resolution: "refused", adaptive: { used: true, proposal, checks: v.checks } });
+    }
+    if (proposal.kind === "resolve") {
+      record.outcome = "accepted";
+      writeDrift();
+      const loc = proposal.locator as Loc;
+      return { el: v.el!, rung: rungOf(loc), locator: loc, position: -1,
+               adaptive: { snapshot_sha256: snap.sha256, proposal, checks: v.checks, entry: record } };
+    }
+    try {
+      if (proposal.kind === "dismiss") {
+        await v.el!.click();
+        await settle();
+      } else {
+        await page.goto(v.url!, { waitUntil: "domcontentloaded" });
+        const state = await settledAuth(flow.timeouts.action);
+        if (!state.ok) await waitForHuman(it.phase, state);
+      }
+    } catch (e) {
+      record.outcome = "action-failed";
+      writeDrift();
+      const message = e instanceof Error ? e.message.split("\n")[0] : String(e);
+      logAction({ ...line, result: "error", acted: true, checks: v.checks, reason: message, ended_at: now() });
+      return stopVisit(it.phase, "action-failed", `${it.id}: the adaptive ${String(proposal.kind)} failed (${message})`, { intent: it.id });
+    }
+    result.adaptive.acted += 1;
+    record.outcome = "acted";
+    if (proposal.kind === "navigate") record.worked_path = pathOf(page.url());
+    writeDrift();
+    logAction({ ...line, result: "ok", acted: true, checks: v.checks, element: v.element,
+                url: bare(page.url()), ended_at: now() });
+    if (it.action === "navigate") return "navigated";
+    const r = await resolve(page, it.target || [], flow.timeouts.action, it.action !== "upload");
+    if (r.one) return { ...r.one, adaptive: { via: proposal.kind, snapshot_sha256: snap.sha256, proposal, entry: record, profile_locator: true } };
+    reason = `after the adaptive ${String(proposal.kind)}, ${ladderWhy(r.counts)}`;
+    counts = r.counts;
+  }
+}
+
+// An irreversible intent's drift: the resolver's proposal, asked for and recorded as a
+// suggestion only. Nothing is checked against the page because nothing is ever done with it.
+async function suggest(it: Intent, reason: string): Promise<Record<string, unknown> | null> {
+  if (result.adaptive.used >= ADAPT.max_per_visit) return null;
+  const snap = await snapshotPage();
+  if (!snap) return null;
+  result.adaptive.used += 1;
+  result.adaptive.suggestions += 1;
+  const proposal = await askResolver(it, reason, snap, true);
+  driftEntries.push({
+    intent: it.id, locale: it.locale ?? null, phase: it.phase, class: it.class, action: it.action,
+    failed_ladder: it.target ?? [], why: reason, url: snap.url, snapshot_sha256: snap.sha256,
+    proposal, checks: [], outcome: "suggestion", worked: null, at: now(),
+  });
+  writeDrift();
+  logAction({ phase: it.phase, intent: it.id, class: it.class, action: `adaptive-${String(proposal.kind)}`,
+              adaptive: true, source: "adaptive", snapshot_sha256: snap.sha256, proposal,
+              result: "suggestion", acted: false });
+  return { proposal, snapshot_sha256: snap.sha256, url: snap.url,
+           note: "a suggestion only, never acted on: a person verifies it and corrects the profile" };
 }
 
 // -- intents ------------------------------------------------------------------------------------
@@ -555,8 +991,7 @@ function accepts(accept: string, file: string): boolean {
     a === ext || a === mime || (a.endsWith("/*") && mime.startsWith(a.slice(0, -1))));
 }
 
-async function runIntent(it: Intent): Promise<string | null> {
-  await ensureSession(it.phase);
+function entryFor(it: Intent): Record<string, unknown> {
   const entry: Record<string, unknown> = {
     phase: it.phase, intent: it.id, class: it.class, action: it.action, locale: it.locale ?? null,
     source: "profile", started_at: now(),
@@ -564,19 +999,38 @@ async function runIntent(it: Intent): Promise<string | null> {
   if (it.value_sha256) entry.value_sha256 = it.value_sha256;
   if (it.value_public && it.value !== undefined) entry.value = it.value;
   if (it.files) entry.files = it.files.map((f) => ({ name: f.name, sha256: f.sha256 }));
+  return entry;
+}
+
+async function runIntent(it: Intent): Promise<string | null> {
+  await ensureSession(it.phase);
+  const entry = entryFor(it);
   const timeout = it.phase === "upload_build" ? flow.timeouts.upload : flow.timeouts.navigation;
 
   if (it.action === "navigate") {
     const pre = await shot(`${it.id}-pre`);
     await goto(it.url!, it.phase);
-    const post = await checkExpect(it, null, timeout);
+    let post = await checkExpect(it, null, timeout);
     entry.url = bare(page.url());
     entry.result = post.ok ? "ok" : "post-condition-failed";
     entry.post_condition = post;
     entry.screenshots = { pre, post: await shot(`${it.id}-post`) };
     entry.ended_at = now();
     logAction(entry);
-    if (!post.ok) await drift(it, `post-condition failed: ${post.detail}`);
+    if (!post.ok) {
+      await adapt(it, `post-condition failed: ${post.detail}`, null);
+      post = await checkExpect(it, null, timeout);
+      const again = { ...entryFor(it), adaptive: true, source: "adaptive", url: bare(page.url()),
+                      result: post.ok ? "ok" : "post-condition-failed", post_condition: post, ended_at: now() };
+      logAction(again);
+      const record = driftEntries[driftEntries.length - 1];
+      if (record) record.outcome = post.ok ? "ok" : "post-condition-failed";
+      writeDrift();
+      if (!post.ok) {
+        await drift(it, `post-condition failed after the adaptive navigate: ${post.detail}`,
+                    { resolution: "post-condition-failed" });
+      }
+    }
     return null;
   }
 
@@ -586,27 +1040,40 @@ async function runIntent(it: Intent): Promise<string | null> {
     await ensureSession(it.phase); // a challenge shown mid-flow: the person answers it
     r = await resolve(page, it.target || [], flow.timeouts.action, visibleOnly);
   }
-  if (!r.one) {
-    const several = r.counts.some((c) => c > 1);
-    if (it.optional && !several) {
-      entry.result = "absent";
-      entry.ended_at = now();
-      logAction(entry);
-      result.absent.push(it.locale ? `${it.id}:${it.locale}` : it.id);
-      return null;
-    }
-    entry.result = "drift";
-    entry.ladder_counts = r.counts;
+  if (r.one) return await act(it, r.one, timeout);
+  const several = r.counts.some((c) => c > 1);
+  if (it.optional && !several) {
+    entry.result = "absent";
     entry.ended_at = now();
     logAction(entry);
-    const why = several ? `the locator ladder matches several elements (${r.counts.join(", ")})`
-                        : "no rung of the locator ladder matches a visible element";
-    return await drift(it, why);
+    result.absent.push(it.locale ? `${it.id}:${it.locale}` : it.id);
+    return null;
   }
-  const el = r.one.el;
-  entry.locator = r.one.locator;
-  entry.rung = r.one.rung;
-  entry.ladder_position = r.one.position;
+  entry.result = "drift";
+  entry.ladder_counts = r.counts;
+  entry.ended_at = now();
+  logAction(entry);
+  const adapted = await adapt(it, ladderWhy(r.counts), r.counts);
+  return await act(it, adapted as Adapted, timeout);
+}
+
+// Act on the element a profile ladder (or an adaptive resolution) found, then check the
+// post-condition. A reversible intent's failed post-condition may adapt once; an adaptive
+// resolution's failed post-condition never adapts again.
+async function act(it: Intent, target: Adapted, timeout: number): Promise<string | null> {
+  const entry = entryFor(it);
+  const viaResolve = !!target.adaptive && !target.adaptive.profile_locator;
+  const el = target.el;
+  if (viaResolve) {
+    entry.adaptive = true;
+    entry.source = "adaptive";
+    entry.snapshot_sha256 = target.adaptive!.snapshot_sha256;
+    entry.proposal = target.adaptive!.proposal;
+    entry.checks = target.adaptive!.checks;
+  }
+  entry.locator = target.locator;
+  entry.rung = target.rung;
+  entry.ladder_position = target.position;
   entry.element = await describe(el);
   const pre = await shot(`${it.id}-pre`);
   let read: string | null = null;
@@ -650,6 +1117,10 @@ async function runIntent(it: Intent): Promise<string | null> {
     }
     return stopVisit(it.phase, "action-failed", `${it.id}: ${entry.reason}`, { intent: it.id });
   }
+  if (viaResolve) {
+    entry.acted = true;
+    result.adaptive.acted += 1;
+  }
   const error = await portalError();
   if (error !== null) {
     entry.result = "portal-error";
@@ -669,13 +1140,25 @@ async function runIntent(it: Intent): Promise<string | null> {
   entry.screenshots = { pre, post: await shot(`${it.id}-post`) };
   entry.ended_at = now();
   logAction(entry);
+  const record = target.adaptive?.entry as Record<string, unknown> | undefined;
+  if (record && viaResolve) {
+    record.outcome = post.ok ? "ok" : "post-condition-failed";
+    record.post_condition = post;
+    if (post.ok) record.worked = target.locator;
+    writeDrift();
+  }
   if (!post.ok) {
     if (it.class === "irreversible") {
       // Clicked once; what the portal did is not what the profile says it does. Never again.
       return stopVisit(it.phase, "ambiguous-portal-state",
                        `${it.id} was clicked but ${post.detail}: a person reads the portal`, { intent: it.id });
     }
-    await drift(it, `post-condition failed: ${post.detail}`);
+    if (target.adaptive) {
+      return drift(it, `post-condition failed after an adaptive resolution: ${post.detail}; never adapted twice`,
+                   { resolution: "post-condition-failed" });
+    }
+    const adapted = await adapt(it, `post-condition failed: ${post.detail}`, null);
+    return await act(it, adapted as Adapted, timeout);
   }
   return read;
 }
@@ -933,7 +1416,8 @@ function loginRedirect(request: Request): boolean {
 }
 
 test("publication console flow", async ({ browser }: { browser: Browser }) => {
-  test.setTimeout(flow.login_timeout_ms * 4 + flow.timeouts.upload + flow.timeouts.navigation * 40);
+  const adaptiveMs = flow.adaptive?.enabled ? (flow.adaptive.max_per_visit + 1) * (flow.adaptive.response_timeout_ms + flow.timeouts.navigation) : 0;
+  test.setTimeout(flow.login_timeout_ms * 4 + flow.timeouts.upload + flow.timeouts.navigation * 40 + adaptiveMs);
   context = await browser.newContext(); // fresh: no storage state in, none out
   browser.on("disconnected", () => { disconnected = true; });
   await context.route("**/*", (route) => {

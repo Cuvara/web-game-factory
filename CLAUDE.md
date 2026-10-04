@@ -500,6 +500,9 @@ outward-facing and largely irreversible. Do not perform them unless explicitly i
 even when a procedure or stage file describes them. The `submit` step submits to a portal
 only behind a person's G6 decision pinning the manifest, only in `factory.publish.mode:
 live` with `WGF_PUBLISH_LIVE=1`, only where a person has recorded that the portal's terms
-permit it, and only through its documented tool or its own console - never through an agent
-deciding what to click, never past a login, a CAPTCHA or a second factor. Secrets never enter
-source; a portal session is named by an environment variable and redacted everywhere.
+permit it, and only through its documented tool or its own console, driven by the profile's
+intents. An agent may resolve a drifted reversible step of that flow, and only under the
+executor's checks (`factory.publish.adaptive`, off by default; `docs/publish-module.md`); it
+never chooses an irreversible action, never acts outside the profile's intents, and never
+passes a login, a CAPTCHA, a second factor or an anti-bot check. Secrets never enter source;
+a portal session is named by an environment variable and redacted everywhere.

@@ -15,8 +15,10 @@ the session ends with the window. Each state change the spec announces on stdout
 (`WGF_PUBLISH_STATE {...}`: WAITING_FOR_HUMAN_LOGIN, AUTHENTICATED, LOGIN_TIMEOUT, ...) is
 handed to `on_state` as it happens, so the step can report it while the browser waits.
 
-Not Playwright MCP, and never an agent: the irreversible request is one click on a profile
-locator, in a visit a person confirmed, or no click at all.
+Not Playwright MCP, and never an agent at the controls: the irreversible request is one click
+on a profile locator, in a visit a person confirmed, or no click at all. The bounded adaptive
+mode (adaptive.py) only proposes, through files, for a reversible intent; the spec checks
+every proposal and is still the only thing that acts.
 """
 
 import json

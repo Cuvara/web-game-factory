@@ -52,7 +52,11 @@ class Job:
                  logger=None, timeouts=None, console_url=None,
                  run_process=None, listing=None, platform_profile=None, live=None,
                  submit_confirmed=False, track=False, known_ids=None, registry_status=None,
-                 required_ids=None, identity=None, allow_create=True, login_timeout_s=None):
+                 required_ids=None, identity=None, allow_create=True, login_timeout_s=None,
+                 adaptive=None):
+        # The bounded adaptive mode's settings for this visit (wgf_publish/adaptive.py
+        # settings_for), resolved by the step from the run's configuration; None: from config.
+        self.adaptive = adaptive
         self.platform_id = platform_id
         self.release_id = release_id
         self.idempotency_key = idempotency_key

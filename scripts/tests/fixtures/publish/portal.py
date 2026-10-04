@@ -55,6 +55,10 @@ Behaviour is set per run with PORTAL_MODE (comma-separated):
                     intent's ladder matches nothing
     drift-submit    the request button reads "Send to moderation" (#send): the irreversible
                     intent's ladder matches nothing
+    drift-save      the save button reads "Save and publish" (#save-publish): draft.save's ladder
+                    matches nothing, and the name is deny vocabulary
+    overlay         a tour dialog ("Welcome tour") hides the listing form until its "Got it"
+                    is clicked; it also holds a "Delete game" button that does nothing
     ambiguous       a requested game's status reads "Processing" (a word no profile maps)
     slow-upload     the upload answers after PORTAL_DELAY seconds (default 3)
 
@@ -165,9 +169,16 @@ def game_page(game, issued=False):
                   "accept='image/png,image/jpeg'>")
     fields.append("<label for='screenshots'>Screenshots</label><input id='screenshots' "
                   "type='file' name='screenshots' accept='image/png' multiple>")
-    parts.append(f"<form method='post' action='/console/game/{gid}/save' "
-                 f"enctype='multipart/form-data'>{''.join(fields)}"
-                 f"<button id='save' type='submit'>Save</button></form>")
+    save, save_id = ("Save and publish", "save-publish") if "drift-save" in MODES else ("Save", "save")
+    hidden = " style='display:none'" if "overlay" in MODES else ""
+    if "overlay" in MODES:
+        parts.append("<div id='tour' role='dialog' aria-label='Welcome tour'><p>Welcome to the "
+                     "new console.</p><button type='button' onclick=\"document.getElementById("
+                     "'tour').remove();document.getElementById('listing').style.display='block'"
+                     "\">Got it</button><button type='button'>Delete game</button></div>")
+    parts.append(f"<form id='listing' method='post' action='/console/game/{gid}/save' "
+                 f"enctype='multipart/form-data'{hidden}>{''.join(fields)}"
+                 f"<button id='{save_id}' type='submit'>{save}</button></form>")
     if game.get("saved"):
         parts.append("<span id='saved'>Saved</span>")
     if "undeclared" in MODES:

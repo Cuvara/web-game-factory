@@ -381,6 +381,7 @@
           "pattern": "^(listing|manifest|package|identity)(\\.[A-Za-z0-9_<>-]+)*$",
           "description": "fill, select, upload: a path into the shipped store listing, the release manifest, the package or the game identity - never free text. <locale> stands for each locale of a per_locale intent."
         },
+        "page": { "type": "string", "minLength": 1, "description": "Since 2.1.0 (additive, the bounded adaptive mode): a regular expression the console page's url path matches while this intent runs. An adaptive proposal for the intent is refused on any other page, and an adaptive navigate must land on one. Without it, a game's own phases expect that game's page (identity.game_url) and other phases only an allowed origin." },
         "per_locale": { "type": "boolean", "description": "Run once per locale the listing carries and the console asks for." },
         "multiple": { "type": "boolean", "description": "Since 2.1.0. upload: every file the value names goes into the one input (screenshots); the input must accept several." },
         "optional": { "type": "boolean", "description": "The element may be absent (a field the console shows only sometimes); absence is recorded, not a drift." },

@@ -32,6 +32,13 @@ or `legal`) until the page shows them done.
 
 Every action and waiting period is a line of `<run scratch>/actions.jsonl`, scrubbed with
 wgflib.redact after the run; its run-relative path is `Publication.actions_log`.
+
+Bounded adaptive mode (wgf_publish/adaptive.py): when the profile says `adaptive: allowed`,
+the installation sets `factory.publish.adaptive: true` and a resolver agent is configured,
+the flow carries an `adaptive` block and a Responder thread answers the runner's drift
+requests while the browser runs. The runner checks every proposal itself before acting. A
+visit in which an adaptive action ran is `automation-console-adaptive`; its `drift.json`
+(scrubbed, with proposed profile patches) is evidence, and never changes a profile.
 """
 
 import hashlib
@@ -39,10 +46,11 @@ import json
 import os
 import re
 
+from wgflib import publication as pub
 from wgflib import redact
 
+from .. import adaptive, outcomes
 from .. import identity as ids
-from .. import outcomes
 from ..browser import BrowserExecutor
 from ..evidence import Evidence, file_sha256, relative_to_run
 from .base import Publication, PublicationAdapter, utc_now
@@ -265,7 +273,8 @@ class ConsoleAdapter(PublicationAdapter):
     def _resolve_intent(self, intent, job, locale, primary, status):
         """The intent as the runner takes it, or a reason (str) it cannot be run."""
         item = {k: _substitute(intent[k], locale) for k in
-                ("id", "phase", "class", "action", "target", "url", "note", "optional", "multiple")
+                ("id", "phase", "class", "action", "target", "url", "note", "optional", "multiple",
+                 "names", "page")
                 if k in intent}
         item["locale"] = locale
         path = intent.get("value")
@@ -299,6 +308,42 @@ class ConsoleAdapter(PublicationAdapter):
                 expect["visible"] = _substitute(expect["visible"], locale)
             item["expect"] = expect
         return item
+
+    def adaptive_settings(self, job):
+        """The installation's adaptive settings for this visit (wgf_publish/adaptive.py)."""
+        settings = getattr(job, "_adaptive_settings", None)
+        if settings is None:
+            settings = adaptive.settings_for(job, self.settings)
+            job._adaptive_settings = settings
+        return settings
+
+    def adaptive_flow(self, job, scratch):
+        """The flow's `adaptive` block: enabled only when the profile allows it, the
+        installation enabled it and a resolver is configured; the budget the smallest of the
+        design's, the profile's and the installation's; the deny vocabulary the shared one
+        plus the profile's."""
+        settings = self.adaptive_settings(job)
+        reasons = []
+        if self.submission.get("adaptive") != "allowed":
+            reasons.append(f"the publication profile says adaptive: "
+                           f"{self.submission.get('adaptive') or 'forbidden'}")
+        if not settings.available:
+            reasons.append(settings.unavailable_reason())
+        limits = adaptive.bounds(self.submission.get("adaptive_bounds"), settings.bounds)
+
+        def where(name):
+            return os.path.join(scratch, name).replace(os.sep, "/")
+        return {
+            "enabled": not reasons,
+            "unavailable": "; ".join(reasons) or None,
+            "request_path": where(adaptive.REQUEST),
+            "response_path": where(adaptive.RESPONSE),
+            "drift_path": where(adaptive.DRIFT),
+            "response_timeout_ms": int((settings.timeout_s + 30) * 1000),
+            **limits,
+            "dismissable": [str(n) for n in self.submission.get("dismissable") or []],
+            "deny": list(pub.deny_vocabulary(self.profile)),
+        }
 
     def flow(self, job, scratch):
         intents = self.intents(job)[0]
@@ -362,6 +407,7 @@ class ConsoleAdapter(PublicationAdapter):
                      "media": [f["name"] for i in intents if i.get("phase") == "upload_media"
                                for f in i.get("files") or []]},
             "timeouts": self.timeouts(job),
+            "adaptive": self.adaptive_flow(job, scratch),
         }
 
     # -- the visit ---------------------------------------------------------------------------
@@ -395,12 +441,18 @@ class ConsoleAdapter(PublicationAdapter):
         scratch = job.scratch_dir
         os.makedirs(scratch, exist_ok=True)
         log = os.path.join(scratch, ACTIONS_LOG)
-        if os.path.exists(log):
-            os.remove(log)  # one visit, one log
+        for stale in (log, os.path.join(scratch, adaptive.DRIFT)):
+            if os.path.exists(stale):
+                os.remove(stale)  # one visit, one log
         flow = self.flow(job, scratch)
         headless, _ = self.browser_mode(job)
         timeouts = flow["timeouts"]
-        budget = (flow["login_timeout_ms"] * 4 + timeouts["upload"] + timeouts["navigation"] * 40) // 1000
+        adapt = flow["adaptive"]
+        adaptive_ms = ((adapt["max_per_visit"] + 1) * (adapt["response_timeout_ms"]
+                                                       + timeouts["navigation"])
+                       if adapt["enabled"] else 0)
+        budget = (flow["login_timeout_ms"] * 4 + timeouts["upload"] + timeouts["navigation"] * 40
+                  + adaptive_ms) // 1000
         executor = BrowserExecutor(job.checkout, job.release_dir, job.env, job.hooks,
                                    run_process=job.run_process, timeout_s=budget + 120,
                                    headless=headless, on_state=self._relay(job))
@@ -414,8 +466,22 @@ class ConsoleAdapter(PublicationAdapter):
                                             if unfilled else ""),
                           phase="prepare", data={"intents": [i["id"] for i in intents],
                                                  "unfilled": unfilled})]
+        if adapt["enabled"]:
+            noted.append(Evidence("observation",
+                                  f"bounded adaptive mode on: at most {adapt['max_per_intent']} "
+                                  f"resolution(s) per intent and {adapt['max_per_visit']} per "
+                                  f"visit, every proposal checked by the executor before it acts",
+                                  phase="prepare"))
         try:
-            run = executor.execute(flow, log_path=console_log)
+            if adapt["enabled"]:
+                resolver = self.adaptive_settings(job).resolver
+                if isinstance(resolver, adaptive.CommandResolver) and not resolver.hooks:
+                    resolver.hooks = {k: v for k, v in (job.hooks or {}).items()
+                                      if k in ("on_event", "should_stop")}
+                with adaptive.Responder(resolver, scratch, logger=job.logger):
+                    run = executor.execute(flow, log_path=console_log)
+            else:
+                run = executor.execute(flow, log_path=console_log)
             publication = self._interpret(job, run, flow)
             publication.evidence[:0] = noted
             return publication
@@ -486,6 +552,14 @@ class ConsoleAdapter(PublicationAdapter):
                                measurement_class="automation-check")
         res = run.result or {}
         lines, actions_log = self._actions(job, flow["out_dir"])
+        drift = adaptive.finish_drift(flow["out_dir"], self.profile)
+        if drift is not None:
+            evidence.append(Evidence.file(
+                f"drift.json: {len(drift.get('entries') or [])} adaptive exchange(s) - proposed "
+                f"profile changes a person reviews (wgf-publish.py drift-review), never applied",
+                os.path.join(flow["out_dir"], adaptive.DRIFT), job.run_dir, phase="run"))
+        acted = [l for l in lines if l.get("adaptive") is True and l.get("acted") is True]
+        measurement = "automation-console-adaptive" if acted else "automation-console"
         if actions_log:
             evidence.append(Evidence.file(f"actions.jsonl: {len(lines)} action(s) and waiting "
                                           f"period(s)", os.path.join(flow["out_dir"], ACTIONS_LOG),
@@ -513,7 +587,7 @@ class ConsoleAdapter(PublicationAdapter):
             evidence=evidence, found_game=found, created_ids=res.get("created_ids") or {},
             uploaded=bool(res.get("uploaded")), saved=bool(res.get("saved")),
             status_text=status_text, login_handoffs=handoffs, actions_log=actions_log,
-            phase_reached=res.get("phase_reached"))
+            phase_reached=res.get("phase_reached"), measurement_class=measurement)
         if not res:
             tail = run.process.tail(8) if hasattr(run.process, "tail") else ""
             return Publication(outcomes.RETRYABLE_FAILURE,
@@ -539,13 +613,21 @@ class ConsoleAdapter(PublicationAdapter):
                          resume="wgf resume <run-id>")
         if outcome == "drift":
             if stop.get("class") == "irreversible":
+                proposal = (stop.get("suggestion") or {}).get("proposal") or {}
+                hint = (f"; the resolver suggests "
+                        f"{json.dumps(redact.scrub(proposal), ensure_ascii=False)} - a "
+                        f"suggestion only, never acted on (drift.json)" if proposal else "")
                 return human(outcomes.UNKNOWN, "drift-irreversible",
                              f"{where}: drift on the irreversible intent {stop.get('intent')}: "
                              f"{reason}; it is never resolved adaptively - a person corrects the "
-                             f"profile or requests review by hand")
+                             f"profile or requests review by hand{hint}")
+            detail = stop.get("adaptive") or {}
+            why = (f"; adaptive mode: {detail.get('reason')}"
+                   if detail.get("reason") and not detail.get("used") else "")
             return human(outcomes.UNKNOWN, "ambiguous-portal-state",
                          f"{where}: drift on {stop.get('intent')}: {reason}; the console no "
-                         f"longer matches the profile (resolution: {stop.get('resolution')})")
+                         f"longer matches the profile (resolution: {stop.get('resolution')})"
+                         f"{why}")
         if outcome == "stopped":
             if code == "dry-run":
                 return Publication(outcomes.DRY_RUN, f"{pid}: dry run: {reason}; would upload "

@@ -58,6 +58,7 @@ from wgflib import publication as pub
 from wgflib.workflow import StepOutcome, StepResult, WorkflowStep
 
 from . import common, identity, outcomes
+from . import adaptive as adaptive_mode
 from . import registry as portal_registry
 from .adapters import Job, resolve
 from .evidence import Evidence
@@ -443,6 +444,8 @@ class PublishStep(WorkflowStep):
                   login_timeout_s=settings.get("login_timeout_s"),
                   # A game the registry knows is never created again: the visit finds it.
                   allow_create=(reg.status(pid) if reg else "NOT_CREATED") == "NOT_CREATED")
+        # The run's configuration (a `wgf --config` override included), not the shipped one.
+        job.adaptive = adaptive_mode.settings_for(job, platform_settings, config=context.config)
         # No session is loaded or kept: a person logs in, live, in the window the adapter
         # opens (credential.kind human-login), and the session ends with it.
         if scratch:

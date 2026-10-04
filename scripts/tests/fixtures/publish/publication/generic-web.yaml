@@ -98,7 +98,8 @@ submission:
       action: fill
       value: listing.title
       target: [{role: textbox, name: "Title"}, {css: "input[name=title]"}]
-      names: [Title, Game title]
+      names: [Title, Game title, Game name]
+      page: "^/console/game/[^/]+$"
       expect: {value_equals: listing.title}
       basis: observed
     - id: field.description

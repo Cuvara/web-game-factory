@@ -515,7 +515,7 @@ seen by the engine — validate what you write there with ajv.
   what the shipped corpus supports, and what is not implemented
 - `docs/quality-consistency-tests.md` — WS-13: the Core Acceptance Suite's QUALITY category.
   The shipped new-game run on six genres through the real gates (fixture designer, developer
-  and bot only), ten intentional degradations each detected, blocking, typed and routed,
+  and bot only), eleven intentional degradations each detected, blocking, typed and routed,
   recovery by re-measurement, anti-gaming, and the gaps it found
 - `docs/new-game-quality-inheritance.md` — WS-12: every entry point and resume path of
   `new-game` (CLI, plugin, `--run`, `--from`, `--force`, `decide`, autonomous profile, config

@@ -460,6 +460,33 @@ class IntentionalDegradations(_Case):
         self.assertEqual(sfx["dimension"], "audio")
 
 
+    def test_11_store_copy_claiming_content_the_build_lacks(self):
+        """After G4: the store copy says the game has more levels than the build measured.
+        listing-validation's count check (wgf_listing.buildfacts, as the real step runs it)
+        fails it, listing-triage routes the copywriter's finding to store-listing, and with
+        no rewrite the run stops before release."""
+        world = self.world("platformer-content", ["copy-overclaims"])
+        api = self.api(world)
+        state = self.decide(api, self.to_g4(api))
+        self.assertEqual(state.status, RunStatus.BLOCKED, self.story(api, state))
+        self.assertNotIn("release", self.steps(state))
+        self.assertFalse(api.quality(state)["release_ready"])
+        report = self.newest(api, state, "listing-validation-report")
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertIn("grounding.counts.en", report["failed"])
+        counts = next(c for c in report["checks"] if c["id"] == "grounding.counts.en")
+        self.assertIn("but the build has 12", counts["summary"])
+        triage = self.every(api, state, "triage-report")[-1]
+        self.assertEqual(triage["source"], "listing-validation.listing")
+        self.assertEqual((triage["selected"]["owner"], triage["selected"]["label"]),
+                         ("copywriter", "listing"))
+        finding = next(f for f in triage["findings"]
+                       if f["source"]["check"] == "grounding.counts.en")
+        self.assertEqual((finding["owner"], finding["route"]), ("copywriter", "listing"))
+        codes = [r.code for r in self.release_refusals(api, state, gates_passed=("G4",))]
+        self.assertIn("listing-not-passed", codes)
+
+
 # -- C. recovery -------------------------------------------------------------------------------
 
 class Recovery(_Case):
@@ -569,6 +596,20 @@ class Recovery(_Case):
         self.assertFalse(any(item.get("placeholder") for item in manifest["items"]))
         state = self.decide(api, state)
         self.assertEqual(state.status, RunStatus.COMPLETED, self.story(api, state))
+
+    def test_store_copy_rewritten_by_the_copywriter_is_validated_again(self):
+        world = self.world("platformer-content", ["copy-overclaims"],
+                           {"copywriter": {"fixes": ["copy-overclaims"]}})
+        api = self.api(world)
+        state = self.decide(api, self.to_g4(api))
+        self.assertEqual(state.status, RunStatus.COMPLETED, self.story(api, state))
+        self.assertEqual(world.visits, ["copywriter"])
+        verdicts = [r["verdict"] for r in self.every(api, state, "listing-validation-report")]
+        self.assertEqual(verdicts, ["FAIL", "PASS"])
+        listings = self.every(api, state, "store-listing")
+        self.assertNotEqual(listings[0]["copy"], listings[-1]["copy"])
+        self.assertEqual(world.refusals, [])
+        self.assertTrue(api.quality(state)["release_ready"])
 
     def test_a_quality_gate_finding_is_closed_only_on_a_newer_build(self):
         case, world, api, state = self.recover(

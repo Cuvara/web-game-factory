@@ -51,6 +51,10 @@
      "expect": ["content.structure"], "label": "level-designer"},
     {"id": "one-dimension-below-floor", "n": 10, "genre": "simulation-systems",
      "defect": "thin-audio", "gate": "quality-gate", "report": "quality-report",
-     "expect": ["floor.sfx"], "label": "assets", "owner": "audio-designer"}
+     "expect": ["floor.sfx"], "label": "assets", "owner": "audio-designer"},
+    {"id": "store-copy-overclaims", "n": 11, "genre": "platformer-content",
+     "defect": "copy-overclaims", "gate": "listing-validation",
+     "report": "listing-validation-report", "expect": ["grounding.counts.en"],
+     "label": "listing", "owner": "copywriter"}
   ]
 }

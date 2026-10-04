@@ -17,7 +17,7 @@ SUITE = {
     "CONTRACTS": ["test_core_contracts", "test_core_lineage", "test_core_template", "test_golden_fast"],
     "VERIFY": ["test_core_verify"],
     "RELEASE": ["test_core_release", "test_publish_module"],
-    # An intentionally bad game cannot pass new-game: six genres held to one floor, ten
+    # An intentionally bad game cannot pass new-game: six genres held to one floor, eleven
     # degradations each detected, blocking and routed, recovery, anti-gaming (WS-13,
     # docs/quality-consistency-tests.md).
     "QUALITY": ["test_quality_consistency"],

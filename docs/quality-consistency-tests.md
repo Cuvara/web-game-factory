@@ -5,7 +5,8 @@
 `scripts/tests/test_quality_consistency.py` is the Core Acceptance Suite's `QUALITY` category
 (`scripts/tests/core_suite.py`, `bin/wgf test-core --only QUALITY`). It runs the shipped
 `new-game` workflow through the real engine on six genres. It puts each of ten degradations
-into a build that is otherwise release quality, and checks four things:
+into a build that is otherwise release quality, plus one into the store copy, and checks four
+things:
 
 - a gate detects the degradation;
 - the run stops (no G4, no release);
@@ -28,7 +29,7 @@ only. It starts no agent session and makes no network call. On Windows it runs i
 | playability | the **real step**, with only its bot replaced. It clones nothing, builds nothing and opens no browser. It writes the records and frames `bot.spec.ts` writes, from the build, and the real `analysis.judge` judges them. The records are first-session, act, win, lose, pause, traverse, persist, session and survey, plus `content/units.json` |
 | production-quality, content-sufficiency, quality-gate, triage | the **real modules** |
 | visual-qa | the **real step** with a command judge (`fixtures/quality/judge.py`). The judge decodes the frames and reports a blocker only for what the pixels show |
-| store-listing, listing-validation | placeholders of the build the run verified |
+| store-listing, listing-validation | placeholders of the build the run verified, with one real check. The listing's facts are grounded in the build as the real step grounds them (`wgf_listing.buildfacts`: tier, store bars, the counts the build's content-sufficiency report measured). Validation runs the real count check (`buildfacts.count_problems`, `grounding.counts.<locale>`). `listing-triage` is the real triage step |
 | release | the real release step's refusals (`wgf_release.lineage.evidence_refusals`, with the step's defaults). It drafts a placeholder manifest only when nothing is refused. Packaging is not what this suite tests |
 
 A build is the design as built plus the degradations it carries. Its commit is a digest of
@@ -98,8 +99,10 @@ and stops BLOCKED. Every case proves the following:
 | 8 | performance regression (24 fps against 60) | racing | quality-gate | `floor.performance` (technical below its floor) | gameplay |
 | 9 | duplicate level (one level ships another's layout) | platformer | content-sufficiency | `content.structure` (2 of 12 repeated, bar 10%) | level-designer |
 | 10 | one dimension below the floor (3 sfx against 8) while every other dimension is high | simulation | quality-gate | `floor.sfx`; `failed == ["audio"]`, overall score above 75, decision `not-release` | the assets step, finding owned by audio-designer |
+| 11 | store copy claims 20 levels where the build measured 12 (after G4) | platformer | listing-validation | `grounding.counts.en` | listing-triage -> store-listing, finding owned by copywriter |
 
-Cases 8 and 10 pass every producing gate. Only the quality floor holds them back, and it
+Case 11 comes after G4, so G4 is asked and passed; what stops is release. Cases 8 and 10
+pass every producing gate. Only the quality floor holds them back, and it
 does not average a dimension away. In case 6 the gate sends the build straight to the
 assets step, as `new-game` routes `production-quality.assets`. Triage then drops the
 finding as handed over. The test shows that the gate's report, normalized by triage's own
@@ -112,6 +115,7 @@ normalizer, gives a typed finding with route `assets`.
 | `test_content_restored_by_the_level_designer_is_verified_on_the_new_commit` | The level designer's visit makes a new commit. Every gate measures it again; the failing report is about the old commit and the passing one about the new. In the ledger, the finding moves `detected -> classified -> assigned -> implemented -> verified -> closed`. It is implemented by the specialist's commit and verified by the gate that raised it, re-measuring that commit. Only then are G4 and release reached, and the run is release-ready |
 | `test_a_fix_that_regresses_another_gate_is_not_verified` | The ui fix makes the production gate pass but drops content. The next triage keeps the ui finding `implemented` with verdict `regressed`, names the content finding as the regression, and routes the level designer. After that fix, the ui finding is verified and the run is released |
 | `test_art_made_again_through_the_assets_step` | The assets step makes the placeholder again, the gates pass the new build, and the run is released |
+| `test_store_copy_rewritten_by_the_copywriter_is_validated_again` | listing-triage routes the copywriter's finding to store-listing. The rewritten copy is validated again (`FAIL`, then `PASS`), and only then is the release drafted |
 | `test_a_quality_gate_finding_is_closed_only_on_a_newer_build` | The quality-report's own finding lifecycle closes the performance finding on the newer build's commit (`closed_on`). The newer report names the failed build as its `previous` |
 
 The ledger is read by running the real triage step on the run's newest artifacts, outside

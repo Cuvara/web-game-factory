@@ -43,7 +43,9 @@ from wgf_assets.raster import Image, encode_png  # noqa: E402
 from wgf_develop import specialist as specialists  # noqa: E402
 from wgf_playability.step import PlayabilityStep  # noqa: E402
 from wgf_release.lineage import BLOCKED, evidence_refusals  # noqa: E402
-from wgflib import genre_models, provenance  # noqa: E402
+from wgf_listing import buildfacts  # noqa: E402
+from wgflib import genre_models, paths, provenance  # noqa: E402
+from wgflib.yamllite import load_file  # noqa: E402
 from wgflib.workflow import mock  # noqa: E402
 from wgflib.workflow.model import ArtifactOutput, StepResult  # noqa: E402
 
@@ -64,8 +66,9 @@ CONTENT_ROLES = ("threat", "goal", "target", "projectile", "collectible", "hazar
 SFX_IN_A_RELEASE = 10
 
 # The degradations, each a defect a build can carry. `art` defects live in the assets, and
-# only the assets step can take them out; the others live in the build, and a develop visit
-# by the specialist that owns them does. `owner` is the specialist-routing label triage is
+# only the assets step can take them out; `listing` ones in the store listing, which only
+# its copywriter's pass rewrites; the others live in the build, and a develop visit by the
+# specialist that owns them does. `owner` is the specialist-routing label triage is
 # expected to route to (core/reference/specialist-routing.yaml): the tests assert it, this
 # fixture only uses it to decide which visit fixes what.
 DEFECTS = {
@@ -81,6 +84,7 @@ DEFECTS = {
     "thin-audio": {"where": "art"},
     "kinds-omitted": {"where": "build"},
     "flat-progression": {"where": "build"},
+    "copy-overclaims": {"where": "listing"},
 }
 
 
@@ -149,7 +153,8 @@ class World:
     def build(self, phase):
         # The degradations are the production build's: the greybox is the loop in primitives,
         # before any of what they take away exists.
-        active = sorted(d for d in self.defects if DEFECTS[d]["where"] == "build")             if phase == "production" else []
+        active = (sorted(d for d in self.defects if DEFECTS[d]["where"] == "build")
+                  if phase == "production" else [])
         self.count = getattr(self, "count", 0) + 1
         body = {"family": self.family, "phase": phase, "defects": active,
                 "design": self.design["provenance"]["content_hash"],
@@ -776,31 +781,96 @@ class FixtureVerifyStep(_Fixture):
 
 
 class FixtureListingStep(mock.MockStoreListingStep):
-    """The placeholder store package, of the build the run verified."""
+    """The placeholder store package of the build the run verified, its facts grounded in
+    that build as the real step grounds them (wgf_listing.buildfacts: the run's tier, its
+    store bars, the counts the build's content-sufficiency report measured), and copy that
+    states how many units the game has. A world carrying `copy-overclaims` states more
+    than the design has; re-entered through listing-triage (route `listing`), the scenario's
+    `copywriter` fix rewrites it."""
+
+    world = None
+
+    def __init__(self, definition, world=None):
+        super().__init__(definition)
+        self.world = world
 
     def execute(self, inputs, context):
-        qa = inputs.load("qa-report") if "qa-report" in inputs else {}
-        self._commit = ((qa or {}).get("build_ref") or {}).get("commit_sha")
+        if str(getattr(context, "entered_by", "") or "").endswith(".listing"):
+            self.world.apply("copywriter")
+        loaded = {t: inputs.load(t) for t in inputs.refs}
+        qa = loaded.get("qa-report") or {}
+        self._commit = (qa.get("build_ref") or {}).get("commit_sha")
+        design = loaded.get("game-design") or {}
+        sdk = loaded.get("sdk-report") or {}
+        reference = load_file(os.path.join(paths.REFERENCE, "store-listing.yaml"))
+        tier, where = buildfacts.resolve_tier(self.params, getattr(context, "environment", None),
+                                              design, loaded.get("title-strategy"))
+        self._quality = {"tier": tier, "where": where, "bars": buildfacts.store_bars(tier)}
+        self._measured = buildfacts.measured_counts(
+            loaded.get("content-sufficiency-report"), design, reference,
+            commits=[self._commit, (sdk.get("build_ref") or {}).get("base_commit_sha")])
         return super().execute(inputs, context)
 
     def customize(self, body, artifact_type, context, entry):
         super().customize(body, artifact_type, context, entry)
-        if artifact_type == "store-listing" and self._commit:
+        if artifact_type != "store-listing":
+            return
+        if self._commit:
             body["commit"] = self._commit
+        body["facts"]["quality"] = self._quality
+        if self._measured is not None:
+            body["facts"]["measured"] = self._measured
+        kind = self.world.spec["content"]["unit_kind"]
+        units = len(self.world.units) + (8 if "copy-overclaims" in self.world.defects else 0)
+        text = body["copy"]["locales"]["en"]
+        text["long_description"] = (f"{units} {kind}s to clear, each one built around its own "
+                                    f"idea. " + text["long_description"])
 
 
 class FixtureListingValidationStep(mock.MockListingValidationStep):
-    """The placeholder validation, of exactly the listing the run holds."""
+    """The placeholder validation of exactly the listing the run holds, with one real check:
+    every count the copy states is the build's measured count
+    (wgf_listing.buildfacts.count_problems, as validation.py's grounding.counts.<locale>)."""
 
     def execute(self, inputs, context):
         ref = inputs.refs.get("store-listing")
         self._pinned = getattr(ref, "content_hash", None)
-        return super().execute(inputs, context)
+        listing = inputs.load("store-listing") if "store-listing" in inputs else {}
+        reference = load_file(os.path.join(paths.REFERENCE, "store-listing.yaml"))
+        facts = dict((listing or {}).get("facts") or {},
+                     content_unit_kind=((inputs.load("game-design") or {}).get("build_spec") or {})
+                     .get("content", {}).get("unit_kind"))
+        self._counted = {}
+        for locale, copy_ in sorted(((listing or {}).get("copy") or {}).get("locales", {}).items()):
+            problems = buildfacts.count_problems(copy_, facts, reference.get("counts"),
+                                                 locale=locale, where="copy")
+            self._counted[locale] = [p for p in problems if p["severity"] == "error"]
+        result = super().execute(inputs, context)
+        if any(self._counted.values()) and result.outcome == "SUCCESS":
+            return StepResult("FAILED", route="listing", artifacts=result.artifacts,
+                              retryable=False,
+                              error="the copy states counts the build did not measure")
+        return result
 
     def customize(self, body, artifact_type, context, entry):
         super().customize(body, artifact_type, context, entry)
-        if artifact_type == "listing-validation-report" and self._pinned:
+        if artifact_type != "listing-validation-report":
+            return
+        if self._pinned:
             body.setdefault("listing", {})["content_hash"] = self._pinned
+        for locale, problems in sorted(self._counted.items()):
+            body["checks"].append({
+                "id": f"grounding.counts.{locale}", "section": "grounding",
+                "status": "FAIL" if problems else "PASS", "required": True, "locale": locale,
+                "summary": ("; ".join(p["message"][:160] for p in problems[:4]) if problems
+                            else "every count the copy states is the build's"),
+                "fix": "rewrite"})
+            if problems:
+                body["failed"].append(f"grounding.counts.{locale}")
+        if body["failed"]:
+            body["verdict"] = "FAIL"
+            body["sections"]["grounding"] = "FAIL"
+            body["routes"] = ["listing"]
 
 
 class FixtureReleaseStep(_Fixture):
@@ -837,9 +907,9 @@ def register(registry, world):
     mock.register(registry)
     for module in (production, quality_gate, sufficiency, triage, visualqa):
         module(registry)
-    for cls in (FixtureReviewStep, FixtureListingStep, FixtureListingValidationStep):
+    for cls in (FixtureReviewStep, FixtureListingValidationStep):
         registry.register(cls.type, cls)
-    for cls in (FixtureDesignStep, FixtureInitStep, FixtureAssetsStep, FixtureDevelopStep,
+    for cls in (FixtureListingStep, FixtureDesignStep, FixtureInitStep, FixtureAssetsStep, FixtureDevelopStep,
                 FixtureSDKStep, FixtureVerifyStep, FixtureReleaseStep, FixturePlayabilityStep):
         registry.register(cls.type, (lambda c: (lambda d: c(d, world)))(cls))
     return registry

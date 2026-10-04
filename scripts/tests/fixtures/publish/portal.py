@@ -42,6 +42,9 @@ Pages for the read-only console observer (scripts/wgf_publish/observe.py), besid
 Behaviour is set per run with PORTAL_MODE (comma-separated):
 
     open            the console needs no login (as if the person had just logged in)
+    sso             the login is on another origin (an identity provider): /console redirects
+                    to http://localhost:<port>/login, which hands a ticket back to
+                    http://127.0.0.1:<port>/sso
     captcha         a CAPTCHA (#captcha) on every console page until a person answers it
     captcha-midflow the CAPTCHA only on a game's pages and /console/new: after login, mid-flow
     two-factor-midflow  a one-time code (#two-factor) asked the same way
@@ -272,9 +275,16 @@ class Handler(BaseHTTPRequestHandler):
                                                  "method='post' action='/login'><input name='user'>"
                                                  "<input name='password' type='password'>"
                                                  "<button>Log in</button></form>"))
-        if not path.startswith("/console"):
+        if not path.startswith("/console") and not (path == "/sso" and "sso" in MODES):
             return self._send(404, page("Not found", "<p>no such page</p>"))
+        if path == "/sso" and "sso" in MODES:
+            ticket = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("ticket")
+            if ticket == ["fixture-ticket"]:
+                return self._redirect("/console", [("Set-Cookie", f"session={SESSION}; Path=/")])
+            return self._send(403, page("Refused", "<p>bad ticket</p>"))
         if not self._session_ok():
+            if "sso" in MODES:
+                return self._redirect(f"http://localhost:{self.server.server_address[1]}/login")
             return self._redirect("/login")
         challenge = self._challenge(path)
         if challenge is not None:
@@ -314,6 +324,9 @@ class Handler(BaseHTTPRequestHandler):
             self._form()
             with LOCK:
                 STATE["logins"] += 1
+            if "sso" in MODES:
+                port = self.server.server_address[1]
+                return self._redirect(f"http://127.0.0.1:{port}/sso?ticket=fixture-ticket")
             return self._redirect("/console", [("Set-Cookie", f"session={SESSION}; Path=/")])
         if not self._session_ok():
             return self._redirect("/login")

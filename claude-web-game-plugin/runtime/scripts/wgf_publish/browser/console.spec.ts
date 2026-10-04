@@ -39,14 +39,15 @@
 // WAITING_FOR_HUMAN_LOGIN to its state file and stdout and polls until the authenticated
 // console is detected (or login_timeout_ms; or the window is closed). The same wait covers
 // a CAPTCHA, second factor or anti-bot check shown mid-flow. While a person drives the
-// window, requests to other origins (an identity provider) are let through; otherwise every
-// request outside allowed_origins is aborted. Nothing types a password or a code, nothing
+// window, and for the console's own redirect to a login page before the first login, requests
+// to other origins (an identity provider) are let through; otherwise every request outside
+// allowed_origins is aborted. Nothing types a password or a code, nothing
 // answers a challenge, nothing reads or saves cookies or storage, and no screenshot is
 // taken on a page that is not the logged-in console.
 //
 // Every action and every waiting period is one line in actions.jsonl.
 
-import { test, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
+import { test, type Browser, type BrowserContext, type Locator, type Page, type Request } from "@playwright/test";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -304,6 +305,9 @@ let context: BrowserContext;
 let page: Page;
 let disconnected = false;
 let humanDriving = false;
+// Until the person has reached the console once, a top-level navigation may leave the allowed
+// origins: a console commonly redirects to its identity provider's login page.
+let sessionReady = false;
 
 type AuthState = { ok: true } | { ok: false; kind: string; reason: string };
 
@@ -702,6 +706,7 @@ async function phaseSession() {
   await page.goto(flow.console_url, { waitUntil: "domcontentloaded" }).catch(() => undefined);
   const state = await settledAuth(flow.timeouts.action);
   if (!state.ok) await waitForHuman("session", state);
+  sessionReady = true;
   await runPhase("session");
   reached("session", { url: bare(page.url()) });
 }
@@ -911,13 +916,22 @@ async function phaseVerify() {
 
 // -- the test -------------------------------------------------------------------------------------
 
+function loginRedirect(request: Request): boolean {
+  if (sessionReady || !page) return false;
+  try {
+    return request.isNavigationRequest() && request.frame() === page.mainFrame();
+  } catch {
+    return false; // a service worker's request has no frame
+  }
+}
+
 test("publication console flow", async ({ browser }: { browser: Browser }) => {
   test.setTimeout(flow.login_timeout_ms * 4 + flow.timeouts.upload + flow.timeouts.navigation * 40);
   context = await browser.newContext(); // fresh: no storage state in, none out
   browser.on("disconnected", () => { disconnected = true; });
   await context.route("**/*", (route) => {
     const url = route.request().url();
-    if (humanDriving || allowed(url) || /^(data|about|blob):/.test(url)) return route.continue();
+    if (humanDriving || loginRedirect(route.request()) || allowed(url) || /^(data|about|blob):/.test(url)) return route.continue();
     result.refused.push(bare(url));
     return route.abort("blockedbyclient");
   });

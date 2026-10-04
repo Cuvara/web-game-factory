@@ -582,6 +582,15 @@ class Browser(ExecutorCase):
         self.assertTrue(all(l["seq"] > first_resolved for l in shots))
         self.no_session_kept()
 
+    def test_a_login_on_the_identity_provider_s_origin_is_let_through(self):
+        self.portal("sso")
+        publication = self.visit(live=True)
+        self.assertEqual(publication.outcome, outcomes.UPLOAD_COMPLETE, publication.message)
+        handoff = publication.login_handoffs[0]
+        self.assertIn("outside the console's allowed origins", handoff["reason"])
+        self.assertTrue(handoff["url"].startswith("http://localhost:"), handoff["url"])
+        self.assertEqual(self.state()["logins"], 1)
+
     def test_no_login_within_the_timeout_is_auth_required_waiting_not_a_failure(self):
         self.portal()
         publication = self.visit(live=True, human=False, login_timeout_s=3)

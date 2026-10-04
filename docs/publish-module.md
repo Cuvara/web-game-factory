@@ -470,7 +470,8 @@ the flow resolved from the job, every runner result mapped to its outcome and in
 fields, the state relay, the scrubbed `actions.jsonl`; and, with `WGF_PUBLISH_BROWSER_TEST=1`,
 headless Chromium against `scripts/tests/fixtures/publish/portal.py`, driven only by the
 fixture profile's flow, the test playing the person: the login handoff (waiting recorded,
-then the visit continues), a login timeout (`AUTH_REQUIRED`), a CAPTCHA and a second factor
+then the visit continues), a login on an identity provider's origin, a login timeout
+(`AUTH_REQUIRED`), a CAPTCHA and a second factor
 mid-flow, a duplicate by title, a pending review (nothing uploaded), the dry run, a live
 upload (`UPLOAD_COMPLETE`, nothing requested) and a confirmed visit requesting review once
 (`SUBMITTED` from the status text; a third visit clicks nothing), ids issued on create

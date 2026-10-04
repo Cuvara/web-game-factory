@@ -271,7 +271,7 @@
     "scripts/wgf_publish/adapters/fixture.py": "sha256:636fae64cfc50979d924a3801f352245c4c2a7868b9489a0047eb11f37f24a76",
     "scripts/wgf_publish/adapters/yandex.py": "sha256:716f47240ef0ee0cd383f3400d12b34e2c55643fb10e17babba309835c223103",
     "scripts/wgf_publish/browser.py": "sha256:4317c061b1babfd8fcb299838d8182970fcae1b7b729fad71a2bbf3eccb41dc0",
-    "scripts/wgf_publish/browser/console.spec.ts": "sha256:5ab269e7406dc89c981c515a6636c7809079e0f198483be3b8c52f835074fba4",
+    "scripts/wgf_publish/browser/console.spec.ts": "sha256:97f8fef05e0c701ccea29da122fb7f923c0beaa96685c4ab78c7c743bb7ae916",
     "scripts/wgf_publish/browser/observe.spec.ts": "sha256:16e6e73d3af71653699c273ef2f5c39782f95e9b3dee77d4d9929fb11bc7e623",
     "scripts/wgf_publish/common.py": "sha256:526d1eb2fea3e666eb3ca334b2445789fca1c1fa80672597b7e0d046c01549e8",
     "scripts/wgf_publish/evidence.py": "sha256:4b31aed990e384488e66fae08e62e29612f2c8d3d476fce29f1018e35cd3aa1e",

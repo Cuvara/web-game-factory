@@ -361,11 +361,13 @@ class DryRunFromTheInstalledPlugin(unittest.TestCase):
         waits for a person before init. Nothing past plan runs. The design author is pinned
         to the built-in one on top of the profile - the way a project overrides one key - so
         the test starts no agent session; the profile's agent author is held by
-        TheDesignAgent."""
+        TheDesignAgent. The built-in author writes MVP-sized content, so the run is at tier
+        mvp: at release the design is held to the quality benchmark (content.tier_*)."""
         project = self.project("real-plan")
         with open(os.path.join(project, "workspace", "config", "factory.yaml"), "a",
                   encoding="utf-8") as handle:
-            handle.write("\n  design:\n    author: archetype\n")
+            handle.write("\n  design:\n    author: archetype\n"
+                         "  strategy:\n    quality_tier: mvp\n")
         shutil.copytree(os.path.join(ROOT, "workspace", "research", "snapshots"),
                         os.path.join(project, "workspace", "research", "snapshots"))
         research = self.wgf(project, "research", "--json")

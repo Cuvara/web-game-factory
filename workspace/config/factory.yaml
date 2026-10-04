@@ -764,6 +764,11 @@ factory:
   # the same buildability, consistency and content checks to it. A design returned through
   # `design-gap` is repaired only by the `agent` author. {request} {draft} {prompt} are
   # substituted. Opt-in; uncomment and set `author: agent` to use it.
+  # At `strategy.quality_tier: release` (the default) the design is held to the quality
+  # benchmark's content bars (content.tier_*, docs/factory-lifecycle.md). The built-in
+  # `archetype` author writes MVP-sized content and fails there, naming what is short: a
+  # release-tier run needs `author: agent`, and a run with the built-in author sets
+  # `strategy.quality_tier: mvp`.
   design:
     author: archetype
     # agent:

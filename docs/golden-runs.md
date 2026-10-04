@@ -344,6 +344,13 @@ They do **not** prove:
   `authored`. `difficulty.axes_progress`, `content.variety` and `depth.ramp` are measured from
   the endless windows and the in-run content schedule. A level game — the authored path, a data
   file compared unit for unit — has no golden run and needs its own port before it has one.
+- **the release tier.** A golden run sets `factory.strategy.quality_tier: mvp`
+  (`scripts/golden/harness.py`): it is a pipeline regression of a known-good port at MVP
+  tier. At `release` the design step holds the design to the quality benchmark's content bars
+  (`content.tier_*`, game-design 1.10.0), which the built-in design authors the golden runs
+  use do not write to - a true finding at that tier, not a fixture to loosen. So the goldens
+  do not exercise a release-tier design, the content budget or the tier rules; the unit tests
+  do (`scripts/tests/test_design_content.py`, `TheQualityTier`).
 - **the GitHub path.** `init.source: local`; creating a repository with `gh` is outward-facing
   and is not exercised.
 - **that the art suits every locale.** The ports' bundled display and body fonts are subset

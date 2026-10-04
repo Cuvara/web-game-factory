@@ -10,8 +10,13 @@
 #
 # Status: the strategy reads `content` (1.1.0): a release-tier title-strategy commits a
 # content budget - units, groups, elements, designed play - from the larger of these bars and
-# the family's genre model (scripts/wgf_strategy/planner.py). No check reads the file yet.
-# Wiring a check is a change to the consumers named under `consumers`, each with its own tests.
+# the family's genre model (scripts/wgf_strategy/planner.py). The design step reads `content`
+# (1.2.0): a design at a quality tier is held to these bars and the strategy's budget, the
+# larger of the two, on what it declares - units, elements, introductions, combinations,
+# structure kinds, layouts, objective kinds, groups and their milestones, designed play and
+# difficulty (scripts/wgf_design/content.py, rules content.tier_*; blocking). No check reads
+# the built content yet. Wiring a check is a change to the consumers named under
+# `consumers`, each with its own tests.
 #
 # Calibration. Every bar records its `basis`:
 #   measured-2   both calibration releases meet it (the audit says which bars the unattended
@@ -30,7 +35,7 @@
 # game presents together (world, tier, chapter). Every count is over the units the release
 # ships at the tier being judged.
 
-version: 1.1.0
+version: 1.2.0
 
 tiers:
   # `mvp` is the genre model's prototype bar and is not restated here. `release` is what a
@@ -88,7 +93,8 @@ content:
     min_escalating_axes: {release: 2, basis: measured-2}
     # Relief units (breather purpose, or every axis dips) at least once per this many units.
     relief_every_units: {release: 6, basis: measured-1}
-    # Climax units (boss, finale, gate test) at least one per group.
+    # Climax units (boss, finale, gate test) at least one per group, where the family's
+    # groups close with a milestone (genre-models budget.milestone; null: no climax asked).
     min_climax_per_group: {release: 1, basis: measured-1}
 
 progression:
@@ -146,8 +152,9 @@ store_listing:
 
 consumers:
   # Where each block is read, or is meant to be read once wired. The strategy reads
-  # `content.units` and `content.elements` to commit the release budget; no check reads any
-  # block yet.
+  # `content.units` and `content.elements` to commit the release budget; the design step
+  # holds a design at its tier to every `content` bar (content.tier_*). Nothing reads the
+  # build against any block yet.
   content: [scripts/wgf_strategy/planner.py, scripts/wgf_design/content.py, scripts/wgf_playability/analysis.py]
   progression: [scripts/wgf_design/content.py, scripts/wgf_playability/analysis.py]
   features: [scripts/wgf_design/consistency.py, scripts/wgf_techplan/devplan.py]

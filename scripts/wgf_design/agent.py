@@ -146,6 +146,15 @@ PROMPT_CONTENT = (
       "unit says how it is won and lost in its own terms; and no two units accept nearly the "
       "same thing. scope.content_units and scope.content_unit_kind say what "
       "build_spec.content says. The craft guide is the request's `content_craft`."
+      " At the quality tier the request's `content_rules.tier` names (the strategy's"
+      " concept.content_model.quality_tier) the content_rules.tier rules also hold the units"
+      " to the strategy's content budget and the quality benchmark's bars at that tier, the"
+      " larger of the two: declare the elements in build_spec.content.elements and name them"
+      " in each unit's `elements`, give each unit its `structure`, `objective_kind` and - where"
+      " the family has groups (genre_model.budget.group_kind) - its `group`, close each group"
+      " with a `climax` unit where the family names a milestone, and score secondary goals in"
+      " build_spec.content.secondary_goals. A design short of its tier fails; it is never"
+      " passed at a lower tier than the strategy committed to."
 )
 # Appended when a prototype report named gaps in the design: answer each one where it belongs.
 PROMPT_GAPS = (
@@ -218,6 +227,22 @@ KEEP = ("identity", "palette", "fonts", "assets", "controls", "ui")
 DEFAULTS = {"argv": [], "timeout_seconds": 1800, "idle_timeout_seconds": 600,
             "draft_from": "file"}
 _MAX_BYTES = 4 * 1024 * 1024
+
+
+def _tier_request(design, strategy):
+    """What the content check holds the units to at the run's quality tier: the tier, where
+    it is stated, the strategy's content budget and the quality benchmark's content bars at
+    the tier, as `{section: {key: value}}`. Empty bars at a tier the benchmark states none for."""
+    tier, where = content_rules.quality_tier(design, strategy)
+    bars = {}
+    if tier is not None:
+        for (section, key), value in sorted(
+                content_rules.tier_bars(content_rules.load_benchmark(), tier).items()):
+            bars.setdefault(section, {})[key] = value
+    budget = (((strategy or {}).get("concept") or {}).get("content_model") or {}).get("budget")
+    return {"quality_tier": tier, "where": where, "budget": budget or None,
+            "benchmark": bars,
+            "rules": list(content_rules.TIER_RULES)}
 
 
 class AgentRunFailed(RuntimeError):
@@ -375,6 +400,9 @@ class AgentAuthor(DesignAuthor):
                        "session_profile": dict(
                            (models.get("session_profiles") or {}).get(profile_name) or {},
                            name=profile_name),
+                       # The quality tier and what it asks for (content.tier_*): the
+                       # strategy's budget and the benchmark's bars at the tier.
+                       "tier": _tier_request(starting, brief.get("strategy")),
                    },
                    "content_craft": os.path.join(paths.CORE, "craft",
                                                  "content-and-level-design.md")}

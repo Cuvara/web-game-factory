@@ -121,7 +121,7 @@ probe. The developer brief embeds the schema, so a developer knows how the build
   `play.showcase.show(id)`, waits up to 6 s for the probe to report `playing` with a visible
   entity drawn from that asset (or one of its runtime-manifest `variants`), lets the screen
   settle, and keeps the frame `state-showcase-<id>.png` with the entities in it (each box
-  swept between the snapshots before and after the shot, as for a glimpse of play) under
+  swept between the snapshots before and after the shot, with its drawn size as `own: [w, h]`, as for a glimpse of play) under
   `ui["showcase-<id>"]` (`showcase: true`). `visits[]` records what each call did (staged,
   refused, timed out, never reported drawn). Its window is `SHOWCASE_S` (90 s), outside the
   time budget below, so a game without a showcase plays exactly as before; its record is then

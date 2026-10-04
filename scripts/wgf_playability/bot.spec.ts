@@ -188,8 +188,9 @@ class Watch {
   // A frame `state-<name>.png` of the screen now, with the entities the probe reports in it.
   // A screenshot takes up to a second here, and the frame it keeps is somewhere inside that
   // second: a falling pickup moves past its own box meanwhile. So each entity's box is the one
-  // it swept between the snapshots just before and just after the shot, and an entity gone by
-  // then is left out. Null when the probe did not answer.
+  // it swept between the snapshots just before and just after the shot, `own` is its drawn
+  // size [w, h] (the larger of the two snapshots), and an entity gone by then is left out.
+  // Null when the probe did not answer.
   async capture(name: string): Promise<{ state: string; viewport: number[] | null; entities: Snapshot["entities"] } | null> {
     const before = this.saw(await snap(this.page));
     await this.page.screenshot({ path: path.join(dir(this.project), "frames", `state-${name}.png`) });
@@ -200,7 +201,7 @@ class Watch {
       const a = later.get(e.id)!;
       const x = Math.min(e.x, a.x), y = Math.min(e.y, a.y);
       return { ...e, x, y, w: Math.max(e.x + e.w, a.x + a.w) - x, h: Math.max(e.y + e.h, a.y + a.h) - y,
-               visible: e.visible && a.visible };
+               own: [Math.max(e.w, a.w), Math.max(e.h, a.h)], visible: e.visible && a.visible };
     });
     const viewport = this.page.viewportSize();
     return { state: before.state, viewport: viewport ? [viewport.width, viewport.height] : null, entities };

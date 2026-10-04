@@ -135,6 +135,24 @@ class _Frames:
                     changed += 1
         return round(changed / total, 4) if total else None
 
+    def best_window(self, frame_id, box, own, viewport, min_delta):
+        """`differs` for an entity whose `box` is the one it swept while the frame was taken
+        (the bot's capture): the best share over windows of the entity's `own` size [w, h]
+        slid along that box in half-size steps - it was drawn in one of them, and the swept
+        box as a whole dilutes a small fast mover below any bar. Without a usable `own`
+        size, the box as a whole."""
+        if not (isinstance(own, (list, tuple)) and len(own) == 2
+                and all(isinstance(v, (int, float)) and v > 0 for v in own)
+                and box and (own[0] < box[2] or own[1] < box[3])):
+            return self.differs(frame_id, box, viewport, min_delta)
+        ow, oh = min(own[0], box[2]), min(own[1], box[3])
+        sx, sy = max(1.0, ow / 2.0), max(1.0, oh / 2.0)
+        xs = [box[0] + i * sx for i in range(int((box[2] - ow) / sx) + 1)] + [box[0] + box[2] - ow]
+        ys = [box[1] + j * sy for j in range(int((box[3] - oh) / sy) + 1)] + [box[1] + box[3] - oh]
+        seen = [d for d in (self.differs(frame_id, [x, y, ow, oh], viewport, min_delta)
+                            for x in xs for y in ys) if d is not None]
+        return max(seen) if seen else None
+
 
     def local_contrast(self, frame_id, box, viewport, bars):
         """The entity's contrast with its surround in a frame: the WCAG ratio, at the bars'
@@ -386,8 +404,9 @@ def assets_runtime(wanted, records, rules, frames_by_project):
                         # only with what its frame shows: an entity whose box there is the
                         # background was named, not drawn.
                         box = [e.get(k) for k in ("x", "y", "w", "h")]
-                        differs = frames.differs(ui.get("frame"), box, ui.get("viewport"),
-                                                 bars.get("min_pixel_delta", 24))                             if all(isinstance(v, (int, float)) for v in box) else None
+                        differs = frames.best_window(ui.get("frame"), box, e.get("own"),
+                                                     ui.get("viewport"),
+                                                     bars.get("min_pixel_delta", 24))                             if all(isinstance(v, (int, float)) for v in box) else None
                         if differs is None or differs < bars.get("min_changed_share", 0.1):
                             continue
                         showcased.add(canon(e["asset"]))
@@ -398,10 +417,15 @@ def assets_runtime(wanted, records, rules, frames_by_project):
                     x, y, w, h = (e.get(k) or 0 for k in ("x", "y", "w", "h"))
                     if vw and vh and w and h and x + w > 0 and y + h > 0 and x < vw and y < vh:
                         key = canon(e["asset"])
+                        # The drawn size, not the box swept while the frame was taken.
+                        own = e.get("own")
+                        if isinstance(own, list) and len(own) == 2 and \
+                                all(isinstance(v, (int, float)) and v > 0 for v in own):
+                            w, h = min(w, own[0]), min(h, own[1])
                         largest[key] = max(largest.get(key, 0.0), w * h / float(vw * vh))
                     boxes.setdefault(canon(e["asset"]), []).append(
                         (project, ui.get("frame"), [e.get("x"), e.get("y"), e.get("w"), e.get("h")],
-                         ui.get("viewport")))
+                         ui.get("viewport"), e.get("own")))
     chain, failures = {}, {}
     for asset_id, (req, item) in sorted(wanted.items()):
         role = (req or {}).get("role") or (item or {}).get("role")
@@ -418,9 +442,9 @@ def assets_runtime(wanted, records, rules, frames_by_project):
             links["rendered"] = bool(rendered.get(asset_id, set()) & renders)
             share = largest.get(asset_id, 0.0)
             seen = []
-            for project, frame_id, box, viewport in boxes.get(asset_id, []):
-                differs = _Frames(frames_by_project.get(project)).differs(
-                    frame_id, box, viewport, bars.get("min_pixel_delta", 24))
+            for project, frame_id, box, viewport, own in boxes.get(asset_id, []):
+                differs = _Frames(frames_by_project.get(project)).best_window(
+                    frame_id, box, own, viewport, bars.get("min_pixel_delta", 24))
                 if differs is not None:
                     seen.append(differs)
             links["visible"] = share >= bars.get("min_area_fraction", 0.002) and \

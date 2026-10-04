@@ -68,6 +68,7 @@ from wgflib import checkout, paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.yamllite import YamlError, load_file
 
+from . import climax as climax_mod
 from . import feedback as feedback_mod
 from . import modelspec
 from .blender import BACKEND_ID as BLENDER
@@ -300,6 +301,12 @@ class AssetsStep(WorkflowStep):
                                     logger=context.logger,
                                     variation=(int(getattr(context, "visit", 1) or 1)
                                                if rebuild else 0))
+        # distinct_climax_art (core/reference/quality-benchmark.yaml) at the run's quality
+        # tier: `factory.strategy.quality_tier`, `release` when unset.
+        tier = settings.get("quality_tier") or _config_section(
+            context.config, "strategy").get("quality_tier") or "release"
+        climax_units = (climax_mod.climax_units(design)
+                        if climax_mod.load_bar(tier) else None)
         pipeline = AssetPipeline(policy, store, backends, libraries, logger=context.logger,
                                  placeholders=bool(placeholders.get("enabled")),
                                  optimize=bool(settings.get("optimize")),
@@ -317,7 +324,8 @@ class AssetsStep(WorkflowStep):
                                      "art_direction": design.get("art_direction"),
                                      "design_resolution": (design.get("engine") or {}).get(
                                          "design_resolution")},
-                                 producers=producers)
+                                 producers=producers,
+                                 climax_units=climax_units)
         context.logger.info("asset pipeline", requirements=len(requirements),
                             dimension=dimension, root=store.root,
                             derived=bool(requirements and requirements[0].derived))

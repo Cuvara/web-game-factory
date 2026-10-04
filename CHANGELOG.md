@@ -50,12 +50,14 @@ carries `submit_confirmed`. Every action and waiting period is a line of `action
 The captured session is gone: `wgf-publish.py capture`, the storage-state copy and
 `WGF_PUBLISH_<PLATFORM>_STORAGE_STATE`. The adapter selector maps and
 `ConsoleAdapter.listing_fields` of the entry below are replaced by the profile's flow.
+
 **Publication profile 2.1.0** (additive): credential kind `human-login` (`storage-state` is
 deprecated and refused by `check-integrity.py`), `session.authenticated_url`,
 `identity.page_id` and `identity.issued_on_create`, `status.error`, and an upload intent's
 `multiple`. To bring a profile forward: set `credential: {kind: human-login}`, drop `env`
 and `capture`, and bump its version. Delete any `WGF_PUBLISH_*_STORAGE_STATE` variables and
 the session files they named.
+
 **GameDistribution and GamePix as modeled targets** (facts read 2026-10-04 from public pages
 only; [docs/platform-targets-2026-10.md](docs/platform-targets-2026-10.md)).
 GameDistribution's publication profile 2.1.0 records the documented flow (account, Game ID
@@ -135,6 +137,8 @@ verification-report 1.2.0 (`build_artifact.platforms`), release-manifest 1.4.0
 unchanged). Docs: [platform-targets-2026-10.md](docs/platform-targets-2026-10.md) Part 2,
 [verification-module.md](docs/verification-module.md#one-bundle-per-platform),
 [release-module.md](docs/release-module.md#one-package-per-target-platform).
+
+**Feature evaluation in design** (WS-5 of [docs/quality-gap-audit-2026-10.md](docs/quality-gap-audit-2026-10.md); game-design 1.10.0, adapter binding 1.9.0). A brief feature no longer drops silently: the 2D validation brief's endless mode and the 3D marble brief's time trial were lost without a word. `core/reference/feature-catalogue.yaml` (1.0.0) lists 23 candidate features - progression, unlocks, themed worlds, star rating, rewards, daily rewards, daily challenge, streaks, leaderboard, achievements, missions, shop, skins, upgrades, difficulty modes, time trial, endless mode, statistics, profile, local and cloud save, settings, tutorial - with the phrases that name them, their relevance per genre family (expected, fits, poor), the platform capability they rest on and its fallback, and estimates of player value, build hours, monetization impact and QA cost. `features[]` gain `source`, `catalogue` and `evaluation` (decision `include`, `later` or `cut`, with a reason). The design step's new `features.*` checks (`scripts/wgf_design/features.py`) require every catalogue feature the brief or the strategy names, and every one the genre family expects, to be evaluated - not added blindly; an `include` to be built (mvp or post-mvp) and a `later` or `cut` to be optional; an included feature to run on every required platform. The built-in author evaluates them (included where its archetype builds the feature, cut where the strategy or the platforms rule it out, deferred otherwise); the agent author is handed them as `feature_candidates`. A cut feature is listed in `scope.tiers.out_of_scope` with its reason, and G3 and G4 are shown the cut and deferred features, with a warning for any the brief asked for (`wgflib.gate_evidence`). `retention.hooks` gains `daily_challenge` (F13). New playbook `core/craft/feature-evaluation.md`. Bringing an artifact forward: a 1.9.0 game-design stays valid; re-running design adds the evaluations.
 
 ## [2.7.0] - 2026-10-03
 
@@ -280,6 +284,7 @@ strategy from research or the family's default. **`opportunity` 1.3.0** carries
 `capability.genre_model` and `research.design_constraints` (the content shape research coded
 for the cell, with the genre conventions it counted). **`prototype-report` 1.1.0** adds
 `content_coverage` (designed units against built ones) and `design_gaps`.
+
 **`playability-report` 1.2.0** adds the status `SKIPPED` and `skipped_checks`. **`qa-report`
 1.2.0** adds the suite `gameplay-quality`. **`review-report` 1.1.0** is a version bump for the
 reviewer's new `## Design fidelity` brief section. `play-probe` gains `content`,
@@ -350,6 +355,7 @@ greybox return BLOCKED, no agent spawned, for a command developer in a run with 
 naming `factory.develop.budget`; and the first `wgf resume` by a person that finds one
 configured records it for the run as a `BUDGET_ADOPTED` operator event (corroborated like
 `BUDGET_RAISED`, counted once; params are not edited). Handoff developers are unaffected.
+
 **Upgrading:** an installation that runs a command developer without `factory.develop.budget`
 must set one; a run already in progress adopts it at its next resume.
 

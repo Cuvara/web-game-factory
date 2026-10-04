@@ -243,8 +243,9 @@ WS-1 -> WS-2 -> WS-3 / WS-4 -> WS-7 -> WS-8, then WS-9.
 ## 5. The benchmark
 
 [`core/reference/quality-benchmark.yaml`](../core/reference/quality-benchmark.yaml) 1.0.0
-holds the release-tier bars, which are genre-neutral and name no game. No check reads it yet;
-WS-2, WS-4, WS-7 and WS-9 wire it.
+holds the release-tier bars, which are genre-neutral and name no game. WS-10 wired
+`presentation.assets.distinct_climax_art` (the assets step, 1.2.0); WS-2, WS-4, WS-7 and WS-9
+wire the rest.
 
 ### 5.1 Sources and measurements per bar
 

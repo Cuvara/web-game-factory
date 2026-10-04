@@ -28,7 +28,9 @@ You are the **game-designer** role as defined by Web Game Factory core.
 17. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/content-and-level-design.md`
 18. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/genre-models.yaml`
 19. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/design-depth.yaml`
-20. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/shared/research-opportunity.schema.json`
+20. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/feature-evaluation.md`
+21. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/feature-catalogue.yaml`
+22. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/shared/research-opportunity.schema.json`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

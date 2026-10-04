@@ -496,7 +496,7 @@ class QualityTierBudget(unittest.TestCase):
         self.assertEqual(units, {"quantity": "units", "genre_model": 6, "benchmark": 12,
                                  "value": 12})
         self.assertEqual(budget["references"], ["genre-models@1.1.0",
-                                                "quality-benchmark@1.1.0"])
+                                                "quality-benchmark@1.2.0"])
         self.assertTrue(any(d.startswith(f"Quality tier release: the content budget is 12 "
                                          f"{model['unit_kind']}s, 3 worlds, 8 distinct "
                                          f"elements")

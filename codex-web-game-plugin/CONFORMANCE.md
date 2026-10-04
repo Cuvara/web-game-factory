@@ -303,6 +303,21 @@ Fixes from the plugin validation run, all in the `new-game` entry point and gene
   `<choice>` or `a|b`, which a shell reads as redirections and pipes, and never `"..."`,
   which was recorded as the reason of a G4.
 
+## Feature evaluation (binding manifest 1.9.0)
+
+The design evaluates candidate features instead of dropping them silently
+(docs/quality-gap-audit-2026-10.md WS-5): game-design 1.10.0 `features[].source`,
+`.catalogue` and `.evaluation`, held to `core/reference/feature-catalogue.yaml` by the design
+step's `features.*` checks, and G4 shown the cut and deferred lists.
+
+- `core/craft/feature-evaluation.md` (new playbook) and `core/reference/feature-catalogue.yaml`
+  are added to the `must_read` of the `game-designer` agent and to the `reads` of the
+  `game-design` skill, whose `covers` now names feature evaluation, in
+  `core/bindings/adapter-binding.yaml` and the `scripts/gen-adapters.sh` tables alike.
+
+No agent, command, workflow, role, machine or gate was added or removed; the manifest goes to
+1.9.0 for the new reads.
+
 ## Not covered, deliberately
 
 - **`workflows/` tree** — removed. A per-provider copy of a workflow duplicates

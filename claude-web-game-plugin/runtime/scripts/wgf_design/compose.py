@@ -6,7 +6,8 @@ supplies what no author may decide for itself:
 - SDK touchpoints the platform profiles require,
 - `platform_constraints_applied`, read from the same profiles,
 - `scope.tiers`, derived from `features` so the tier list and the feature list cannot drift
-  (mvp -> mvp and prototype, post-mvp -> production, optional -> future),
+  (mvp -> mvp and prototype, post-mvp -> production, optional -> future; a feature
+  evaluated `cut` -> out_of_scope with its reason),
 - `monetization.placements`, derived from the build spec's monetization touchpoints,
 - the buildability check: every cross-reference inside the build spec resolves, the game's
   state machine is connected, and the MVP is complete without anything outside the MVP.
@@ -58,9 +59,17 @@ def finalize(draft, platforms, title_id):
     ]
 
     features = design.get("features") or []
-    names = {tier: [f["name"] for f in features if f["tier"] == tier] for tier in TIERS}
+    cut = [f for f in features if (f.get("evaluation") or {}).get("decision") == "cut"]
+    names = {tier: [f["name"] for f in features if f["tier"] == tier and f not in cut]
+             for tier in TIERS}
     scope = design["scope"]
     out_of_scope = scope.pop("out_of_scope", [])
+    # A feature evaluated and cut (game-design 1.10.0) is out of scope, with its reason: the
+    # list G4 is shown is derived from the evaluations, so the two cannot drift.
+    listed = {str(o.get("item", "")).strip().lower() for o in out_of_scope if isinstance(o, dict)}
+    out_of_scope = list(out_of_scope) + [
+        {"item": f["name"], "why_excluded": f["evaluation"]["reason"]}
+        for f in cut if f["name"].strip().lower() not in listed]
     design["scope"] = dict({"tiers": {
         "mvp": names["mvp"],
         "prototype": list(names["mvp"]),

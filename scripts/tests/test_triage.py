@@ -129,6 +129,42 @@ class Normalization(unittest.TestCase):
         self.assertIn("playability/1-1/f1.png", finding["evidence_refs"])
         self.assertIn("playability plays the next build", finding["task"]["acceptance"][0])
 
+    def test_content_sufficiency_findings_route_to_level_design_or_design(self):
+        report = {"verdict": "FAIL", "routes": ["develop", "design-gap"], "findings": [
+            {"id": "content.elements_distinct", "check": "content.elements_distinct",
+             "dimension": "content", "severity": "blocker", "summary": "5 elements, bar 8",
+             "observed": 5, "bar": 8, "owner": "level-design", "route": "develop",
+             "evidence": ["public/content/units.json"]},
+            {"id": "content.units_total", "check": "content.units_total",
+             "dimension": "level-design", "severity": "blocker",
+             "summary": "the design states 6 units; the tier asks 12", "observed": 6,
+             "bar": 12, "owner": "game-design", "route": "design-gap",
+             "design_gap": {"field": "build_spec.content.units", "question": "Which 6 more?",
+                            "assumed": None, "severity": "blocking"}},
+            {"id": "content.difficulty_new_skills", "check": "content.difficulty_new_skills",
+             "dimension": "difficulty", "severity": "minor", "summary": "late units only scale",
+             "owner": "level-design", "route": "develop"}]}
+        found = self.by_id(normalize("content-sufficiency-report", report, ROUTING))
+        built = found["content-sufficiency-report:content.elements_distinct"]
+        self.assertEqual((built["owner"], built["route"], built["measured"], built["bar"]),
+                         ("level-designer", "develop", 5, 8))
+        gap = found["content-sufficiency-report:content.units_total"]
+        self.assertEqual((gap["owner"], gap["route"], gap["task"]["design_field"]),
+                         ("level-designer", "design", "build_spec.content.units"))
+        self.assertEqual(found["content-sufficiency-report:content.difficulty_new_skills"]
+                         ["owner"], "encounter-designer")
+        # Through triage: the design gap goes to design first and alone.
+        result = run_triage({"game-design": DESIGN_2D,
+                             "prototype-report": {"title_id": "demo", "iteration": 2,
+                                                  "build_ref": {"commit_sha": COMMIT}},
+                             "content-sufficiency-report": report},
+                            seqs={"prototype-report": 5, "content-sufficiency-report": 9},
+                            entered="content-sufficiency.design-gap")
+        content = result.artifacts[0].content
+        self.assertEqual(result.route, "design")
+        self.assertEqual([g["label"] for g in content["deferred"]],
+                         ["level-designer", "encounter-designer"])
+
     def test_canvas_ui_a_player_cannot_reach_goes_to_ui(self):
         found = normalize("playability-report", playability(("restart.works", {})), ROUTING)
         self.assertEqual(found[0]["owner"], "ui")

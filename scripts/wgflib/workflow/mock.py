@@ -301,6 +301,43 @@ class MockVisualQAStep(MockStep):
             body["routes"] = [route]
 
 
+class MockContentSufficiencyStep(MockStep):
+    """`develop` (or `fail`) and `design-gap` in a mock plan are a content sufficiency
+    failure routed there: FAILED with that route and not retryable, a finding naming it in
+    the report - the shape the real step (scripts/wgf_sufficiency) returns."""
+
+    type, role = "content-sufficiency", "qa"
+    ROUTES = ("design-gap", "develop")
+
+    def execute(self, inputs, context):
+        result = super().execute(inputs, context)
+        route = "develop" if result.route == "fail" else result.route
+        if route in self.ROUTES:
+            return StepResult("FAILED", route=route, artifacts=result.artifacts,
+                              retryable=False, error=f"{self.id} found the content short (mock)")
+        return result
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type != "content-sufficiency-report":
+            return
+        route = "develop" if entry == "fail" else entry
+        if route in self.ROUTES:
+            check = body["checks"][0]
+            check.update(status="FAIL", summary="scripted content shortfall (mock)", route=route)
+            finding = {"id": f"content-sufficiency:{check['id']}", "check": check["id"],
+                       "dimension": "content", "severity": "blocker",
+                       "summary": check["summary"], "route": route,
+                       "owner": "game-design" if route == "design-gap" else "level-design"}
+            if route == "design-gap":
+                finding["design_gap"] = {"field": "build_spec.content.units",
+                                         "question": "Which units does the design add? (mock)",
+                                         "assumed": None, "severity": "blocking"}
+            body["findings"] = [finding]
+            body["verdict"] = "FAIL"
+            body["failed"] = [check["id"]]
+            body["routes"] = [route]
+
+
 class MockStoreListingStep(MockStep):
     """`incomplete` in a mock plan is a listing with a problem recorded (status incomplete,
     still SUCCESS, as the real step returns one); otherwise the placeholder package."""
@@ -453,6 +490,7 @@ MOCK_STEPS = (
     MockPlayabilityStep,
     MockProductionQualityStep,
     MockVisualQAStep,
+    MockContentSufficiencyStep,
     MockReviewStep,
     MockSDKStep,
     MockVerificationStep,

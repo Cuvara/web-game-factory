@@ -9,11 +9,21 @@ already states:
                     per unit are core/reference/genre-models.yaml `implementation`). A design
                     whose content is generated - `generation.mode` other than `authored` -
                     gets no CONTENT task: there is no list of units to build one against.
-    M2  production  one task per `post-mvp` feature; omitted when there are none
+    M2  production  one task per `post-mvp` feature, and - when the run's quality tier builds
+                    the post-mvp tier - one CONTENT task per batch of its post-mvp units;
+                    omitted when there are none
     M3  hardening   one task per target platform (acceptance = the profile's blocking
                     assertions) plus QA-001, the verify suite green
 
-`optional` features are committed to nothing and get no task. A design without `features`
+What the run builds before G4 is its quality tier's (core/reference/quality-benchmark.yaml
+`tiers[].builds`, recorded as `dev_plan.build_scope`): at `mvp` the prototype phase (M1), at
+`release` the prototype and production phases (M1 and M2) - every feature the design
+includes and every unit the release ships, since in `new-game` nothing is built after G4.
+The developer's brief carries exactly those phases, and the develop budget is derived from
+their tasks (budget.py).
+
+`optional` features - and any feature whose evaluation is `later` or `cut` - are committed to
+nothing and get no task. A design without `features`
 (an older schema) falls back to its `scope.tiers` lists, whose entries carry no acceptance
 criteria of their own - the generated criterion says so, which is what a reviewer at G3
 should see.
@@ -28,7 +38,7 @@ import re
 
 from wgflib import genre_models
 
-__all__ = ["Estimates", "build_dev_plan", "GENRE_MODELS_PATH", "content_units"]
+__all__ = ["Estimates", "build_dev_plan", "GENRE_MODELS_PATH", "content_units", "MVP_SCOPE"]
 
 # core/reference/genre-models.yaml, read through the one loader every step that holds a build
 # to its genre family uses.
@@ -37,9 +47,18 @@ GENRE_MODELS_PATH = genre_models.PATH
 # (wgf_develop.content). Named here so a CONTENT task's acceptance says where a unit lives.
 CONTENT_FILE = "public/content/units.json"
 CONTENT_TEST = "tests/unit/content.test.ts"
+# What a plan builds before G4 when the run states no quality tier: the MVP, as before.
+MVP_SCOPE = {"quality_tier": "mvp", "design_tiers": ["mvp"], "plan_phases": ["prototype"]}
 
-def content_units(design):
-    """The MVP content units a plan owes tasks for, in index order.
+
+def _tier_of(entry):
+    """A design entry's tier; an untiered entry is MVP."""
+    return entry.get("tier") or "mvp"
+
+
+def content_units(design, design_tiers=("mvp",)):
+    """The content units a plan owes tasks for - those of `design_tiers` (the run's quality
+    tier's, quality-benchmark `tiers[].builds`; the MVP by default) - in index order.
 
     Empty unless the design's content is `authored`: a parametric or procedural design
     generates its units from parameters, and its listed units are examples, not a build
@@ -48,19 +67,21 @@ def content_units(design):
     if (content.get("generation") or {}).get("mode") != "authored":
         return []
     units = [u for u in content.get("units") or []
-             if isinstance(u, dict) and u.get("tier") in (None, "mvp")]
+             if isinstance(u, dict) and _tier_of(u) in design_tiers]
     return sorted(units, key=lambda u: (u.get("index") if isinstance(u.get("index"), int)
                                         else 10 ** 6, str(u.get("id"))))
 
 
-def _content_tasks(design, by_feature, models, unit_kind=None):
-    """One CONTENT task per batch of `implementation.task_batch` MVP units.
+def _content_tasks(design, by_feature, models, unit_kind=None, design_tiers=("mvp",)):
+    """One CONTENT task per batch of `implementation.task_batch` units of the tiers built.
 
     Batched because a unit is small and a task per unit would make a plan nobody reads; kept
-    in the design's order, because the order is the difficulty curve. Each task depends on the
-    GAME tasks of the mechanics its units ask for: a level cannot be built before the verb it
-    is made of."""
-    units = content_units(design)
+    in the design's order, because the order is the difficulty curve. MVP units are batched
+    into M1 and the post-mvp units a release tier builds into M2, so a batch never mixes what
+    the prototype is judged on with what the release adds. Each task depends on the GAME tasks
+    of the mechanics its units ask for: a level cannot be built before the verb it is made
+    of."""
+    units = content_units(design, design_tiers)
     if not units:
         return []
     implementation = (models or {}).get("implementation") or {}
@@ -69,15 +90,20 @@ def _content_tasks(design, by_feature, models, unit_kind=None):
     hours = implementation.get("content_unit_hours")
     hours = float(hours) if isinstance(hours, (int, float)) and hours > 0 else 1.5
     kind = unit_kind or "unit"
+    batches = []
+    for milestone, phase, members in (
+            ("M1", "prototype", [u for u in units if _tier_of(u) == "mvp"]),
+            ("M2", "production", [u for u in units if _tier_of(u) != "mvp"])):
+        for start in range(0, len(members), batch_size):
+            batches.append((milestone, phase, members[start:start + batch_size]))
     tasks = []
-    for number, start in enumerate(range(0, len(units), batch_size), start=1):
-        batch = units[start:start + batch_size]
+    for number, (milestone, phase, batch) in enumerate(batches, start=1):
         ids = [unit.get("id") for unit in batch]
         criteria, mechanics = [], []
         for unit in batch:
             criteria.extend(line for line in unit.get("acceptance") or [])
             criteria.append(f"Unit {unit.get('id')} is in {CONTENT_FILE} with the design's "
-                            f"difficulty values")
+                            f"difficulty values" + _unit_fields(unit))
             index = unit.get("index")
             if isinstance(index, int) and index > 1:
                 criteria.append(f"Reachable from unit {index - 1} in play")
@@ -87,8 +113,8 @@ def _content_tasks(design, by_feature, models, unit_kind=None):
         tasks.append({
             "id": f"CONTENT-{number:03d}",
             "title": f"Build {kind}s " + ", ".join(str(i) for i in ids),
-            "milestone": "M1",
-            "phase": "prototype",
+            "milestone": milestone,
+            "phase": phase,
             "description": (f"The design's content units {', '.join(str(i) for i in ids)} as "
                             f"data in {CONTENT_FILE}, loaded at boot and reachable in play in "
                             f"the design's order. Difficulty values are the design's; nothing "
@@ -146,6 +172,13 @@ class Estimates:
         return math.ceil(2 * hours / self.hours_per_day) / 2
 
 
+def _unit_fields(unit):
+    """The game-design 1.12.0 fields a unit states, named in its criterion so the built unit is
+    held to them (wgf_develop.content compares them)."""
+    named = [f for f in ("group", "structure", "elements", "objective_kind") if unit.get(f)]
+    return f", and its {', '.join(named)} as the design states" if named else ""
+
+
 def _slug(text):
     return re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")[:48] or "item"
 
@@ -169,12 +202,17 @@ def _features(design):
     return derived
 
 
-def build_dev_plan(design, engine, platforms, estimates, models=None):
+def build_dev_plan(design, engine, platforms, estimates, models=None, scope=None):
     """dev_plan for the tech-plan, and the ids of the tasks per milestone.
 
     `models` is core/reference/genre-models.yaml, read when not given: its `implementation`
-    block says how MVP content units are batched into tasks and what one costs."""
+    block says how content units are batched into tasks and what one costs. `scope` is what
+    the run builds before G4 ({quality_tier, design_tiers, plan_phases, where?}; MVP_SCOPE
+    when not given): every unit of its design tiers gets a CONTENT task."""
     models = genre_models.load() if models is None else models
+    scope = dict(scope or MVP_SCOPE)
+    design_tiers = tuple(scope.get("design_tiers") or MVP_SCOPE["design_tiers"])
+    plan_phases = list(scope.get("plan_phases") or MVP_SCOPE["plan_phases"])
     tasks, by_feature = [], {}
     core = {
         "id": "CORE-001",
@@ -195,10 +233,14 @@ def build_dev_plan(design, engine, platforms, estimates, models=None):
     tasks.append(core)
 
     features = _features(design)
+    decisions = {f.get("id"): (f.get("evaluation") or {}).get("decision")
+                 for f in design.get("features") or [] if isinstance(f, dict)}
     counters = {"GAME": 0}
     for fid, name, tier, description, acceptance, _deps in features:
         if tier not in ("mvp", "post-mvp"):
             continue
+        if decisions.get(fid) in ("later", "cut"):
+            continue  # evaluated out of this game (game-design 1.10.0): nothing to build
         counters["GAME"] += 1
         task_id = f"GAME-{counters['GAME']:03d}"
         by_feature[fid] = task_id
@@ -228,9 +270,12 @@ def build_dev_plan(design, engine, platforms, estimates, models=None):
     # its task depends on theirs.
     tasks.extend(_content_tasks(
         design, by_feature, models,
-        unit_kind=(((design.get("build_spec") or {}).get("content") or {}).get("unit_kind"))))
+        unit_kind=(((design.get("build_spec") or {}).get("content") or {}).get("unit_kind")),
+        design_tiers=design_tiers))
 
-    m1_ids = [t["id"] for t in tasks if t["milestone"] == "M1"]
+    # Platform integration starts from everything built before G4.
+    m1_ids = [t["id"] for t in tasks if t["milestone"] == "M1"
+              or (t["milestone"] == "M2" and t.get("phase") in plan_phases)]
     for index, platform in enumerate(platforms, start=1):
         assertions = platform.blocking_assertions()
         tasks.append({
@@ -261,14 +306,21 @@ def build_dev_plan(design, engine, platforms, estimates, models=None):
         "status": "todo",
     })
 
-    content_exit = (["Every MVP content unit is in public/content/units.json and reachable "
-                     "in play"] if any(t["id"].startswith("CONTENT-") for t in tasks) else [])
+    def content_exit(milestone, which):
+        return ([f"Every {which} content unit is in {CONTENT_FILE} and reachable in play"]
+                if any(t["id"].startswith("CONTENT-") and t["milestone"] == milestone
+                       for t in tasks) else [])
+
+    before_g4 = "production" in plan_phases
     labels = {"M1": ("Playable core loop", "prototype",
-                     ["Every mvp feature meets its acceptance criteria"] + content_exit
+                     ["Every mvp feature meets its acceptance criteria"]
+                     + content_exit("M1", "MVP")
                      + ["The prototype answers the strategy's prototype_must_prove "
                         "questions"]),
-              "M2": ("Production scope", "production",
-                     ["Every post-mvp feature meets its acceptance criteria"]),
+              "M2": ("Release scope, built before G4" if before_g4 else "Production scope",
+                     "production",
+                     ["Every post-mvp feature meets its acceptance criteria"]
+                     + content_exit("M2", "post-mvp")),
               "M3": ("Platform integration and hardening", "hardening",
                      ["Every target platform's blocking assertions pass",
                       "The verify suite is green"])}
@@ -282,6 +334,9 @@ def build_dev_plan(design, engine, platforms, estimates, models=None):
                            "est_days": estimates.days(hours), "exit_criteria": exit_criteria})
     return {
         "est_days": sum(m["est_days"] for m in milestones),
+        "build_scope": {"quality_tier": scope.get("quality_tier") or "mvp",
+                        "design_tiers": list(design_tiers), "plan_phases": plan_phases,
+                        **({"where": scope["where"]} if scope.get("where") else {})},
         "milestones": milestones,
         "tasks": tasks,
     }

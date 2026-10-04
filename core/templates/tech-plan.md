@@ -87,6 +87,13 @@ compliance rules in force.
 
 **Total** {{est_days}} days against a {{timebox_days}} day timebox.
 
+**Built before G4** quality tier {{quality_tier}}: design tiers {{design_tiers}}, phases
+{{plan_phases}}. In `new-game` nothing is built after G4.
+
+**Develop budget** {{develop_sessions}} sessions, cost {{develop_cost}}, derived from
+{{build_hours}} build hours ({{formula}}). **Cap** {{cap}}. **Planned shortfall**
+{{shortfall}} - a cap below the plan's need is decided here, not discovered mid-build.
+
 ## 7. Tasks
 
 The unit a coding agent works from. Acceptance criteria and tests are mandatory — a task

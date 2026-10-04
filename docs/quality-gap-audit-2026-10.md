@@ -236,6 +236,7 @@ Ordered by dependency. Each is sized for one agent and one PR, with its own test
 | **WS-9 Store copy grounded in the build** | The copywriter agent is the default writer. Every number the copy states equals the content audit's count (I-23 "six courses"). Controls are derived from the design's `actions` for every input. Every required locale gets a full description; cross-locale grounding checks against the source fact, not shared words (LEAD 33). | `scripts/wgf_listing/`, `core/reference/store-listing.yaml`, `docs/store-listing-module.md` | WS-4 (counts) |
 | **WS-10 Assets re-entry scope** | Re-entered assets remakes only the refused items and keeps the GLB node names of untouched models (LEAD 22, I-21). Climax units get distinct art (`distinct_climax_art`). | `scripts/wgf_assets/`, `docs/assets-module.md` | none |
 | **WS-11 Platform behaviour checks** | platform-validate exercises per-portal behaviour in a browser: mute through ads, rewarded onClose grants, context menu. This found real bugs in both games after release (I-12, I-25). | `scripts/wgf_publish/` (platform-validate), `core/reference/platforms/*.yaml` checks | none |
+| **WS-12 Built-in authors at the release tier** (follow-up from WS-2) | The deterministic design authors (`archetypes.py`, the genre seed in `seed.py` from `genre-models.yaml` `seed` blocks) write MVP-sized content: a few units, two to four mechanics, no declared elements, structures, objective kinds or groups. Since WS-2 they fail the `content.tier_*` rules at `release`, a true finding, so a run without an agent author, the golden runs and research-to-design declare `quality_tier: mvp`. Make the seed author write release-tier content from per-family seed data (elements, structures, objective kinds, groups closed by the family milestone), then move the goldens back to `release`. | `scripts/wgf_design/seed.py`, `scripts/wgf_design/archetypes.py`, `core/reference/genre-models.yaml` `seed`, `scripts/golden/harness.py`, `docs/golden-runs.md` | WS-2 |
 
 Independent now: WS-1, WS-5, WS-6, WS-10, WS-11. The critical path is
 WS-1 -> WS-2 -> WS-3 / WS-4 -> WS-7 -> WS-8, then WS-9.
@@ -244,8 +245,10 @@ WS-1 -> WS-2 -> WS-3 / WS-4 -> WS-7 -> WS-8, then WS-9.
 
 [`core/reference/quality-benchmark.yaml`](../core/reference/quality-benchmark.yaml) 1.0.0
 holds the release-tier bars, which are genre-neutral and name no game. WS-10 wired
-`presentation.assets.distinct_climax_art` (the assets step, 1.2.0); WS-2, WS-4, WS-7 and WS-9
-wire the rest.
+`presentation.assets.distinct_climax_art` (the assets step, 1.2.0). WS-4 wired `content` and
+`progression` on the built content (the `content-sufficiency` step, 1.4.0,
+[content-sufficiency-module.md](content-sufficiency-module.md)). WS-2, WS-7 and WS-9 wire the
+rest.
 
 ### 5.1 Sources and measurements per bar
 

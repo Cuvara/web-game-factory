@@ -53,10 +53,12 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
                └─► CLI progress, and later a UI / monitor / agent host
 
   research → strategy → [G2] → design → tech-plan → [G3] → init → greybox → greybox-playability
-    → assets → triage → develop → playability → production-quality → visual-qa → review → sdk
-    → sdk-review → verify → [G4] → store-listing → listing-validation → release
+    → assets → triage → develop → playability → production-quality → visual-qa
+    → content-sufficiency → review → sdk → sdk-review → verify → [G4] → store-listing
+    → listing-validation → release
 
   greybox, develop     design-gap       → design (then tech-plan, [G3], greybox again)
+  content-sufficiency  develop / design-gap → triage (design-gap findings route `design`)
   greybox-playability  fail             → greybox
   listing-validation   listing          → store-listing
   playability          fail             → triage
@@ -495,14 +497,15 @@ refills that limit alone (the person granting that loop more passes); `--from` r
 every one. The engine names no route: every one comes from the workflow file, and the
 definition refuses a key that is no route into the step.
 
-new-game bounds the seven routes that send the build back this way, on `triage` since
-workflow 9 (they all go through it, [specialist-routing.md](specialist-routing.md)):
+new-game bounds the routes that send the build back this way, on `triage` since
+workflow 10 (they all go through it, [specialist-routing.md](specialist-routing.md)):
 `playability.fail: 2`, `production-quality.develop: 2`, `visual-qa.develop: 2`,
+`content-sufficiency.develop: 2`, `content-sufficiency.design-gap: 1`,
 `review.request-changes: 2`, `sdk-review.request-changes: 2`, `verify.fail: 2` and
 `iterate: 2` (G4) - and the production gates' asset failures on `assets`:
 `production-quality.assets: 2`, `visual-qa.assets: 2`, plus triage's own `triage.assets: 2`
 (assets' `max_visits` 7). What triage routes on to develop is bounded per specialist on
-develop: `triage.gameplay: 14` (the generalist, which takes review's, sdk-review's and
+develop: `triage.gameplay: 16` (the generalist, which takes review's, sdk-review's and
 verify's blockers and anything nobody else owns) and `triage.<role>: 4` for every other
 specialist - a specialist that never resolves what it owns stops the run named
 (`blocked_reason.limit_key: triage.environment-artist`), without spending the others'
@@ -516,15 +519,18 @@ what was asked, and inventing the answer would carry a decision nobody made into
 It is bounded on `design`, one pass from each source: `greybox.design-gap: 1`,
 `develop.design-gap: 1` (design's `max_visits` 3). A design repair re-runs `tech-plan` and
 G3 on the repaired design, and the build starts again at `greybox`, so each return costs a
-greybox visit and a develop visit: `greybox`'s `max_visits` is 6 (the first visit, two
-playability passes, three returns) and develop's is 56 - the first visit, the specialists'
-budgets, assets' (each pass through assets enters develop once more) and the three design
-returns - and it is never what a loop meets first. Triage's `design` is a third route back
-(`triage.design: 1`, design's `max_visits` 4): a finding that asks for more content or scope
-than the design states; every step after develop (playability, production-quality,
-visual-qa, review, sdk, sdk-review, verify, prototype-review), each visited at most once per
-develop visit, carries 56 as well, and so do store-listing and listing-validation, which add
-listing-validation's own route back into store-listing (`listing-validation.listing: 2`).
+greybox visit and a develop visit. Workflow 9 adds `content-sufficiency` after visual-qa
+(docs/content-sufficiency-module.md); since workflow 10 both of its routes go through
+triage, and a design gap it finds reaches design as triage's `design` - a finding that asks
+for more content or scope than the design states (`triage.design: 2`, design's
+`max_visits` 5). `greybox`'s `max_visits` is 7 (the first visit, two playability passes,
+four returns) and develop's is 59 - the first visit, the specialists' budgets, assets' (each
+pass through assets enters develop once more) and the four design returns - and it is never
+what a loop meets first; every step after develop (playability, production-quality,
+visual-qa, content-sufficiency, review, sdk, sdk-review, verify, prototype-review), each
+visited at most once per develop visit, carries 59 as well, and so do store-listing and
+listing-validation, which add listing-validation's own route back into store-listing
+(`listing-validation.listing: 2`).
 A reviewer that never approves blocks the run on its own
 third request for changes; a verification that always fails, on its third failure; a third
 G4 iterate stops for a person too; none spends another's budget. What a whole run may spend

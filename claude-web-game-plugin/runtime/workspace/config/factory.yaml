@@ -77,6 +77,8 @@ factory:
   #   wgf_strategy   the `strategy` step (scripts/wgf_strategy/)
   #   wgf_release    the `release` step (scripts/wgf_release/, docs/release-module.md)
   #   wgf_visualqa   the `visual-qa` step (scripts/wgf_visualqa/, docs/visual-qa-module.md)
+  #   wgf_sufficiency the `content-sufficiency` step (scripts/wgf_sufficiency/,
+  #                  docs/content-sufficiency-module.md)
   #   wgf_listing    the `store-listing` and `listing-validation` steps (scripts/wgf_listing/,
   #                  docs/store-listing-module.md)
   #   wgf_publish    the `platform-validate` and `publish` steps (scripts/wgf_publish/,
@@ -84,7 +86,7 @@ factory:
   #   wgf_triage     the `triage` step: failures as quality findings, routed to the
   #                  specialist that owns them (scripts/wgf_triage/, docs/specialist-routing.md)
   steps:
-    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa, wgf_listing, wgf_publish, wgf_triage]
+    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa, wgf_sufficiency, wgf_listing, wgf_publish, wgf_triage]
 
   # The strategy module (scripts/wgf_strategy): by default it ranks the opportunity's
   # candidate platforms by audience fit and makes the best one required. A project that has
@@ -539,6 +541,10 @@ factory:
     # The run's budget for command-developer sessions (docs/development-module.md#budget).
     # Loop limits (the workflow's max_visits_by_route) are refilled by a person resuming the
     # loop they stopped; this is not.
+    # It is a CAP: the tech plan derives what the run needs from the tasks its quality tier
+    # builds before G4 (tech-plan dev_plan.develop_budget, core/reference/
+    # quality-benchmark.yaml `develop`) and the lower of the two is in force. A cap below the
+    # plan's need is recorded in the tech plan as a planned shortfall, which G3 reads.
     # Counted from the run's event log; develop BLOCKS - nothing spawned - once the
     # sessions recorded reach max_sessions, or their recorded cost reaches max_cost.
     # Snapshotted when a run starts; raised only by a person: wgf resume <run>
@@ -766,6 +772,11 @@ factory:
   # the same buildability, consistency and content checks to it. A design returned through
   # `design-gap` is repaired only by the `agent` author. {request} {draft} {prompt} are
   # substituted. Opt-in; uncomment and set `author: agent` to use it.
+  # At `strategy.quality_tier: release` (the default) the design is held to the quality
+  # benchmark's content bars (content.tier_*, docs/factory-lifecycle.md). The built-in
+  # `archetype` author writes MVP-sized content and fails there, naming what is short: a
+  # release-tier run needs `author: agent`, and a run with the built-in author sets
+  # `strategy.quality_tier: mvp`.
   design:
     author: archetype
     # agent:

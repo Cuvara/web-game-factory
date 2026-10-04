@@ -25,7 +25,8 @@ __all__ = ["normalize", "from_requests", "NormalizeError", "PRODUCERS", "finding
 
 # The artifact types a finding can be read from, in the order a build's reports are read.
 PRODUCERS = ("playability-report", "production-quality-report", "visual-qa-report",
-             "review-report", "qa-report", "listing-validation-report", "quality-scorecard")
+             "content-sufficiency-report", "review-report", "qa-report",
+             "listing-validation-report", "quality-scorecard")
 
 _ID_SAFE = re.compile(r"[^a-z0-9._:/@-]+")
 
@@ -314,6 +315,36 @@ def _listing(ctx):
     return out
 
 
+def _sufficiency(ctx):
+    """A content-sufficiency-report's typed findings (FAIL and WARNING checks), kept as the
+    gate stated them - observed against the bar, its evidence - with the owner recomputed
+    from the routing data. A `design-gap` finding routes `design`: the design itself is
+    short of the tier's bar, and its `design_gap` is what the design step repairs."""
+    out = []
+    for item in ctx.report.get("findings") or []:
+        if not isinstance(item, dict):
+            continue
+        check = item.get("id") or item.get("check") or "content"
+        word = item.get("dimension") if item.get("dimension") in ctx.routing.dimensions \
+            else (ctx.table.get("checks") or {}).get(item.get("check"))
+        dimension = ctx.dimension(word)
+        gap = item.get("design_gap") if isinstance(item.get("design_gap"), dict) else None
+        design = item.get("route") == "design-gap"
+        finding = ctx.make(
+            check=check, dimension=dimension,
+            severity=item.get("severity") if item.get("severity") in (
+                "blocker", "major", "minor") else "major",
+            summary=item.get("summary"),
+            route="design" if design else None,
+            measured=item.get("observed"), bar=item.get("bar"),
+            evidence=item.get("evidence") or (),
+            change=((gap or {}).get("question") if design else None))
+        if design and gap and gap.get("field"):
+            finding["task"]["design_field"] = gap["field"]
+        out.append(finding)
+    return out
+
+
 def _scorecard(ctx):
     """A quality scorecard's findings are already in this shape: kept, owner and route
     recomputed from the routing data so the scorecard cannot disagree with it."""
@@ -332,6 +363,7 @@ def _scorecard(ctx):
 _READERS = {
     "playability-report": _playability,
     "visual-qa-report": _visual_qa,
+    "content-sufficiency-report": _sufficiency,
     "review-report": _review,
     "qa-report": _qa,
     "listing-validation-report": _listing,

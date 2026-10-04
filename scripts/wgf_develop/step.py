@@ -155,11 +155,11 @@ def _loop(context, spec=None, via=None):
     return loop
 
 
-def _sessions(context):
+def _sessions(context, tech_plan=None):
     """What the run's developer budget has spent before this visit, for the brief; None when
     the run has no budget. Read before the brief is written: the brief used to show only
     develop's max_visits loop guard, which a reader took for the session budget."""
-    budget = Budget.load(context)
+    budget = Budget.load(context, tech_plan)
     return budget.summary() if budget.active else None
 
 
@@ -279,7 +279,8 @@ class DevelopStep(WorkflowStep):
         for artifact_type in REQUIRED_INPUTS + ("title-strategy", "tech-plan", "qa-report",
                                                 "review-report", "playability-report",
                                                 "production-quality-report",
-                                                "visual-qa-report", "triage-report"):
+                                                "visual-qa-report",
+                                                "content-sufficiency-report", "triage-report"):
             ref = inputs.refs.get(artifact_type)
             version = getattr(ref, "schema_version", None) or ""
             if ref is not None and version and version.split(".")[0] != SUPPORTED_MAJOR:
@@ -300,6 +301,8 @@ class DevelopStep(WorkflowStep):
         production = (inputs.load("production-quality-report")
                       if "production-quality-report" in inputs else None)
         visual_qa = inputs.load("visual-qa-report") if "visual-qa-report" in inputs else None
+        sufficiency = (inputs.load("content-sufficiency-report")
+                       if "content-sufficiency-report" in inputs else None)
         # A qa-report on the first visit is a leftover from an earlier release, not feedback
         # on this build; only a loop back from verify carries defects to fix.
         if qa is not None and (context.visit <= 1 or qa.get("verdict") == "pass"):
@@ -358,6 +361,10 @@ class DevelopStep(WorkflowStep):
                 context.visit > 1 and visual_qa.get("verdict") == "FAIL"
                 and visual_qa.get("commit") == git.head()):
             visual_qa = None
+        if sufficiency is not None and not (
+                context.visit > 1 and sufficiency.get("verdict") == "FAIL"
+                and sufficiency.get("commit") == git.head()):
+            sufficiency = None
         # Routed by triage as a specialist (`triage.<role>`): the visit is that discipline's.
         # Its brief carries the findings it owns - each with its measurement, bar, evidence
         # and acceptance - in place of the gates' raw reports, its own craft playbooks, and
@@ -374,7 +381,7 @@ class DevelopStep(WorkflowStep):
                     f"; its scope: {', '.join(spec['writes']) or 'none'}): it cannot be "
                     f"briefed as a develop visit", retryable=False)
             settings.writable_paths = narrowed
-            qa = review = playability = production = visual_qa = None
+            qa = review = playability = production = visual_qa = sufficiency = None
             context.logger.info("develop briefed as a specialist", specialist=spec["role"],
                                 findings=[f.get("id") for f in spec["findings"]],
                                 writable_paths=narrowed, pending=spec["pending"] or None)
@@ -435,7 +442,7 @@ class DevelopStep(WorkflowStep):
                 strategy=strategy, qa=qa, previous_checks=previous_checks,
                 refs=inputs.refs, skills=settings.skills, review=review,
                 playability=playability, frames_root=getattr(context, "run_dir", None),
-                production=production, visual_qa=visual_qa,
+                production=production, visual_qa=visual_qa, sufficiency=sufficiency,
                 phase=phase, greybox_commit=greybox_commit, review_baseline=review_baseline,
                 tech_plan=tech_plan, self_playtest=settings.self_playtest,
                 mobile_test=bool((game_config.get("verification") or {}).get("mobile_test",
@@ -445,7 +452,7 @@ class DevelopStep(WorkflowStep):
                 loop=_loop(context, spec, via=(
                     (inputs.load("triage-report") or {}).get("source")
                     if "triage-report" in inputs else None)),
-                sessions=_sessions(context),
+                sessions=_sessions(context, tech_plan),
                 developer=settings.developer,
                 specialist=spec,
             )
@@ -467,7 +474,7 @@ class DevelopStep(WorkflowStep):
                 # A paid agent session: counted against the run's budget from its event
                 # log - which a resume does not reset - and refused, before anything is
                 # spawned, once the budget is spent or when the run has none.
-                budget = Budget.load(context)
+                budget = Budget.load(context, tech_plan)
                 missing = budget.missing(context.run_id)
                 if missing:
                     context.logger.warning("develop budget missing", **budget.summary())

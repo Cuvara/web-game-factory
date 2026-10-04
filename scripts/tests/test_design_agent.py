@@ -309,6 +309,23 @@ class TheModuleStillJudges(AgentCase):
         # loop and the word "harder".
         self.assertTrue(request["starting_draft"]["build_spec"]["content"]["units"])
 
+    def test_request_carries_the_quality_tier_and_its_bars(self):
+        """At release the agent is told the tier, the strategy's budget and the benchmark's
+        bars, so the units are written to the measure content.tier_* applies."""
+        budget = {"units": 12, "designed_play_s": 300}
+        concept = dict(design_tests.load_strategy().get("concept") or {})
+        concept["content_model"] = {"family": "arcade", "source": "default",
+                                    "quality_tier": "release", "budget": budget}
+        strategy = design_tests.variant(concept=concept)
+        AgentAuthor().draft(self.brief(strategy=strategy, config=self.config("improve")))
+        tier = self.request_of()["content_rules"]["tier"]
+        self.assertEqual(tier["quality_tier"], "release")
+        self.assertEqual(tier["budget"], budget)
+        bars = content_rules.load_benchmark()["content"]
+        self.assertEqual(tier["benchmark"]["elements"]["min_distinct"],
+                         bars["elements"]["min_distinct"]["release"])
+        self.assertEqual(tier["rules"], list(content_rules.TIER_RULES))
+
     def test_the_prompt_names_the_content_rules(self):
         from wgf_design.agent import PROMPT_CONTENT
         for rule_id, _meaning in content_rules.RULES:

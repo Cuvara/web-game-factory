@@ -9,7 +9,9 @@
 # units a prototype and a release carry, what counts as variety, and how mastery shows.
 #
 # Read by:
-#   scripts/wgf_design/content.py          the design step's content check (rule ids content.*)
+#   scripts/wgf_design/content.py          the design step's content check (rule ids content.*),
+#                                          and at a quality tier the `budget` block beside
+#                                          core/reference/quality-benchmark.yaml (content.tier_*)
 #   scripts/wgf_design/seed.py             the deterministic genre seed author (`seed` blocks)
 #   scripts/wgf_develop/brief.py           the developer brief and the content data-file check
 #   scripts/wgf_playability/analysis.py    the genre-aware playability checks (`qa` blocks)
@@ -30,7 +32,7 @@
 # Change a bar only with a reason a person could defend from a playtest; a looser bar here lets
 # a one-level prototype through as a game.
 
-version: 1.1.0
+version: 1.2.0
 
 session_profiles:
   # max_unit_s: the longest a single unit is designed to last. max_first_session_s: the
@@ -92,8 +94,13 @@ implementation:
 #                       core/reference/quality-benchmark.yaml): group_kind, the set of units
 #                       the game presents together (world, chapter, cup...), null when the
 #                       family has none and its units are one sequence; element_kinds, what
-#                       counts as a distinct element of this family's units (added in 1.1.0)
-#   variety.dimensions  what `variation_from_previous` may name
+#                       counts as a distinct element of this family's units (added in 1.1.0);
+#                       milestone, what closes a group of this family - the unit of purpose
+#                       `climax` each group carries at a tier whose quality benchmark asks for
+#                       one (`content.difficulty.min_climax_per_group`), null when the family's
+#                       groups have none (added in 1.2.0). The design's tier rules
+#                       (scripts/wgf_design/content.py, content.tier_*) read this block
+##   variety.dimensions  what `variation_from_previous` may name
 #   mastery             how a player gets better: the model, the signals a hud metric shows
 #   qa                  parameters the playability checks read (fixed vocabulary:
 #                       min_units_traversed, reset_in_unit, checkpoint, min_new_kinds_per_unit,
@@ -157,7 +164,10 @@ families:
       per_unit: true
       description: Moves or time run out before the goal; the level restarts intact
     units: {min_mvp: 6, min_total: 20, generation: [authored, parametric]}
-    budget: {group_kind: world, element_kinds: [blocker kind, piece kind, rule twist]}
+    budget:
+      group_kind: world
+      element_kinds: [blocker kind, piece kind, rule twist]
+      milestone: "a capstone level that combines the world's blockers and twists"
     variety: {dimensions: [introduces, objective, board_shape, blocker_set, rule_twist, pacing]}
     mastery:
       model: reading
@@ -632,7 +642,10 @@ families:
       per_unit: true
       description: A hazard or a fall costs a life; no lives left ends the attempt
     units: {min_mvp: 5, min_total: 12, generation: [authored, parametric]}
-    budget: {group_kind: world, element_kinds: [hazard kind, enemy kind, traversal element]}
+    budget:
+      group_kind: world
+      element_kinds: [hazard kind, enemy kind, traversal element]
+      milestone: "a gauntlet or boss level that tests the world's hazards together"
     variety: {dimensions: [introduces, objective, layout_motif, hazard_set, pacing, verticality]}
     mastery:
       model: execution
@@ -1146,7 +1159,10 @@ families:
       per_unit: false
       description: A hit, a miss or a fall ends the run
     units: {min_mvp: 3, min_total: 6, generation: [authored, parametric, procedural]}
-    budget: {group_kind: world, element_kinds: [obstacle kind, target kind, power-up]}
+    budget:
+      group_kind: world
+      element_kinds: [obstacle kind, target kind, power-up]
+      milestone: "a finale unit that combines the world's obstacles and targets"
     variety: {dimensions: [introduces, pattern_set, hazard_kind, tempo, objective]}
     mastery:
       model: execution
@@ -1606,7 +1622,10 @@ families:
       per_unit: true
       description: The player's health reaches zero
     units: {min_mvp: 4, min_total: 10, generation: [authored, parametric]}
-    budget: {group_kind: chapter, element_kinds: [enemy kind, weapon, hazard kind]}
+    budget:
+      group_kind: chapter
+      element_kinds: [enemy kind, weapon, hazard kind]
+      milestone: "a set-piece encounter that tests the chapter's enemies and weapons together"
     variety: {dimensions: [introduces, enemy_mix, arena_layout, objective, weapon_available, pacing]}
     mastery:
       model: routing
@@ -2110,7 +2129,10 @@ families:
       per_unit: true
       description: The time runs out or the position target is missed
     units: {min_mvp: 3, min_total: 8, generation: [authored, parametric]}
-    budget: {group_kind: cup, element_kinds: [track segment kind, obstacle kind, hazard kind]}
+    budget:
+      group_kind: cup
+      element_kinds: [track segment kind, obstacle kind, hazard kind]
+      milestone: "the cup's final race over the cup's hardest segments"
     variety: {dimensions: [introduces, route_shape, surface, hazard_set, objective, opponents]}
     mastery:
       model: optimisation
@@ -2624,7 +2646,10 @@ families:
       per_unit: true
       description: The base's lives reach zero
     units: {min_mvp: 4, min_total: 10, generation: [authored, parametric]}
-    budget: {group_kind: region, element_kinds: [enemy kind, tower kind, map feature]}
+    budget:
+      group_kind: region
+      element_kinds: [enemy kind, tower kind, map feature]
+      milestone: "a siege map that tests the region's enemies and towers together"
     variety: {dimensions: [introduces, enemy_mix, path_shape, economy_rule, objective, tower_available]}
     mastery:
       model: planning
@@ -3132,7 +3157,7 @@ families:
       per_unit: false
       description: The player's health reaches zero
     units: {min_mvp: 3, min_total: 8, generation: [authored, parametric, procedural]}
-    budget: {group_kind: null, element_kinds: [enemy kind, hazard kind, upgrade]}
+    budget: {group_kind: null, element_kinds: [enemy kind, hazard kind, upgrade], milestone: null}
     variety: {dimensions: [introduces, enemy_mix, event, upgrade_pool, arena_zone, objective]}
     mastery:
       model: planning
@@ -3632,7 +3657,10 @@ families:
       per_unit: true
       description: Bankruptcy, collapse, or the target unmet when the scenario ends
     units: {min_mvp: 4, min_total: 10, generation: [authored, parametric]}
-    budget: {group_kind: chapter, element_kinds: [customer kind, event kind, upgrade]}
+    budget:
+      group_kind: chapter
+      element_kinds: [customer kind, event kind, upgrade]
+      milestone: "a scenario whose target needs every system the chapter added"
     variety: {dimensions: [introduces, objective, economy_rule, event_set, unlock_available, pacing]}
     mastery:
       model: optimisation

@@ -1361,8 +1361,8 @@ class PrototypeReviewGate(_MockNewGame):
         executed = self.executed(state)
         at = executed.index("prototype-review")
         # waited, answered iterate, the loop, and waiting again
-        self.assertEqual(executed[at:], ["prototype-review", "prototype-review", "triage",
-                                         "develop", "playability", "production-quality", "visual-qa",
+        self.assertEqual(executed[at:], ["prototype-review", "prototype-review", "triage", "develop",
+                                         "playability", "production-quality", "visual-qa", "content-sufficiency",
                                          "review", "sdk", "sdk-review",
                                          "verify", "prototype-review"])
         self.assertEqual(state.steps["prototype-review"].visits, 2)

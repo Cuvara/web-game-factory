@@ -99,7 +99,9 @@ def triage_gaps(triage):
     gaps = []
     for fid in selected.get("findings") or []:
         finding = by_id.get(fid)
-        if not finding:
+        # content-sufficiency's own design gaps are read from its report (_sufficiency_gaps).
+        if not finding or (finding.get("source") or {}).get("producer") \
+                == "content-sufficiency-report":
             continue
         task = finding.get("task") or {}
         field = task.get("design_field") or (
@@ -179,6 +181,12 @@ class DesignStep(WorkflowStep):
         entered = getattr(context, "entered_by", None) or ""
         if entered.rpartition(".")[2] == "design" and "triage-report" in inputs.refs:
             gaps = gaps + triage_gaps(inputs.load("triage-report"))
+        # Re-entered through `design-gap` from content-sufficiency: the built content fell
+        # short of the quality tier's bars where the design itself is short of them. Its
+        # findings carry the gaps - only from a report on the design this run holds now (a
+        # report on a design since repaired is answered already).
+        if "content-sufficiency-report" in inputs.refs:
+            gaps += self._sufficiency_gaps(inputs.load("content-sufficiency-report"), context)
         if gaps:
             previous = self._previous_design(context)
             if previous is None:
@@ -487,6 +495,25 @@ class DesignStep(WorkflowStep):
                 os.remove(path)
             except OSError:
                 pass
+
+    @classmethod
+    def _sufficiency_gaps(cls, report, context):
+        """The design gaps of a failing content-sufficiency-report routed `design-gap`, in
+        prototype-report design_gaps shape - when it judged the design this run holds now."""
+        if not isinstance(report, dict) or report.get("verdict") != "FAIL" \
+                or "design-gap" not in (report.get("routes") or []):
+            return []
+        previous = cls._previous_design(context) or {}
+        current = (previous.get("provenance") or {}).get("content_hash")
+        judged = next((p.get("content_hash") for p in
+                       (report.get("provenance") or {}).get("inputs") or []
+                       if isinstance(p, dict) and p.get("artifact_type") == "game-design"),
+                      None)
+        if not current or judged != current:
+            return []
+        return [dict(f["design_gap"]) for f in report.get("findings") or []
+                if isinstance(f, dict) and f.get("route") == "design-gap"
+                and isinstance(f.get("design_gap"), dict)]
 
     @staticmethod
     def _previous_design(context):

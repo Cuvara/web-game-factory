@@ -53,15 +53,20 @@ workflow:
   # the playability report, whose content and difficulty checks hold the build to the units
   # the design claims. A run records the version it started under; one resumed under a newer
   # definition is marked (WORKFLOW_RESUMED `definition_version`).
-  # 9: specialist routing - every failure that sent the build back to develop, and G4's
-  # iterate, goes to `triage` instead, which normalizes the current build's failures into
-  # quality findings, groups them by the specialist that owns each dimension
-  # (core/reference/specialist-routing.yaml) and routes one group per visit: `design` for a
-  # scope or content increase, `assets` for an asset made again, or the specialist's own
-  # label, mapped to develop, whose brief is then that specialist's (docs/
-  # specialist-routing.md). The loop budgets move with it: per source on triage, per
-  # specialist on develop.
-  version: 9
+  # 9: content sufficiency - after visual-qa, the BUILT game's content is counted against its
+  # quality tier (core/reference/quality-benchmark.yaml): the content data file the played
+  # commit ships, and what its probe showed while the playability bot traversed the units and
+  # surveyed every one of them. A build short of a design that meets the bar goes back to
+  # develop; a design itself short of the bar goes back to design (route `design-gap`).
+  # 10: specialist routing - every failure that sent the build back to develop or design
+  # (content-sufficiency's `design-gap` included), and G4's iterate, goes to `triage`
+  # instead, which normalizes the current build's failures into quality findings, groups
+  # them by the specialist that owns each dimension (core/reference/specialist-routing.yaml)
+  # and routes one group per visit: `design` for a scope or content increase, `assets` for
+  # an asset made again, or the specialist's own label, mapped to develop, whose brief is
+  # then that specialist's (docs/specialist-routing.md). The loop budgets move with it: per
+  # source on triage, per specialist on develop.
+  version: 10
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -76,12 +81,14 @@ workflow:
 
   # Loops. Two routes lead back into design: a blocking design gap reported by greybox or
   # develop (`design-gap`), one pass from each, and triage's `design` (a scope or content
-  # increase a finding asks for), one pass. Seven routes send the build back: playability's
-  # fail, production-quality's and visual-qa's `develop`, review's and sdk-review's
-  # request-changes, verify's fail, and G4's iterate. They all go to `triage`, which routes
-  # the build's findings to the specialist that owns them - and two go to assets,
-  # production-quality's and visual-qa's `assets`, from which the run continues through
-  # triage to develop as on its first pass. Each sending route has its own budget on triage
+  # increase a finding asks for - content-sufficiency's `design-gap` among them), two
+  # passes. Eight routes send the build back: playability's fail, production-quality's,
+  # visual-qa's and content-sufficiency's `develop`, review's and sdk-review's
+  # request-changes, verify's fail, and G4's iterate - and content-sufficiency's
+  # `design-gap`. They all go to `triage`, which routes the build's findings to the
+  # specialist that owns them - and two go to assets, production-quality's and visual-qa's
+  # `assets`, from which the run continues through triage to develop as on its first pass.
+  # Each sending route has its own budget on triage
   # (max_visits_by_route; `review.request-changes` counts only review's requests), counted
   # over the whole run, so one loop cannot spend the passes another needs - and G4's
   # iterate, which always arrives by a resume, is still bounded - and a run blocked at a
@@ -134,17 +141,19 @@ workflow:
     #
     # Re-entered through triage's `design` with the triage-report whose selected findings ask
     # for a scope or content increase the design must state before anything is built on it
-    # (the findings become the gaps the design answers). One pass, then a person looks.
+    # (the findings become the gaps the design answers) - content-sufficiency's design gaps
+    # among them, read from its report. Two passes, then a person looks.
     - id: design
       type: design
       stage: title:design
-      inputs: [title-strategy, prototype-report, triage-report]
+      inputs: [title-strategy, prototype-report, content-sufficiency-report, triage-report]
       outputs: [game-design]
-      max_visits: 4
+      # 5 = the first design + one repair from each design-gap source + two from triage.
+      max_visits: 5
       max_visits_by_route:
         greybox.design-gap: 1
         develop.design-gap: 1
-        triage.design: 1
+        triage.design: 2
       # A blocking design-consistency breach is FAILED with route `descope` and the design
       # kept as evidence. Nothing in this workflow can act on a descope yet - strategy does
       # not consume one - so it ends the run, explicitly: cut scope in the strategy, and
@@ -194,8 +203,9 @@ workflow:
       outputs: [prototype-report]
       with:
         phase: greybox
-      # 6 = the first visit + 2 playability passes + 3 returns after a design repair (two
+      # 7 = the first visit + 2 playability passes + 4 returns after a design repair (two
       # design-gap sources and triage's design).
+      max_visits: 7
       max_visits: 6
       max_visits_by_route:
         greybox-playability.fail: 2
@@ -251,16 +261,18 @@ workflow:
       type: triage
       stage: title:prototype
       description: Normalize the current build's failures into quality findings and route them to the specialist that owns them.
-      inputs: [game-design, prototype-report, asset-manifest, playability-report, production-quality-report, visual-qa-report, review-report, qa-report, verification-report, decision-record, triage-report]
+      inputs: [game-design, prototype-report, asset-manifest, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, review-report, qa-report, verification-report, decision-record, triage-report]
       outputs: [triage-report]
-      # 1 + 6 assets passes + 2 x 7 sending routes, each followed by at most one visit per
-      # specialist (10) through next-specialist; the specialists' own budgets on develop are
+      # 1 + 6 assets passes + the sending routes' budgets, each followed by at most one visit
+      # per specialist through next-specialist; the specialists' own budgets on develop are
       # the bound a chain meets.
-      max_visits: 90
+      max_visits: 100
       max_visits_by_route:
         playability.fail: 2
         production-quality.develop: 2
         visual-qa.develop: 2
+        content-sufficiency.develop: 2
+        content-sufficiency.design-gap: 1
         review.request-changes: 2
         sdk-review.request-changes: 2
         verify.fail: 2
@@ -288,20 +300,20 @@ workflow:
       # triage-report: entered through triage with a specialist's label, the visit is that
       # specialist's - its focus, craft playbooks, writable scope and only the findings it
       # owns (docs/specialist-routing.md).
-      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report, playability-report, production-quality-report, visual-qa-report, triage-report]
+      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, triage-report]
       outputs: [prototype-report]
       with:
         phase: production
       # Per specialist, over the whole run: the generalist (gameplay) takes what review,
-      # sdk-review and verify send back and what nobody else owns - every sending route's
-      # budget (2 x 7), so it is never cut before a gate's own; every
+      # sdk-review and verify send back and what nobody else owns - every develop-bound
+      # sending route's budget (2 x 8), so it is never cut before a gate's own; every
       # other specialist four visits before a person looks. Plus the six passes through
       # assets (assets' own route budgets), each of which enters develop once more.
-      # 56 = the first visit + 14 + 8 x 4 + 6 + 3 returns after a design repair (one each
-      # from greybox's and develop's design-gap, one from triage's design).
-      max_visits: 56
+      # 59 = the first visit + 16 + 8 x 4 + 6 + 4 returns after a design repair (one each
+      # from greybox's and develop's design-gap, two from triage's design).
+      max_visits: 59
       max_visits_by_route:
-        triage.gameplay: 14
+        triage.gameplay: 16
         triage.level-designer: 4
         triage.systems-designer: 4
         triage.encounter-designer: 4
@@ -323,12 +335,19 @@ workflow:
     # entities, lit frames (the design's experience contract, core/reference/
     # visual-quality.yaml). FAIL (route `fail`) goes back, through triage, to develop with the report and
     # the frames that show it; BLOCKED - it could not be built or played - stops the run.
+    #
+    # `survey`: after the traverse plays the first units in order, the bot also enters every
+    # unit the design lists directly through the probe's unit link and records what each one
+    # draws and how long it takes (core/reference/content-sufficiency.yaml `survey`), so
+    # content-sufficiency counts every unit, not the first few. The greybox is not surveyed.
     - id: playability
       type: playability
       stage: title:prototype
       inputs: [prototype-report, game-design, scaffold-record]
       outputs: [playability-report]
-      max_visits: 56
+      with:
+        survey: true
+      max_visits: 59
       on:
         fail: triage
 
@@ -344,7 +363,7 @@ workflow:
       stage: title:prototype
       inputs: [playability-report, asset-manifest, game-design, scaffold-record]
       outputs: [production-quality-report]
-      max_visits: 56
+      max_visits: 59
       on:
         assets: assets
         develop: triage
@@ -358,10 +377,34 @@ workflow:
       stage: title:prototype
       inputs: [playability-report, game-design, asset-manifest, production-quality-report]
       outputs: [visual-qa-report]
-      max_visits: 56
+      max_visits: 59
       on:
         assets: assets
         develop: triage
+
+    # Content sufficiency: the BUILT game carries the content its quality tier asks for.
+    # From what playability recorded of the same commit - the content data file it ships,
+    # the traverse and the survey of every unit through the probe - the units shipped and
+    # reached, the elements and element combinations the probe shows, structural variety and
+    # near-identical units, groups that bring something new, difficulty that asks for new
+    # skills, objective kinds, climax units with art of their own, gated unlocks, designed
+    # play and every design commitment present, against core/reference/quality-benchmark.yaml
+    # at the design's tier (core/reference/content-sufficiency.yaml says how each is
+    # measured). FAILED with route `develop` - the build is short of a design that meets the
+    # bar - goes through triage to develop; route `design-gap` - the design itself is short
+    # of it - goes through triage to design with the findings' design gaps. BLOCKED
+    # (nothing recorded) stops the run.
+    - id: content-sufficiency
+      type: content-sufficiency
+      stage: title:prototype
+      inputs: [playability-report, game-design, scaffold-record, title-strategy, visual-qa-report]
+      outputs: [content-sufficiency-report]
+      max_visits: 59
+      on:
+        # Through triage, like every gate: `develop` to the specialist that owns each
+        # finding, `design-gap` to design (triage's `design`, with the report's gaps).
+        develop: triage
+        design-gap: triage
 
     # An independent reviewer reads the commit develop made; it may not change it. Approve
     # continues to sdk (whose own commit sdk-review reads in turn); request-changes (FAILED,
@@ -376,7 +419,7 @@ workflow:
       stage: title:prototype
       inputs: [prototype-report, game-design, scaffold-record, qa-report]
       outputs: [review-report]
-      max_visits: 56
+      max_visits: 59
       on:
         request-changes: triage
 
@@ -387,7 +430,7 @@ workflow:
       stage: title:prototype
       inputs: [game-design, scaffold-record, prototype-report]
       outputs: [sdk-report]
-      max_visits: 56
+      max_visits: 59
 
     # The sdk step commits integration code on top of the reviewed development commit, and
     # that sdk commit is what verify checks and release ships. So it is reviewed too, by the
@@ -402,7 +445,7 @@ workflow:
       stage: title:prototype
       inputs: [sdk-report, prototype-report, game-design, scaffold-record, qa-report]
       outputs: [review-report]
-      max_visits: 56
+      max_visits: 59
       with:
         subject: sdk-report
       on:
@@ -419,7 +462,7 @@ workflow:
       inputs: [prototype-report, sdk-report, game-design, scaffold-record, asset-manifest, playability-report]
       outputs: [verification-report, qa-report]
       retry: {max_attempts: 2}
-      max_visits: 56
+      max_visits: 59
       on:
         fail: triage
 
@@ -442,7 +485,7 @@ workflow:
         gate: G4
         prompt: Judge the verified prototype against the kill criteria set at strategy - pass to release, iterate to develop again, or kill the title?
         choices: [pass, iterate, kill]
-      max_visits: 56
+      max_visits: 59
       on:
         iterate: triage
         kill: $end
@@ -469,7 +512,7 @@ workflow:
       retry: {max_attempts: 2}
       # Once per develop visit (G4's iterate comes back through here), plus the validation
       # loop's own budget.
-      max_visits: 56
+      max_visits: 59
       max_visits_by_route:
         listing-validation.listing: 2
 
@@ -484,7 +527,7 @@ workflow:
       stage: release:store-listing
       inputs: [store-listing, game-design, sdk-report, scaffold-record]
       outputs: [listing-validation-report]
-      max_visits: 56
+      max_visits: 59
       on:
         listing: store-listing
 

@@ -72,6 +72,7 @@ EXPECTED_STEPS = (
     ("playability", "SUCCESS"),        # played from outside through the port's play probe
     ("production-quality", "SUCCESS"), # the port's library art delivered, loaded, drawn
     ("visual-qa", "SUCCESS"),          # its frames against the port's approved baseline
+    ("content-sufficiency", "SUCCESS"), # the built content against the run's tier (mvp)
     ("review", "SUCCESS"),
     ("sdk", "SUCCESS"),
     ("sdk-review", "SUCCESS"),         # the sdk commit - the one that ships - reviewed too

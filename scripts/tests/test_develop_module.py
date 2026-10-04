@@ -2354,7 +2354,7 @@ class ThroughTheEngine(unittest.TestCase):
                                             "title-strategy", "tech-plan", "qa-report",
                                             "review-report", "playability-report",
                                             "production-quality-report", "visual-qa-report",
-                                        "triage-report"})
+                                            "content-sufficiency-report", "triage-report"})
         self.assertEqual(list(step.outputs), ["prototype-report"])
 
 
@@ -3378,6 +3378,173 @@ class ShellContract(DevelopCase):
             handle.write(tool_call("w", "Write", file_path="src/b.ts"))
             handle.write(tool_result("w", "ok"))
         self.assertEqual(permission_stall(path, size), ([], True))
+
+
+# -- the release tier in the build (WS-3) ---------------------------------------------------
+
+
+def release_tech_plan(tier="release", budget=None):
+    """A tech plan's dev_plan as wgf_techplan writes it at `tier` (tech-plan 1.1.0)."""
+    builds = ({"design_tiers": ["mvp", "post-mvp"], "plan_phases": ["prototype", "production"]}
+              if tier == "release" else
+              {"design_tiers": ["mvp"], "plan_phases": ["prototype"]})
+    plan = {"build_scope": dict(builds, quality_tier=tier),
+            "milestones": [{"id": "M1", "label": "Playable core loop", "phase": "prototype",
+                            "exit_criteria": ["mvp"]},
+                           {"id": "M2", "label": "Release scope", "phase": "production",
+                            "exit_criteria": ["post-mvp"]}],
+            "tasks": [{"id": "CONTENT-001", "title": "Build levels l-01", "milestone": "M1",
+                       "phase": "prototype", "acceptance_criteria": ["l-01"]},
+                      {"id": "CONTENT-003", "title": f"Build levels {LATER_UNIT}",
+                       "milestone": "M2", "phase": "production",
+                       "acceptance_criteria": [LATER_UNIT]}]}
+    if budget is not None:
+        plan["develop_budget"] = budget
+    return {"dev_plan": plan}
+
+
+class ReleaseScopeInTheBuild(unittest.TestCase):
+    """At quality tier `release` the build owes every unit the release ships, and the
+    develop checks fail a build that ships only the MVP subset."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="wgf-release-")
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.design = authored_design()
+
+    def write(self, data):
+        for relative, text in content_files(data).items():
+            path = os.path.join(self.root, relative)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(text)
+
+    def findings(self, tech_plan, design=None):
+        return content.codes(content.content_findings(
+            self.root, design or self.design, tiers=content.built_tiers(tech_plan)))
+
+    def test_the_tiers_built_are_the_tech_plans(self):
+        self.assertEqual(content.built_tiers(None), content.MVP_TIERS)
+        self.assertEqual(content.built_tiers(release_tech_plan("mvp")), content.MVP_TIERS)
+        self.assertEqual(content.built_tiers(release_tech_plan()), (None, "mvp", "post-mvp"))
+
+    def test_conformance_fails_a_release_build_that_ships_only_the_mvp_subset(self):
+        self.write(content_data_for(self.design))  # the MVP units only
+        self.assertEqual(self.findings(release_tech_plan("mvp")), [])
+        self.assertEqual(self.findings(release_tech_plan()),
+                         [f"content.unit_missing:{LATER_UNIT}"])
+        # The release's units, all of them, pass.
+        units = briefs.select_content(self.design, content.built_tiers(release_tech_plan()))
+        data = content_data_for(self.design)
+        data["units"] = [{f: copy.deepcopy(u[f]) for f in CONTENT_FIELDS if f in u}
+                         for u in units["units"]]
+        self.write(data)
+        self.assertEqual(self.findings(release_tech_plan()), [])
+
+    def test_the_new_unit_fields_are_held_to_the_design(self):
+        design = copy.deepcopy(self.design)
+        for unit in design["build_spec"]["content"]["units"]:
+            unit.update(group="w1", structure="static-field", elements=["spikes"],
+                        objective_kind="reach")
+        design["provenance"]["content_hash"] = content_hash(design)
+        data = content_data_for(design)
+        fields = CONTENT_FIELDS + content.UNIT_FIELDS
+        data["units"] = [{f: copy.deepcopy(u[f]) for f in fields if f in u}
+                         for u in briefs.select_content(design)["units"]]
+        self.write(data)
+        self.assertEqual(self.findings(None, design), [])
+        data["units"][0]["group"] = "w2"
+        data["units"][1]["elements"] = ["spikes", "saws"]
+        data["units"][2].pop("objective_kind")
+        data["units"][3]["structure"] = "moving-field"
+        self.write(data)
+        self.assertEqual(sorted(self.findings(None, design)),
+                         ["content.unit_field:l-01.group", "content.unit_field:l-02.elements",
+                          "content.unit_field:l-03.objective_kind",
+                          "content.unit_field:l-04.structure"])
+        # And the brief's table shows them, a column each.
+        header, rows = content.table_rows(briefs.select_content(design)["units"], [])
+        for column in ("group", "structure", "elements", "objective kind"):
+            self.assertIn(column, header)
+
+    def test_the_brief_carries_the_release_scope(self):
+        tiers = content.built_tiers(release_tech_plan())
+        selected = briefs.select_content(self.design, tiers)
+        self.assertIn(LATER_UNIT, [u["id"] for u in selected["units"]])
+        self.assertEqual(selected["later"], [])
+        spec = briefs.select_build_spec(self.design, tiers)
+        self.assertNotIn("depth/goal_ladder/all-stars (post-mvp)", spec["not_now"])
+        release = briefs.select_dev_plan(release_tech_plan())
+        self.assertEqual([t["id"] for t in release["tasks"]], ["CONTENT-001", "CONTENT-003"])
+        mvp = briefs.select_dev_plan(release_tech_plan("mvp"))
+        self.assertEqual([t["id"] for t in mvp["tasks"]], ["CONTENT-001"])
+        self.assertEqual(mvp["later"], ["CONTENT-003"])
+        # Without a tech plan the build is the MVP, as before.
+        self.assertEqual(briefs.build_scope(None)["tiers"], briefs.BUILD_TIERS)
+
+
+class DerivedDevelopBudget(unittest.TestCase):
+    """The develop budget in force is the lower of the plan's need and the installation's
+    cap, raised only by a person; running out is BLOCKED with the tier not achieved."""
+
+    PLANNED = {"sessions": 21, "cost": 73.5, "basis": {}, "cap": {"max_sessions": 12},
+               "shortfall": {"sessions": 9}}
+
+    def budget(self, snapshot, planned=None, raises=(), events=()):
+        from wgf_develop.budget import Budget
+        from wgflib import budget as run_budget
+
+        class Ctx:
+            environment = {run_budget.PARAM: snapshot} if snapshot is not None else {}
+
+            @staticmethod
+            def read_events():
+                return list(events)
+
+        tech_plan = release_tech_plan(budget=planned) if planned else None
+        budget = Budget.load(Ctx(), tech_plan)
+        if raises:
+            budget.limits["raises"] = list(raises)
+        return budget
+
+    def test_the_lower_of_the_plan_and_the_cap_is_in_force(self):
+        self.assertEqual(self.budget({"max_sessions": 12}, self.PLANNED).limits["max_sessions"],
+                         12)
+        self.assertEqual(self.budget({"max_sessions": 40}, self.PLANNED).limits["max_sessions"],
+                         21)
+        # No plan budget (tech-plan 1.0.0): the configured budget alone, as before.
+        self.assertEqual(self.budget({"max_sessions": 40}).limits["max_sessions"], 40)
+        # A cost limit applies only where the installation reads a session's cost.
+        costed = self.budget({"max_sessions": 40, "cost_from": {"jsonl_key": "c"}},
+                             self.PLANNED)
+        self.assertEqual(costed.limits["max_cost"], 73.5)
+        self.assertIsNone(self.budget({"max_sessions": 40}, self.PLANNED).limits["max_cost"])
+
+    def test_no_configured_budget_still_starts_no_command_developer(self):
+        budget = self.budget(None, self.PLANNED)
+        self.assertFalse(budget.active)
+        self.assertIn("no developer-session budget", budget.missing("run-1"))
+
+    def test_a_persons_raise_lifts_it_above_the_plan(self):
+        from wgf_develop.budget import with_plan
+        limits = {"max_sessions": 12, "max_cost": None, "cost_from": None,
+                  "raises": [{"max_sessions": 25, "decided_by": "human"}]}
+        self.assertEqual(with_plan(limits, {"max_sessions": 12}, self.PLANNED)["max_sessions"],
+                         25)
+
+    def test_exhaustion_is_blocked_and_says_the_tier_is_not_achieved(self):
+        events = [{"event": "STEP_LOG", "data": {"budget": "developer-session"}}] * 12
+        budget = self.budget({"max_sessions": 12}, dict(self.PLANNED, quality_tier=None),
+                             events=events)
+        message = budget.exhausted("run-1")
+        self.assertIn("budget exhausted: 12 developer sessions used of 12", message)
+        self.assertIn("derived 21 sessions", message)
+        self.assertIn("planned shortfall reported at G3", message)
+        self.assertIn("quality tier is not achieved", message)
+        summary = budget.summary()
+        self.assertEqual((summary["planned_sessions"], summary["quality_tier"]),
+                         (21, "release"))
+        self.assertEqual(summary["planned_shortfall"], {"sessions": 9})
 
 
 if __name__ == "__main__":

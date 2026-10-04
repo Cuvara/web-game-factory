@@ -7,7 +7,7 @@ producer of findings.
 
 ## Why
 
-Before workflow 9, every failure that sent a build back went to one generalist develop
+Before workflow 10, every failure that sent a build back went to one generalist develop
 visit, whatever the failure was about. Examples: a dark 3D scene (I-18, I-19), a level set
 with one element (I-03, I-15), canvas UI the bot could not reach (I-01), a code review
 blocker. Each got the same brief, the same developer tried, and the loop limit stopped the
@@ -59,6 +59,7 @@ No consumer branches on a game, an engine name or a family id.
 | playability-report | each required FAIL check (`content.*` to content, `restart.works` to ui, `entities.*` to art, ...) | develop |
 | production-quality-report | each required FAIL check (`assets.*` to art, `scene.contrast` to lighting, `ui.*`, `audio.*`) | the check's own (assets or develop) |
 | visual-qa-report | every judge finding (blockers, and the majors and minors that travel with them), each failed score, each failed state answer, the look; a failed mean, as each dimension below 4 | the finding's own, or the rubric's for the dimension or question |
+| content-sufficiency-report | each typed finding (FAIL and WARNING checks) in its own dimension - content, level-design, difficulty, progression - with its observed value, bar and evidence | develop; `design` for a `design-gap` finding, whose `design_gap` the design step reads from the report |
 | review-report | each blocker (gameplay) | develop |
 | qa-report | each blocking defect (gameplay; `platform` when it names a platform), each failed suite, else the verdict | develop |
 | listing-validation-report | each required FAIL check, by section (`metadata` and `grounding` to store-copy, `platforms` to platform, `screenshots`, `video` and `assets` to art-2d) | listing |
@@ -73,8 +74,8 @@ of the next build and no longer fails `score:environment` (bar: 3)".
 ## How the triage step routes
 
 Every route that sends a build back goes to `triage`: playability `fail`,
-production-quality and visual-qa `develop`, review and sdk-review `request-changes`, verify
-`fail`, and G4 `iterate`. assets also continues to triage, on the first pass and after a
+production-quality and visual-qa `develop`, content-sufficiency `develop` and `design-gap`,
+review and sdk-review `request-changes`, verify `fail`, and G4 `iterate`. assets also continues to triage, on the first pass and after a
 re-entry. The step:
 
 1. **Picks the build.** The build is the newest prototype-report. A gate report produced
@@ -117,10 +118,10 @@ Review reads the whole chain: the next specialist's brief carries the first one'
 
 | Bound | Where | Limit |
 |---|---|---|
-| How often each gate may send the build back | `triage.max_visits_by_route` | `playability.fail`, `production-quality.develop`, `visual-qa.develop`, `review.request-changes`, `sdk-review.request-changes`, `verify.fail`, `iterate`: 2 each |
-| How often each specialist may be visited | `develop.max_visits_by_route` | `triage.gameplay`: 14 (it takes review's, sdk-review's and verify's blockers, G4 iterations without typed findings and anything unowned: every sending route's budget, so it is never cut before a gate's own); every other specialist: 4 |
+| How often each gate may send the build back | `triage.max_visits_by_route` | `playability.fail`, `production-quality.develop`, `visual-qa.develop`, `content-sufficiency.develop`, `review.request-changes`, `sdk-review.request-changes`, `verify.fail`, `iterate`: 2 each; `content-sufficiency.design-gap`: 1 |
+| How often each specialist may be visited | `develop.max_visits_by_route` | `triage.gameplay`: 16 (it takes review's, sdk-review's and verify's blockers, G4 iterations without typed findings and anything unowned: every sending route's budget, so it is never cut before a gate's own); every other specialist: 4 |
 | Asset remakes triage routes | `assets.max_visits_by_route` | `triage.assets`: 2 |
-| Scope increases | `design.max_visits_by_route` | `triage.design`: 1 |
+| Scope increases | `design.max_visits_by_route` | `triage.design`: 2 (content-sufficiency's design gaps, and a person's or the scorecard's) |
 
 A specialist chain has no budget on triage. Each link enters develop through a specialist's
 limit, and that limit ends the chain. When a limit is reached, the run is BLOCKED with

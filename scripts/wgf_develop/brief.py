@@ -10,10 +10,17 @@ the template's rules to it, and states the two contracts the developer owes back
 integration seam the SDK module wires, and the development report this module checks.
 
 Two selections are carried rather than summarised, because they are what the design and the
-plan exist to hand over: the design's `build_spec` (its MVP tier - mechanics with their
-rules and tuning, states, screens, HUD, tutorial, rewards and failure with their feedback,
-session beats, audio cues, responsive behaviour, visual identity), and the approved tech
-plan's prototype milestones and tasks, each with its acceptance criteria.
+plan exist to hand over: the design's `build_spec` (the tiers the run builds - mechanics with
+their rules and tuning, states, screens, HUD, tutorial, rewards and failure with their
+feedback, session beats, audio cues, responsive behaviour, visual identity), and the approved
+tech plan's milestones and tasks of the phases the run builds, each with its acceptance
+criteria.
+
+What the run builds is the approved tech plan's `dev_plan.build_scope` (tech-plan 1.1.0, from
+the run's quality tier): the MVP and the prototype phase at `mvp`; at `release` also the
+post-mvp tier and the production phase - every feature and content unit the release ships,
+since in `new-game` nothing is built after G4. A run without a tech plan, or with a tech-plan
+1.0.0, builds the MVP, as before.
 """
 
 import json
@@ -33,7 +40,7 @@ from .scope import DEFAULT_WRITABLE
 __all__ = ["REQUIRED_SYSTEMS", "INTEGRATION_CONTRACT", "REPORT_PATH", "BRIEF_DIR",
            "build_brief", "render_markdown", "PROTECTED_PATHS", "STRUCTURAL_PATHS",
            "TEMPLATE_SOURCE", "ENGINE_DIRS", "select_build_spec", "select_dev_plan",
-           "select_production_art", "select_content", "shell_contract"]
+           "select_production_art", "select_content", "shell_contract", "build_scope"]
 
 BRIEF_DIR = "docs/development"
 REPORT_PATH = f"{BRIEF_DIR}/report.json"
@@ -327,6 +334,18 @@ SPEC_SECTIONS_RENDERED_ABOVE = {"content": "Content units", "mastery": "Mastery"
 BUILD_TIERS = (None, "mvp")
 DEV_PLAN_PHASES = (None, "prototype")
 
+
+def build_scope(tech_plan):
+    """{"quality_tier", "tiers", "phases"} the run builds, from the approved tech plan's
+    `dev_plan.build_scope`; the MVP (BUILD_TIERS, DEV_PLAN_PHASES) without one."""
+    scope = (((tech_plan or {}).get("dev_plan") or {}).get("build_scope") or {})
+    tiers = content_contract.built_tiers(tech_plan)
+    phases = scope.get("plan_phases") if isinstance(scope, dict) else None
+    phases = ((None,) + tuple(str(p) for p in phases)
+              if isinstance(phases, list) and phases else DEV_PLAN_PHASES)
+    return {"quality_tier": (scope.get("quality_tier") if isinstance(scope, dict) else None)
+            or "mvp", "tiers": tiers, "phases": phases}
+
 # Host skills the brief recommends, by area. The `web-game-factory:` names are this Factory's
 # own plugin (claude-web-game-plugin), pointers into core/craft/; a host that loads the plugin
 # (the opt-in self-playtest developer passes --plugin-dir) has them. The generic ones are for
@@ -429,42 +448,45 @@ def _label(item):
     return item.get("id") or item.get("label") or item.get("name") or "?"
 
 
-def _mvp_only(value, dropped, path):
-    """`value` without the entries tiered past the MVP, at any depth. Each dropped entry is
-    named in `dropped` by its path (e.g. `menus/title-menu/items/Settings (post-mvp)`), so the
-    brief can say it is left out on purpose rather than forgotten."""
+def _mvp_only(value, dropped, path, tiers=BUILD_TIERS):
+    """`value` without the entries tiered past `tiers` (the MVP by default), at any depth.
+    Each dropped entry is named in `dropped` by its path (e.g. `menus/title-menu/items/
+    Settings (post-mvp)`), so the brief can say it is left out on purpose rather than
+    forgotten."""
     if isinstance(value, dict):
-        return {k: _mvp_only(v, dropped, f"{path}/{k}") for k, v in value.items()}
+        return {k: _mvp_only(v, dropped, f"{path}/{k}", tiers) for k, v in value.items()}
     if isinstance(value, list):
         kept = []
         for item in value:
             if not isinstance(item, dict):
                 kept.append(item)
-            elif item.get("tier") not in BUILD_TIERS:
+            elif item.get("tier") not in tiers:
                 dropped.append(f"{path}/{_label(item)} ({item['tier']})")
             else:
-                kept.append(_mvp_only(item, dropped, f"{path}/{_label(item)}"))
+                kept.append(_mvp_only(item, dropped, f"{path}/{_label(item)}", tiers))
         return kept
     return value
 
 
-def select_build_spec(design):
-    """The design's build_spec as the developer builds it: the MVP tier, in reading order."""
+def select_build_spec(design, tiers=BUILD_TIERS):
+    """The design's build_spec as the developer builds it: the tiers built (the MVP by
+    default), in reading order."""
     spec = (design or {}).get("build_spec")
     if not isinstance(spec, dict):
         return None
     dropped = []
-    sections = {key: _mvp_only(spec[key], dropped, key)
+    sections = {key: _mvp_only(spec[key], dropped, key, tiers)
                 for key, _ in BUILD_SPEC_SECTIONS if key in spec}
     return {"sections": sections, "not_now": dropped,
             "omitted": [k for k in ("sdk_touchpoints", "assets") if k in spec]}
 
 
-def select_content(design):
-    """The content the MVP build owes, as the developer builds it (see content.py).
+def select_content(design, tiers=BUILD_TIERS):
+    """The content the build owes - the units of `tiers`, the MVP by default - as the
+    developer builds it (see content.py).
 
-    `applies` is the content contract: an authored design with at least one MVP unit owes
-    `public/content/units.json` holding exactly those units. A parametric or procedural
+    `applies` is the content contract: an authored design with at least one unit of `tiers`
+    owes `public/content/units.json` holding exactly those units. A parametric or procedural
     design states the same table - the units it commits to - but generates the rest from
     `generation.parameters`, so there is no list to compare a file against and no file is
     owed."""
@@ -472,21 +494,21 @@ def select_content(design):
     content = spec.get("content") if isinstance(spec.get("content"), dict) else {}
     axes = [a for a in (spec.get("difficulty") or {}).get("axes") or [] if isinstance(a, dict)]
     return {
-        "applies": content_contract.applies(design),
+        "applies": content_contract.applies(design, tiers),
         "unit_kind": content.get("unit_kind"),
         "generation": content.get("generation") or None,
-        "units": content_contract.expected_units(design),
+        "units": content_contract.expected_units(design, tiers),
         # Units of a later tier: named so the developer knows they exist and does not build
         # them, the way the build spec's `not_now` works.
         "later": [u.get("id") for u in content.get("units") or []
-                  if isinstance(u, dict) and u.get("tier") not in BUILD_TIERS],
+                  if isinstance(u, dict) and u.get("tier") not in tiers],
         "axes": axes,
         "file": CONTENT_PATH,
         "test": TEST_PATH,
     }
 
 
-def select_production_art(design, assets=None):
+def select_production_art(design, assets=None, tiers=BUILD_TIERS):
     """The design's production art (game-design 1.6.0) as the developer draws it.
 
     Each MVP asset requirement in the design's `build_spec.assets` with its role, dimension
@@ -505,14 +527,14 @@ def select_production_art(design, assets=None):
          "description": a.get("description"), "spec": a.get("spec"),
          "runtime_asset": a.get("id"),
          "delivered": (a.get("id") in manifest) if manifest is not None else None}
-        for a in spec.get("assets") or [] if a.get("tier") in BUILD_TIERS
+        for a in spec.get("assets") or [] if a.get("tier") in tiers
     ]
     sounds = [
         {"id": a.get("id"), "type": a.get("type"), "loop": bool(a.get("loop")),
          "trigger": a.get("trigger"), "description": a.get("description"),
          "runtime_asset": a.get("id"),
          "delivered": (a.get("id") in manifest) if manifest is not None else None}
-        for a in spec.get("audio") or [] if isinstance(a, dict) and a.get("tier") in BUILD_TIERS
+        for a in spec.get("audio") or [] if isinstance(a, dict) and a.get("tier") in tiers
     ]
     if not requirements and not look:
         return None
@@ -530,7 +552,7 @@ def select_production_art(design, assets=None):
             {"id": sc.get("id"), "state": sc.get("state"),
              "actions": [a.get("label") for a in sc.get("actions") or []]}
             for sc in spec.get("screens") or []
-            if sc.get("tier") in BUILD_TIERS and sc.get("id") in ("result", "level-complete")
+            if sc.get("tier") in tiers and sc.get("id") in ("result", "level-complete")
         ],
     }
 
@@ -554,18 +576,21 @@ def _dependency_order(tasks):
 
 
 def select_dev_plan(tech_plan):
-    """The approved plan's prototype milestones and their tasks. Production and hardening
-    milestones (platform tasks, the verify suite) belong to later steps and stages."""
+    """The approved plan's milestones and tasks of the phases the run builds before G4
+    (`dev_plan.build_scope.plan_phases`: the prototype phase at `mvp`, prototype and
+    production at `release`). Hardening (platform tasks, the verify suite) belongs to later
+    steps."""
     plan = (tech_plan or {}).get("dev_plan")
     if not isinstance(plan, dict):
         return None
-    milestones = [m for m in plan.get("milestones") or [] if m.get("phase") in DEV_PLAN_PHASES]
+    phases = build_scope(tech_plan)["phases"]
+    milestones = [m for m in plan.get("milestones") or [] if m.get("phase") in phases]
     in_scope = {m.get("id") for m in milestones}
     tasks = [
         {k: t[k] for k in ("id", "title", "milestone", "description", "dependencies",
                            "acceptance_criteria", "tests", "assets") if t.get(k)}
         for t in plan.get("tasks") or []
-        if t.get("milestone") in in_scope and t.get("phase") in DEV_PLAN_PHASES
+        if t.get("milestone") in in_scope and t.get("phase") in phases
     ]
     return {
         "milestones": [{k: m[k] for k in ("id", "label", "exit_criteria") if m.get(k)}
@@ -581,7 +606,7 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                 review=None, mobile_test=True, tech_plan=None, self_playtest=False,
                 writable_paths=None, package_changes=None, loop=None, sessions=None,
                 playability=None, frames_root=None, phase=None, greybox_commit=None,
-                production=None, visual_qa=None,
+                production=None, visual_qa=None, sufficiency=None,
                 review_baseline=None, developer=None, specialist=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
@@ -651,6 +676,14 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         if c.get("required") and c.get("status") == "FAIL"
     ]
     visual_qa_failures = _visual_qa_failures(visual_qa, frames_root)
+    # The content-sufficiency step's findings on the commit this visit starts from that the
+    # build owes (route `develop`): the design meets its tier's bar, the build does not.
+    sufficiency_failures = [
+        {k: f.get(k) for k in ("check", "severity", "owner", "summary", "observed", "bar")
+         if f.get(k) is not None}
+        for f in (sufficiency or {}).get("findings") or []
+        if isinstance(f, dict) and f.get("route") == "develop" and f.get("severity") != "minor"
+    ]
     failures = [
         {"check": c.get("id"), "summary": c.get("summary"), "output_tail": c.get("output_tail")}
         for c in (previous_checks or {}).get("checks") or []
@@ -662,6 +695,8 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
     session = design.get("session") or {}
     ux = design.get("ux") or {}
     scope_block = design.get("scope") or {}
+    scope = build_scope(tech_plan)
+    builds_production = "post-mvp" in scope["tiers"]
     return {
         "format": 1,
         "title_id": title_id,
@@ -686,7 +721,8 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                          ("tech-plan", tech_plan), ("qa-report", qa),
                          ("review-report", review), ("playability-report", playability),
                          ("production-quality-report", production),
-                         ("visual-qa-report", visual_qa))
+                         ("visual-qa-report", visual_qa),
+                         ("content-sufficiency-report", sufficiency))
             if c
         ],
         "design": {
@@ -714,16 +750,24 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         # The family of core/reference/genre-models.yaml the design is held to: the unit
         # kinds, axes and win/loss shapes that fit it. None before game-design 1.9.0.
         "genre": design.get("genre") if isinstance(design.get("genre"), dict) else None,
-        # Every unit of content the MVP build owes, and whether a data file is owed with it.
-        "content": select_content(design),
+        # What the run builds before G4 (the tech plan's dev_plan.build_scope): its quality
+        # tier, and whether the post-mvp tier is part of this build.
+        "build_scope": {"quality_tier": scope["quality_tier"],
+                        "design_tiers": [t for t in scope["tiers"] if t],
+                        "plan_phases": [p for p in scope["phases"] if p]},
+        # Every unit of content the build owes, and whether a data file is owed with it.
+        "content": select_content(design, scope["tiers"]),
         "mvp": list(tiers.get("mvp") or []),
         "prototype_tier": list(tiers.get("prototype") or []),
-        "not_now": list(tiers.get("production") or []) + list(tiers.get("future") or []),
+        # The production tier, when the run's quality tier builds it before G4.
+        "release_scope": list(tiers.get("production") or []) if builds_production else [],
+        "not_now": (([] if builds_production else list(tiers.get("production") or []))
+                    + list(tiers.get("future") or [])),
         "out_of_scope": [o.get("item") for o in tiers.get("out_of_scope") or []],
         "must_prove": list((strategy or {}).get("prototype_must_prove") or []),
         # What the design and the approved plan hand over in detail; None when the design
         # carries no build_spec (an older schema) or the run holds no tech plan.
-        "build_spec": select_build_spec(design),
+        "build_spec": select_build_spec(design, scope["tiers"]),
         "dev_plan": select_dev_plan(tech_plan),
         "placements": placements,
         "assets": asset_items,
@@ -749,11 +793,13 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         # What the design says the finished game looks like: each MVP asset requirement's
         # role and readability with the runtime asset id that draws it, the UI spec, and
         # whether the art direction is geometric on purpose. None for a design without it.
-        "production_art": select_production_art(design, assets),
+        "production_art": select_production_art(design, assets, scope["tiers"]),
         "greybox_commit": greybox_commit,
         "playability_failures": playability_failures,
         "production_failures": production_failures,
         "visual_qa_failures": visual_qa_failures,
+        "sufficiency_failures": sufficiency_failures,
+        "sufficiency_commit": (sufficiency or {}).get("commit") if sufficiency_failures else None,
         "gated_commit": ((production if production_failures else None)
                          or (visual_qa if visual_qa_failures else None) or {}).get("commit"),
         "played_commit": (playability or {}).get("commit") if playability_failures else None,
@@ -1029,7 +1075,7 @@ def _qa_obligations(family):
 
 
 def _content_section(brief):
-    """The content the build owes: the genre it is held to, every MVP unit in order with its
+    """The content the build owes: the genre it is held to, every unit built in order with its
     acceptance, the axes difficulty is stated on, what mastery means, and - when the content
     contract applies - the data file the units live in.
 
@@ -1129,8 +1175,11 @@ def _content_section(brief):
             f"game reads its content from that file, and nothing in `src/` hard-codes a unit. "
             f"`{content.get('test')}` is the unit test over it. The develop checks compare the "
             f"file with the design unit by unit and field by field - a missing unit, a changed "
-            f"objective, a difficulty value further from the design than the genre's "
-            f"tolerance, or a mechanic parameter missing from `tuning` each fails the step.\n")
+            f"objective, group, structure, elements or objective kind, a difficulty value "
+            f"further from the design than the genre's tolerance, or a mechanic parameter "
+            f"missing from `tuning` each fails the step. Every row of the table is owed, the "
+            f"later tiers' rows included when this run builds them: a build that ships a "
+            f"subset fails.\n")
     else:
         add(f"`{content.get('file')}` and `{content.get('test')}` are optional for a "
             f"{mode or 'generated'} design: the units are generated from the parameters, so "
@@ -1149,6 +1198,10 @@ def _content_section(brief):
         "unit_kind": kind,
         "generation": generation or {"mode": "authored"},
         "units": [{"id": "<unit id>", "index": 1, "tier": "mvp",
+                   **{field: (["<element id>"] if field == "elements"
+                              else f"<the design's {field}>")
+                      for field in content_contract.UNIT_FIELDS
+                      if any(u.get(field) for u in units)},
                    "objective": "<as the table says>", "mechanics": ["<mechanic id>"],
                    "introduces": ["<mechanic id>"], "difficulty": {"<axis id>": 0.1},
                    "expected_duration_s": 45, "success": "<as the table says>",
@@ -1199,7 +1252,7 @@ def _ownership_section(brief):
     if content.get("units") or content.get("generation"):
         if content.get("applies"):
             lines.append(f"- **The content contract's files, yours to write:** "
-                         f"`{content['file']}` (every MVP content unit as data) and "
+                         f"`{content['file']}` (every content unit of the table as data) and "
                          f"`{content['test']}` (the unit test over it). The develop checks "
                          f"read both: the data file is compared with the design unit by unit, "
                          f"and a build that hard-codes its units instead fails the step.")
@@ -1585,7 +1638,12 @@ def render_markdown(brief):
     if brief["prototype_tier"]:
         add("\nThe prototype tier, which the MVP must at least cover:\n")
         add(_bullets(brief["prototype_tier"]))
-    add("\nNot now (production/future tiers - do not build):\n")
+    if brief.get("release_scope"):
+        tier = (brief.get("build_scope") or {}).get("quality_tier") or "release"
+        add(f"\nThe {tier} scope, built in this run too (quality tier `{tier}`: nothing is "
+            f"built after prototype review, so what the release ships is built now):\n")
+        add(_bullets(brief["release_scope"]))
+    add("\nNot now (later tiers - do not build):\n")
     add(_bullets(brief["not_now"]))
     add("\nOut of scope:\n")
     add(_bullets(brief["out_of_scope"]))
@@ -1829,7 +1887,8 @@ def render_markdown(brief):
                     f"show is wrong, and say in `known_issues` that no reason was given.")
         elif brief.get("qa_defects") or brief.get("review_blockers") or \
                 brief.get("previous_failures") or brief.get("playability_failures") or \
-                brief.get("production_failures") or brief.get("visual_qa_failures"):
+                brief.get("production_failures") or brief.get("visual_qa_failures") or \
+                brief.get("sufficiency_failures"):
             add("Fix what sent it back first (below); a pass that does not fix it is one "
                 "fewer left.")
         else:
@@ -1908,6 +1967,26 @@ def render_markdown(brief):
                 + (" Frame: `" + failure["frame"] + "`" if failure.get("frame") else "")
                 + (" Frames: " + ", ".join(f"`{f}`" for f in failure["frames"])
                    if failure.get("frames") else ""))
+        add("")
+
+    if brief.get("sufficiency_failures"):
+        add("## Fix first: what the content audit counted on the build\n")
+        add(f"The content-sufficiency step counted the content of "
+            f"`{(brief.get('sufficiency_commit') or '')[:12]}` - its "
+            "`public/content/units.json` and what the play probe showed in every unit, played "
+            "in order and entered through the unit link (`?wgf-probe=1&wgf-unit=<unit id>`) - "
+            "against the bars of the design's quality tier "
+            "(core/reference/quality-benchmark.yaml). The design meets these bars and the "
+            "build does not: build what the design states, unit by unit. Never invent a unit, "
+            "an element or a number the design does not state; where the design is silent, "
+            "record the gap in `design_gaps`. Every entity of a content role carries its "
+            "`kind` while a unit is in play.\n")
+        for failure in brief["sufficiency_failures"]:
+            line = (f"- `{failure.get('check')}` ({failure.get('severity')}): "
+                    f"{failure.get('summary')}")
+            if failure.get("bar") is not None:
+                line += f" Bar: {_inline(failure['bar'])}."
+            add(line)
         add("")
 
     if brief.get("review_blockers"):

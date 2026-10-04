@@ -19,7 +19,8 @@
 # Changing an owner, a playbook or a mapping is a version bump of this file; a new dimension
 # is a change to the quality-finding schema first (its `dimension` enum), then here.
 
-version: 1.0.0
+# 1.1.0: content-sufficiency-report (workflow 10).
+version: 1.1.0
 
 # The quality dimensions, as the quality-finding schema enumerates them.
 dimensions: [content, level-design, difficulty, progression, gameplay, art-2d, environment-3d, lighting-material, ui, audio, feel, store-copy, platform]
@@ -149,6 +150,15 @@ producers:
     look: art
     default: art
     acceptance: visual-qa judges frames of the next build and no longer fails `{check}`{bar_clause}.
+
+  content-sufficiency-report:
+    step: content-sufficiency
+    # Its findings name their own dimension (content, level-design, difficulty,
+    # progression); a `design-gap` finding routes `design` with the gap it carries.
+    checks:
+      content.: content
+    default: content
+    acceptance: content-sufficiency counts the next build and `{check}` PASSes{bar_clause}.
 
   review-report:
     step: review

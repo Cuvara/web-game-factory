@@ -26,7 +26,7 @@ inputs ──► brief ──► developer ──► checks ──► commit ─
 | `tech-plan` | `dev_plan`: the prototype milestones and their tasks, with acceptance criteria and tests — optional (absent, the brief has no plan section) |
 | `qa-report` | on a verify → develop loop, the blocking defects the brief says to fix first |
 | `review-report` | on a review → develop loop, the reviewer's blockers the brief says to fix first — used only when it requests changes to the commit this visit starts from ([review-module.md](review-module.md)) |
-| `triage-report` | entered as `triage.<role>` (workflow 9): the visit is that specialist's - its findings, playbooks and writable scope replace the raw gate reports above ([specialist-routing.md](specialist-routing.md)) |
+| `triage-report` | entered as `triage.<role>` (workflow 10): the visit is that specialist's - its findings, playbooks and writable scope replace the raw gate reports above ([specialist-routing.md](specialist-routing.md)) |
 
 The engine comes from the checkout's `game.config.yaml`: `pixijs` or `phaserjs` for 2D,
 `threejs` for 3D.
@@ -145,26 +145,39 @@ the game, regenerated on every visit and committed with the code it asked for. I
   `mastery` (the mastery signals are shown on the result screen and persisted through the
   seam). `progression`'s acceptance is tightened with them: after a page reload the probe
   reports the same `content.unit_index` and `metrics.best` before any input.
-- **Scope** — the MVP verbatim, the tiers that are *not now*, and what is out of scope.
+- **What this run builds: the quality tier.** The approved tech plan's
+  `dev_plan.build_scope` (tech-plan 1.1.0, from the run's quality tier and
+  `core/reference/quality-benchmark.yaml` `tiers[].builds`) says which design tiers and which
+  plan phases the developer builds: at `mvp` the MVP and the prototype milestone (M1); at
+  `release` also the `post-mvp` tier and the production milestone (M2) - every feature the
+  design includes and every unit the release ships, because in `new-game` nothing is built
+  after G4. Everything below that says "the MVP" means the tiers built: the content table, the
+  build spec, the production art, the plan's tasks. `brief.json` carries it as `build_scope`. A
+  run without a tech plan, or with a tech-plan 1.0.0, builds the MVP, as before.
+- **Scope** — the MVP verbatim, at `release` the production tier as `release_scope` ("built in
+  this run too"), the tiers that are *not now*, and what is out of scope.
 - **Genre and content units** — the family the design is held to
   (`core/reference/genre-models.yaml`, with its node, session profile and ending), then the
-  content table: every MVP unit in the design's order with its purpose, objective, mechanics,
-  per-axis difficulty, expected duration, success, failure, acceptance lines and what it
-  varies from the previous unit; the difficulty axes those numbers are on with their ranges;
+  content table: every unit of the tiers built in the design's order with its purpose,
+  objective, mechanics, its `group`, `structure`, `elements` and `objective_kind` where the
+  design states them (game-design 1.12.0, a column each), per-axis difficulty, expected
+  duration, success, failure, acceptance lines and what it varies from the previous unit; the difficulty axes those numbers are on with their ranges;
   the mastery model, statement and signals; and the units of a later tier, named so the
   developer knows not to build them. `brief.json`: `genre` and `content`
   (`brief.select_content`). The **content data-file contract** goes with it, and applies when
-  the design's `build_spec.content.generation.mode` is `authored` with at least one MVP unit:
+  the design's `build_spec.content.generation.mode` is `authored` with at least one unit of
+  the tiers built:
   the developer writes `public/content/units.json` — `schema: "wgf-content/1"`, the `design`
   pin (artifact id and content hash), `genre`, `unit_kind`, `generation`, `units[]` and
-  `tuning` — with the design's unit ids, index order, objectives, mechanics and difficulty
-  values and every mechanic parameter as `tuning`; the game loads it at boot, and
+  `tuning` — with the design's unit ids, index order, objectives, mechanics, groups,
+  structures, elements, objective kinds and difficulty values and every mechanic parameter as
+  `tuning`, so the release-tier bars can be counted on the built content; the game loads it at boot, and
   `tests/unit/content.test.ts` tests it. A `parametric` or `procedural` design states the same
   table but generates the rest from `generation.parameters`, so no data file is owed and none
   is compared. Nothing in the table is the developer's to invent: where the design is silent
   the gap goes in the report's `design_gaps` and the unit is `partial` or `cut`. Craft:
   `core/craft/content-and-level-design.md`.
-- **Build spec** — the design's `build_spec`, MVP tier only, every field: mechanics with
+- **Build spec** — the design's `build_spec`, the tiers built only, every field: mechanics with
   their rules and starting tuning, controls, player goals, game states, screens, HUD,
   menus, tutorial, rewards and failure with their feedback, progression, difficulty curve
   and assist, session beats, monetization touchpoints, audio cues, responsive behaviour and
@@ -237,7 +250,7 @@ the game, regenerated on every visit and committed with the code it asked for. I
 
 ## Specialist visits
 
-Since workflow 9 every failure that sends the build back reaches develop through the
+Since workflow 10 every failure that sends the build back reaches develop through the
 `triage` step, which routes the build's quality findings to the specialist that owns them
 ([specialist-routing.md](specialist-routing.md)). Entered as `triage.<role>` with a
 specialist's label (`wgf_develop/specialist.py`):
@@ -377,7 +390,7 @@ Run in this order; `conformance` cannot be switched off.
 | Check | What |
 |---|---|
 | `install` | `pnpm install --frozen-lockfile`. A failure stops the rest |
-| `conformance` | Static, and the content contract: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, the template's `BootScene` (`src/game/boot-scene.ts`) imported by no game source - judged by the module an import resolves to, so a game's own first scene may also be called `BootScene`, the seam files as the Factory provided them and `src/main.ts` booting through them (`wgflib.gameseam`), the sdk step's files (`gameseam.SDK_OWNED_PATHS`) as the visit's baseline commit has them - absent before the sdk step first runs - since the sdk step rewrites them whole, template-owned paths unchanged since the visit began, `package.json` changed only by allowed dependency changes and the lockfile only with them, and `report.json` complete and, on a `handoff` visit, this visit's (`visit` equals the brief's `report_visit`) — every required system `done`, every MVP item and placement reported. With the content contract, also `public/content/units.json` against the design (`scripts/wgf_develop/content.py`), as findings named by code: `content.file_missing`, `content.design_pin` (its `design.content_hash` is not the brief's pin), `content.unit_missing:<id>`, `content.unit_extra:<id>`, `content.unit_field:<id>.<field>` (index, objective, mechanics, success or failure differ), `content.difficulty:<id>.<axis>` (further from the design's value than `implementation.difficulty_tolerance`, 0.05), `content.tuning:<mechanic>.<param>`, `content.test_missing` and `content.not_loaded` (no file under `src/` reads the data file) |
+| `conformance` | Static, and the content contract: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, the template's `BootScene` (`src/game/boot-scene.ts`) imported by no game source - judged by the module an import resolves to, so a game's own first scene may also be called `BootScene`, the seam files as the Factory provided them and `src/main.ts` booting through them (`wgflib.gameseam`), the sdk step's files (`gameseam.SDK_OWNED_PATHS`) as the visit's baseline commit has them - absent before the sdk step first runs - since the sdk step rewrites them whole, template-owned paths unchanged since the visit began, `package.json` changed only by allowed dependency changes and the lockfile only with them, and `report.json` complete and, on a `handoff` visit, this visit's (`visit` equals the brief's `report_visit`) — every required system `done`, every MVP item and placement reported. With the content contract, also `public/content/units.json` against the design (`scripts/wgf_develop/content.py`), as findings named by code: `content.file_missing`, `content.design_pin` (its `design.content_hash` is not the brief's pin), `content.unit_missing:<id>`, `content.unit_extra:<id>`, `content.unit_field:<id>.<field>` (index, objective, mechanics, success, failure, group, structure, elements or objective_kind differ; a release build that ships only the MVP subset fails with `content.unit_missing` for every post-mvp unit), `content.difficulty:<id>.<axis>` (further from the design's value than `implementation.difficulty_tolerance`, 0.05), `content.tuning:<mechanic>.<param>`, `content.test_missing` and `content.not_loaded` (no file under `src/` reads the data file) |
 | `format` | `pnpm format` — optional |
 | `typecheck`, `lint`, `unit`, `build` | the repository's own scripts, as CI runs them |
 | `smoke` | `pnpm test:e2e`, behind a proxy that refuses every non-local request (`wgflib.netguard`): a portal build would otherwise load the portal's real SDK from its CDN - dev traffic to the portal, and a result that depends on it (a Poki build's own "makes no insecure requests" failed on Poki's http:// ad bridge). The game must boot and play with the SDK refused, as for an ad-blocker; the summary says what was refused. Where Chromium ignores the proxy variables (Windows, macOS) the suite runs with `-c` on a wrapper of the game's `playwright.config.ts`, written outside the checkout, that hands the browser the proxy itself (`netguard.guarded_playwright_config`); the summary still names the plain command. Skipped, and reported as skipped, only when no browser is installed |
@@ -436,6 +449,20 @@ prototype-report ([core-contracts.md](core-contracts.md) §4.3, gap 9), so today
 value is that the run stops carrying an invented decision forward and a person sees the gaps.
 
 ## Budget
+
+**Derived from the plan, capped by the installation.** The approved tech plan records what its
+own tasks need (`dev_plan.develop_budget`: sessions and cost from the hours of every task the
+run's quality tier builds before G4, with its basis - `docs/techplan-module.md`). The limit in
+force is the lower of that need and the run's `factory.develop.budget` below, each limit on its
+own (a `max_cost` from the plan only where the installation sets `cost_from`), raised above
+either only by a person's `BUDGET_RAISED`. A cap below the plan's need was recorded at G3 as a
+planned shortfall, so the run is not surprised mid-build; a run whose tech plan records no
+budget (tech-plan 1.0.0, or no tech plan) is held to the configured budget alone. The
+configured budget remains the installation's consent to spend: without one, no command
+developer starts, whatever the plan needs. Running out is never success: develop returns
+`BLOCKED` with what the plan derived, whether it was a planned shortfall, and that the build is
+not finished and its quality tier not achieved within the budget; the step's `budget` summary
+carries `planned_sessions`, `planned_cost`, `quality_tier` and `planned_shortfall`.
 
 Loop limits bound passes, not spend: `max_visits` is refilled by every resume, and a
 route limit (`max_visits_by_route`) by a resume of the run it stopped - a person saying

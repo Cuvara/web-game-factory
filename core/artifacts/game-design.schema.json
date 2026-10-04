@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/game-design.schema.json",
   "title": "Game Design",
-  "description": "One artifact covering scope, session, retention, monetization, progression and economy.\n\nThese are NOT separate stages and not separate documents. Scope depends on monetization, which depends on session, which depends on scope — sequencing them invents an order that does not exist, and splitting them into four files guarantees they drift apart. One artifact with a recorded consistency result is atomic; four files cannot be.\n\nThe `consistency` block is what makes 'these were co-designed' checkable rather than asserted. It is produced by evaluating core/reference/design-consistency-rules.yaml and is the exit guard on title:design.\n\nThe human-readable GDD is a RENDERING of this artifact (see core/templates/gdd.md), not a separate source of truth.\n\nSchema 1.1.0 adds three optional blocks — `engine`, `features` and `build_spec` — which carry the design down to what an implementation agent needs to build the MVP without guessing. They are optional so 1.0.0 artifacts stay valid; the design module always emits them. Schema 1.7.0 adds `build_spec.depth`: the meta loop, goal ladder, content schedule, first-session length and return hooks, each tiered. Schema 1.9.0 adds the content contract: `genre` (the family of core/reference/genre-models.yaml the design is held to), `build_spec.content` (every unit of content the player meets - level, wave, track, encounter, scenario, round - with its objective, mechanics, difficulty, success, failure and acceptance), `build_spec.difficulty.axes` (the axes those difficulty values are on) and `build_spec.mastery` (what getting better means here, and the signals that show it). All optional, so 1.8.0 artifacts stay valid; a design that names a `finite` ending must state its win. Schema 1.10.0 adds the quality tier to the content contract, all optional: `build_spec.content.quality_tier` (the tier the design is built to, the strategy's by default), `build_spec.content.elements` (the declared elements a unit is made of beyond its mechanics), `build_spec.content.groups` and `build_spec.content.secondary_goals`, and on each unit `group`, `structure`, `elements` and `objective_kind`, so that what a release-tier design carries is counted, not interpreted (core/reference/quality-benchmark.yaml).",
+  "description": "One artifact covering scope, session, retention, monetization, progression and economy.\n\nThese are NOT separate stages and not separate documents. Scope depends on monetization, which depends on session, which depends on scope — sequencing them invents an order that does not exist, and splitting them into four files guarantees they drift apart. One artifact with a recorded consistency result is atomic; four files cannot be.\n\nThe `consistency` block is what makes 'these were co-designed' checkable rather than asserted. It is produced by evaluating core/reference/design-consistency-rules.yaml and is the exit guard on title:design.\n\nThe human-readable GDD is a RENDERING of this artifact (see core/templates/gdd.md), not a separate source of truth.\n\nSchema 1.1.0 adds three optional blocks — `engine`, `features` and `build_spec` — which carry the design down to what an implementation agent needs to build the MVP without guessing. They are optional so 1.0.0 artifacts stay valid; the design module always emits them. Schema 1.7.0 adds `build_spec.depth`: the meta loop, goal ladder, content schedule, first-session length and return hooks, each tiered. Schema 1.9.0 adds the content contract: `genre` (the family of core/reference/genre-models.yaml the design is held to), `build_spec.content` (every unit of content the player meets - level, wave, track, encounter, scenario, round - with its objective, mechanics, difficulty, success, failure and acceptance), `build_spec.difficulty.axes` (the axes those difficulty values are on) and `build_spec.mastery` (what getting better means here, and the signals that show it). All optional, so 1.8.0 artifacts stay valid; a design that names a `finite` ending must state its win. Schema 1.10.0 adds feature evaluation: `features[].source`, `features[].catalogue` and `features[].evaluation` (core/reference/feature-catalogue.yaml) - every feature the brief or strategy names, and every catalogue feature the genre family expects, is included, deferred or cut with a reason - and the retention hook `daily_challenge`. All optional, so 1.9.0 artifacts stay valid. Schema 1.11.0 adds `build_spec.content.units[].art`: the drawings particular to a unit, so climax units can be held to distinct art. Optional, so 1.10.0 artifacts stay valid. Schema 1.12.0 adds the quality tier to the content contract, all optional: `build_spec.content.quality_tier` (the tier the design is built to, the strategy's by default), `build_spec.content.elements` (the declared elements a unit is made of beyond its mechanics), `build_spec.content.groups` and `build_spec.content.secondary_goals`, and on each unit `group`, `structure`, `elements` and `objective_kind`, so that what a release-tier design carries is counted, not interpreted (core/reference/quality-benchmark.yaml). Optional, so 1.11.0 artifacts stay valid.",
 
   "x-wgf": {
     "id": "game-design",
     "kind": "artifact",
     "format": "json",
-    "version": "1.10.0",
+    "version": "1.12.0",
     "template": "templates/gdd.md",
     "producer": "title:design",
     "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "release:qa", "title:scaffolding", "release:store-listing"],
@@ -142,7 +142,8 @@
       "properties": {
         "hooks": {
           "type": "array",
-          "items": { "enum": ["daily_quest", "energy", "streak", "leaderboard", "collection", "progression", "unlock_timer", "social", "none"] }
+          "items": { "enum": ["daily_quest", "daily_challenge", "energy", "streak", "leaderboard", "collection", "progression", "unlock_timer", "social", "none"] },
+          "description": "`daily_challenge` (1.10.0): one unit or seed a day, the same for every player, that fits inside one short session - unlike `daily_quest`, which needs room to present and complete a task."
         },
         "return_reason": {
           "type": "string",
@@ -320,7 +321,34 @@
           "tier": { "$ref": "#/$defs/tier" },
           "description": { "type": "string" },
           "acceptance": { "type": "array", "items": { "type": "string" } },
-          "depends_on": { "type": "array", "items": { "$ref": "#/$defs/localId" } }
+          "depends_on": { "type": "array", "items": { "$ref": "#/$defs/localId" } },
+          "source": {
+            "enum": ["brief", "strategy", "design", "catalogue"],
+            "description": "Where the feature came from: the person's brief, the title strategy, the designer, or core/reference/feature-catalogue.yaml (a feature the genre family expects). A brief- or strategy-named feature carries an evaluation. Added in 1.10.0."
+          },
+          "catalogue": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "description": "The core/reference/feature-catalogue.yaml feature this entry evaluates. Added in 1.10.0."
+          },
+          "evaluation": {
+            "type": "object",
+            "description": "Why this feature is in the game, deferred or cut. `include` is tiered mvp or post-mvp; `later` and `cut` are tiered optional, and a cut feature is listed in scope.tiers.out_of_scope with its reason, which G4 shows. Added in 1.10.0.",
+            "required": ["decision", "reason"],
+            "properties": {
+              "player_value": { "enum": ["low", "medium", "high"] },
+              "cost_h": { "type": "number", "minimum": 0, "description": "Estimated build hours." },
+              "platform_support": {
+                "enum": ["all", "some", "local", "none"],
+                "description": "Across the required platforms: all support it (or it needs no platform capability); some do; none do but it works on-device; none do and there is no fallback."
+              },
+              "monetization_impact": { "enum": ["none", "low", "medium", "high"] },
+              "qa_cost": { "enum": ["low", "medium", "high"] },
+              "decision": { "enum": ["include", "later", "cut"] },
+              "reason": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+          }
         },
         "additionalProperties": false
       }
@@ -369,11 +397,11 @@
           "properties": {
             "quality_tier": {
               "enum": ["mvp", "release"],
-              "description": "The quality tier this content is designed to: the strategy's `concept.content_model.quality_tier` when absent. At `release` the content is held to the strategy's content budget and the quality benchmark's content bars (core/reference/quality-benchmark.yaml): elements, introduction points, combinations, structure kinds, objective kinds, groups and difficulty that asks for different skills. A design may not state a lower tier than its strategy commits to. Added in 1.10.0."
+              "description": "The quality tier this content is designed to: the strategy's `concept.content_model.quality_tier` when absent. At `release` the content is held to the strategy's content budget and the quality benchmark's content bars (core/reference/quality-benchmark.yaml): elements, introduction points, combinations, structure kinds, objective kinds, groups and difficulty that asks for different skills. A design may not state a lower tier than its strategy commits to. Added in 1.12.0."
             },
             "elements": {
               "type": "array",
-              "description": "The elements the units are made of beyond their mechanics: each obstacle, hazard, enemy, target, block or segment kind that changes what the player does (the family's `budget.element_kinds`). A number-only change is never an element. A unit names the ones it uses in its own `elements`; a unit's mechanics count as elements too. Added in 1.10.0.",
+              "description": "The elements the units are made of beyond their mechanics: each obstacle, hazard, enemy, target, block or segment kind that changes what the player does (the family's `budget.element_kinds`). A number-only change is never an element. A unit names the ones it uses in its own `elements`; a unit's mechanics count as elements too. Added in 1.12.0.",
               "items": {
                 "type": "object",
                 "required": ["id", "kind", "description"],
@@ -387,7 +415,7 @@
             },
             "groups": {
               "type": "array",
-              "description": "The sets of units the game presents together (the family's `budget.group_kind`: world, chapter, cup, region). A unit names its group in `group`. Added in 1.10.0.",
+              "description": "The sets of units the game presents together (the family's `budget.group_kind`: world, chapter, cup, region). A unit names its group in `group`. Added in 1.12.0.",
               "items": {
                 "type": "object",
                 "required": ["id", "name"],
@@ -401,7 +429,7 @@
             },
             "secondary_goals": {
               "type": "array",
-              "description": "Scored goals beside a unit's objective - stars, collectibles, a par time - each an objective kind of its own. Added in 1.10.0.",
+              "description": "Scored goals beside a unit's objective - stars, collectibles, a par time - each an objective kind of its own. Added in 1.12.0.",
               "items": {
                 "type": "object",
                 "required": ["id", "kind", "description"],
@@ -450,13 +478,13 @@
                     "description": "Why this unit exists. A run of units that all `test` is a difficulty curve with no shape."
                   },
                   "objective": { "type": "string", "minLength": 8, "description": "What the player is trying to do here, in the words they are shown." },
-                  "objective_kind": { "$ref": "#/$defs/localId", "description": "What kind of thing the objective asks for, as one id shared by every unit that asks for the same kind (clear-all, reach-exit, survive, collect, beat-time...). Read before the objective's own words when objective kinds are counted. Added in 1.10.0." },
-                  "group": { "$ref": "#/$defs/localId", "description": "The build_spec.content.groups id this unit belongs to. Added in 1.10.0." },
-                  "structure": { "$ref": "#/$defs/localId", "description": "The structural kind of the unit, as one id shared by every unit built the same way: static-field, moving-field, path-with-turns, arena, climax... Added in 1.10.0." },
+                  "objective_kind": { "$ref": "#/$defs/localId", "description": "What kind of thing the objective asks for, as one id shared by every unit that asks for the same kind (clear-all, reach-exit, survive, collect, beat-time...). Read before the objective's own words when objective kinds are counted. Added in 1.12.0." },
+                  "group": { "$ref": "#/$defs/localId", "description": "The build_spec.content.groups id this unit belongs to. Added in 1.12.0." },
+                  "structure": { "$ref": "#/$defs/localId", "description": "The structural kind of the unit, as one id shared by every unit built the same way: static-field, moving-field, path-with-turns, arena, climax... Added in 1.12.0." },
                   "elements": {
                     "type": "array",
                     "items": { "$ref": "#/$defs/localId" },
-                    "description": "The build_spec.content.elements ids this unit uses. Together with its mechanics, the unit's set of elements. Added in 1.10.0."
+                    "description": "The build_spec.content.elements ids this unit uses. Together with its mechanics, the unit's set of elements. Added in 1.12.0."
                   },
                   "start_state": { "type": "string", "description": "What the unit begins from: the board, the grid, the starting line, what the player carries in." },
                   "end_state": { "type": "string" },
@@ -469,7 +497,7 @@
                   "introduces": {
                     "type": "array",
                     "items": { "$ref": "#/$defs/localId" },
-                    "description": "Mechanics - or, from 1.10.0, build_spec.content.elements - the player meets for the first time here. Every mechanic is introduced by exactly one unit and used again after it."
+                    "description": "Mechanics - or, from 1.12.0, build_spec.content.elements - the player meets for the first time here. Every mechanic is introduced by exactly one unit and used again after it."
                   },
                   "difficulty": {
                     "type": "object",
@@ -485,6 +513,11 @@
                     "minItems": 1,
                     "items": { "type": "string", "minLength": 12 },
                     "description": "What must be true of the built unit. The developer builds against these; two near-identical lines across units mean the units are not distinct."
+                  },
+                  "art": {
+                    "type": "array",
+                    "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+                    "description": "The build_spec.assets ids that draw what is particular to this unit - its antagonist, boss or set piece - one drawing each: an asset id, or a variant id (`boss-2`, the second drawing of an asset with `count` 4). A climax unit names its own: two climax units drawn with one drawing, or with a tint of it, fail core/reference/quality-benchmark.yaml `presentation.assets.distinct_climax_art` (the assets step checks it). Added in 1.11.0."
                   },
                   "variation_from_previous": {
                     "type": "array",
@@ -1194,6 +1227,15 @@
           "type": "boolean",
           "default": false,
           "description": "Set at G3. A warning nobody read is just a comment."
+        },
+        "feature_catalogue": {
+          "type": "object",
+          "description": "The feature catalogue the features were evaluated against: core/reference/feature-catalogue.yaml by id and version (rule ids features.*). Added in 1.10.0.",
+          "properties": {
+            "id": { "type": "string" },
+            "version": { "type": "string" }
+          },
+          "additionalProperties": false
         },
         "content_model": {
           "type": "object",

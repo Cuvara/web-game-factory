@@ -18,7 +18,7 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.8.0
+version: 1.9.0  # 1.9.0: feature evaluation (playbook and catalogue) in the game-designer surfaces
 
 surface_kinds:
   agent: A persistent role the runtime can delegate to.
@@ -87,6 +87,8 @@ agents:
       - core/craft/content-and-level-design.md
       - core/reference/genre-models.yaml
       - core/reference/design-depth.yaml
+      - core/craft/feature-evaluation.md
+      - core/reference/feature-catalogue.yaml
       - core/artifacts/shared/research-opportunity.schema.json
     produces: [title-strategy, game-design]
     consumes: [opportunity, evaluation, claim]
@@ -370,8 +372,8 @@ skills:
   - id: game-design
     supports: [game-designer]
     covers: >
-      Core loop, session structure, retention hooks, scope tiers, the build spec, and the
-      design consistency rules.
+      Core loop, session structure, retention hooks, scope tiers, feature evaluation, the
+      build spec, and the design consistency rules.
     reads:
       - core/lifecycle/stages/design.md
       - core/artifacts/game-design.schema.json
@@ -385,6 +387,8 @@ skills:
       - core/craft/content-and-level-design.md
       - core/reference/genre-models.yaml
       - core/reference/design-depth.yaml
+      - core/craft/feature-evaluation.md
+      - core/reference/feature-catalogue.yaml
   - id: core-loop
     supports: [game-designer, gameplay]
     covers: >

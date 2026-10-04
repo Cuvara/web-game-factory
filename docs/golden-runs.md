@@ -347,7 +347,7 @@ They do **not** prove:
 - **the release tier.** A golden run sets `factory.strategy.quality_tier: mvp`
   (`scripts/golden/harness.py`): it is a pipeline regression of a known-good port at MVP
   tier. At `release` the design step holds the design to the quality benchmark's content bars
-  (`content.tier_*`, game-design 1.10.0), which the built-in design authors the golden runs
+  (`content.tier_*`, game-design 1.12.0), which the built-in design authors the golden runs
   use do not write to - a true finding at that tier, not a fixture to loosen. So the goldens
   do not exercise a release-tier design, the content budget or the tier rules; the unit tests
   do (`scripts/tests/test_design_content.py`, `TheQualityTier`).

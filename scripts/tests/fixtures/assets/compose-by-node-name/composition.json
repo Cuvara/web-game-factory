@@ -1,0 +1,8 @@
+{
+  "description": "What a 3D game's code looks up by node name in each model the assets step delivers (three.js getObjectByName), as the 3D validation game did: the kart's wheels are spun and steered by name, the rival's chassis is tinted by name. A model renamed under the game breaks it. Every name is the node the model author's first build gave the part.",
+  "models": {
+    "kart": ["chassis", "wheel-front-left", "wheel-front-right", "wheel-rear-left", "wheel-rear-right", "spoiler"],
+    "rival": ["chassis", "wheel-front-left", "wheel-front-right", "wheel-rear-left", "wheel-rear-right"],
+    "cone": ["cone-body", "cone-base"]
+  }
+}

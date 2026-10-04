@@ -45,6 +45,7 @@ from wgflib import template_contract as contract
 
 from . import archetypes, identity, presentation
 from . import depth as depth_check
+from . import features as feature_check
 from .platforms import supported_placements, tightest_interval
 
 __all__ = ["DesignAuthor", "ArchetypeAuthor", "AUTHORS", "Resolved", "register_author",
@@ -575,6 +576,13 @@ class ArchetypeAuthor(DesignAuthor):
                 taken.add(candidate["id"])
                 features.append({"id": candidate["id"], "name": candidate["name"], "tier": tier,
                                  "description": candidate["description"]})
+        # Every feature the brief or strategy names, and every one the genre family expects
+        # (core/reference/feature-catalogue.yaml), evaluated rather than dropped or added: an
+        # archetype feature that builds it is marked so; the rest are deferred or cut with a
+        # reason (features.py).
+        feature_check.evaluate_for_author(
+            features, strategy, (a.get("genre") or {}).get("family"), platforms,
+            exclusions.entries)
         features.sort(key=lambda f: TIER_ORDER.index(f["tier"]))
 
         # 7. The build spec.

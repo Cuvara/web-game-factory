@@ -103,7 +103,7 @@ at G4 - a prototype to test the bet - sets `quality_tier: mvp`, and its budget i
 units. The tier changes what the strategy commits to, never a gate's bar.
 
 **The design is held to the tier.** The design states the same tier
-(`build_spec.content.quality_tier`, game-design 1.10.0; never lower than the strategy's) and
+(`build_spec.content.quality_tier`, game-design 1.12.0; never lower than the strategy's) and
 the design step holds `build_spec.content` to the budget and to the quality benchmark's
 `content` bars at the tier, the larger of the two (`scripts/wgf_design/content.py`, rules
 `content.tier_*`): distinct elements, introduction points, combinations, structure kinds,

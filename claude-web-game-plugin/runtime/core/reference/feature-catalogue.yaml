@@ -1,0 +1,328 @@
+# Feature catalogue: the candidate features a web game design evaluates, never adds blindly.
+#
+# A brief asks for "an endless mode for replay"; a genre's players expect a time trial. Neither
+# is a mechanic the consistency rules see, and both used to drop out of a design without a
+# word. This file names the features a design is expected to have an opinion about, and the
+# design records that opinion per feature in `game-design.features[]` (1.10.0):
+#
+#   source       where the feature came from: brief | strategy | design | catalogue
+#   catalogue    this file's feature id the entry evaluates
+#   evaluation   {player_value, cost_h, platform_support, monetization_impact, qa_cost,
+#                 decision: include | later | cut, reason}
+#
+# Read by:
+#   scripts/wgf_design/features.py   the design step's feature check (criterion ids features.*)
+#                                    and the built-in author's evaluations
+#   scripts/wgf_design/agent.py      the agent author's request (`feature_candidates`)
+#
+# What the check requires (docs/quality-gap-audit-2026-10.md WS-5):
+#
+#   - a catalogue feature the brief names (one of its `terms`) is a feature with
+#     `catalogue: <id>`, `source: brief` and an evaluation - included, deferred or cut, each
+#     with a reason;
+#   - the same for one the title strategy names (its one-liner, concept, MVP, what the
+#     prototype must prove, or its out_of_scope list), with `source: strategy` or `brief`;
+#   - every feature this file marks `expected` for the design's genre family
+#     (core/reference/genre-models.yaml) is evaluated the same way - not added: `later` and
+#     `cut` are honest answers when the reason is stated;
+#   - an `include` is tiered mvp or post-mvp, a `later` or `cut` is tiered optional, and a
+#     cut feature is listed in scope.tiers.out_of_scope with its reason (so G4 shows it);
+#   - an included feature that needs a platform capability (`platform.capability`) that a
+#     required platform lacks, with no local fallback, is refused: cut it or defer it.
+#
+# Fields per feature:
+#   terms         how a brief or strategy names it: whole words or phrases, lower case,
+#                 matched on word boundaries with hyphens read as spaces. Only phrases that
+#                 name THIS feature - a bare "best" or "mode" names nothing.
+#   families      per genre family: expected (its players look for it; must be evaluated),
+#                 fits (a reasonable candidate) or poor (rarely worth its cost there). Every
+#                 family of genre-models.yaml is listed; no consumer branches on a family id.
+#   platform      the capability of a platform profile (`capabilities.<name>`) the feature
+#                 rests on, and `fallback`: local (it still works on-device without it) or
+#                 none (without it there is no feature). Absent: any platform.
+#   player_value, monetization_impact, qa_cost
+#                 the starting estimate an evaluation may revise with a reason: low |
+#                 medium | high (monetization_impact also none).
+#   cost_h        the starting estimate of build hours at web-portal scale.
+#
+# Change an estimate only with a reason a person could defend from a build or a playtest; add
+# a feature when a brief named one this file could not recognise. Never edit a term to make a
+# brief stop naming something.
+
+version: 1.0.0
+
+# The values an evaluation's platform_support takes, computed from the required platforms:
+#   all    every required platform supports it (or it needs no capability)
+#   some   some required platforms do; the others need its fallback or go without
+#   local  no required platform does, and it works on-device (fallback: local)
+#   none   no required platform does, and there is no fallback
+platform_support: [all, some, local, none]
+
+features:
+  - id: progression
+    name: Level progression
+    kind: meta
+    description: A level map or select screen the player advances through, one unit after another.
+    terms: [progression, level select, level map, world map, campaign]
+    families: {puzzle: expected, platformer: expected, arcade: fits, shooter: fits, racing: fits, strategy: expected, survival: poor, simulation: fits}
+    player_value: high
+    cost_h: 6
+    monetization_impact: low
+    qa_cost: medium
+
+  - id: unlocks
+    name: Unlocks
+    kind: meta
+    description: Content, modes or cosmetics that open on a stated condition, so a goal is always visible.
+    terms: [unlock, unlocks, unlockable, unlockables, unlocked]
+    families: {puzzle: fits, platformer: fits, arcade: fits, shooter: fits, racing: expected, strategy: fits, survival: fits, simulation: fits}
+    player_value: medium
+    cost_h: 4
+    monetization_impact: low
+    qa_cost: medium
+
+  - id: worlds
+    name: Themed worlds
+    kind: content
+    description: The units grouped into themed worlds, each with its own look and the elements it introduces.
+    terms: [themed worlds, worlds of, world themes, themed zones, chapters]
+    families: {puzzle: fits, platformer: expected, arcade: fits, shooter: fits, racing: fits, strategy: fits, survival: poor, simulation: poor}
+    player_value: high
+    cost_h: 16
+    monetization_impact: low
+    qa_cost: high
+
+  - id: star-rating
+    name: Star rating and replay goals
+    kind: replayability
+    description: Each unit scored in stars, medals or a par, so a cleared unit is still worth replaying.
+    terms: [star rating, stars, three stars, 3 stars, medal, medals, par time, par score]
+    families: {puzzle: expected, platformer: expected, arcade: fits, shooter: fits, racing: expected, strategy: expected, survival: poor, simulation: fits}
+    player_value: high
+    cost_h: 4
+    monetization_impact: low
+    qa_cost: low
+
+  - id: rewards
+    name: Rewards
+    kind: meta
+    description: Something the player earns at the end of a unit or run beyond the score - a currency, a chest, a part.
+    terms: [reward, rewards, loot, chest, chests, prize, prizes]
+    families: {puzzle: fits, platformer: fits, arcade: fits, shooter: fits, racing: fits, strategy: fits, survival: fits, simulation: expected}
+    player_value: medium
+    cost_h: 5
+    monetization_impact: medium
+    qa_cost: medium
+
+  - id: daily-rewards
+    name: Daily rewards
+    kind: retention
+    description: A reward for returning on consecutive days, shown on the first screen of the day.
+    terms: [daily reward, daily rewards, daily bonus, daily gift, login reward, login rewards]
+    families: {puzzle: fits, platformer: poor, arcade: fits, shooter: fits, racing: fits, strategy: fits, survival: fits, simulation: expected}
+    platform:
+      capability: cloud_saves
+      fallback: local
+    player_value: medium
+    cost_h: 4
+    monetization_impact: medium
+    qa_cost: medium
+
+  - id: daily-challenge
+    name: Daily challenge
+    kind: retention
+    description: One unit or seed a day, the same for every player, playable inside one short session.
+    terms: [daily challenge, daily challenges, daily puzzle, daily level, daily run, puzzle of the day, level of the day]
+    families: {puzzle: expected, platformer: fits, arcade: fits, shooter: fits, racing: fits, strategy: fits, survival: fits, simulation: poor}
+    player_value: medium
+    cost_h: 6
+    monetization_impact: low
+    qa_cost: medium
+
+  - id: streaks
+    name: Streaks
+    kind: retention
+    description: A count of consecutive days played or units cleared without failing, shown where it can be lost.
+    terms: [streak, streaks, win streak, day streak]
+    families: {puzzle: fits, platformer: poor, arcade: fits, shooter: poor, racing: poor, strategy: poor, survival: fits, simulation: fits}
+    player_value: low
+    cost_h: 3
+    monetization_impact: low
+    qa_cost: low
+
+  - id: leaderboard
+    name: Leaderboard
+    kind: social
+    description: Scores or times ranked against other players through the platform's leaderboard service.
+    terms: [leaderboard, leaderboards, high score table, global ranking, global rankings, online ranking]
+    families: {puzzle: poor, platformer: fits, arcade: expected, shooter: fits, racing: fits, strategy: poor, survival: fits, simulation: poor}
+    platform:
+      capability: leaderboards
+      fallback: none
+    player_value: medium
+    cost_h: 5
+    monetization_impact: low
+    qa_cost: high
+
+  - id: achievements
+    name: Achievements
+    kind: meta
+    description: Named goals beside the main progression, recorded where the player can see them.
+    terms: [achievement, achievements, trophy, trophies, badge, badges]
+    families: {puzzle: fits, platformer: fits, arcade: fits, shooter: fits, racing: fits, strategy: fits, survival: fits, simulation: fits}
+    platform:
+      capability: achievements
+      fallback: local
+    player_value: low
+    cost_h: 5
+    monetization_impact: none
+    qa_cost: medium
+
+  - id: missions
+    name: Missions
+    kind: meta
+    description: Short stated tasks (clear five units without a miss) that rotate and pay a reward.
+    terms: [mission, missions, quest, quests, daily quest, daily quests, side objectives]
+    families: {puzzle: poor, platformer: poor, arcade: fits, shooter: fits, racing: fits, strategy: fits, survival: fits, simulation: expected}
+    player_value: medium
+    cost_h: 6
+    monetization_impact: medium
+    qa_cost: medium
+
+  - id: shop
+    name: Shop
+    kind: economy
+    description: A screen where an earned currency buys cosmetics, upgrades or consumables.
+    terms: [shop, in game shop, in game store, item shop, store screen]
+    families: {puzzle: poor, platformer: poor, arcade: fits, shooter: fits, racing: fits, strategy: fits, survival: fits, simulation: expected}
+    player_value: medium
+    cost_h: 8
+    monetization_impact: high
+    qa_cost: high
+
+  - id: skins
+    name: Skins and cosmetics
+    kind: economy
+    description: Cosmetic variants of the player's piece, vehicle or character, earned or bought; no gameplay change.
+    terms: [skin, skins, cosmetic, cosmetics, outfit, outfits, livery, liveries]
+    families: {puzzle: fits, platformer: fits, arcade: fits, shooter: fits, racing: fits, strategy: poor, survival: fits, simulation: fits}
+    player_value: low
+    cost_h: 6
+    monetization_impact: medium
+    qa_cost: low
+
+  - id: upgrades
+    name: Upgrades
+    kind: economy
+    description: Persistent improvements bought between runs that change how the next run plays.
+    terms: [upgrade, upgrades, upgradable, upgradeable, skill tree, perks]
+    families: {puzzle: poor, platformer: poor, arcade: fits, shooter: expected, racing: fits, strategy: expected, survival: expected, simulation: expected}
+    player_value: high
+    cost_h: 8
+    monetization_impact: medium
+    qa_cost: high
+
+  - id: difficulty-modes
+    name: Difficulty modes
+    kind: mode
+    description: A chosen difficulty (easy, normal, hard) that scales the family's axes, beside the assist.
+    terms: [difficulty modes, difficulty mode, difficulty levels, difficulty setting, difficulty settings, easy mode, hard mode]
+    families: {puzzle: poor, platformer: fits, arcade: fits, shooter: fits, racing: fits, strategy: fits, survival: fits, simulation: poor}
+    player_value: medium
+    cost_h: 5
+    monetization_impact: none
+    qa_cost: high
+
+  - id: time-trial
+    name: Time trial
+    kind: mode
+    description: Every unit replayed against the clock alone, scored on time, with the personal best to beat.
+    terms: [time trial, time trials, time attack, speedrun mode, against the clock]
+    families: {puzzle: poor, platformer: fits, arcade: fits, shooter: poor, racing: expected, strategy: poor, survival: poor, simulation: poor}
+    player_value: medium
+    cost_h: 6
+    monetization_impact: low
+    qa_cost: medium
+
+  - id: endless-mode
+    name: Endless mode
+    kind: mode
+    description: A run with no last unit - generated or looped content ramping until the player fails, scored for the best.
+    terms: [endless mode, endless play, endless variant, infinite mode, survival mode, endless for replay]
+    families: {puzzle: fits, platformer: fits, arcade: expected, shooter: fits, racing: poor, strategy: fits, survival: expected, simulation: poor}
+    player_value: medium
+    cost_h: 8
+    monetization_impact: medium
+    qa_cost: medium
+
+  - id: statistics
+    name: Statistics and personal bests
+    kind: meta
+    description: The player's records - best score or time per unit, totals - shown on the result card and a stats screen.
+    terms: [statistics, stats, personal best, personal bests, best score, best scores, best time, best times, high score, high scores]
+    families: {puzzle: fits, platformer: fits, arcade: expected, shooter: fits, racing: expected, strategy: fits, survival: expected, simulation: fits}
+    player_value: medium
+    cost_h: 3
+    monetization_impact: none
+    qa_cost: low
+
+  - id: profile
+    name: Player profile
+    kind: social
+    description: A name and avatar shown with the player's records, from the platform's account where there is one.
+    terms: [player profile, player profiles, avatar, avatars, player name]
+    families: {puzzle: poor, platformer: poor, arcade: fits, shooter: fits, racing: fits, strategy: poor, survival: poor, simulation: fits}
+    platform:
+      capability: auth
+      fallback: local
+    player_value: low
+    cost_h: 4
+    monetization_impact: none
+    qa_cost: medium
+
+  - id: local-save
+    name: Saved progress
+    kind: system
+    description: Progress, settings and records kept across reloads on the device.
+    terms: [saved progress, save progress, saves progress, progress is saved, progress saved, save game, autosave, local save]
+    families: {puzzle: fits, platformer: fits, arcade: fits, shooter: fits, racing: fits, strategy: fits, survival: fits, simulation: fits}
+    player_value: high
+    cost_h: 3
+    monetization_impact: none
+    qa_cost: medium
+
+  - id: cloud-save
+    name: Cloud save
+    kind: system
+    description: The saved progress kept in the platform's cloud save, so it follows the player's account.
+    terms: [cloud save, cloud saves, cloud saving, cross device, cross-device progress]
+    families: {puzzle: fits, platformer: fits, arcade: poor, shooter: fits, racing: fits, strategy: fits, survival: fits, simulation: fits}
+    platform:
+      capability: cloud_saves
+      fallback: none
+    player_value: medium
+    cost_h: 4
+    monetization_impact: none
+    qa_cost: high
+
+  - id: settings
+    name: Settings
+    kind: system
+    description: Sound, music and reduced-motion toggles, and any control option, reachable from the title and pause screens.
+    terms: [settings, options menu, settings menu, sound toggle, volume control]
+    families: {puzzle: fits, platformer: fits, arcade: fits, shooter: fits, racing: fits, strategy: fits, survival: fits, simulation: fits}
+    player_value: medium
+    cost_h: 3
+    monetization_impact: none
+    qa_cost: low
+
+  - id: tutorial
+    name: Tutorial and onboarding
+    kind: system
+    description: The first unit or overlay that teaches the controls and the goal by doing, inside the first session.
+    terms: [tutorial, tutorials, onboarding, how to play, guided first level]
+    families: {puzzle: fits, platformer: fits, arcade: fits, shooter: fits, racing: fits, strategy: expected, survival: fits, simulation: expected}
+    player_value: high
+    cost_h: 4
+    monetization_impact: none
+    qa_cost: medium

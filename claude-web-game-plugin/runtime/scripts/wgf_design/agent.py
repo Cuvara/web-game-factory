@@ -50,8 +50,10 @@ import os
 from wgflib import agentenv, genre_models, paths, permpath, procs, quality_bar
 
 from . import content as content_rules
+from . import features as feature_check
 from . import identity
-from .authors import ArchetypeAuthor, AuthorError, DesignAuthor, register_author
+from .authors import (ArchetypeAuthor, AuthorError, DesignAuthor, register_author,
+                      split_reason)
 from .depth import load_rules as load_depth_rules
 from .experience import load_rules
 from .revision import as_draft
@@ -214,6 +216,20 @@ PROMPT_DEPTH = (
     " depth the strategy excludes is optional. The bars are the request's `depth`; the craft"
     " guide is the request's `depth_craft`."
 )
+# Appended always: the features the brief, the strategy and the genre family name
+# (features.py, core/reference/feature-catalogue.yaml), so none is dropped silently and none
+# is added because a list has it. The candidates are the request's `feature_candidates`.
+PROMPT_FEATURES = (
+    " Evaluate every feature in the request's `feature_candidates` (the brief or the strategy"
+    " names it, or the genre family expects it): list it in `features` with `catalogue` (its"
+    " id), `source` (as given) and an `evaluation` - player_value, cost_h, platform_support"
+    " (as given), monetization_impact, qa_cost, and a decision with its reason: `include`"
+    " (tier mvp or post-mvp, built), `later` (tier optional, deferred) or `cut` (tier"
+    " optional, never). A feature the person's brief asks for is built unless you state why"
+    " not; a feature only the family expects is included only where it earns its cost, and"
+    " never one a required platform cannot run (platform_support none). The catalogue is the"
+    " request's `feature_catalogue`."
+)
 # Appended when the step asks again: the previous draft and exactly what made it invalid.
 PROMPT_REPAIR = (
     " Your previous draft (the request's `repair.previous_draft`) was invalid for the reasons"
@@ -243,6 +259,19 @@ def _tier_request(design, strategy):
     return {"quality_tier": tier, "where": where, "budget": budget or None,
             "benchmark": bars,
             "rules": list(content_rules.TIER_RULES)}
+
+
+def _feature_candidates(strategy, family, platforms):
+    catalogue = feature_check.load_catalogue()
+    entries = {e["id"]: e for e in catalogue.get("features") or []}
+    out = []
+    for want in feature_check.candidates(strategy, family, catalogue):
+        entry = entries[want["id"]]
+        out.append(dict(want, description=entry.get("description"),
+                        platform_support=feature_check.platform_support(entry, platforms),
+                        estimate={key: entry.get(key) for key in (
+                            "player_value", "cost_h", "monetization_impact", "qa_cost")}))
+    return out
 
 
 class AgentRunFailed(RuntimeError):
@@ -355,6 +384,14 @@ class AgentAuthor(DesignAuthor):
                         if key not in ("provenance", "consistency")}
         elif revision:
             starting = as_draft(revision["design"], brief.get("strategy"))
+            # A feature the changed strategy now names starts evaluated (deferred, or cut
+            # where the strategy or platforms rule it out), as in a first design.
+            if isinstance(starting.get("features"), list):
+                feature_check.evaluate_for_author(
+                    starting["features"], brief.get("strategy") or {},
+                    (starting.get("genre") or {}).get("family"), brief.get("platforms") or [],
+                    [split_reason(e) for e in (brief.get("strategy") or {}).get("out_of_scope")
+                     or []])
         else:
             # The built-in author's draft is the starting point: the exact shape the module
             # requires, already inside the strategy's scope. The agent improves it.
@@ -405,7 +442,13 @@ class AgentAuthor(DesignAuthor):
                        "tier": _tier_request(starting, brief.get("strategy")),
                    },
                    "content_craft": os.path.join(paths.CORE, "craft",
-                                                 "content-and-level-design.md")}
+                                                 "content-and-level-design.md"),
+                   # The features the design must evaluate (features.py), with what the
+                   # catalogue and the required platforms say of each.
+                   "feature_catalogue": feature_check.CATALOGUE_PATH,
+                   "feature_candidates": _feature_candidates(
+                       brief.get("strategy") or {}, genre.get("family"),
+                       brief.get("platforms") or [])}
         if revision:
             # The identity is kept, so no other look is offered.
             request["revision"] = {"revises_version": revision.get("version"),
@@ -454,7 +497,7 @@ class AgentAuthor(DesignAuthor):
         values["prompt"] += PROMPT_CONCEPT + PROMPT_SCHEMA + PROMPT_ART
         if not revision:
             values["prompt"] += PROMPT_ART_KIT
-        values["prompt"] += PROMPT_DEPTH + PROMPT_CONTENT
+        values["prompt"] += PROMPT_DEPTH + PROMPT_CONTENT + PROMPT_FEATURES
         if gaps:
             values["prompt"] += PROMPT_GAPS.format(draft=draft_path)
         if repair:

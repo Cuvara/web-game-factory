@@ -25,7 +25,9 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 17. `core/craft/content-and-level-design.md`
 18. `core/reference/genre-models.yaml`
 19. `core/reference/design-depth.yaml`
-20. `core/artifacts/shared/research-opportunity.schema.json`
+20. `core/craft/feature-evaluation.md`
+21. `core/reference/feature-catalogue.yaml`
+22. `core/artifacts/shared/research-opportunity.schema.json`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

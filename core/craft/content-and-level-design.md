@@ -57,6 +57,14 @@ profile, 5 on `standard`). Above the MVP, repeat the arc per block, each block s
 a higher floor. Two `teach` units in a row means the first did not teach; two `climax` units
 in a row means neither is one.
 
+A climax is met as a new antagonist or set piece, so it names its own art: `art` lists the
+`build_spec.assets` ids (or a counted asset's variant ids, `boss-2`) that draw what is
+particular to the unit. Four bosses drawn as one sprite tinted per world read as one boss
+four times; at the `release` tier every climax unit has a drawing or model no other climax
+unit shares, and none is a recolour of another's (`core/reference/quality-benchmark.yaml`
+`presentation.assets.distinct_climax_art`, checked by the assets step). Plan a counted
+asset (`count` = the number of climax units) or one asset per climax, and budget the art.
+
 ## Introduce, then reuse
 
 Every mechanic the MVP declares appears in at least `mechanic_reuse_min_units` units (2)

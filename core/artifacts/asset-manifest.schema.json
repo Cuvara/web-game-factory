@@ -8,7 +8,7 @@
     "id": "asset-manifest",
     "kind": "artifact",
     "format": "json",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "producer": "title:prototype",
     "updated_by": ["title:design", "title:tech-plan", "title:production"],
     "consumers": ["title:tech-plan", "title:prototype", "title:production", "release:qa", "release:draft", "release:store-listing"],
@@ -247,7 +247,8 @@
         "properties": {
           "item_id": { "type": "string" },
           "code": {
-            "enum": ["missing", "invalid-format", "format-not-allowed", "too-large", "not-power-of-two", "duplicate-content", "license-unknown", "license-restricted", "provenance-missing", "placeholder", "generation-failed", "library-candidate-rejected", "over-budget", "over-bundle-size", "unsafe-svg", "texture-too-large", "transparency-mismatch", "dimension-mismatch", "invalid-atlas", "atlas-overflow", "atlas-source-served", "invalid-tileset", "duplicate-path", "not-served", "model-invalid", "model-external-reference", "model-unsupported-extension", "model-needs-decoder", "model-transform", "model-scale", "model-pivot", "model-over-budget", "animation-missing", "animation-invalid", "lod-missing", "lod-invalid", "collision-missing", "model-spec-unbuilt", "quality-failed", "author-rejected", "variants-short"]
+            "enum": ["missing", "invalid-format", "format-not-allowed", "too-large", "not-power-of-two", "duplicate-content", "license-unknown", "license-restricted", "provenance-missing", "placeholder", "generation-failed", "library-candidate-rejected", "over-budget", "over-bundle-size", "unsafe-svg", "texture-too-large", "transparency-mismatch", "dimension-mismatch", "invalid-atlas", "atlas-overflow", "atlas-source-served", "invalid-tileset", "duplicate-path", "not-served", "model-invalid", "model-external-reference", "model-unsupported-extension", "model-needs-decoder", "model-transform", "model-scale", "model-pivot", "model-over-budget", "animation-missing", "animation-invalid", "lod-missing", "lod-invalid", "collision-missing", "model-spec-unbuilt", "quality-failed", "author-rejected", "variants-short", "model-nodes-renamed", "climax-art-unassigned", "climax-art-shared"],
+            "description": "Added in 1.5.0: `model-nodes-renamed` (a model remade for a re-entry lost node names the shipped one had; game code that looks parts up by name must follow), `climax-art-unassigned` (a climax content unit names no drawing or model of its own, so distinct climax art cannot be checked) and `climax-art-shared` (two climax units are drawn with one drawing or model, or with drawings that differ only in colour)."
           },
           "severity": { "enum": ["error", "warning", "info"] },
           "message": { "type": "string" }

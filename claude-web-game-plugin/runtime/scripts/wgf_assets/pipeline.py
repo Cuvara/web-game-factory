@@ -56,6 +56,7 @@ from collections import namedtuple
 from wgflib import paths
 
 from . import atlas as atlases_mod
+from . import climax as climax_mod
 from . import formats, gltf, modelspec, quality as quality_mod, raster, runtime
 from . import preview
 from .author import AUTHOR_CRAFT, AuthorError, AuthorRunFailed
@@ -348,7 +349,7 @@ class AssetPipeline:
                  title_id=None, author=None, model_author=None, model_set=None, palette=(),
                  identity=None, design=None, bars=None, rebuild=None, work_dir=None,
                  settings=None, context=None, locales=(), design_context=None,
-                 producers=()):
+                 producers=(), climax_units=None):
         self.policy = policy
         self.store = store
         self.backends = backends  # [(id, backend or None, note)]
@@ -381,6 +382,9 @@ class AssetPipeline:
         # libraries and authors and before any placeholder: the font library
         # (fontlib.FontProducer), the composer (sound.producer.AudioProducer).
         self.producers = list(producers or [])
+        # The design's climax units and the art each names (climax.climax_units), held to
+        # distinct_climax_art when the run's quality tier sets it; None: not checked.
+        self.climax_units = list(climax_units or [])
         # {requirement id: {"reasons": [text], "frames": [PNG path]}}: what a re-entry was
         # sent back for (feedback.py); only these are rebuilt, and the reasons and frames
         # reach the author. A bare list is reasons alone.
@@ -465,6 +469,12 @@ class AssetPipeline:
         finally:
             self.close()
         self._write_ledger()
+        for item, code, severity, message in climax_mod.judge(self.climax_units, built,
+                                                              self.bars):
+            if item is None:
+                result.issues.append({"code": code, "severity": severity, "message": message})
+            else:
+                item.issue(code, severity, message)
         packed = self._pack_atlases(built, result)
         entries = {}
         if self.runtime_manifest:
@@ -531,6 +541,11 @@ class AssetPipeline:
             if self.model_author is not None and req.dimension == "3d" \
                     and req.policy.dimension in ("3d", "any") and req.kind in (
                         "model", "environment", "animation"):
+                # Not sent back: the model the author made before is kept, byte for byte.
+                # Asked again, an author writes a new spec and Blender new node names, and a
+                # game that composes the model's parts by node name breaks.
+                if not redo and self._reused_model(req, item):
+                    return item
                 if self.model_set is not None:
                     item.model_deferred = True
                     return item
@@ -1358,12 +1373,105 @@ class AssetPipeline:
             item.deferred = False
 
     def _model_requirement(self, req):
-        return {"id": req.id, "kind": req.kind, "type": req.design_type or req.kind,
-                "role": req.role, "dimension": req.dimension,
-                "description": req.description or req.label,
-                "readability": req.readability, "spec": req.spec, "count": req.count,
-                "tier": req.design_tier or req.scope_tier, "model": req.model,
-                **self._model_feedback(req)}
+        requirement = {"id": req.id, "kind": req.kind, "type": req.design_type or req.kind,
+                       "role": req.role, "dimension": req.dimension,
+                       "description": req.description or req.label,
+                       "readability": req.readability, "spec": req.spec, "count": req.count,
+                       "tier": req.design_tier or req.scope_tier, "model": req.model,
+                       **self._model_feedback(req)}
+        current = self._current_model(req) if requirement.get("feedback") else None
+        if current:
+            requirement["current"] = current
+        return requirement
+
+    def _model_path(self, req):
+        """Where the model author's file of `req` goes (one GLB)."""
+        return self._variant_paths(req, "glb", 1)[0][1]
+
+    def _model_key(self, req):
+        """What an authored model was made from: a changed requirement, model spec, look,
+        design camera or author mode asks again; a re-entry's feedback is not part of it."""
+        basis = {"id": req.id, "type": req.design_type or req.kind, "kind": req.kind,
+                 "role": req.role, "dimension": req.dimension,
+                 "description": req.description or req.label,
+                 "readability": req.readability, "spec": req.spec, "count": req.count,
+                 "tier": req.design_tier or req.scope_tier, "model": req.model,
+                 "identity": self.identity, "design": self.design,
+                 "mode": "set" if self.model_set is not None else "each"}
+        text = json.dumps(basis, sort_keys=True, separators=(",", ":"), default=str)
+        return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def _current_model(self, req):
+        """What the game ships now for a model sent back: {path, nodes, spec}. The node
+        names are what game code may look the parts up by; the spec, when the ledger holds
+        it, is what the model was built from. None when there is no model there."""
+        relative = self._model_path(req)
+        try:
+            data = self.store.read(relative)
+        except StoreError:
+            data = None
+        if not data or bytes(data[:4]) != b"glTF":
+            return None
+        current = {"path": os.path.abspath(self.store.resolve(relative)),
+                   "nodes": gltf.node_names(data)}
+        record = self._ledger_entries().get(relative)
+        if isinstance(record, dict) and record.get("hash") == file_hash(data) \
+                and isinstance(record.get("spec"), dict):
+            current["spec"] = record["spec"]
+        return current
+
+    def _reused_model(self, req, item):
+        """The model the author made on an earlier visit, when the ledger says it was made
+        from this requirement and the file is still those bytes. True when reused."""
+        relative = self._model_path(req)
+        record = self._ledger_entries().get(relative)
+        data = self._reusable(relative, self._model_key(req))
+        if data is None:
+            return False
+        found, problems = validate_file(req.policy, relative, data, policy=self.policy)
+        if found is None or any(sev == "error" for _, sev, _ in problems):
+            return False
+        stored = [self._store(relative, data, found.format)]
+        generator = str(record.get("generator") or "model-author")
+        item.data["source"] = record.get("source") if record.get("source") in SOURCES \
+            else "ai-generated"
+        item.data["origin"] = {"kind": "generated", "generator": generator}
+        item.data["placeholder"] = False
+        item.quality_author = record.get("author")
+        if isinstance(record.get("quality"), dict) and record["quality"].get("verdict"):
+            item.quality = record["quality"]  # the verdict these bytes were accepted with
+        verdict = self._license(item, record.get("license") or GENERATED_LICENSE)
+        if verdict.status != "generated":
+            self._check_clearance(item, verdict, item.data["origin"])
+        self._record_files(item, stored)
+        item.data["optimization"] = self._optimization(req, stored)
+        item.data["notes"] = " ".join(filter(None, [
+            item.data.get("notes"), "Reused: the model the author made before, unchanged "
+            "(no gate sent it back, and its requirement is the same)."]))
+        item.data["status"] = "delivered"
+        self._log("model reused", asset=req.id, path=relative)
+        return True
+
+    def _keep_model(self, req, stored, made):
+        """Record an accepted authored model in the ledger, so a later visit that does not
+        send it back reuses these bytes instead of asking the author again."""
+        quality = made.get("quality") if isinstance(made.get("quality"), dict) else {}
+        for entry in stored:
+            record = {"key": self._model_key(req), "hash": file_hash(entry.data),
+                      "author": quality.get("author") or "model-author",
+                      "generator": str(made.get("source") or "model-author"),
+                      "source": made.get("source") if made.get("source") in SOURCES
+                      else "ai-generated",
+                      "nodes": gltf.node_names(entry.data)}
+            if made.get("license"):
+                record["license"] = made["license"]
+            if isinstance(made.get("spec"), dict):
+                record["spec"] = made["spec"]
+            if quality.get("verdict"):
+                record["quality"] = quality
+            if self._ledger_entries().get(entry.relative) != record:
+                self._ledger_entries()[entry.relative] = record
+                self._ledger_dirty = True
 
     def _model_feedback(self, req):
         """What a failed gate sent `req` back for: `notes` (the judge's reasons, which the
@@ -1464,9 +1572,21 @@ class AssetPipeline:
                        + ("; ".join(errors[:4]) or "no files"))
             return False
         names = self._variant_paths(req, checked[0][1].format, len(checked))
+        # The node names of the model the game ships now, read before it is replaced.
+        before = (self._current_model(req) or {}).get("nodes")             if self._feedback(req)[0] else None
         stored = [self._store(path, data, found.format)
                   for (vid, path), (data, found) in zip(names, checked)]
         item.variants = [vid for vid, _ in names] if len(names) > 1 else []
+        if not made.get("placeholder"):
+            self._keep_model(req, stored, made)
+        if before:
+            gone = [name for name in before if name not in set(gltf.node_names(stored[0].data))]
+            if gone:
+                item.issue("model-nodes-renamed", "warning",
+                           f"{req.id}: the remade model no longer has the node(s) "
+                           f"{', '.join(gone[:12])}{' ...' if len(gone) > 12 else ''} the "
+                           f"shipped one had; game code that looks its parts up by name "
+                           f"must follow")
         source = made.get("source") if made.get("source") in SOURCES else "ai-generated"
         generator = str(made.get("source") or "model-author")
         item.data["source"] = source

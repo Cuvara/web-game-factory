@@ -26,7 +26,7 @@ number:
   * `scope.content_units` agrees with the list, and mastery is stated in hud metrics a player
     can read.
 
-At a quality tier (game-design 1.10.0 `build_spec.content.quality_tier`, else the strategy's
+At a quality tier (game-design 1.12.0 `build_spec.content.quality_tier`, else the strategy's
 `concept.content_model.quality_tier`) the content is also held to what a title of that tier
 carries: the strategy's content budget and core/reference/quality-benchmark.yaml's `content`
 bars at that tier, the larger of the two, counted on declared fields - a unit's mechanics and
@@ -71,7 +71,7 @@ __all__ = ["MODELS_PATH", "VOCABULARY_PATH", "BENCHMARK_PATH", "RULES", "TIER_RU
 
 MODELS_PATH = os.path.join(paths.REFERENCE, "genre-models.yaml")
 BENCHMARK_PATH = os.path.join(paths.REFERENCE, "quality-benchmark.yaml")
-# game-design 1.10.0 build_spec.content.quality_tier, lowest first.
+# game-design 1.12.0 build_spec.content.quality_tier, lowest first.
 QUALITY_TIERS = ("mvp", "release")
 VOCABULARY_PATH = os.path.join(paths.REFERENCE, "research-vocabulary.yaml")
 
@@ -1012,7 +1012,7 @@ def _mastery_stated(d):
     return problems, signals, f"{len(shown)} mvp hud id(s) and metric(s) to read mastery from"
 
 
-# -- the quality tier (game-design 1.10.0) -----------------------------------------------
+# -- the quality tier (game-design 1.12.0) -----------------------------------------------
 # Each holds, and says so, when the design has no tier or the tier has no bar for it. Every
 # number comes from core/reference/quality-benchmark.yaml at the tier or the strategy's
 # content budget, the larger of the two; the family's genre model says what a group, an

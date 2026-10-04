@@ -51,8 +51,8 @@ ALWAYS_REQUIRED = (
 )
 
 # Retention hooks that only work if progress survives a reload.
-_PERSISTENT_HOOKS = {"progression", "collection", "streak", "daily_quest", "unlock_timer",
-                     "energy"}
+_PERSISTENT_HOOKS = {"progression", "collection", "streak", "daily_quest", "daily_challenge",
+                     "unlock_timer", "energy"}
 
 
 def classify_trigger(trigger):

@@ -869,7 +869,8 @@ class Rendition(unittest.TestCase):
         codes = sorted(u["code"] for u in entry["unmet"])
         self.assertEqual(codes, ["age-rating-missing", "format-unavailable", "locale-missing",
                                  "video-format-unavailable"])
-        self.assertEqual(entry["text"], {})
+        # The required ru is missing; the en the copy has is carried, never in ru's place.
+        self.assertEqual(sorted(entry["text"]), ["en"])
         # With the browser's encoders, a jpg is a derive job for the browser, not an unmet.
         entry, derive = self.render(profile, browser_formats=("jpg", "webp"), age_rating={"default": "3+"})
         self.assertEqual([d["format"] for d in derive], ["jpg"])
@@ -889,7 +890,7 @@ class Rendition(unittest.TestCase):
         # reported it missing because it was only written into copy that did not exist.
         profile = {"store_listing": {"status": "unverified", "locales": ["ru"], "age_rating": {"required": True}}}
         entry, _ = self.render(profile, platform_id="yandex", age_rating={"default": "12+"})
-        self.assertEqual(entry["text"], {})
+        self.assertNotIn("ru", entry["text"])
         self.assertEqual(entry["age_rating"], "12+")
         self.assertEqual([u["code"] for u in entry["unmet"]], ["locale-missing"])
 
@@ -1118,7 +1119,8 @@ class Validation(ListingCase):
         self.assertEqual(listing["status"], "complete", listing["problems"])
         self.assertEqual(sorted(listing["copy"]["locales"]), ["en", "ru"])
         yandex = listing["platforms"][0]
-        self.assertEqual(sorted(yandex["text"]), ["ru"])
+        # ru (required) and every other locale the copy has: descriptions go per locale.
+        self.assertEqual(sorted(yandex["text"]), ["en", "ru"])
         self.assertEqual(yandex["text"]["ru"]["short_description"], "Нажимайте в такт, чтобы менять полосу.")
         self.assertEqual(yandex["text"]["ru"]["categories"], ["Arcade"])
         self.assertEqual(yandex["text"]["ru"]["age_rating"], "12+")

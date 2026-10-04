@@ -205,6 +205,29 @@ Otherwise it copies the package to `release/<release-id>/listing/`, fills
 `evidence.store_listing` (release-manifest 1.3.0). G6 is decided on `release-manifest`,
 `store-listing` and `listing-validation-report` (`core/lifecycle/gates.yaml`).
 
+Every rendition carries the copy of every locale the canonical package has: the platform's
+required locales first, then the others, each cut to the platform's limits. A required
+locale's checks are judged on that locale alone - another locale never stands in for it -
+but the others reach the portal: the release fills `store_metadata.<pid>.descriptions` per
+locale from them, and the submit step's console fills a per-locale description field in
+each (`wgf_publish.campaign`, docs/publish-module.md "The campaign").
+
+## The campaign the portals are filled from
+
+The shipped listing is the campaign package every portal field and medium comes from
+(`scripts/wgf_publish/campaign.py`); a portal adapter never invents campaign content.
+`listing-validation` runs its media check against each platform's publication profile too
+(`platforms.<pid>.media.<code>.<n>` checks): every screenshot and the trailer must trace to
+the capture record of the verified build (the screenshot's `source`, the recorded trailer,
+their sha256; the listing's commit, `measurement_class: automation-bot`, `capture.kind:
+browser`) - else `no-provenance`, fix `recapture`; an asset-pipeline placeholder is
+`placeholder`; the publication profile's required media, `formats`, `max_count`, intent
+`accept` and `multiple`, and per-locale media are judged, and what it leaves unstated is
+UNKNOWN. Store-listing 1.2.0 adds an optional `locale` to a file record, for a file that is
+one locale's own; without it a file serves every locale. The platform profile's `video`
+block takes an `orientation` list. The submit step runs the full check again before any
+upload, with the shipped build's commit.
+
 ## Platform requirements are data, and unknown is unknown
 
 `core/artifacts/shared/platform-profile.schema.json` `storeListing`: text limits, list

@@ -45,6 +45,9 @@ class Job:
                           create another (True only for NOT_CREATED).
         login_timeout_s   factory.publish.login_timeout_s: how long a person has to log in on
                           the portal's page; None lets the adapter use its default.
+        campaign          the store listing the release shipped for this platform
+                          (wgf_publish.campaign): every listing text and medium an intent
+                          names comes from it, the rendition's files first.
     """
 
     def __init__(self, *, platform_id, release_id, idempotency_key, package_path, package,
@@ -52,7 +55,8 @@ class Job:
                  logger=None, timeouts=None, console_url=None,
                  run_process=None, listing=None, platform_profile=None, live=None,
                  submit_confirmed=False, track=False, known_ids=None, registry_status=None,
-                 required_ids=None, identity=None, allow_create=True, login_timeout_s=None):
+                 required_ids=None, identity=None, allow_create=True, login_timeout_s=None,
+                 campaign=None):
         self.platform_id = platform_id
         self.release_id = release_id
         self.idempotency_key = idempotency_key
@@ -84,6 +88,9 @@ class Job:
         self.identity = dict(identity or {})
         self.allow_create = bool(allow_create)
         self.login_timeout_s = login_timeout_s
+        # The shipped campaign (wgf_publish.campaign.Campaign) every listing value comes
+        # from; None: read from release_dir when first needed.
+        self.campaign = campaign
 
 
 class Publication:

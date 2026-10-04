@@ -57,7 +57,7 @@ from wgflib import checkout as checkouts
 from wgflib import publication as pub
 from wgflib.workflow import StepOutcome, StepResult, WorkflowStep
 
-from . import common, identity, outcomes
+from . import campaign, common, identity, outcomes
 from . import registry as portal_registry
 from .adapters import Job, resolve
 from .evidence import Evidence
@@ -99,6 +99,7 @@ class _Visit:
         self.registry = None
         self.artifacts = []          # the records written by this execution
         self.notes = {}              # pid -> (state, message) for platforms with no new record
+        self.campaigns = {}          # pid -> the shipped campaign (wgf_publish.campaign) or None
 
 
 class PublishStep(WorkflowStep):
@@ -345,7 +346,58 @@ class PublishStep(WorkflowStep):
         if human is not None:
             raise _Refused(outcomes.HUMAN_REQUIRED, "human", human[0], f"{pid}: {human[1]}")
         adapter = (self.adapter_factory or resolve)(pid, profile, platform_settings)
+        if not visit.track:
+            self._refuse_unless_campaign_valid(visit, pid, profile, evidence)
         return root, package, path, profile, adapter, credential
+
+    def _campaign(self, visit, pid):
+        """The campaign the release shipped for `pid` (release/<id>/listing/), or None."""
+        if pid not in visit.campaigns:
+            root = visit.root
+            if root is None:  # before _prepare took the checkout: only read it
+                root, _ = common.locate_checkout(self.params or {}, visit.context.config,
+                                                 visit.scaffold, visit.env, section="publish",
+                                                 logger=visit.context.logger)
+            if root is None:
+                return None
+            visit.campaigns[pid] = campaign.load(common.release_dir(root, visit.release_id), pid)
+        return visit.campaigns[pid]
+
+    def _campaign_hash(self, visit, pid):
+        """The hash of what fills this platform's listing: the shipped campaign's, else the
+        G6-pinned store-listing's (a release that shipped no listing)."""
+        shipped = self._campaign(visit, pid)
+        return shipped.campaign_hash() if shipped is not None else visit.campaign_hash
+
+    def _refuse_unless_campaign_valid(self, visit, pid, profile, evidence):
+        """The shipped campaign is the store-listing G6 pinned, and its media pass the
+        portal's checks (wgf_publish.campaign.check_media) before anything is uploaded."""
+        shipped = self._campaign(visit, pid)
+        if shipped is None:
+            return
+        if visit.campaign_hash and shipped.listing_hash and shipped.listing_hash != visit.campaign_hash:
+            raise _Refused(outcomes.BLOCKED, "blocked", "g6-stale",
+                           f"{pid}: the listing shipped in release/{visit.release_id}/listing is "
+                           f"store-listing {shipped.listing_hash[:19]}..., G6 pinned "
+                           f"{visit.campaign_hash[:19]}...: nothing is uploaded. Release again "
+                           f"from the validated listing, and G6 must be decided again")
+        findings = campaign.check_media(shipped, common.profile_for(pid), profile,
+                                        shipped_commit=visit.manifest.get("commit_sha"))
+        failed = campaign.failures(findings)
+        if failed:
+            raise _Refused(outcomes.INVALID_METADATA, "failed", campaign.INVALID_MEDIA,
+                           f"{pid}: the campaign's media fail the portal's checks, nothing is "
+                           f"uploaded: " + "; ".join(f"[{f['code']}] {f['message']}"
+                                                    for f in failed[:8])
+                           + (f" (+{len(failed) - 8} more)" if len(failed) > 8 else ""))
+        unknown = [f for f in findings if f["status"] == "UNKNOWN"]
+        evidence.append(Evidence(
+            "observation", f"campaign media checked against {pid}'s profiles: no failure"
+                           + (f"; UNKNOWN (not verified): "
+                              + "; ".join(f["message"] for f in unknown[:6]) if unknown else ""),
+            phase="prepare", data={"campaign_hash": shipped.campaign_hash(),
+                                   "findings": findings[:40],
+                                   "surfaced": campaign.surfaced(shipped)}))
 
     def _refuse_unless_this_platform_build(self, visit, pid, prior, package):
         """The package is this platform's build, the one verify verified for it: its
@@ -441,6 +493,7 @@ class PublishStep(WorkflowStep):
                   registry_status=reg.status(pid) if reg else None,
                   required_ids=required, identity=ident,
                   login_timeout_s=settings.get("login_timeout_s"),
+                  campaign=self._campaign(visit, pid),
                   # A game the registry knows is never created again: the visit finds it.
                   allow_create=(reg.status(pid) if reg else "NOT_CREATED") == "NOT_CREATED")
         # No session is loaded or kept: a person logs in, live, in the window the adapter
@@ -474,6 +527,9 @@ class PublishStep(WorkflowStep):
         })
         if result.draft_id:
             submission["portal_draft_id"] = result.draft_id
+        campaign_hash = self._campaign_hash(visit, pid)
+        if campaign_hash:
+            submission["campaign_hash"] = campaign_hash
         if result.submitted:
             submission["submitted_at"] = common.utc_now()
             submission["submitted_by"] = f"wgf publish ({adapter.__class__.__name__})"
@@ -569,7 +625,7 @@ class PublishStep(WorkflowStep):
             # makes the submission facts recorded for the old one stale.
             if reg.get(pid) is not None:
                 changed = reg.invalidate_if_changed(pid, build_hash=bundle,
-                                                    campaign_hash=visit.campaign_hash,
+                                                    campaign_hash=self._campaign_hash(visit, pid),
                                                     run_id=context.run_id)
                 if changed:
                     evidence.append(Evidence(
@@ -578,7 +634,7 @@ class PublishStep(WorkflowStep):
                                        f"applies", phase="registry",
                         data={"changed": sorted(changed)}))
             fields["build_hash"] = bundle
-            fields["campaign_hash"] = visit.campaign_hash
+            fields["campaign_hash"] = self._campaign_hash(visit, pid)
         if result.status_text:
             fields["submission_status"] = str(result.status_text)
         created = identity.created_fields(profile, result.created_ids)
@@ -725,7 +781,8 @@ class PublishStep(WorkflowStep):
                         if str(p.get("platform_id")) == pid), {})
         entry = visit.registry.get(pid) if visit.registry else None
         bundle = package.get("bundle_hash") or package.get("checksum")
-        for field, now in (("build_hash", bundle), ("campaign_hash", visit.campaign_hash)):
+        for field, now in (("build_hash", bundle),
+                           ("campaign_hash", self._campaign_hash(visit, pid))):
             then = (entry or {}).get(field)
             if then and now and then != now:
                 raise _Refused(outcomes.BLOCKED, "blocked", "g6-stale",

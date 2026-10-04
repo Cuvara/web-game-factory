@@ -3,9 +3,9 @@ profile-driven intent runner (browser/console.spec.ts, run by wgf_publish.browse
 
 No selector lives in code. The publication profile (core/reference/publication/<id>.yaml,
 2.1.0) holds the console flow as intents; this adapter resolves every value an intent names
-from the job - the shipped listing's copy per locale, the store metadata's media files, the
-package, the game identity - substitutes `<locale>` in per-locale intents, and hands the
-runner a flow it executes without deciding anything. The runner's result is mapped here into
+from the job - the shipped campaign (wgf_publish.campaign: the listing's copy per locale,
+the platform rendition's media files), the package, the game identity - substitutes
+`<locale>` in per-locale intents, and hands the runner a flow it executes without deciding anything. The runner's result is mapped here into
 the common outcome vocabulary and the interface fields of `Publication`.
 
 The visit:
@@ -41,27 +41,23 @@ import re
 
 from wgflib import redact
 
+from .. import campaign
 from .. import identity as ids
 from .. import outcomes
 from ..browser import BrowserExecutor
 from ..evidence import Evidence, file_sha256, relative_to_run
 from .base import Publication, PublicationAdapter, utc_now
 
-__all__ = ["ConsoleAdapter", "DEFAULT_TIMEOUTS", "LOGIN_TIMEOUT_S", "resolve_value"]
+__all__ = ["ConsoleAdapter", "DEFAULT_TIMEOUTS", "LOGIN_TIMEOUT_S", "resolve_value",
+           "job_campaign"]
 
 DEFAULT_TIMEOUTS = {"action": 5000, "navigation": 60000, "upload": 900000}
 LOGIN_TIMEOUT_S = 900
 ACTIONS_LOG = "actions.jsonl"
 STATE_FILE = "browser-state.json"
 
-# Where a listing field's text is in the shipped listing's localeCopy, first non-empty wins.
-TEXT_FIELDS = {
-    "description": ("long_description", "description", "short_description"),
-    "long_description": ("long_description",),
-    "short_description": ("short_description",),
-    "instructions": ("controls", "instructions"),
-    "how_to_play": ("controls", "how_to_play"),
-}
+# Where a listing field's text is in the shipped listing's localeCopy (wgf_publish.campaign).
+TEXT_FIELDS = campaign.TEXT_FIELDS
 # Values that are public listing copy: logged as they are. Everything else only by hash.
 PUBLIC = re.compile(r"^(listing\.(title|text|tags|categories)|identity\.title)")
 LEGAL = re.compile(r"terms|legal|tax|payout|payment|contract|agreement|pricing|identity|bank",
@@ -124,9 +120,22 @@ def job_identity(job):
     }
 
 
+def job_campaign(job):
+    """The campaign the job's release shipped for its platform (wgf_publish.campaign), read
+    once; None when the release shipped no store listing."""
+    if not getattr(job, "_campaign_read", False):
+        if getattr(job, "campaign", None) is None:
+            job.campaign = campaign.load(getattr(job, "release_dir", None),
+                                         getattr(job, "platform_id", None))
+        job._campaign_read = True
+    return getattr(job, "campaign", None)
+
+
 def resolve_value(path, job, locale=None, primary=None):
     """("text", str) | ("files", [abs path]) | (None, None): the value an intent's path
-    names, from the job only. Nothing is invented: a missing value is None."""
+    names, from the job only. Nothing is invented: a missing value is None. Every
+    `listing.` path resolves in the shipped campaign (wgf_publish.campaign): its texts per
+    locale, the platform rendition's files before the canonical package's."""
     path = _substitute(path, locale)
     parts = path.split(".")
     root = parts[0]
@@ -143,30 +152,21 @@ def resolve_value(path, job, locale=None, primary=None):
         return ("text", value) if value else (None, None)
     if root != "listing" or len(parts) < 2:
         return None, None
-    listing = job.listing or {}
-    metadata = job.metadata or {}
-    if parts[1] == "media" and len(parts) == 3:
-        raw = metadata.get(parts[2])
-        paths = raw if isinstance(raw, list) else [raw] if isinstance(raw, str) and raw else []
-        files = [os.path.join(job.release_dir, *str(p).split("/")) for p in paths]
-        return ("files", files) if files else (None, None)
-    if parts[1] == "text" and len(parts) == 4:
-        locale, field = parts[2], parts[3]
-    elif len(parts) == 2:
-        locale, field = primary or locale, parts[1]
-    else:
+    kind, value = campaign.resolve(job_campaign(job), path, locale, primary,
+                                   texts=job.listing or None)
+    if kind == "text":
+        return kind, redact.scrub_text(value)
+    if kind == "files":
+        return kind, value
+    if parts[1] == "media":
         return None, None
-    order = [locale] if parts[1] == "text" else _unique([locale] + list(listing))
-    for where in order:
-        copy = listing.get(where) or {}
-        for key in TEXT_FIELDS.get(field, (field,)):
-            value = _text(copy.get(key))
-            if value:
-                return "text", redact.scrub_text(value)
+    metadata = job.metadata or {}
+    field = parts[-1]
     if field == "title" and _text(metadata.get("title")):
         return "text", _text(metadata["title"])
     if field in ("description", "long_description"):
-        value = _text((metadata.get("descriptions") or {}).get(locale))
+        where = parts[2] if parts[1] == "text" and len(parts) == 4 else (primary or locale)
+        value = _text((metadata.get("descriptions") or {}).get(where))
         if value:
             return "text", redact.scrub_text(value)
     return None, None

@@ -336,7 +336,10 @@ def assets_runtime(wanted, records, rules, frames_by_project):
     render asset|composite) -> visible (that entity on screen, visible and at a readable size
     in the per-frame samples, and its box in a state frame is not the frame's background).
     The last two apply to assets of an entity role; the chain stops at the first link that
-    fails. Route `assets` when any asset fails at `exists`, else `develop`."""
+    fails. Route `assets` when any asset fails at `exists`, else `develop`. A state the game
+    staged through its probe's showcase (the bot's `showcase-<asset>` screens: later content a
+    fresh save never reaches) counts for rendered and visible like any state frame, but only
+    for an entity whose box in that frame is not the background."""
     asset_roles = set((rules.get("entities") or {}).get("asset_roles") or [])
     renders = set((rules.get("entities") or {}).get("asset_renders") or ["asset", "composite"])
     not_loaded = set((rules.get("assets") or {}).get("not_loaded_types") or [])
@@ -357,7 +360,7 @@ def assets_runtime(wanted, records, rules, frames_by_project):
     canon = lambda asset: parent.get(asset, asset)  # noqa: E731
     # What the probe said about each asset id: renders, largest on-screen share, and state
     # frames with the box of an entity drawn with it.
-    rendered, largest, boxes = {}, {}, {}
+    rendered, largest, boxes, showcased = {}, {}, {}, set()
     for project, tests in records.items():
         for eid, _role, asset, render, _has in _entity_views(tests):
             if asset:
@@ -374,9 +377,20 @@ def assets_runtime(wanted, records, rules, frames_by_project):
                     if vis and x + w > 0 and y + h > 0 and x < vw and y < vh:
                         key = canon(sample[7])
                         largest[key] = max(largest.get(key, 0.0), w * h / area)
+        frames = _Frames(frames_by_project.get(project))
         for state, ui in _ui_states(tests):
             for e in ui.get("entities") or []:
                 if isinstance(e, dict) and e.get("asset") and e.get("visible"):
+                    if ui.get("showcase"):
+                        # A state the game staged on request (play.showcase) is credited
+                        # only with what its frame shows: an entity whose box there is the
+                        # background was named, not drawn.
+                        box = [e.get(k) for k in ("x", "y", "w", "h")]
+                        differs = frames.differs(ui.get("frame"), box, ui.get("viewport"),
+                                                 bars.get("min_pixel_delta", 24))                             if all(isinstance(v, (int, float)) for v in box) else None
+                        if differs is None or differs < bars.get("min_changed_share", 0.1):
+                            continue
+                        showcased.add(canon(e["asset"]))
                     # A screen's snapshot (a state frame, or a glimpse of play) names what
                     # it drew as much as the per-frame samples do.
                     rendered.setdefault(canon(e["asset"]), set()).add(e.get("render"))
@@ -413,6 +427,8 @@ def assets_runtime(wanted, records, rules, frames_by_project):
                 any(d >= bars.get("min_changed_share", 0.1) for d in seen)
             links["visible_measured"] = {"largest_area_fraction": round(share, 4),
                                          "box_not_background": max(seen) if seen else None}
+            if asset_id in showcased:
+                links["showcase"] = True
         failed_at = next((link for link in CHAIN if links.get(link) is False), None)
         chain[asset_id] = dict(links, role=role, failed_at=failed_at)
         if failed_at:

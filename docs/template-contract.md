@@ -49,6 +49,35 @@ by the template's naming convention: `packages/<engine without "js">-framework/`
 | Test projects | Playwright `desktop`, `mobile`, `verify`; Vitest `unit`, `integration`, `sdk` | verify (gameplay, runtime facts), sdk |
 | `@aspect` tags (`ASPECTS`) | `boot`, `loading`, `start`, `input`, `core-loop`, `progression`, `game-over`, `restart`, `pause-resume`, `responsive` | verify (gameplay), the developer brief |
 
+## The play probe showcase
+
+The play probe (`window.__wgf__.play`, `core/artifacts/shared/play-probe.schema.json`) is
+the game's code, not the template's, so it is not an entry of `template_contract.py` and
+not in `CONTRACT_DIGEST`. One part of it is optional and backwards compatible: a game may
+declare a **showcase**, only when the page URL carries `wgf-probe=1`:
+
+```ts
+window.__wgf__.play.showcase = {
+  targets(): string[];                              // runtime asset ids it can stage
+  show(assetId: string): boolean | Promise<boolean>; // stage it; false when it cannot
+};
+```
+
+- `targets()` lists runtime asset ids (`public/assets/assets.json`) of readable entities
+  the build can stage: typically the ones that first appear after the opening unit, which a
+  bot starting on a fresh save never reaches.
+- `show(assetId)` puts the running game into a real state of play in which an entity drawn
+  from that asset is on screen - the unit it first appears in, its encounter - through the
+  game's own loading and rendering, and resolves `true`; `false` when it cannot. Afterwards
+  `snapshot()` reports `state: "playing"` and the entity with `asset` (or one of its
+  variants) and its drawn box.
+
+The playability bot uses it only in its last test, after its fresh-save play, and keeps a
+frame of each staged state (`docs/playability-module.md`); production-quality's
+`assets.runtime` credits an asset there only where that frame shows it
+(`docs/production-quality-module.md`). A game without a showcase is played and judged
+exactly as before; no Factory step requires one.
+
 ## How drift is caught
 
 `scripts/tests/test_template_contract.py` holds every entry against a checkout of the pinned

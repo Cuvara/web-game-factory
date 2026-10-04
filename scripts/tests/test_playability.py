@@ -834,6 +834,58 @@ class TheAntiOracle(unittest.TestCase):
         self.has("filter((m) => !UTILITY.test(m.action) && !UNDO.test(m.action))")
 
 
+class TheShowcase(unittest.TestCase):
+    """The probe's optional showcase (play.showcase): the bot asks a game that declares it to
+    stage the states where later content's assets are drawn, so the production gate can see
+    them; every other test still starts on a fresh save and plays only through real input."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(SCRIPTS, "wgf_playability", "bot.spec.ts"), encoding="utf-8") as handle:
+            cls.source = handle.read()
+
+    def test_the_showcase_is_its_own_last_test(self):
+        start = self.source.index('test("showcase:')
+        self.assertGreater(start, self.source.index('test("session:'))
+        body = self.source[start:]
+        self.assertIn("showcaseTargets(page)", body)
+        self.assertIn("watch.showcase(target)", body)
+        self.assertIn('write(project, "showcase"', body)
+
+    def test_no_other_test_reaches_content_through_the_showcase(self):
+        before = self.source[:self.source.index("// -- the showcase")]
+        for name in ("traverse", "persist", "session", "first session", "win", "lose", "act"):
+            start = before.index(f'test("{name}')
+            end = before.find("\ntest(", start + 1)
+            self.assertNotIn("showcase", before[start:end if end > 0 else len(before)], name)
+
+    def test_a_staged_state_is_kept_as_a_frame_with_its_entities(self):
+        start = self.source.index("async showcase(target: string)")
+        body = self.source[start:self.source.index("record(): Record<string, unknown>", start)]
+        self.assertIn("const name = `showcase-${target}`;", body)
+        self.assertIn("await this.capture(name)", body)
+        self.assertIn("showcase: true, target,", body)
+        # Only a state of play the probe reports the asset drawn in is captured.
+        self.assertIn('s?.state === "playing"', body)
+
+    def test_the_step_reads_the_record_and_gives_it_a_window(self):
+        from wgf_playability import step as playability
+
+        self.assertIn("showcase", playability.RECORDS)
+        self.assertGreater(playability.SHOWCASE_S, 0)
+
+    def test_a_game_without_a_showcase_is_judged_as_before(self):
+        judge = Judge("test_a_well_behaved_game_passes_every_check")
+        judge.setUp()
+        try:
+            before = judge.judge()
+            judge.records["showcase"] = {"applies": False,
+                                         "reason": "the probe declares no showcase (play.showcase)"}
+            self.assertEqual(before, judge.judge())
+        finally:
+            judge.doCleanups()
+
+
 class TheStep(unittest.TestCase):
     def setUp(self):
         self.base = tempfile.mkdtemp(prefix="wgf-play-step-")

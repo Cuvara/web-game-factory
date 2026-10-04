@@ -7,13 +7,21 @@ the newest is the run's ledger and a finding survives every visit. `advance` mov
 from what this triage can see - never from what a specialist says it did:
 
     implemented  the prototype-report's `specialist` block lists the finding: the owner's
-                 visit built a change for it (the visit's commit and run-local seq)
+                 visit built a change for it (the visit's commit and run-local seq); or a
+                 gate routed it straight to a step that makes its artifact again
+                 (production-quality's and visual-qa's `assets`), and that step has run
+                 since the report (`handed`: the asset-manifest is the fix)
     verified     the producer that raised it has a report newer than that visit, the report
                  no longer fails the finding's id, and nothing that was passing before the
                  fix fails on a build at or after it (a regression keeps it `implemented`,
                  `verification.verdict: regressed`, the regressions named)
     closed       verified, and every gate the run holds a report of has measured a build at
                  or after the fix
+    verified     also with no recorded fix: the raising producer measured a newer build than
+    (no fix)     the one it was detected on, and no longer fails it (its group was still
+                 pending, or another visit's change fixed it); the history says no fix was
+                 recorded. A person's G4 finding is verified so by a later G4 decision that
+                 does not send it back again
     reopened     a raising producer still fails it after the fix, or fails a verified or
                  closed finding again: back to `classified`, said so in its history
 
@@ -24,10 +32,18 @@ unless that decision is `iterate` naming the same finding again.
 producer; the routing data classifies it), `assigned` when a triage selects its group.
 """
 
-__all__ = ["advance", "OPEN", "DONE"]
+__all__ = ["advance", "unresolved", "OPEN", "DONE"]
 
 OPEN = ("detected", "classified", "assigned", "implemented")
 DONE = ("verified", "closed")
+
+
+def unresolved(lifecycle, severities, producers=None):
+    """The ledger's records of a severity in `severities` that are still OPEN - neither
+    verified nor closed - optionally only those raised by one of `producers`."""
+    return [r for r in lifecycle or [] if isinstance(r, dict)
+            and r.get("status") in OPEN and r.get("severity") in severities
+            and (producers is None or (r.get("source") or {}).get("producer") in producers)]
 
 
 def _event(record, status, at, by=None, build=None, note=None):
@@ -73,7 +89,8 @@ def _observe(record, finding):
 
 
 def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, decision,
-            decision_seq, human_ids, selected, triage_id, routing_version, build_of):
+            decision_seq, human_ids, selected, triage_id, routing_version, build_of,
+            handed=None):
     """The ledger after this triage.
 
     previous     the previous triage-report's `lifecycle` (or [])
@@ -87,6 +104,9 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
                  the typed findings it carries
     selected     the group this triage routes (or None)
     build_of     producer -> {"commit", "digest"} of its newest report
+    handed       [(finding, {"specialist", "artifact_id", "seq"})]: findings a gate routed
+                 straight to a step that has run since (the assets step's asset-manifest),
+                 so no triage routed them
     """
     records = {}
     for record in previous or []:
@@ -163,14 +183,78 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
                build=measured_by["build"].get("commit"),
                note=f"{producer} re-measured a build at or after the fix: no longer fails")
 
-    # closed: verified, and every gate the run holds has measured the fix's build.
+    # verified with no recorded fix: the raising producer measured a newer build than the
+    # one it was detected on, and it no longer fails there.
+    for record in records.values():
+        if record["status"] not in ("detected", "classified", "assigned") or record.get("fix"):
+            continue
+        producer = (record.get("source") or {}).get("producer")
+        detected = record.get("detected_seq")
+        if producer == "decision-record":
+            raised_by = (record.get("source") or {}).get("artifact_id")
+            decided = (decision or {}).get("provenance") or {}
+            if decision is None or not raised_by or decided.get("artifact_id") == raised_by \
+                    or (decision.get("decision") == "iterate" and record["id"] in human_ids):
+                continue
+            measured_by = {"producer": producer, "artifact_id": decided.get("artifact_id"),
+                           "content_hash": None, "build": {"commit": commit, "digest": None},
+                           "observed": decision.get("decision")}
+            measured = []
+        else:
+            if producer not in failing or detected is None \
+                    or (seqs.get(producer) or -1) <= detected \
+                    or record["id"] in failing[producer]:
+                continue
+            report = reports.get(producer) or {}
+            measured_by = {"producer": producer,
+                           "artifact_id": (report.get("provenance") or {}).get("artifact_id"),
+                           "content_hash": (report.get("provenance") or {}).get("content_hash"),
+                           "build": build_of(producer), "observed": "passes"}
+            measured = sorted(p for p, s in seqs.items() if (s or -1) > detected)
+        record["verification"] = dict(measured_by, verdict="passed", regressions=[],
+                                      gates_measured=measured)
+        _event(record, "verified", at, by=measured_by["artifact_id"],
+               build=measured_by["build"].get("commit"),
+               note=f"{producer} measured a newer build than it was detected on: no longer "
+                    f"fails (no fix was recorded for it)")
+
+    # handed: a gate sent these straight to another step, which has run since: recorded,
+    # and implemented by that step's artifact, so the gates' re-measurement verifies them.
+    for finding, made in handed or []:
+        record = records.get(finding["id"])
+        if record is None:
+            seq = seqs.get((finding.get("source") or {}).get("producer"))
+            record = records[finding["id"]] = _new(finding, at, routing_version, seq)
+        elif record["status"] in DONE:
+            _observe(record, finding)
+            record["fix"] = None
+            _event(record, "classified", at,
+                   by=(finding.get("source") or {}).get("artifact_id"),
+                   build=(finding.get("build") or {}).get("commit"),
+                   note="reopened: failing again after it was " + record["status"])
+        if record["status"] in ("detected", "classified"):
+            _event(record, "assigned", at, by=(finding.get("source") or {}).get("artifact_id"),
+                   note=f"routed `{finding.get('route')}` straight from "
+                        f"{(finding.get('source') or {}).get('step') or 'its gate'}")
+        if record["status"] == "assigned" and not (
+                (record.get("fix") or {}).get("artifact_id") == made.get("artifact_id")):
+            record["fix"] = {"specialist": made.get("specialist"), "commit": None,
+                             "prototype_report": None, "artifact_id": made.get("artifact_id"),
+                             "seq": made.get("seq")}
+            _event(record, "implemented", at, by=made.get("artifact_id"),
+                   note=f"made again by the {made.get('specialist')} step")
+
+    # closed: verified, and every gate the run holds has measured the fix's build (with no
+    # recorded fix, a newer build than the one it was detected on).
     for record in records.values():
         fix = record.get("fix") or {}
-        if record["status"] != "verified" or fix.get("seq") is None:
+        after = fix.get("seq") if fix else record.get("detected_seq")
+        if record["status"] != "verified" or after is None:
             continue
         gates = [p for p in seqs if p != "decision-record"]
-        if all((seqs.get(p) or -1) > fix["seq"] for p in gates):
-            _event(record, "closed", at, by=triage_id, build=fix.get("commit"),
+        if all((seqs.get(p) or -1) > after for p in gates):
+            _event(record, "closed", at, by=triage_id,
+                   build=fix.get("commit") or (record.get("build") or {}).get("commit"),
                    note="every gate of the run measured the build carrying the fix: "
                         + ", ".join(sorted(gates)))
 

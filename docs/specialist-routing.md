@@ -155,8 +155,11 @@ detected -> classified -> assigned -> implemented -> verified -> closed
 ```
 
 Each triage-report carries the whole ledger forward (`lifecycle`,
-`quality-finding.schema.json#/$defs/record`), so the newest triage-report is the run's
-ledger and a finding survives every visit (`wgf_triage/lifecycle.py`). Each record holds:
+`quality-finding.schema.json#/$defs/record`), so a finding survives every visit
+(`wgf_triage/lifecycle.py`). The quality gate advances the same ledger on every report of
+the build it scores and carries it in its quality-report (`ledger`, quality-report 1.1.0;
+`wgf_triage/ledger.py`): after the last specialist fix no triage runs, and the gate is
+where that fix is verified. The run's ledger is the newest of the two. Each record holds:
 
 - severity, the category (the dimension), the owner and the route;
 - the summary, the source, and the evidence refs;
@@ -170,15 +173,30 @@ ledger and a finding survives every visit (`wgf_triage/lifecycle.py`). Each reco
 | detected | a producer reports the finding |
 | classified | its dimension, owner and route are decided from the routing data |
 | assigned | a triage routes its group to the owner |
-| implemented | the owner's develop visit lists it (the prototype-report's `specialist` block): the fix's commit and run-local seq |
+| implemented | the owner's develop visit lists it (the prototype-report's `specialist` block): the fix's commit and run-local seq. A finding a gate routed straight to the assets step (production-quality's and visual-qa's `assets`) is recorded by the triage after that step, assigned to it and implemented by its asset-manifest (`fix.artifact_id`) |
 | verified | the producer that raised it has a report newer than the fix, that report no longer fails its id, and **nothing that passed before fails on a build at or after the fix**. A regression keeps the finding `implemented`, with `verification.verdict: regressed` and the regressions named. |
 | closed | verified, and every gate the run holds a report of has measured a build at or after the fix |
+
+A finding with no recorded fix - its group still pending, or fixed by another visit's
+change - is verified when the raising producer measures a newer build than the one it was
+detected on and no longer fails it; its history says no fix was recorded.
 
 A finding never closes on the specialist's word. Only the raising gate's re-measurement
 moves it past `implemented`. If the raising gate still fails it, the finding is reopened:
 `classified`, with `verification.verdict: still-failing`. A verified or closed finding that a
 gate fails again is reopened the same way. A person's G4 finding is re-measured by the next
 G4 decision: it is verified unless that decision is `iterate` and names it again.
+
+### An open finding holds the build
+
+`core/reference/specialist-routing.yaml` `ledger.blocking_severities` (1.3.0:
+`[blocker, major]`) says which findings hold a build back while they are open (detected,
+classified, assigned or implemented). The quality gate is BLOCKED while one raised by a gate
+report is open, even when every dimension holds its floor: nothing has measured it fixed. A
+person's G4 finding waits for G4 (`ledger.awaiting`). Release advances the ledger once more
+on the newest reports and G4's decision, and refuses (`open-findings`) while any is open.
+Verified is enough there: the release step's other refusals already hold every report to the
+build it ships. A minor finding never holds a build.
 
 ### What the specialist brief carries
 

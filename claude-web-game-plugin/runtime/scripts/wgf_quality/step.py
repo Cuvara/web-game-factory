@@ -3,7 +3,7 @@
     playability-report, production-quality-report, visual-qa-report,
     content-sufficiency-report, qa-report, verification-report, prototype-report,
     game-design [+ sdk-report, review-report, asset-manifest, title-strategy,
-    listing-validation-report]
+    listing-validation-report, triage-report, decision-record]
       -> the build: the verified commit, the development commit it sits on, the bundle digest
       -> every report checked to be about that build (stale evidence BLOCKS)
       -> the contract: core/reference/quality-floor.yaml (universal floor, genre family or its
@@ -12,14 +12,21 @@
       -> scoring.score: every criterion, every dimension against its floor, typed findings
          with their lifecycle against the run's previous quality-report, regression, and
          the release decision
+      -> the run's finding ledger (wgf_triage.ledger.remeasure), advanced on every report
+         of this build and this report itself: a finding a specialist fixed is verified or
+         regressed here, by the producer that raised it, though no triage runs after the
+         last fix
       -> quality-report
 
-    PASS      every dimension at or above its floor (the store DEFERRED to the listing)  SUCCESS
+    PASS      every dimension at or above its floor (the store DEFERRED to the listing), and
+              no blocking finding of the ledger raised by a gate is open             SUCCESS
     FAIL      a dimension below its floor                                    FAILED, not
               retryable, routed by the findings that hold it there: design-gap, assets,
               develop (listing once the listing is measured)
     BLOCKED   evidence about another build, a pinned reference edited after the start, or a
-              contract that cannot be read
+              contract that cannot be read; or every dimension holds its floor while a
+              blocking finding (specialist-routing.yaml `ledger.blocking_severities`) a gate
+              raised is still open on the ledger - nothing has verified it on a newer build
 
 It plays nothing and touches no checkout: it reads what the producing steps recorded about
 the same build. A run at tier mvp is a development build: PASS means its floor holds, and the
@@ -36,13 +43,13 @@ from wgflib.yamllite import YamlError, load as load_yaml
 from . import scoring
 
 __all__ = ["QualityGateStep", "REQUIRED_INPUTS", "OPTIONAL_INPUTS", "FLOOR", "BENCHMARK",
-           "RUBRIC", "load_contract"]
+           "RUBRIC", "load_contract", "advance_ledger"]
 
 REQUIRED_INPUTS = ("playability-report", "production-quality-report", "visual-qa-report",
                    "content-sufficiency-report", "qa-report", "verification-report",
                    "prototype-report", "game-design")
 OPTIONAL_INPUTS = ("sdk-report", "review-report", "asset-manifest", "title-strategy",
-                   "listing-validation-report")
+                   "listing-validation-report", "triage-report", "decision-record")
 FLOOR = "core/reference/quality-floor.yaml"
 BENCHMARK = "core/reference/quality-benchmark.yaml"
 RUBRIC = "core/reference/visual-qa-rubric.yaml"
@@ -68,6 +75,28 @@ def load_contract(environment=None, run_dir=None):
     spec = scoring.contract(texts["floor"], texts["quality_benchmark"],
                             texts["visual_qa_rubric"])
     return spec, record
+
+
+def advance_ledger(inputs, report, run_dir=None):
+    """(the run's finding ledger advanced on this build's reports and `report` - the
+    quality-report being produced - as the `ledger` block, the open blocking findings a gate
+    raised). Raises wgf_triage.RoutingError when the routing data is unusable."""
+    from wgf_triage import ledger as ledgers
+    from wgf_triage.routing import Routing
+    routing = Routing.load()
+    refs = dict(getattr(inputs, "refs", {}) or {})
+    newest = max([getattr(r, "seq", None) or 0 for r in refs.values()] or [0]) + 1
+    lifecycle = ledgers.remeasure(
+        refs, inputs.load, at=report["provenance"]["produced_at"],
+        by=report["provenance"]["artifact_id"], routing=routing, run_dir=run_dir,
+        current={"quality-report": (report, newest)})
+    held = ledgers.blocking(lifecycle, routing, producers=ledgers.GATE_REPORTS)
+    waiting = [r for r in ledgers.blocking(lifecycle, routing) if r not in held]
+    block = {"blocking_severities": list(ledgers.blocking_severities(routing)),
+             "open": [r["id"] for r in held],
+             "awaiting": [r["id"] for r in waiting],
+             "lifecycle": lifecycle}
+    return block, held
 
 
 def _family_of_node():
@@ -169,7 +198,7 @@ class QualityGateStep(WorkflowStep):
         return None
 
     def _report(self, context, inputs, title_id, build, tier, record, summary, entries,
-                result, previous, blocked):
+                result, previous, blocked, seal=True):
         now = self.clock()
         record = record or {key: {"path": path, "version": "unknown",
                                   "sha256": "sha256:" + "0" * 64}
@@ -218,7 +247,7 @@ class QualityGateStep(WorkflowStep):
             "blocked_reason": blocked,
             "verdict": "BLOCKED" if blocked else (result or {}).get("verdict"),
         }
-        return provenance.seal(report)
+        return provenance.seal(report) if seal else report
 
     def _blocked(self, context, inputs, title_id, build, tier, record, summary, reason,
                  entries=None):
@@ -232,7 +261,32 @@ class QualityGateStep(WorkflowStep):
     def _finish(self, context, inputs, title_id, build, tier, record, summary, entries,
                 result, previous):
         report = self._report(context, inputs, title_id, build, tier, record, summary,
-                              entries, result, previous, None)
+                              entries, result, previous, None, seal=False)
+        try:
+            report["ledger"], held = advance_ledger(inputs, report,
+                                                    getattr(context, "run_dir", None))
+        except Exception as exc:  # noqa: BLE001 - an unreadable ledger never passes a build
+            held = None
+            reason = (f"the run's finding ledger cannot be advanced ({exc}): no finding can "
+                      "be shown verified on this build")
+        else:
+            reason = None
+            if held:
+                reason = (f"{len(held)} blocking finding(s) of the run's ledger are still open "
+                          "- no re-measurement of a newer build has verified them: "
+                          + "; ".join(f"{r['id']} ({r['status']})" for r in held[:6])
+                          + ". The producer that raised each must measure it passing on a "
+                            "newer build.")
+        if reason and report["verdict"] == "PASS":
+            report["verdict"] = "BLOCKED"
+            report["blocked_reason"] = reason
+            report["release_decision"] = {"decision": "not-release", "reasons": [reason]}
+            report = provenance.seal(report)
+            output = ArtifactOutput("quality-report", report, metadata={
+                "verdict": "BLOCKED", "commit": build.get("commit")})
+            context.logger.warning("quality-gate blocked", reason=reason)
+            return StepResult("BLOCKED", artifacts=[output], message=reason)
+        report = provenance.seal(report)
         decision = report["release_decision"]["decision"]
         verdict = report["verdict"]
         output = ArtifactOutput("quality-report", report, metadata={

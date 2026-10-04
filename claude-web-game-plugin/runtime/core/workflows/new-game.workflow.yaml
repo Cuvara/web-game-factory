@@ -78,7 +78,12 @@ workflow:
   # `listing-triage` (a triage after G4) to store-listing, whose copywriter is briefed with
   # the store-copy findings; store-listing reads the content-sufficiency report of the build
   # it lists (every count the copy states is a measured one) and the triage-report.
-  version: 12
+  # 13: the finding ledger closes before G4 and release - the quality gate advances the
+  # run's ledger (the triage-report it reads, and the decision-record) on every report of the
+  # build, so the last specialist fix is verified by the gate that raised it though no
+  # triage runs after it, and is BLOCKED while a blocking finding a gate raised is open;
+  # release refuses while any is (it reads the triage-report and decision-record too).
+  version: 13
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -503,7 +508,7 @@ workflow:
     - id: quality-gate
       type: quality-gate
       stage: title:prototype
-      inputs: [playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, qa-report, verification-report, prototype-report, game-design, sdk-report, review-report, asset-manifest, title-strategy]
+      inputs: [playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, qa-report, verification-report, prototype-report, game-design, sdk-report, review-report, asset-manifest, title-strategy, triage-report, decision-record]
       outputs: [quality-report]
       max_visits: 59
       on:
@@ -604,11 +609,13 @@ workflow:
     # a `development` decision (tier mvp) is drafted and recorded as such, never as a
     # release. A workflow without the quality gate says so with `required_quality: false`.
     # playability-report and content-sufficiency-report are read only to tell whether the
-    # quality-report scored the run's newest of them.
+    # quality-report scored the run's newest of them. And it refuses while the run's finding
+    # ledger, advanced on the newest reports and G4's decision (triage-report,
+    # decision-record), holds an open finding of a blocking severity.
     - id: release
       type: release
       stage: release:draft
-      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report, store-listing, listing-validation-report, quality-report, playability-report, content-sufficiency-report]
+      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report, store-listing, listing-validation-report, quality-report, playability-report, content-sufficiency-report, triage-report, decision-record, game-design]
       outputs: [release-manifest]
       with:
         required_gates: [G4]

@@ -26,7 +26,12 @@ A draft release is only prepared from:
     decision (a run at quality tier mvp) is drafted and recorded as such
     (evidence.quality_report), never as a release;
   * a verification of a clean tree: a verified working tree with uncommitted changes is not
-    reproducible from any commit.
+    reproducible from any commit;
+  * a closed finding ledger: the run's ledger (wgf_triage.ledger.remeasure, advanced here on
+    the newest reports and the G4 decision) holds no open finding of a blocking severity
+    (specialist-routing.yaml `ledger.blocking_severities`) - every finding a gate or a person
+    raised was verified on a newer build than the one it was found on. Verified is enough:
+    that every report is about the build shipped is the refusals above.
 
 Each failed precondition is a Refusal. `failed` ones are facts about the evidence that no
 retry changes (FAILED, not retryable); `blocked` ones need a person to do something first -
@@ -43,7 +48,8 @@ __all__ = ["Refusal", "FAILED", "BLOCKED", "evidence_refusals", "commit_lineage"
            "shipped_commit", "ACCEPTED_EVIDENCE", "DEFAULT_REQUIRED_GATES", "UNREVIEWED",
            "REVIEW_MISMATCH", "DEFAULT_REQUIRED_REPORTS", "production_refusals",
            "developed_commit", "listing_refusals", "DEFAULT_REQUIRED_LISTING",
-           "quality_refusals", "quality_evidence", "DEFAULT_REQUIRED_QUALITY"]
+           "quality_refusals", "quality_evidence", "DEFAULT_REQUIRED_QUALITY",
+           "ledger_refusals"]
 
 FAILED, BLOCKED = "failed", "blocked"
 ACCEPTED_EVIDENCE = ("PASS", "PASS_MOCK")
@@ -389,6 +395,33 @@ def quality_evidence(refs, loaded):
             "benchmark_version": (benchmark.get("quality_benchmark") or {}).get("version")}
 
 
+def ledger_refusals(refs, loaded):
+    """[Refusal] for every finding of the run's ledger that still holds the build back: of a
+    blocking severity and not verified. A run with no ledger (no triage ever ran) has none."""
+    if not any(t in loaded for t in ("triage-report", "quality-report")):
+        return []
+    try:
+        from wgf_triage import ledger as ledgers
+        from wgf_triage.routing import Routing
+        routing = Routing.load()
+        lifecycle = ledgers.remeasure(refs, loaded.get, at="release", by="release",
+                                      routing=routing)
+    except Exception as exc:  # noqa: BLE001 - an unreadable ledger never releases a build
+        return [Refusal(FAILED, "ledger-unreadable",
+                        f"the run's finding ledger cannot be advanced ({exc}): no finding can "
+                        "be shown verified on the build released.")]
+    held = ledgers.blocking(lifecycle, routing)
+    if not held:
+        return []
+    return [Refusal(FAILED, "open-findings",
+                    f"{len(held)} blocking finding(s) of the run's ledger are still open - no "
+                    "re-measurement of a newer build verified them: "
+                    + "; ".join(f"{r['id']} ({r['status']}, {r['owner']})" for r in held[:6])
+                    + (f" and {len(held) - 6} more" if len(held) > 6 else "")
+                    + ". A release ships only a build on which every finding was measured "
+                      "fixed.")]
+
+
 def gate_refusals(gates_passed, required_gates):
     """[Refusal] for each gate in `required_gates` that this run has not passed, or whose
     approval later work superseded (the engine's `context.gates_passed`)."""
@@ -498,6 +531,7 @@ def evidence_refusals(refs, loaded, run_id, *, gates_passed,
     out.extend(production_refusals(loaded, required_reports))
     out.extend(listing_refusals(refs, loaded, required_listing))
     out.extend(quality_refusals(refs, loaded, required_quality))
+    out.extend(ledger_refusals(refs, loaded))
     if (vr.get("commit") or {}).get("dirty") is None:
         out.append(Refusal(BLOCKED, "verified-tree-unknown",
                            "the verification could not establish whether its working tree "

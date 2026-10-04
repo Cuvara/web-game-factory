@@ -32,6 +32,8 @@ It plays nothing, renders nothing and never touches the checkout.
 | `asset-manifest` | no | delivered music and sound effects |
 | `title-strategy` | no | the quality tier when the design states none |
 | `listing-validation-report` | no | the store dimension, once a listing exists |
+| `triage-report` | no | the run's finding ledger, which the gate advances on this build |
+| `decision-record` | no | G4's decision, which verifies a person's findings |
 
 Without a required input the step waits for input: the build has not been judged on every
 side yet. A missing optional input leaves the criteria that read it UNMEASURED - never a pass.
@@ -131,6 +133,20 @@ Against the run's previous quality-report (the step's own last output):
 * a criterion that met its minimum on the previous build and does not now is `regressed`,
   and a dimension score that dropped is listed in `regression.dropped`.
 
+## The run's finding ledger
+
+The quality gate sees every report of one build, so it is where the run's finding ledger
+(docs/specialist-routing.md) moves on after the last specialist fix, when no triage runs. It
+advances the newest triage-report's `lifecycle` on the build's reports and on its own
+(`wgf_triage.ledger.remeasure`, the same rules as triage): a finding a specialist fixed is
+implemented by the visit, verified by the producer that raised it and closed once every gate
+measured the fix, or kept `implemented` as regressed. It records the result as the report's
+`ledger`: `lifecycle`, `open` (blocking findings a gate raised that are still open) and
+`awaiting` (a person's findings, which the next G4 decision verifies). With every dimension
+at its floor and a blocking finding open, the verdict is BLOCKED (`not-release`): nothing
+verified it on a newer build. Which severities block is
+`core/reference/specialist-routing.yaml` `ledger.blocking_severities`.
+
 ## Routing
 
 FAILED (not retryable) with the first of the routes of the open findings that hold a
@@ -170,7 +186,8 @@ findings and the release decision (`wgflib/gate_evidence.py`). Release refuses
 review, playability, production-quality, visual-qa and content-sufficiency reports, and did
 not decide `not-release` (a `development` decision is drafted and recorded as such). A
 workflow without the quality gate says so with `with: required_quality: false` on its release
-step.
+step. Release also refuses while the run's finding ledger, advanced once more on the newest
+reports and G4's decision, holds an open blocking finding (`open-findings`).
 
 ## Running it
 

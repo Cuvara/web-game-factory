@@ -416,8 +416,14 @@ class IntentionalDegradations(_Case):
         self.assertEqual((present["route"], present["measured"]["placeholder"]),
                          ("assets", present["assets"]))
         # Routed straight to the step that owns art (new-game: production-quality `assets`
-        # -> assets); triage then drops the finding as handed over, never as resolved.
+        # -> assets); triage does not route it again, and records it in the run's ledger as
+        # handed to the assets step - implemented by its manifest, never resolved by it.
         self.assertEqual(self.routes(state, "production-quality").count("assets"), 3)
+        ledger = {r["id"]: r for r in self.newest(api, state, "triage-report")["lifecycle"]}
+        handed = [r for fid, r in ledger.items() if "assets.present" in fid]
+        self.assertTrue(handed, sorted(ledger))
+        self.assertTrue(all(r["status"] == "implemented" and r["fix"]["specialist"] == "assets"
+                            and r["fix"]["artifact_id"] for r in handed), handed)
         entered = [e for e in state.trail if e["step"] == "assets"]
         self.assertGreaterEqual(len(entered), 3)
         typed = triage_findings.normalize("production-quality-report", report, Routing.load())
@@ -496,9 +502,8 @@ class Recovery(_Case):
 
     def ledger(self, api, state):
         """The run's finding ledger as triage would advance it now: the real step, executed
-        on the run's newest artifacts, outside the run (the run itself is not changed). In
-        the run, the ledger moves only when triage runs - and after the last fix nothing
-        sends the build back to triage (docs/quality-consistency-tests.md, "Gaps")."""
+        on the run's newest artifacts, outside the run (the run itself is not changed). It
+        must agree with the ledger the quality gate advanced in the run."""
         step_def = api.definition_for(state).step("triage")
         refs = {t: state.latest_of_type(t) for t in step_def.inputs}
         inputs = StepInputs({t: r for t, r in refs.items() if r is not None},
@@ -541,14 +546,19 @@ class Recovery(_Case):
         self.assertEqual(world.visits, ["level-designer"])
         dev = self.assert_measured_again(api, state, case)
         fid = "content-sufficiency-report:content-sufficiency:content.units_shipped"
-        # The run's own ledger stops where triage last ran: the finding assigned, the fix
-        # never recorded as measured (a gap: docs/quality-consistency-tests.md, "Gaps").
-        in_run = {r["id"]: r for r in self.newest(api, state, "triage-report")["lifecycle"]}
-        self.assertEqual(in_run[fid]["status"], "assigned")
-        # Advanced on the fixed build's reports, the finding is implemented by the owner's
-        # visit, verified by the gate that raised it, and closed once every gate measured it.
+        # No triage runs after the last fix: the last triage left the finding assigned...
+        triaged = {r["id"]: r for r in self.newest(api, state, "triage-report")["lifecycle"]}
+        self.assertEqual(triaged[fid]["status"], "assigned")
+        # ...and the quality gate, which sees every report of the fixed build, advanced the
+        # run's ledger before G4: implemented by the owner's visit, verified by the gate that
+        # raised it, closed once every gate measured it. Nothing blocking is left open.
+        quality_report = self.newest(api, state, "quality-report")
+        self.assertEqual(quality_report["ledger"]["open"], [])
+        in_run = {r["id"]: r for r in quality_report["ledger"]["lifecycle"]}
+        self.assertEqual(in_run[fid]["status"], "closed", in_run[fid])
         ledger = self.ledger(api, state)
-        finding = ledger[fid]
+        self.assertEqual(ledger[fid]["status"], in_run[fid]["status"])
+        finding = in_run[fid]
         self.assertEqual(finding["status"], "closed", finding)
         self.assertEqual(finding["fix"]["specialist"], "level-designer")
         self.assertEqual(finding["fix"]["commit"], dev)
@@ -579,10 +589,13 @@ class Recovery(_Case):
         self.assertIn("content-sufficiency-report:content-sufficiency:content.units_shipped",
                       targets["verification"]["regressions"])
         self.assertEqual(after_ui["selected"]["label"], "level-designer")
-        # Once the regression is fixed too, the ui finding is verified on that build.
-        ledger = self.ledger(api, state)
-        self.assertIn(ledger["production-quality-report:ui.targets@mobile"]["status"],
+        # Once the regression is fixed too, the ui finding is verified on that build - in the
+        # run, by the quality gate before G4.
+        quality_report = self.newest(api, state, "quality-report")
+        in_run = {r["id"]: r for r in quality_report["ledger"]["lifecycle"]}
+        self.assertIn(in_run["production-quality-report:ui.targets@mobile"]["status"],
                       ("verified", "closed"))
+        self.assertEqual(quality_report["ledger"]["open"], [])
         state = self.decide(api, state)
         self.assertEqual(state.status, RunStatus.COMPLETED, self.story(api, state))
         self.assertTrue(api.quality(state)["release_ready"])
@@ -594,6 +607,13 @@ class Recovery(_Case):
         self.assert_measured_again(api, state, case)
         manifest = self.newest(api, state, "asset-manifest")
         self.assertFalse(any(item.get("placeholder") for item in manifest["items"]))
+        # The finding the gate sent straight to assets is in the run's ledger, implemented by
+        # the remade manifest and verified when the production gate passed the new build.
+        in_run = {r["id"]: r for r in self.newest(api, state, "quality-report")["ledger"]
+                  ["lifecycle"]}
+        handed = [r for fid, r in in_run.items() if "assets.present" in fid]
+        self.assertTrue(handed and all(r["status"] in ("verified", "closed") for r in handed),
+                        sorted(in_run))
         state = self.decide(api, state)
         self.assertEqual(state.status, RunStatus.COMPLETED, self.story(api, state))
 

@@ -135,6 +135,7 @@
             "specialist": { "type": "string" },
             "commit": { "type": ["string", "null"] },
             "prototype_report": { "type": ["string", "null"] },
+            "artifact_id": { "type": ["string", "null"], "description": "The artifact that made the change when no develop visit did: the assets step's asset-manifest, for a finding a gate routed straight to it." },
             "seq": { "type": ["integer", "null"] }
           },
           "additionalProperties": false

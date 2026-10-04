@@ -8,9 +8,9 @@
     "id": "decision-record",
     "kind": "artifact",
     "format": "json",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "producer": "gate",
-    "consumers": ["portfolio:approved", "title:design", "title:prototype", "title:scaffolding", "title:production", "release:approved", "release:validating", "release:submitting", "title:live"],
+    "consumers": ["portfolio:approved", "title:design", "title:prototype", "title:scaffolding", "title:production", "release:approved", "release:validating", "release:submitting", "title:live", "release:draft"],
     "repo_path": "workspace/titles/<title-id>/decisions/<gate-id>-<yyyymmdd>.json",
     "also_at": "workspace/opportunities/<opportunity-id>/decisions/<gate-id>-<yyyymmdd>.json",
     "immutable": true

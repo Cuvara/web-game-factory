@@ -11,13 +11,18 @@ are files in scripts/tests/ without `.py`.
 """
 
 SUITE = {
-    "WORKFLOW": ["test_core_workflow", "test_core_persistence", "test_decisions"],
+    "WORKFLOW": ["test_core_workflow", "test_core_persistence", "test_decisions",
+                 "test_triage"],
     "AGENTS": ["test_core_agents", "test_live_loop"],
     "CONTRACTS": ["test_core_contracts", "test_core_lineage", "test_core_template", "test_golden_fast"],
     "VERIFY": ["test_core_verify"],
     "RELEASE": ["test_core_release", "test_publish_module", "test_publish_registry",
                 "test_publish_observe", "test_publish_executor", "test_publish_step",
                 "test_publish_adaptive", "test_publish_campaign", "test_publish_portals"],
+    # An intentionally bad game cannot pass new-game: six genres held to one floor, eleven
+    # degradations each detected, blocking and routed, recovery, anti-gaming (WS-13,
+    # docs/quality-consistency-tests.md).
+    "QUALITY": ["test_quality_consistency"],
     "2D GOLDEN": ["test_golden_2d"],
     "3D GOLDEN": ["test_golden_3d"],
     "PROCESS CLEANUP": ["test_core_process"],

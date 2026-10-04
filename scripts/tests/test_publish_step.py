@@ -680,7 +680,7 @@ workflow:
       stage: release:draft
       inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report]
       outputs: [release-manifest]
-      with: {repo_dir: %(repo)s, required_gates: [], required_listing: false}
+      with: {repo_dir: %(repo)s, required_gates: [], required_listing: false, required_quality: false}
       max_visits: 5
     - id: platform-validate
       type: test.validate
@@ -722,9 +722,18 @@ class ThroughTheEngine(MultiCase):
 
     def setUp(self):
         super().setUp()
-        from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+        from unittest import mock
+        from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep, quality
         from wgf_release import ReleaseStep
         case = self
+        # This flow is not one the Factory ships and lacks its required steps, so its runs
+        # are development class, and the quality policy refuses a live submit in one
+        # (production_only). That rule and how it composes with submit's own re-entries are
+        # tested on the shipped new-game in test_quality_inheritance (SubmitReentry); here
+        # the publisher's mechanics are, so it is lifted for this flow alone.
+        lifted = mock.patch.object(quality, "production_problems", lambda *a, **k: [])
+        lifted.start()
+        self.addCleanup(lifted.stop)
         self.script = Script()
 
         class Sdk(WorkflowStep):

@@ -85,6 +85,36 @@ def utc_now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def triage_gaps(triage):
+    """The design gaps a triage-report's selected `design` findings stand for: each one's
+    design field (`task.design_field`, else build_spec.content for content and level
+    design, else the dimension), the question - what the finding asks to change and how it
+    is accepted - and blocking, since the build cannot be made to pass it until the design
+    states it."""
+    selected = (triage or {}).get("selected") or {}
+    if selected.get("route") != "design":
+        return []
+    by_id = {f.get("id"): f for f in (triage or {}).get("findings") or []
+             if isinstance(f, dict)}
+    gaps = []
+    for fid in selected.get("findings") or []:
+        finding = by_id.get(fid)
+        # content-sufficiency's own design gaps are read from its report (_sufficiency_gaps).
+        if not finding or (finding.get("source") or {}).get("producer") \
+                == "content-sufficiency-report":
+            continue
+        task = finding.get("task") or {}
+        field = task.get("design_field") or (
+            "build_spec.content" if finding.get("dimension") in ("content", "level-design")
+            else str(finding.get("dimension") or "build_spec"))
+        acceptance = "; ".join(task.get("acceptance") or [])
+        gaps.append({"field": field,
+                     "question": (f"{finding.get('summary')} - {task.get('change')}"
+                                  + (f" (accepted when: {acceptance})" if acceptance else "")),
+                     "assumed": None, "severity": "blocking", "finding": fid})
+    return gaps
+
+
 def _brief_dimension(brief):
     """'3d' or '2d' when the brief names exactly one."""
     words = set(re.findall(r"[a-z0-9][a-z0-9-]*", brief.lower()))
@@ -144,6 +174,13 @@ class DesignStep(WorkflowStep):
         if "prototype-report" in inputs.refs:
             report = inputs.load("prototype-report")
             gaps = [g for g in report.get("design_gaps") or [] if isinstance(g, dict)]
+        # Re-entered through triage's `design` (docs/specialist-routing.md): the quality
+        # findings it selected ask for a scope or content increase the design must state
+        # first. They are repaired like gaps - at their field, on the design they were found
+        # in - and the triage-report is pinned as an input like the prototype-report.
+        entered = getattr(context, "entered_by", None) or ""
+        if entered.rpartition(".")[2] == "design" and "triage-report" in inputs.refs:
+            gaps = gaps + triage_gaps(inputs.load("triage-report"))
         # Re-entered through `design-gap` from content-sufficiency: the built content fell
         # short of the quality tier's bars where the design itself is short of them. Its
         # findings carry the gaps - only from a report on the design this run holds now (a

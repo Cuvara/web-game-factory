@@ -33,6 +33,7 @@ from wgflib.yamllite import load_file
 from wgf_verification.checks.gameplay import ASPECTS, required_aspects_for
 
 from . import content as content_contract
+from . import specialist as specialist_section
 from .content import CONTENT_PATH, TEST_PATH
 from .scope import DEFAULT_WRITABLE
 
@@ -606,7 +607,7 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                 writable_paths=None, package_changes=None, loop=None, sessions=None,
                 playability=None, frames_root=None, phase=None, greybox_commit=None,
                 production=None, visual_qa=None, sufficiency=None,
-                review_baseline=None, developer=None):
+                review_baseline=None, developer=None, specialist=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
     writable_paths = list(DEFAULT_WRITABLE if writable_paths is None else writable_paths)
@@ -686,7 +687,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
     failures = [
         {"check": c.get("id"), "summary": c.get("summary"), "output_tail": c.get("output_tail")}
         for c in (previous_checks or {}).get("checks") or []
-        if c.get("status") == "failed"
+        # A skip the run's tier held against the build is not passed either: its finding
+        # names what was missing.
+        if c.get("status") == "failed" or c.get("blocking")
     ]
     host_skills = dict(DEFAULT_SKILLS)
     host_skills.update(skills or {})
@@ -833,7 +836,13 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                  "quality_bar": quality_bar.frames(
                      "3d" if engine == "threejs" else "2d"),
                  "qualities": quality_bar.qualities()},
-        "craft_guides": craft_guides(engine),
+        # A specialist visit reads its own playbooks (roles.yaml `reads`), not the full list.
+        "craft_guides": ([factory_path(p) for p in specialist["playbooks"]] if specialist
+                         else craft_guides(engine)),
+        # The specialist this visit is briefed as (wgf_develop.specialist): its focus, the
+        # findings it owns with their acceptance, its writable scope; None otherwise.
+        "specialist": (dict(specialist, writable_paths=list(writable_paths))
+                       if specialist else None),
         # What verification will demand browser evidence for (wgf_verification computes the
         # same set from the same design): the developer is told up front, instead of
         # learning it from a failed verification and a loop back here.
@@ -1490,6 +1499,8 @@ def render_markdown(brief):
         add(f"- Input: `{pin['artifact_type']}` {pin['artifact_id']} "
             f"({(pin['content_hash'] or '')[:19]})")
     add("")
+    if brief.get("specialist"):
+        out.extend(specialist_section.render(brief["specialist"]))
 
     add("## Goal\n")
     add("A genuinely playable game: a stranger opens the build, understands it without help, "
@@ -1856,7 +1867,12 @@ def render_markdown(brief):
                      f"({route_budget.get('remaining')} left after this one)")
         add(line + ".")
         decision = loop.get("decision")
-        if decision:
+        if brief.get("specialist"):
+            add(f"The triage step routed this build's findings by the discipline that owns "
+                f"them, and this visit is the {brief['specialist']['label']}'s: what to "
+                f"change is *Your findings* (*This visit*, above), each with how it is "
+                f"accepted.")
+        elif decision:
             who = decision.get("decided_by") or "unknown"
             if decision.get("note"):
                 add(f"The decision at `{decision['step']}` was `{decision['decision']}` "

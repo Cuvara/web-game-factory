@@ -1,0 +1,18 @@
+{
+  "title_id": "mock-title",
+  "entered_by": null,
+  "source": null,
+  "mode": "first-pass",
+  "commit": null,
+  "findings": [],
+  "groups": [],
+  "selected": null,
+  "pending": [],
+  "deferred": [],
+  "held": [],
+  "ledger": [],
+  "lifecycle": [],
+  "routing": {"reference": "core/reference/specialist-routing.yaml", "version": "1.0.0", "content_hash": null},
+  "verdict": "clear",
+  "message": "nothing to route (mock)"
+}

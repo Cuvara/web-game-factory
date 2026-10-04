@@ -982,7 +982,7 @@ class ThroughTheEngine(PublishCase):
                       stage: release:draft
                       inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report]
                       outputs: [release-manifest]
-                      with: {repo_dir: %(repo)s, required_gates: [], required_listing: false}
+                      with: {repo_dir: %(repo)s, required_gates: [], required_listing: false, required_quality: false}
                     - id: platform-validate
                       type: platform-validate
                       stage: release:validating
@@ -1206,6 +1206,15 @@ class CreateBeforeBuildEndToEnd(PublishCase):
 
     def setUp(self):
         super().setUp()
+        from unittest import mock
+        from wgflib.workflow import quality
+        # This flow is not one the Factory ships and lacks its required steps, so its run is
+        # development class, which the quality policy never submits live (production_only).
+        # That rule is tested on the shipped new-game (test_quality_inheritance
+        # SubmitReentry); this test is about the publisher, so it is lifted here alone.
+        lifted = mock.patch.object(quality, "production_problems", lambda *a, **k: [])
+        lifted.start()
+        self.addCleanup(lifted.stop)
         # One target: the game is built and released for generic-web only.
         self.game.commit("game.config.yaml", textwrap.dedent("""            game:
               id: fixture-game
@@ -1239,7 +1248,7 @@ class CreateBeforeBuildEndToEnd(PublishCase):
                       stage: release:draft
                       inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report]
                       outputs: [release-manifest]
-                      with: {repo_dir: %(repo)s, required_gates: [], required_listing: false}
+                      with: {repo_dir: %(repo)s, required_gates: [], required_listing: false, required_quality: false}
                       max_visits: 3
                     - id: metadata
                       type: test.metadata

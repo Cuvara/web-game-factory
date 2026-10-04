@@ -26,6 +26,7 @@ inputs ──► brief ──► developer ──► checks ──► commit ─
 | `tech-plan` | `dev_plan`: the prototype milestones and their tasks, with acceptance criteria and tests — optional (absent, the brief has no plan section) |
 | `qa-report` | on a verify → develop loop, the blocking defects the brief says to fix first |
 | `review-report` | on a review → develop loop, the reviewer's blockers the brief says to fix first — used only when it requests changes to the commit this visit starts from ([review-module.md](review-module.md)) |
+| `triage-report` | entered as `triage.<role>` (workflow 10): the visit is that specialist's - its findings, playbooks and writable scope replace the raw gate reports above ([specialist-routing.md](specialist-routing.md)) |
 
 The engine comes from the checkout's `game.config.yaml`: `pixijs` or `phaserjs` for 2D,
 `threejs` for 3D.
@@ -243,7 +244,43 @@ the game, regenerated on every visit and committed with the code it asked for. I
   sessions used before this visit and those left (`brief.json` `sessions`, from
   `wgf_develop.budget`); develop's `max_visits` loop guard, which a resume resets and which
   read like the session budget, is no longer shown. Absent on a first visit (entered by
-  `<step>.success`).
+  `<step>.success`). On a specialist visit `loop.entered_by` is the gate entry the findings
+  came from (the triage-report's `source`, e.g. `visual-qa.develop`), `loop.specialist_entry`
+  the `triage.<role>` entry, and the route budget the specialist's.
+
+## Specialist visits
+
+Since workflow 10 every failure that sends the build back reaches develop through the
+`triage` step, which routes the build's quality findings to the specialist that owns them
+([specialist-routing.md](specialist-routing.md)). Entered as `triage.<role>` with a
+specialist's label (`wgf_develop/specialist.py`):
+
+- **The brief is the specialist's.** It opens with *This visit: <label>*: the role's `focus`
+  (core/roles/roles.yaml), **only the findings the triage-report selected** - each with what
+  was measured against which bar, its evidence (frames made absolute under the run
+  directory), the change asked for and how the gate that raised it accepts it - and who
+  comes next, so their findings are left to them. *Craft guides* lists the role's `reads`
+  instead of every playbook. The raw gate reports (qa-report, review-report,
+  playability-report, production-quality-report, visual-qa-report) are not shown: the
+  findings are their failures, normalized. It also carries, once each, the game brief, the
+  design contract, the quality budget and floor, the acceptance rule, the run's other open
+  findings (not to be touched or made worse) and the regression constraints (the verified
+  and closed findings that must stay fixed) - *What every specialist works within*, from
+  the triage-report's `lifecycle`.
+- **The writable scope is the specialist's.** `factory.develop.writable_paths` is cut to the
+  role's `writes` (`specialist.narrow`: never wider; a scope with nothing in common fails the
+  visit), and the commit-scope check holds the visit to it like any other.
+- **The visit is recorded.** The prototype-report's `specialist` block (prototype-report
+  1.2.0): the role, the finding ids, who is still pending, the triage-report, the scope, and
+  the visit's developer sessions and their cost from the run's budget events (null when
+  unknown). The next triage records what the gates measured of them (its `ledger`).
+- **It hands on.** A green visit whose triage-report has groups pending returns SUCCESS with
+  route `next-specialist`, which the workflow maps back to triage: the next specialist works
+  on the same build before the gates measure it. Its review baseline is carried, so review
+  reads every specialist's commit of the chain.
+
+A visit entered any other way - the first build, `triage.success` after an assets pass that
+left nothing for a specialist, `greybox` - is unchanged.
 
 ## Eyes and the quality bar
 
@@ -356,7 +393,17 @@ Run in this order; `conformance` cannot be switched off.
 | `conformance` | Static, and the content contract: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, the template's `BootScene` (`src/game/boot-scene.ts`) imported by no game source - judged by the module an import resolves to, so a game's own first scene may also be called `BootScene`, the seam files as the Factory provided them and `src/main.ts` booting through them (`wgflib.gameseam`), the sdk step's files (`gameseam.SDK_OWNED_PATHS`) as the visit's baseline commit has them - absent before the sdk step first runs - since the sdk step rewrites them whole, template-owned paths unchanged since the visit began, `package.json` changed only by allowed dependency changes and the lockfile only with them, and `report.json` complete and, on a `handoff` visit, this visit's (`visit` equals the brief's `report_visit`) — every required system `done`, every MVP item and placement reported. With the content contract, also `public/content/units.json` against the design (`scripts/wgf_develop/content.py`), as findings named by code: `content.file_missing`, `content.design_pin` (its `design.content_hash` is not the brief's pin), `content.unit_missing:<id>`, `content.unit_extra:<id>`, `content.unit_field:<id>.<field>` (index, objective, mechanics, success, failure, group, structure, elements or objective_kind differ; a release build that ships only the MVP subset fails with `content.unit_missing` for every post-mvp unit), `content.difficulty:<id>.<axis>` (further from the design's value than `implementation.difficulty_tolerance`, 0.05), `content.tuning:<mechanic>.<param>`, `content.test_missing` and `content.not_loaded` (no file under `src/` reads the data file) |
 | `format` | `pnpm format` — optional |
 | `typecheck`, `lint`, `unit`, `build` | the repository's own scripts, as CI runs them |
-| `smoke` | `pnpm test:e2e`, behind a proxy that refuses every non-local request (`wgflib.netguard`): a portal build would otherwise load the portal's real SDK from its CDN - dev traffic to the portal, and a result that depends on it (a Poki build's own "makes no insecure requests" failed on Poki's http:// ad bridge). The game must boot and play with the SDK refused, as for an ad-blocker; the summary says what was refused. Where Chromium ignores the proxy variables (Windows, macOS) the suite runs with `-c` on a wrapper of the game's `playwright.config.ts`, written outside the checkout, that hands the browser the proxy itself (`netguard.guarded_playwright_config`); the summary still names the plain command. Skipped, and reported as skipped, only when no browser is installed |
+| `smoke` | `pnpm test:e2e`, behind a proxy that refuses every non-local request (`wgflib.netguard`): a portal build would otherwise load the portal's real SDK from its CDN - dev traffic to the portal, and a result that depends on it (a Poki build's own "makes no insecure requests" failed on Poki's http:// ad bridge). The game must boot and play with the SDK refused, as for an ad-blocker; the summary says what was refused. Where Chromium ignores the proxy variables (Windows, macOS) the suite runs with `-c` on a wrapper of the game's `playwright.config.ts`, written outside the checkout, that hands the browser the proxy itself (`netguard.guarded_playwright_config`); the summary still names the plain command. Skipped, and reported as skipped, only when no browser is installed - and at the release tier a skip is not passed (below) |
+
+A check that could not run - a script `package.json` lacks, no browser for `smoke` - is
+`skipped`, never `passed`, and never a failure turned into a skip. Whether a skip holds the
+build up is `core/reference/quality-policy.yaml` rule 5 (`skipped_checks`, read by
+`wgflib.check_strength`) at the run's quality tier (`params.quality.tier`, else the brief's
+`build_scope.quality_tier`): at the release tier it is `required` and `blocking` in
+`checks.json`, the build is not green and is not committed, and the next brief carries a
+finding naming the missing script or tool - unless a `skipped_checks.optional` entry declares
+that check optional for the tier and platforms (none is shipped). At `mvp`, or an unknown
+tier, it does not hold the build up and the step's message says "SKIPPED, not measured".
 
 ## Idempotency
 

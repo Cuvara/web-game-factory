@@ -26,8 +26,14 @@
 #
 # `required_artifacts` is what a gate is decided on. A workflow checkpoint for the gate
 # lists them as its inputs, and waits for input - asks nobody - until the run holds them.
+#
+# `hold_for_person_when` (1.5.0) lists evidence that takes a reversible gate out of
+# automation's hands for that decision: when the named field of one of the gate's
+# required artifacts is set (not null, empty or false), the checkpoint neither auto-approves
+# nor approves on a timeout, and refuses an automation decision - it waits for a person, as
+# an irreversible gate does, and says why. A planned shortfall nobody reads is a bypass.
 
-version: 1.4.0  # 1.1.0: G3 and G4 required_artifacts (Factory 2.0.0); 1.2.0: G6 decided on the store listing too; 1.3.0: G4 reads playability and review (2.7.0); 1.4.0: G3 shows the derived develop budget and any planned shortfall
+version: 1.6.0  # 1.1.0: G3 and G4 required_artifacts (Factory 2.0.0); 1.2.0: G6 decided on the store listing too; 1.3.0: G4 reads playability and review (2.7.0); 1.4.0: G3 shows the derived develop budget and any planned shortfall; 1.5.0: hold_for_person_when - G3 with a planned shortfall waits for a person; 1.6.0: G4 is decided on the quality-report too
 
 defaults:
   approvers: [portfolio-owner]
@@ -84,6 +90,12 @@ gates:
     # create. The title machine's asset_manifest_present guard still applies to the
     # lifecycle transition (wgf-state.py), which is not decided inside a workflow run.
     required_artifacts: [game-design, tech-plan]
+    # A release plan the installation's develop budget cannot fund: the run would build less
+    # than the tier needs, and only a person may accept that (raise the cap, or cut scope).
+    hold_for_person_when:
+      - artifact: tech-plan
+        field: dev_plan.develop_budget.shortfall
+        why: the develop budget is capped below what the plan's release content needs (a planned shortfall)
     required_predicates:
       - design_consistent
       - engine_selected
@@ -114,10 +126,13 @@ gates:
     # judged against the terms of the bet: the kill criteria in title-strategy and the
     # design they measure - and, since Factory 2.7.0, the playability report (did the build
     # traverse the units the design claims, with the difficulty it states) and the review
-    # report (was the build faithful to the design, or did it invent). A workflow's G4
-    # checkpoint comes after verification passes, and a verification that runs again after
-    # a pass supersedes it.
-    required_artifacts: [qa-report, verification-report, prototype-report, title-strategy, game-design, playability-report, review-report]
+    # report (was the build faithful to the design, or did it invent) - and, since 2.8.0,
+    # the quality-report: every quality dimension of the same build scored against the
+    # Factory's quality floor at the run's tier, the open findings and the release decision
+    # (core/reference/quality-floor.yaml). A workflow's G4 checkpoint comes after
+    # verification and the quality gate pass, and a verification that runs again after a
+    # pass supersedes it.
+    required_artifacts: [qa-report, verification-report, prototype-report, title-strategy, game-design, playability-report, review-report, quality-report]
     required_predicates:
       - playable_build
     # The workflow checkpoint's choices are pass, iterate and kill; kill is `abandon`.
@@ -129,6 +144,7 @@ gates:
         - Each kill criterion with its measured value and whether it was breached.
         - Playtest evidence from someone who had not seen the game before.
         - Iteration count against the maximum set at strategy.
+        - The quality-report - each dimension's score against its floor, the open findings and the release decision (`development` for a tier-mvp run, never release).
     note: >
       The whole factory exists to be able to say no here. Sunk cost is not an input: the
       question is not "can this be saved" but "would we start this today knowing what we

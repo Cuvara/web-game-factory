@@ -31,11 +31,13 @@ import os
 import shutil
 import socket
 
-from wgflib import agentenv, checkout, genre_models, paths, procs, provenance
+from wgflib import agentenv, check_strength, checkout, genre_models, paths, procs, provenance
 from wgflib.netguard import BROWSER_BYPASS, BROWSER_PROXY_VAR, RefusingProxy, sandbox_env
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+from wgflib.workflow.quality import run_tier
 from wgflib.yamllite import YamlError, load_file
 
+from wgf_design.content import quality_tier
 from wgf_design.experience import load_rules as load_experience_rules
 
 from . import analysis
@@ -161,6 +163,7 @@ class PlayabilityStep(WorkflowStep):
             # The bars the content, difficulty and depth checks read: design-depth.yaml's
             # `playability` block with the genre family's `qa` overrides.
             qa = genre_models.qa_of(design)
+            kinds_required = self._kinds_required(context, design)
         except (OSError, YamlError, ValueError) as exc:
             return StepResult.blocked(
                 f"the genre model and depth bars could not be read ({exc}): nothing can be held "
@@ -210,7 +213,8 @@ class PlayabilityStep(WorkflowStep):
                                  "ran": bool(records), "page_errors": errors[:10]})
                 if records:
                     checks += analysis.judge(records, frames_dir, design, judged,
-                                             experience_rules, project, qa=qa)
+                                             experience_rules, project, qa=qa,
+                                             kinds_required=kinds_required)
                 frames += self._frames(frames_dir, project, context.run_dir)
             if not blocked and not any(p["ran"] for p in projects):
                 blocked = "the bot produced no records on any viewport; see " + os.path.join(logs, "bot.log")
@@ -220,6 +224,20 @@ class PlayabilityStep(WorkflowStep):
                                 projects, records_dir)
         finally:
             shutil.rmtree(repo, ignore_errors=True)
+
+    @staticmethod
+    def _kinds_required(context, design):
+        """Why content.variety fails on a probe that omits entity kinds while a content unit
+        is in play, or None when it stays an unmeasured WARNING: the run's quality tier (else
+        the design's) against core/reference/quality-policy.yaml rule 5."""
+        tier = (run_tier(getattr(context, "environment", None))
+                or quality_tier(design, None)[0])
+        strength = check_strength.for_tier(tier)
+        steps = ("playability", getattr(context, "current_step", None))
+        if not strength.required("content.variety", steps):
+            return None
+        return (f"at quality tier {tier} a check that measured nothing is not passed "
+                f"(core/reference/quality-policy.yaml skipped_checks)")
 
     # -- what the bot is given ----------------------------------------------------------
 

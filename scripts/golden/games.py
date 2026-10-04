@@ -67,6 +67,7 @@ EXPECTED_STEPS = (
     ("greybox", "SUCCESS"),            # the loop with primitives, before any asset
     ("greybox-playability", "SUCCESS"),
     ("assets", "SUCCESS"),
+    ("triage", "SUCCESS"),             # nothing failed yet: the first build goes on to develop
     ("develop", "SUCCESS"),
     ("playability", "SUCCESS"),        # played from outside through the port's play probe
     ("production-quality", "SUCCESS"), # the port's library art delivered, loaded, drawn
@@ -76,6 +77,7 @@ EXPECTED_STEPS = (
     ("sdk", "SUCCESS"),
     ("sdk-review", "SUCCESS"),         # the sdk commit - the one that ships - reviewed too
     ("verify", "SUCCESS"),
+    ("quality-gate", "SUCCESS"),       # every dimension at its floor; tier mvp: development
     ("prototype-review", "SUCCESS"),   # G4, passed by the harness as a person (harness.py)
     ("store-listing", "SUCCESS"),      # the store package captured from the verified build
     ("listing-validation", "SUCCESS"), # against each targeted platform's profile block

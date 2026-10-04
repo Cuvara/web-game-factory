@@ -528,7 +528,7 @@ class Copy(unittest.TestCase):
 
     def test_the_template_writer_stays_within_bounds_and_leads_with_the_verb(self):
         copies, writer = copywriter.write_copy(self.facts, ["en", "ru", "vi"], self.reference)
-        self.assertEqual(writer, {"kind": "template"})
+        self.assertEqual(writer, {"kind": "template", "required": "template"})
         en = copies["en"]
         self.assertTrue(en["short_description"].startswith("Tap on the beat to switch lanes"))
         self.assertLessEqual(len(en["short_description"]), 160)
@@ -1391,7 +1391,10 @@ class ThroughTheEngine(ListingCase):
                         listing: store-listing
                       next: $end
                 """ % (json.dumps(game.root), json.dumps(REFERENCE), json.dumps(REFERENCE))))
-        config = FactoryConfig({"steps": {"modules": [module.__name__]}, "storage": {"fsync": False}})
+        # An MVP-tier run: the template writer writes (store-listing.yaml `writer`); at the
+        # release tier the copywriter agent must (test_listing_build).
+        config = FactoryConfig({"steps": {"modules": [module.__name__]}, "storage": {"fsync": False},
+                                "strategy": {"quality_tier": "mvp"}})
         api = WorkflowAPI(config=config, store_dir=os.path.join(self.scratch, "store"), workflow=path)
         state = api.run(RunRequest(project_id="fixture-game"))
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)

@@ -24,8 +24,15 @@
 # probe showed in every unit, counted the same way at the design's tier
 # (scripts/wgf_sufficiency, how each is measured in core/reference/content-sufficiency.yaml),
 # and `presentation.assets.distinct_climax_art` on the drawings the build shows in its climax
-# units. Wiring another check is a change to the consumers named under `consumers`, each with
-# its own tests.
+# units. The quality gate reads `presentation` (1.6.0): the release tier's visual-qa scores
+# and finding counts, every production-quality check, the skipped content checks and the
+# audio counts are criteria of the Factory quality floor (core/reference/quality-floor.yaml),
+# which names each bar here by path instead of restating it, and scores one build on every
+# quality dimension against them (scripts/wgf_quality, docs/quality-gate-module.md). A run
+# pins this file when it starts (new-game `pinned_references`): an edit applies to the next
+# run. How to version this file and the floor: docs/factory-quality-benchmark.md. Wiring
+# another check is a change to the consumers named under `consumers`, each with its own
+# tests.
 #
 # Calibration. Every bar records its `basis`:
 #   measured-2   both calibration releases meet it (the audit says which bars the unattended
@@ -44,7 +51,7 @@
 # game presents together (world, tier, chapter). Every count is over the units the release
 # ships at the tier being judged.
 
-version: 1.5.0
+version: 1.6.0
 
 tiers:
   # `mvp` is the genre model's prototype bar and is not restated here. `release` is what a
@@ -195,9 +202,10 @@ consumers:
   # `content.units` and `content.elements` to commit the release budget; the design step
   # holds a design at its tier to every `content` bar (content.tier_*); the assets step reads
   # `presentation.assets.distinct_climax_art`; the content-sufficiency step counts `content`
-  # and `progression` on the built content.
+  # and `progression` on the built content; the quality gate holds one build to
+  # `presentation` through the quality floor's criteria.
   content: [scripts/wgf_strategy/planner.py, scripts/wgf_design/content.py, scripts/wgf_sufficiency/audit.py]
   progression: [scripts/wgf_design/content.py, scripts/wgf_sufficiency/audit.py]
   features: [scripts/wgf_design/consistency.py, scripts/wgf_techplan/devplan.py]
-  presentation: [scripts/wgf_visualqa, scripts/wgf_production, scripts/wgf_assets/climax.py, scripts/wgf_sufficiency/audit.py]
+  presentation: [scripts/wgf_visualqa, scripts/wgf_production, scripts/wgf_assets/climax.py, scripts/wgf_sufficiency/audit.py, scripts/wgf_quality]
   store_listing: [scripts/wgf_listing]

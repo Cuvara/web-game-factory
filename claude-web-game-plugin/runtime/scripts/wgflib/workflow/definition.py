@@ -8,6 +8,7 @@ the CLI slices it, and neither of them contains a sequence of its own.
       id: new-game
       version: 1
       start: research                 # default: the first step
+      pinned_references: [core/reference/x.yaml]   # optional: copied and pinned at start
       defaults:
         retry: {max_attempts: 3, backoff: exponential, delay_seconds: 2}
         max_visits: 5
@@ -170,6 +171,9 @@ class WorkflowDefinition:
         self.version = data.get("version")
         self.description = data.get("description")
         self.untyped_artifacts = list(data.get("untyped_artifacts") or [])
+        # Factory files a run copies and pins when it starts (references.py).
+        pinned = data.get("pinned_references")
+        self.pinned_references = list(pinned) if isinstance(pinned, list) else []
         self.steps = []
         self.groups = {}
         self.start = None
@@ -252,6 +256,13 @@ def parse_definition(document, source="<memory>", base_retry=None, base_max_visi
         problems.append(f"workflow.id {definition.id!r} must be kebab-case")
     if definition.version is None:
         problems.append("workflow.version is required")
+
+    pinned = data.get("pinned_references")
+    if pinned is not None and (not isinstance(pinned, list) or not all(
+            isinstance(p, str) and p and not p.startswith("/") and ".." not in p.split("/")
+            for p in pinned)):
+        problems.append("workflow.pinned_references must be a list of paths relative to the "
+                        "Factory root")
 
     defaults = data.get("defaults") or {}
     if not isinstance(defaults, dict):

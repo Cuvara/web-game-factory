@@ -123,6 +123,9 @@ class ArtifactRef:
     schema_version: str = None
     metadata: dict = None
     seq: int = None
+    # The run's quality class when it was written (wgflib.workflow.quality): `release` or
+    # `development`. Refs written before the quality policy have none.
+    quality: str = None
 
     def to_dict(self):
         return {k: v for k, v in dataclasses.asdict(self).items() if v is not None}

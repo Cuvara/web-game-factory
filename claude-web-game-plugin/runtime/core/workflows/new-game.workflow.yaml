@@ -58,13 +58,41 @@ workflow:
   # commit ships, and what its probe showed while the playability bot traversed the units and
   # surveyed every one of them. A build short of a design that meets the bar goes back to
   # develop; a design itself short of the bar goes back to design (route `design-gap`).
-  # 10: publication per platform - submit acts on every packaged platform with its own
+  # 10: specialist routing - every failure that sent the build back to develop or design
+  # (content-sufficiency's `design-gap` included), and G4's iterate, goes to `triage`
+  # instead, which normalizes the current build's failures into quality findings, groups
+  # them by the specialist that owns each dimension (core/reference/specialist-routing.yaml)
+  # and routes one group per visit: `design` for a scope or content increase, `assets` for
+  # an asset made again, or the specialist's own label, mapped to develop, whose brief is
+  # then that specialist's (docs/specialist-routing.md). The loop budgets move with it: per
+  # source on triage, per specialist on develop.
+  # 11: the quality gate - after verify and before G4, one build is scored on every quality
+  # dimension from the reports the producing steps wrote about it, against the Factory's
+  # quality floor (core/reference/quality-floor.yaml: the universal floor, the genre family's
+  # contract, the 3D contract) and the benchmark's release bars at the run's tier, pinned when
+  # the run started (`pinned_references`). A dimension below its floor goes through triage
+  # like every gate's failure: its findings go to the specialist that owns them, `design` for
+  # a design-gap, `assets` for an asset made again. G4 is decided on the quality-report, and
+  # release ships only a build whose quality-report passed.
+  # 12: store copy grounded in the build - listing-validation's failures go through
+  # `listing-triage` (a triage after G4) to store-listing, whose copywriter is briefed with
+  # the store-copy findings; store-listing reads the content-sufficiency report of the build
+  # it lists (every count the copy states is a measured one) and the triage-report.
+  # 13: publication per platform - submit acts on every packaged platform with its own
   # record, checks G6 against the manifest, the store listing and its validation, waits for
   # a person's `submit` after each upload, and routes a create-before-build portal's
   # `platform-ids` back to sdk.
-  version: 10
+  version: 13
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
+
+  # Reference files the run copies and pins when it starts (scripts/wgflib/workflow/
+  # references.py): the quality gate scores every build of the run against the contract it
+  # started under, and an edit made while it runs applies to the next run.
+  pinned_references:
+    - core/reference/quality-floor.yaml
+    - core/reference/quality-benchmark.yaml
+    - core/reference/visual-qa-rubric.yaml
 
   # Every artifact a step names has a schema in core/artifacts/. A workflow MAY list types
   # without one under `untyped_artifacts`, as a visible, temporary gap: check-integrity.py
@@ -75,23 +103,31 @@ workflow:
     # Omitted keys fall back to factory.execution in workspace/config/factory.yaml.
     max_visits: 3
 
-  # Loops. One route leads back into design: a blocking design gap reported by greybox,
-  # develop or content-sufficiency (`design-gap`), one pass from each. Eight routes lead back
-  # into develop: playability's fail, production-quality's, visual-qa's and
-  # content-sufficiency's `develop`, review's and sdk-review's request-changes, verify's fail,
-  # and G4's iterate - and two into assets, production-quality's and visual-qa's `assets`, from
-  # which the run continues to develop as on its first pass. Each has its own budget on develop
+  # Loops. Two routes lead back into design: a blocking design gap reported by greybox or
+  # develop (`design-gap`), one pass from each, and triage's `design` (a scope or content
+  # increase a finding asks for - content-sufficiency's `design-gap` among them), two
+  # passes. Eight routes send the build back: playability's fail, production-quality's,
+  # visual-qa's and content-sufficiency's `develop`, review's and sdk-review's
+  # request-changes, verify's fail, and G4's iterate - and content-sufficiency's
+  # `design-gap`. They all go to `triage`, which routes the build's findings to the
+  # specialist that owns them - and two go to assets, production-quality's and visual-qa's
+  # `assets`, from which the run continues through triage to develop as on its first pass.
+  # Each sending route has its own budget on triage
   # (max_visits_by_route; `review.request-changes` counts only review's requests), counted
   # over the whole run, so one loop cannot spend the passes another needs - and G4's
   # iterate, which always arrives by a resume, is still bounded - and a run blocked at a
-  # limit says which route reached it (state.blocked_reason). develop's own max_visits is
-  # the first visit plus every route's budget - its own, and assets' (each pass through
-  # assets enters develop once more) - so it is never the limit a loop meets first;
-  # every step of the loop after develop is visited at most once per develop visit and
-  # carries the same bound. A person resuming a run blocked at a route limit grants that
-  # route one more pass and a fresh budget - that route only. What a whole run may spend on
-  # unattended developer sessions is bounded separately and is not reset by a resume:
-  # factory.develop.budget.
+  # limit says which route reached it (state.blocked_reason). Each specialist has its own
+  # budget on develop (`triage.<role>`): a specialist that cannot resolve what it owns stops
+  # the run for a person, named, rather than spending the passes of the others. When one
+  # build has findings for several specialists they visit in turn - develop returns
+  # `next-specialist` to triage, which routes the next group - before the gates measure the
+  # build again. develop's own max_visits is the first visit plus every route's budget -
+  # the specialists', and assets' (each pass through assets enters develop once more) - so
+  # it is never the limit a loop meets first; every step of the loop after develop is
+  # visited at most once per gate measurement and carries the same bound. A person resuming
+  # a run blocked at a route limit grants that route one more pass and a fresh budget - that
+  # route only. What a whole run may spend on unattended developer sessions is bounded
+  # separately and is not reset by a resume: factory.develop.budget.
 
   groups:
     plan: [strategy, strategy-review, design, tech-plan, tech-plan-review]
@@ -126,20 +162,22 @@ workflow:
     # Re-entered through `design-gap` from greybox or develop with the prototype-report whose
     # `design_gaps` name what the design did not decide; the design is repaired, never
     # replaced, and tech-plan and G3 run again on it. One pass per source, then a person looks.
-    # Re-entered through `design-gap` from content-sufficiency with the report whose findings
-    # carry the design gaps - where the design itself is short of its quality tier's bars on
-    # the built content - repaired the same way.
+    #
+    # Re-entered through triage's `design` with the triage-report whose selected findings ask
+    # for a scope or content increase the design must state before anything is built on it
+    # (the findings become the gaps the design answers) - content-sufficiency's design gaps
+    # among them, read from its report. Two passes, then a person looks.
     - id: design
       type: design
       stage: title:design
-      inputs: [title-strategy, prototype-report, content-sufficiency-report]
+      inputs: [title-strategy, prototype-report, content-sufficiency-report, triage-report]
       outputs: [game-design]
-      # 4 = the first design + one repair from each of the three sources.
-      max_visits: 4
+      # 5 = the first design + one repair from each design-gap source + two from triage.
+      max_visits: 5
       max_visits_by_route:
         greybox.design-gap: 1
         develop.design-gap: 1
-        content-sufficiency.design-gap: 1
+        triage.design: 2
       # A blocking design-consistency breach is FAILED with route `descope` and the design
       # kept as evidence. Nothing in this workflow can act on a descope yet - strategy does
       # not consume one - so it ends the run, explicitly: cut scope in the strategy, and
@@ -189,8 +227,9 @@ workflow:
       outputs: [prototype-report]
       with:
         phase: greybox
-      # 6 = the first visit + 2 playability passes + 3 returns after a design repair.
-      max_visits: 6
+      # 7 = the first visit + 2 playability passes + 4 returns after a design repair (two
+      # design-gap sources and triage's design).
+      max_visits: 7
       max_visits_by_route:
         greybox-playability.fail: 2
       on:
@@ -211,19 +250,71 @@ workflow:
     # Re-entered by production-quality or visual-qa (route `assets`) with the report that
     # sent it back: only the items the report concerns are rebuilt, by an author handed the
     # judge's reasons and the failing frames (the playability-report resolves them), then the
-    # run continues to develop, which integrates them. A re-entry that could change no art
-    # blocks rather than succeed. Two passes per gate before a person looks.
+    # run continues through triage to develop, which integrates them. A re-entry that could
+    # change no art blocks rather than succeed. Two passes per gate before a person looks.
+    # Re-entered by triage (route `assets`) with the triage-report whose selected findings ask
+    # for an asset made again - a person's at G4 - which are its feedback.
     - id: assets
       type: assets
       stage: title:prototype
-      description: Inspect, source or generate, validate and license-check every asset. Re-entered with the failing production-quality-report or visual-qa-report when an asset must be made again.
-      inputs: [game-design, scaffold-record, production-quality-report, visual-qa-report, playability-report]
+      description: Inspect, source or generate, validate and license-check every asset. Re-entered with the failing production-quality-report or visual-qa-report, or the triage-report, when an asset must be made again.
+      inputs: [game-design, scaffold-record, production-quality-report, visual-qa-report, playability-report, triage-report]
       outputs: [asset-manifest]
-      # 5 = the first visit + 2 + 2.
-      max_visits: 5
+      # 7 = the first visit + 2 + 2 + 2.
+      max_visits: 7
       max_visits_by_route:
         production-quality.assets: 2
         visual-qa.assets: 2
+        triage.assets: 2
+
+    # What sent the build back, as specialist work (scripts/wgf_triage,
+    # docs/specialist-routing.md). After assets on the first pass nothing has failed and it
+    # continues to develop. Entered from a gate's failure or G4's iterate, it normalizes the
+    # current build's failing reports - and the typed findings a person gave at G4 (`wgf
+    # decide <run> iterate --findings FILE`) - into quality findings, groups them by the
+    # specialist that owns each dimension (core/reference/specialist-routing.yaml), and
+    # routes one group: `design` first and alone (a scope or content increase), then
+    # `assets`, then each specialist in the routing data's order, mapped below to develop,
+    # whose brief is then that specialist's. Groups after the first wait as `pending`;
+    # develop returns `next-specialist` and the next is routed, before the gates measure the
+    # build again. A group whose label is not mapped here (store copy before the listing
+    # exists) is held; findings that are all held stop the run (BLOCKED) for a person.
+    # The sending routes' budgets live here: two passes per gate, two G4 iterations.
+    - id: triage
+      type: triage
+      stage: title:prototype
+      description: Normalize the current build's failures into quality findings and route them to the specialist that owns them.
+      inputs: [game-design, prototype-report, asset-manifest, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, review-report, qa-report, verification-report, quality-report, decision-record, triage-report]
+      outputs: [triage-report]
+      # 1 + 6 assets passes + the sending routes' budgets, each followed by at most one visit
+      # per specialist through next-specialist; the specialists' own budgets on develop are
+      # the bound a chain meets. The quality gate's three routes (workflow 11) add 10.
+      max_visits: 110
+      max_visits_by_route:
+        playability.fail: 2
+        production-quality.develop: 2
+        visual-qa.develop: 2
+        content-sufficiency.develop: 2
+        content-sufficiency.design-gap: 1
+        quality-gate.develop: 2
+        quality-gate.assets: 2
+        quality-gate.design-gap: 1
+        review.request-changes: 2
+        sdk-review.request-changes: 2
+        verify.fail: 2
+        iterate: 2
+      on:
+        design: design
+        assets: assets
+        level-designer: develop
+        systems-designer: develop
+        encounter-designer: develop
+        gameplay: develop
+        environment-artist: develop
+        artist-2d: develop
+        ui: develop
+        audio-designer: develop
+        sdk: develop
 
     - id: develop
       type: develop
@@ -232,34 +323,43 @@ workflow:
       # scaffold-record says which repository to build in; title-strategy carries the
       # questions the prototype must answer and the kill criteria its report must list;
       # tech-plan carries the approved prototype tasks and their acceptance criteria.
-      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report]
+      # triage-report: entered through triage with a specialist's label, the visit is that
+      # specialist's - its focus, craft playbooks, writable scope and only the findings it
+      # owns (docs/specialist-routing.md).
+      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, triage-report]
       outputs: [prototype-report]
       with:
         phase: production
-      # Two unplayable builds, two production-quality, two visual-qa and two content
-      # sufficiency failures of the game's own, two requests for changes from each reviewer, two failed verifications
-      # and two G4 iterations before a person looks - plus the four passes through assets
-      # (assets' own route budgets), each of which enters develop once more.
-      # 24 = the first visit + 2 x 8 + 4 + 3 returns after a design repair.
-      max_visits: 24
+      # Per specialist, over the whole run: the generalist (gameplay) takes what review,
+      # sdk-review and verify send back and what nobody else owns - every develop-bound
+      # sending route's budget (2 x 8), so it is never cut before a gate's own; every
+      # other specialist four visits before a person looks. Plus the six passes through
+      # assets (assets' own route budgets), each of which enters develop once more.
+      # 59 = the first visit + 16 + 8 x 4 + 6 + 4 returns after a design repair (one each
+      # from greybox's and develop's design-gap, two from triage's design).
+      max_visits: 59
       max_visits_by_route:
-        playability.fail: 2
-        production-quality.develop: 2
-        visual-qa.develop: 2
-        content-sufficiency.develop: 2
-        review.request-changes: 2
-        sdk-review.request-changes: 2
-        verify.fail: 2
-        iterate: 2
+        triage.gameplay: 16
+        triage.level-designer: 4
+        triage.systems-designer: 4
+        triage.encounter-designer: 4
+        triage.environment-artist: 4
+        triage.artist-2d: 4
+        triage.ui: 4
+        triage.audio-designer: 4
+        triage.sdk: 4
       on:
         design-gap: design
+        # A specialist visit done while the triage that routed it has groups pending: the
+        # next specialist works on the same build before the gates measure it again.
+        next-specialist: triage
 
     # The build is played from outside before anyone reads its code: a bot clones develop's
     # commit, builds it, and plays it through the game's play probe with real input on a
     # desktop and a mobile viewport - objective on screen, no loss before the grace, every
     # action visibly acknowledged, a reachable win and loss, a working retry, readable
     # entities, lit frames (the design's experience contract, core/reference/
-    # visual-quality.yaml). FAIL (route `fail`) goes back to develop with the report and
+    # visual-quality.yaml). FAIL (route `fail`) goes back, through triage, to develop with the report and
     # the frames that show it; BLOCKED - it could not be built or played - stops the run.
     #
     # `survey`: after the traverse plays the first units in order, the bot also enters every
@@ -273,9 +373,9 @@ workflow:
       outputs: [playability-report]
       with:
         survey: true
-      max_visits: 24
+      max_visits: 59
       on:
-        fail: develop
+        fail: triage
 
     # The production gate: from what playability recorded of the same play of the same
     # commit, every required asset exists, is not a placeholder, passes its own quality
@@ -283,30 +383,30 @@ workflow:
     # design's art direction is primitive_style); the DOM UI meets its measured bars
     # (core/reference/production-quality.yaml). FAILED with route `assets` - an asset must
     # be made again - goes to assets; route `develop` - the game's use of assets or its UI
-    # must change - goes to develop. BLOCKED (nothing recorded to judge) stops the run.
+    # must change - goes through triage to develop. BLOCKED (nothing recorded to judge) stops the run.
     - id: production-quality
       type: production-quality
       stage: title:prototype
       inputs: [playability-report, asset-manifest, game-design, scaffold-record]
       outputs: [production-quality-report]
-      max_visits: 24
+      max_visits: 59
       on:
         assets: assets
-        develop: develop
+        develop: triage
 
     # A judge reads the production build's frames against core/reference/visual-qa-rubric.yaml
     # and the design's visual identity; the step decides. FAIL routes by the category of the
-    # failures: `assets` to assets, `develop` to develop. With no judge configured it is
+    # failures: `assets` to assets, `develop` through triage to develop. With no judge configured it is
     # BLOCKED, never a silent pass.
     - id: visual-qa
       type: visual-qa
       stage: title:prototype
       inputs: [playability-report, game-design, asset-manifest, production-quality-report]
       outputs: [visual-qa-report]
-      max_visits: 24
+      max_visits: 59
       on:
         assets: assets
-        develop: develop
+        develop: triage
 
     # Content sufficiency: the BUILT game carries the content its quality tier asks for.
     # From what playability recorded of the same commit - the content data file it ships,
@@ -317,21 +417,24 @@ workflow:
     # play and every design commitment present, against core/reference/quality-benchmark.yaml
     # at the design's tier (core/reference/content-sufficiency.yaml says how each is
     # measured). FAILED with route `develop` - the build is short of a design that meets the
-    # bar - goes to develop; route `design-gap` - the design itself is short of it - goes to
-    # design with the findings' design gaps. BLOCKED (nothing recorded) stops the run.
+    # bar - goes through triage to develop; route `design-gap` - the design itself is short
+    # of it - goes through triage to design with the findings' design gaps. BLOCKED
+    # (nothing recorded) stops the run.
     - id: content-sufficiency
       type: content-sufficiency
       stage: title:prototype
       inputs: [playability-report, game-design, scaffold-record, title-strategy, visual-qa-report]
       outputs: [content-sufficiency-report]
-      max_visits: 24
+      max_visits: 59
       on:
-        develop: develop
-        design-gap: design
+        # Through triage, like every gate: `develop` to the specialist that owns each
+        # finding, `design-gap` to design (triage's `design`, with the report's gaps).
+        develop: triage
+        design-gap: triage
 
     # An independent reviewer reads the commit develop made; it may not change it. Approve
     # continues to sdk (whose own commit sdk-review reads in turn); request-changes (FAILED,
-    # route `request-changes`) goes back to develop with the blockers. Unrouted, a request
+    # route `request-changes`) goes back, through triage, to develop with the blockers. Unrouted, a request
     # for changes would fail the run, never continue. Verify runs only after both reviews
     # approve, so after verify fails the reviewer reads a commit nothing can have verified
     # yet: the newest qa-report, when it is a fail this run recorded, is shown in the brief -
@@ -342,9 +445,9 @@ workflow:
       stage: title:prototype
       inputs: [prototype-report, game-design, scaffold-record, qa-report]
       outputs: [review-report]
-      max_visits: 24
+      max_visits: 59
       on:
-        request-changes: develop
+        request-changes: triage
 
     # Integrates the template's platform SDK into the game the design and init produced:
     # it reads the design's placements, and writes into the repository init created. When
@@ -357,7 +460,7 @@ workflow:
       stage: title:prototype
       inputs: [game-design, scaffold-record, prototype-report, tech-plan]
       outputs: [sdk-report]
-      max_visits: 24
+      max_visits: 59
       # A create-before-build portal's ids (wgf_publish.identity): once per portal, and once
       # more for a person's retry.
       max_visits_by_route:
@@ -367,7 +470,7 @@ workflow:
     # that sdk commit is what verify checks and release ships. So it is reviewed too, by the
     # same independent, read-only reviewer: the subject is the sdk-report's commit (HEAD
     # after sdk), the change is prototype-report's commit..sdk commit. request-changes goes
-    # back to develop with the blockers - the developer fixes the game side, sdk integrates
+    # back, through triage, to develop with the blockers - the developer fixes the game side, sdk integrates
     # again, and both reviews run again; develop's own sdk-review.request-changes budget
     # bounds the loop. A requested change never continues to verify. It is shown an open
     # verify failure the same way review is.
@@ -376,14 +479,15 @@ workflow:
       stage: title:prototype
       inputs: [sdk-report, prototype-report, game-design, scaffold-record, qa-report]
       outputs: [review-report]
-      max_visits: 24
+      max_visits: 59
       with:
         subject: sdk-report
       on:
-        request-changes: develop
+        request-changes: triage
 
     # Verification returns a result, not a destination: FAIL (route `fail`) goes back to
-    # develop with the failing qa-report, PASS continues to the prototype review (G4), and
+    # develop, through triage, with the failing qa-report, PASS continues to the prototype
+    # review (G4), and
     # BLOCKED - a check that could not be established - is unrouted, so the run stops for a
     # person.
     - id: verify
@@ -392,31 +496,57 @@ workflow:
       inputs: [prototype-report, sdk-report, game-design, scaffold-record, asset-manifest, playability-report]
       outputs: [verification-report, qa-report]
       retry: {max_attempts: 2}
-      max_visits: 24
+      max_visits: 59
       on:
-        fail: develop
+        fail: triage
+
+    # The quality gate: one build, every quality dimension. From the reports the producing
+    # steps wrote about this build - playability, production-quality, visual-qa,
+    # content-sufficiency, review, sdk, verify - each dimension (gameplay, content, variety,
+    # progression, visual, UI, audio, consistency, polish, technical, platform, store) is
+    # scored against core/reference/quality-floor.yaml and the benchmark's bars at the run's
+    # quality tier, as pinned when the run started. A dimension below its floor - whatever the
+    # others score - is FAILED and goes through triage like every gate's failure: `develop`
+    # to the specialist that owns each finding, `assets` to assets, `design-gap` to design
+    # (triage's `design`). Evidence about another build, or a pinned reference edited after
+    # the start, is BLOCKED. The store is measured after the listing exists (deferred; release
+    # requires its validation). A run at tier mvp is a development build: its release
+    # decision is `development`, never release (docs/quality-gate-module.md).
+    - id: quality-gate
+      type: quality-gate
+      stage: title:prototype
+      inputs: [playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, qa-report, verification-report, prototype-report, game-design, sdk-report, review-report, asset-manifest, title-strategy]
+      outputs: [quality-report]
+      max_visits: 59
+      on:
+        develop: triage
+        assets: triage
+        design-gap: triage
 
     # G4, the kill gate: a person judges the verified prototype - the qa-report,
     # verification-report and prototype-report verify just produced - against the terms of
     # the bet (the kill criteria in title-strategy, the game-design they measure); nothing else
     # answers it (it is irreversible; automation's answer is refused). `pass` continues to
-    # the store listing, then release. `iterate` sends the work back to develop: a success routed backwards, so the
+    # the store listing, then release. `iterate` sends the work back through triage to develop (typed findings,
+    # `wgf decide <run> iterate --findings FILE`, route like a gate's): a success routed backwards, so the
     # run's lineage stands and the loop ends here again, at a new visit that needs a new
     # decision. `kill` is gates.yaml's `abandon`: it stops the run for good (BLOCKED,
     # routed to $end), and the gate stays unpassed, so no later step of this run can start.
-    # Verification that runs again after a pass supersedes it: G4 is asked again.
+    # Verification that runs again after a pass supersedes it: G4 is asked again. The
+    # quality-report is shown with it: every dimension's score against its floor, the open
+    # findings and the release decision.
     - id: prototype-review
       type: human-checkpoint
       stage: title:prototype-review
-      inputs: [qa-report, verification-report, prototype-report, title-strategy, game-design, playability-report, review-report]
+      inputs: [qa-report, verification-report, prototype-report, title-strategy, game-design, playability-report, review-report, quality-report]
       outputs: [decision-record]
       with:
         gate: G4
         prompt: Judge the verified prototype against the kill criteria set at strategy - pass to release, iterate to develop again, or kill the title?
         choices: [pass, iterate, kill]
-      max_visits: 24
+      max_visits: 59
       on:
-        iterate: develop
+        iterate: triage
         kill: $end
 
     # The store listing, made only after a person passed G4 (`with: required_gates`, the
@@ -426,39 +556,46 @@ workflow:
     # branding from the game's own assets and identity, screenshots and a gameplay recording
     # of real play, copy grounded in the design and the shipped build (checked against
     # core/reference/store-listing.yaml `claims`), and one rendition per targeted platform
-    # under its profile's `store_listing` block. Re-entered from listing-validation (route
-    # `listing`) with the failing report, it captures, renders or rewrites again what the
-    # report names. No browser, no build or an unpassed G4 is BLOCKED, never a silent pass;
-    # a package that is not complete is FAILED with the listing kept as evidence.
+    # under its profile's `store_listing` block. The copy is held to the build: every count
+    # it states is one the content-sufficiency report of the listed build measured, its
+    # controls name every input the build accepts, every required locale is a full
+    # description, written by the copywriter agent at the release tier
+    # (docs/store-listing-module.md). Re-entered through listing-triage (route `listing`)
+    # with the failing report and the triage-report, it captures, renders or rewrites again
+    # what the report names, the copywriter briefed with the store-copy findings. No browser,
+    # no build or an unpassed G4 is BLOCKED, never a silent pass; a package that is not
+    # complete is FAILED with the listing kept as evidence.
     - id: store-listing
       type: store-listing
       stage: release:store-listing
-      description: Capture the verified build's store package - branding, screenshots, trailer, grounded copy, one rendition per platform. Re-entered with the failing listing-validation-report.
-      inputs: [qa-report, verification-report, sdk-report, prototype-report, game-design, title-strategy, scaffold-record, asset-manifest, playability-report, listing-validation-report]
+      description: Capture the verified build's store package - branding, screenshots, trailer, copy grounded in the build's measured content, one rendition per platform. Re-entered through listing-triage with the failing listing-validation-report and the copywriter's findings.
+      inputs: [qa-report, verification-report, sdk-report, prototype-report, game-design, title-strategy, scaffold-record, asset-manifest, playability-report, content-sufficiency-report, listing-validation-report, triage-report]
       outputs: [store-listing]
       with:
         required_gates: [G4]
       retry: {max_attempts: 2}
       # Once per develop visit (G4's iterate comes back through here), plus the validation
       # loop's own budget.
-      max_visits: 24
+      max_visits: 59
       max_visits_by_route:
-        listing-validation.listing: 2
+        listing-triage.listing: 2
 
     # Every required text present and within its limits, every file present with the
     # dimensions, format and size required, screenshots real frames and distinct, the
-    # trailer within bounds or an honest fallback, the copy free of unbacked claims, and
-    # every platform rendition against its profile's block. FAIL (route `listing`) goes back
-    # to store-listing with the report; a requirement a profile leaves null is UNKNOWN,
-    # listed per platform, never passed. BLOCKED (no listing to judge) stops the run.
+    # trailer within bounds or an honest fallback, the copy free of unbacked claims and of
+    # counts the build did not measure, its controls naming every input, every required
+    # locale a full description, and every platform rendition against its profile's block.
+    # FAIL (route `listing`) goes through listing-triage back to store-listing with the
+    # report; a requirement a profile leaves null is UNKNOWN, listed per platform, never
+    # passed. BLOCKED (no listing to judge, or only a person can fix it) stops the run.
     - id: listing-validation
       type: listing-validation
       stage: release:store-listing
       inputs: [store-listing, game-design, sdk-report, scaffold-record]
       outputs: [listing-validation-report]
-      max_visits: 24
+      max_visits: 59
       on:
-        listing: store-listing
+        listing: listing-triage
 
     # Drafts a release only from the newest passing qa-report, whose commit the
     # verification-report, sdk-report, prototype-report and the clean checkout all share.
@@ -474,11 +611,16 @@ workflow:
     # it ships and the newest listing-validation-report passed exactly that listing: the
     # package is copied to release/<release-id>/listing/ and store_metadata is filled from
     # it, which is what G6's store_metadata_complete reads. A workflow without the listing
-    # steps says so with `required_listing: false`.
+    # steps says so with `required_listing: false`. And it refuses unless the newest
+    # quality-report passed exactly the build it ships (its commit and development commit);
+    # a `development` decision (tier mvp) is drafted and recorded as such, never as a
+    # release. A workflow without the quality gate says so with `required_quality: false`.
+    # playability-report and content-sufficiency-report are read only to tell whether the
+    # quality-report scored the run's newest of them.
     - id: release
       type: release
       stage: release:draft
-      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report, store-listing, listing-validation-report]
+      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report, store-listing, listing-validation-report, quality-report, playability-report, content-sufficiency-report]
       outputs: [release-manifest]
       with:
         required_gates: [G4]
@@ -487,6 +629,27 @@ workflow:
       # below are the `publish` group: `wgf publish --run <run-id>` continues this same run
       # through them, reusing its artifacts (docs/publish-module.md).
       next: $end
+
+    # The listing's failures as quality findings (docs/specialist-routing.md): the same
+    # triage step as before G4, here after it, where route `listing` can be taken. Its
+    # findings - store copy the copywriter's, screenshots and art the 2D artist's, a platform
+    # rendition the integrator's - are one store-listing pass (routing.py WHOLE_PASS), whose
+    # copywriter is briefed with the store-copy ones. A finding no store-listing pass can
+    # act on was already BLOCKED by listing-validation, for a person. It is listed after
+    # release, which ends `wgf new-game` ($end), so no step falls through into it; it is
+    # entered only by listing-validation's `listing`, and leads only to store-listing.
+    - id: listing-triage
+      type: triage
+      stage: release:store-listing
+      description: Normalize the store listing's failures into quality findings and route them to store-listing, the copywriter briefed with the store-copy ones.
+      inputs: [game-design, prototype-report, listing-validation-report, triage-report]
+      outputs: [triage-report]
+      max_visits: 59
+      max_visits_by_route:
+        listing-validation.listing: 2
+      on:
+        listing: store-listing
+      next: store-listing
 
     # -- publication: the `publish` group ------------------------------------------------
     #
@@ -563,9 +726,11 @@ workflow:
     # <run> done` after a person acted, or `abandon`). factory.publish.mode is dry-run until
     # an installation sets live. A create-before-build portal (identity.issued_on_create)
     # issues the ids the build must carry when the game is created: IDS_ISSUED routes
-    # `platform-ids` to sdk, which writes them into game.config.yaml; verify, G4, the
-    # listing and release make the build again, and `wgf publish --run <id> --force`
-    # validates it and asks G5 and G6 again.
+    # `platform-ids` to sdk, outside the publish slice: the run ends naming sdk next.
+    # `wgf sdk --run <id> --force` writes them into game.config.yaml; `wgf new-game --run
+    # <id>` runs sdk-review, verify, the quality gate, G4, the listing and release on the new
+    # build; `wgf publish --run <id>` validates it and asks G5 and G6 again. Until then the
+    # quality floor refuses submit: the checks it rests on passed the old build.
     - id: submit
       type: publish
       stage: release:submitting

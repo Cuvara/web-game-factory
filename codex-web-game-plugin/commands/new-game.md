@@ -65,7 +65,12 @@ ask the user to give the idea as one quoted string).
 ## Procedure
 
 1. **Preflight.** Stop unless `core/workflows/new-game.workflow.yaml` exists in the working directory
-   (run from the factory repository root). For `resume <run-id>` and `publish <run-id>`, read
+   (run from the factory repository root). For a new run without `--mock`, read `quality` from
+   `bin/wgf where --json`: when `quality.refused` lists anything, the engine refuses to
+   start the run (core/reference/quality-policy.yaml `preflight`) - report each reason
+   verbatim and stop. The fix is the person's: an `agent` design author, or
+   `factory.strategy.quality_tier: mvp`, which makes the run development, never a release;
+   never change the configuration or the tier yourself. For `resume <run-id>` and `publish <run-id>`, read
    `bin/wgf status <run-id> --json` first and stop unless `workflow_id` is `new-game`.
    Then act on it without starting anything when there is nothing to continue:
    `COMPLETED` — report it (step 6) - for `publish <run-id>`, a run that drafted a release is
@@ -125,7 +130,9 @@ ask the user to give the idea as one quoted string).
 6. **When the process exits**, read `bin/wgf status <run-id> --json` and act on the run's
    status (the process's exit code is the same contract: 0, 1, 2, 3):
    - **COMPLETED** (exit 0): report the run id, the artifacts it produced and the
-     release-manifest draft. If `ended_by` is set — `Ended: kill at G4` — report the kill
+     release-manifest draft, with `quality` as the status reports it: call the draft a
+     release only when `quality.release_ready` is true; a `development` run (a mock, tier
+     `mvp`, a weakening configuration - `quality.reasons`) is never a release. If `ended_by` is set — `Ended: kill at G4` — report the kill
      as the end of the title, never as a release.
    - **FAILED, BLOCKED or CANCELLED** (exit 1): show `status`, `cursor`, `blocked_reason`
      and `bin/wgf logs <run-id> --step <cursor>`. A release refused as `unreviewed` is

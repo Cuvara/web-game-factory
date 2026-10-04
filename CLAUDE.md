@@ -106,9 +106,9 @@ bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; ex
                                           # (0 ok/running/ended by G4 kill, 1 failed/blocked/
                                           # cancelled, 3 waiting/paused); also logs, runs, pause, cancel
 
-# The Core Acceptance Suite: WORKFLOW, AGENTS, CONTRACTS, VERIFY, RELEASE, 2D/3D GOLDEN,
-# PROCESS CLEANUP, SECURITY. MISSING or FAIL exits 1; SKIP is never PASS: skipped tests are
-# listed and the summary says INCOMPLETE. --strict also exits 4 on a skipped category.
+# The Core Acceptance Suite: WORKFLOW, AGENTS, CONTRACTS, VERIFY, RELEASE, QUALITY,
+# 2D/3D GOLDEN, PROCESS CLEANUP, SECURITY. MISSING or FAIL exits 1; SKIP is never PASS:
+# skipped tests are listed and the summary says INCOMPLETE. --strict also exits 4 on a skipped category.
 bin/wgf test-core [--only WORKFLOW] [--json] [--strict]
 WGF_GOLDEN=1 bin/wgf test-core --strict   # the release gate: real 2D + 3D goldens, no SKIP category
 
@@ -236,7 +236,14 @@ again) to `assets` and `develop` to `develop`, and `release` refuses unless both
 development commit it ships (`docs/production-architecture.md`). Workflow 9 then counts the
 built content against the design's quality tier: `content-sufficiency` routes `develop` (the
 build is short of the design) or `design-gap` (the design is short of the tier)
-(`docs/content-sufficiency-module.md`). Workflow 7 adds the **store listing** after G4
+(`docs/content-sufficiency-module.md`). Workflow 11 adds the **quality gate** after verify:
+`quality-gate` scores one build on every quality dimension from the reports the producers
+wrote about it, against `core/reference/quality-floor.yaml` (the universal floor, the genre
+family's contract, the 3D contract) and the benchmark's release bars at the run's tier, as
+pinned when the run started; a dimension below its floor - whatever the others score -
+goes through triage to its findings' owners, stale evidence blocks, a tier-mvp run is
+`development`, never release. G4 is decided on the quality-report, and release refuses a
+build whose quality-report did not pass it (`docs/quality-gate-module.md`). Workflow 7 adds the **store listing** after G4
 (`docs/store-listing-module.md`): `store-listing` captures the verified build's package -
 screenshots and a gameplay recording of real play through the probe, branding from the
 game's own assets and identity, copy grounded in the design, one rendition per targeted
@@ -309,8 +316,9 @@ every step type in `new-game` has one: `wgf_discovery` (research), `wgf_strategy
 `wgf_design`, `wgf_techplan`, `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_review`,
 `wgf_sdk`, `wgf_verification`, `wgf_release`, `wgf_playability`, `wgf_production`
 (production-quality), `wgf_visualqa` (visual-qa), `wgf_sufficiency` (content-sufficiency),
-`wgf_listing` (store-listing and listing-validation) and `wgf_publish` (platform-validate and
-publish). `--mock` still
+`wgf_quality` (quality-gate), `wgf_listing` (store-listing and listing-validation),
+`wgf_publish` (platform-validate and publish) and `wgf_triage` (triage: failures as quality
+findings, routed to the specialist that owns them). `--mock` still
 replaces all of them with placeholders for a run. Discovery reads evidence snapshots from
 `workspace/research/snapshots/` and teardown records from `workspace/research/games/`, codes
 every game on `core/reference/research-vocabulary.yaml`, and proposes several opportunities
@@ -408,6 +416,10 @@ seen by the engine — validate what you write there with ajv.
 - `docs/template-contract.md` — every path, script, CLI, output and config key the Factory
   assumes of a game repository (`wgflib/template_contract.py`), and the drift test against the pin
 - `docs/workflow-engine.md` — the `wgf` engine: definitions, steps, retry, resume, routing
+- `docs/specialist-routing.md` — quality findings (`shared/quality-finding.schema.json`)
+  routed to the specialist that owns each dimension (`core/reference/specialist-routing.yaml`,
+  `core/roles/specialists.md`): the `triage` step, specialist develop visits, their loop
+  budgets and ledger, and G4's `iterate --findings`
 - `docs/plugin-runtime.md` — the installed plugin is the Factory runtime and the working
   directory the project: what the plugin ships, how `ROOT` and `PROJECT` resolve, `wgf where`
 - `docs/autonomous-runs.md` — why the shipped config is supervised, the opt-in autonomous
@@ -436,6 +448,11 @@ seen by the engine — validate what you write there with ajv.
   (the played commit's `public/content/units.json`, the traverse and the survey of every unit
   through the probe's unit link) counted against `core/reference/quality-benchmark.yaml` at
   the design's tier; typed findings routing `develop` or `design-gap`
+- `docs/quality-gate-module.md` — the `quality-gate` step: one build scored on every quality
+  dimension from the same build's reports, hard floors per dimension (no averaging past a
+  blocker), stale evidence, the finding lifecycle, the release decision, routing, pinning
+- `docs/factory-quality-benchmark.md` — the Factory quality benchmark as a system: the
+  benchmark and the two-layer floor (universal + genre/3D), calibration and how to version it
 - `docs/store-listing-module.md` — the `store-listing` and `listing-validation` steps: the
   store package captured from the verified build (branding, screenshots, trailer, grounded
   copy, per-platform renditions under `core/reference/store-listing.yaml` and the profiles'
@@ -518,6 +535,14 @@ seen by the engine — validate what you write there with ajv.
   market cells (demand, supply, saturation, competition, trend), counted patterns, the five
   opportunity generators, capability gaps, the research handoff strategy and design read,
   what the shipped corpus supports, and what is not implemented
+- `docs/quality-consistency-tests.md` — WS-13: the Core Acceptance Suite's QUALITY category.
+  The shipped new-game run on six genres through the real gates (fixture designer, developer
+  and bot only), eleven intentional degradations each detected, blocking, typed and routed,
+  recovery by re-measurement, anti-gaming, and the gaps it found
+- `docs/new-game-quality-inheritance.md` — WS-12: every entry point and resume path of
+  `new-game` (CLI, plugin, `--run`, `--from`, `--force`, `decide`, autonomous profile, config
+  overlays, auto-approve), what each could skip, and how `core/reference/quality-policy.yaml`
+  closes it: the run's quality snapshot, the floor at G4 and release, the development class
 - `docs/env-vars.md` — every `WGF_*` environment variable: runtime and test, who reads it, default
 
 Documentation that contradicts a machine file is worse than none, because people believe it.

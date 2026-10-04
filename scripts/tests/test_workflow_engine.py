@@ -138,8 +138,8 @@ workflow:
 # held by the run and listed as its inputs. `strategy` produces every type any gate these
 # tests name requires, so each test exercises the gate rule it is about, not a missing input.
 GATE_EVIDENCE = ("[title-strategy, game-design, tech-plan, qa-report, verification-report, "
-                 "prototype-report, playability-report, review-report, release-manifest, "
-                 "performance-review]")
+                 "prototype-report, playability-report, review-report, quality-report, "
+                 "release-manifest, performance-review]")
 
 CHECKPOINT = f"""
 workflow:
@@ -406,12 +406,26 @@ class Idempotency(EngineCase):
 
     def test_completed_steps_are_skipped_wherever_they_fall_in_the_scope(self):
         engine = self.engine(LINEAR)
+        run = engine.start()
+        self.script.calls.clear()
+        state = engine.continue_in(run.run_id, None)
+        self.assertEqual(state.status, RunStatus.COMPLETED)
+        self.assertEqual(self.script.executed(), [])
+        self.assertEqual(state.steps["b"].executions, 1)
+        self.assertEqual(state.steps["b"].status, StepStatus.SUCCESS)
+
+    def test_a_completed_step_whose_upstream_ran_since_is_not_skipped(self):
+        """WS-12: `wgf new-game --run` after upstream work was redone (a re-plan, a new
+        build) runs every step after it again, not only the gates: a step skipped as
+        "already completed" would hand a gate the evidence of the old work."""
+        engine = self.engine(LINEAR)
         run = engine.start(scope="middle")
         self.script.calls.clear()
         state = engine.continue_in(run.run_id, None)
         self.assertEqual(state.status, RunStatus.COMPLETED)
-        self.assertEqual(self.script.executed(), ["a"])
-        self.assertEqual(state.steps["b"].executions, 1)
+        self.assertEqual(self.script.executed()[0], "a")
+        self.assertIn("b", self.script.executed())
+        self.assertEqual(state.steps["b"].executions, 2)
         self.assertEqual(state.steps["b"].status, StepStatus.SUCCESS)
 
     def test_force_re_executes(self):

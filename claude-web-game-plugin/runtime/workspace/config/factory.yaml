@@ -79,12 +79,16 @@ factory:
   #   wgf_visualqa   the `visual-qa` step (scripts/wgf_visualqa/, docs/visual-qa-module.md)
   #   wgf_sufficiency the `content-sufficiency` step (scripts/wgf_sufficiency/,
   #                  docs/content-sufficiency-module.md)
+  #   wgf_quality    the `quality-gate` step (scripts/wgf_quality/,
+  #                  docs/quality-gate-module.md)
   #   wgf_listing    the `store-listing` and `listing-validation` steps (scripts/wgf_listing/,
   #                  docs/store-listing-module.md)
   #   wgf_publish    the `platform-validate` and `publish` steps (scripts/wgf_publish/,
   #                  docs/publish-module.md)
+  #   wgf_triage     the `triage` step: failures as quality findings, routed to the
+  #                  specialist that owns them (scripts/wgf_triage/, docs/specialist-routing.md)
   steps:
-    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa, wgf_sufficiency, wgf_listing, wgf_publish]
+    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa, wgf_sufficiency, wgf_quality, wgf_listing, wgf_publish, wgf_triage]
 
   # The strategy module (scripts/wgf_strategy): by default it ranks the opportunity's
   # candidate platforms by audience fit and makes the best one required. A project that has
@@ -673,14 +677,20 @@ factory:
       timeout_seconds: 900       # one capture attempt, wall clock
       trailer: true              # record the gameplay trailer
       # viewports: [{id: landscape, width: 1920, height: 1080}, {id: portrait, width: 1080, height: 1920, mobile: true}]
-    # Who writes the store copy. template (default): the Factory's own deterministic writer,
-    # from the design's facts and the game's own strings - English, plus any locale whose
-    # strings the bundle ships; it never translates. command: an agent host run read-only
-    # once per locale with {brief} {output} {prompt} placeholders; its texts go through the
-    # same grounding check (unbacked claims are refused and asked again once, then the
-    # template writer's text stands in and the listing says so).
+    # Who writes the store copy. auto (default): the run tier's writer
+    # (core/reference/store-listing.yaml `writer`) - the copywriter agent (command) at the
+    # release tier, the template for development runs. template: the Factory's own
+    # deterministic writer, from the design's facts and the game's own strings - English,
+    # plus any locale whose strings the bundle ships; it never translates. command: an agent
+    # host run read-only once per locale with {brief} {output} {prompt} placeholders,
+    # briefed as the copywriter with the build's measured counts, every input it accepts and,
+    # re-entered through triage, the store-copy findings; its texts go through the same
+    # grounding check (refused and asked again once, then the template writer's text stands
+    # in and the listing says so). At the release tier with no argv here the template writes
+    # and listing-validation blocks for a person (metadata.writer): configure the agent below
+    # (the autonomous profile does) or supply the copy (copy_dir).
     writer:
-      kind: template             # template | command
+      kind: auto                 # auto | template | command
       argv: []
       timeout_seconds: 600
       idle_timeout_seconds: null

@@ -1,0 +1,216 @@
+# Specialist routing: which discipline owns a quality finding, and where its work is done.
+#
+# The gates that judge a build (playability, production-quality, visual-qa, review,
+# verification, listing-validation) and a person at G4 each say what fell short in their own
+# words. Before this file a failure went back to one generalist develop visit whatever it
+# was about: a dark 3D scene, a missing level, a browser-default button and a code review
+# blocker all got the same brief (docs/quality-gap-audit-2026-10.md, section 2.2: "gen").
+# Here every such failure becomes a quality finding (core/artifacts/shared/
+# quality-finding.schema.json) with a dimension, the dimension has exactly one owner, and the
+# owner's develop visit is briefed as that specialist: its focus, its craft playbooks, its
+# writable scope (core/roles/roles.yaml `reads` / `writes`) and only the findings it owns.
+#
+# Read by the triage step (scripts/wgf_triage, docs/specialist-routing.md), which normalizes
+# the current build's failing reports with the `producers` tables below, groups the findings
+# by owner, and returns one group's route label per visit. The workflow maps the labels
+# (core/workflows/new-game.workflow.yaml, step `triage`). Nothing reads a game, an engine
+# name or a family id here: the only branch is the design's own `engine.dimension`.
+#
+# Changing an owner, a playbook or a mapping is a version bump of this file; a new dimension
+# is a change to the quality-finding schema first (its `dimension` enum), then here.
+
+# 1.1.0: content-sufficiency-report (workflow 10).
+version: 1.2.0
+
+# The quality dimensions, as the quality-finding schema enumerates them.
+dimensions: [content, level-design, difficulty, progression, gameplay, art-2d, environment-3d, lighting-material, ui, audio, feel, store-copy, platform]
+
+# Owners, in VISIT ORDER: when one build has findings for several specialists, the develop
+# visits run in this order, one specialist per visit, before the gates measure the build
+# again. Structure before systems, systems before the loop's code, the loop before its look,
+# the look before its sound, platform wiring last: polish laid on a structure about to change
+# is work thrown away. Every dimension above has exactly one owner (check-integrity and the
+# triage tests hold it). `route` is where the owner's work is done: `develop` - a develop
+# visit briefed as that specialist - or `listing` (the store-listing step, after G4).
+specialists:
+  - role: level-designer
+    dimensions: [content, level-design]
+    route: develop
+  - role: systems-designer
+    dimensions: [progression]
+    route: develop
+  - role: encounter-designer
+    dimensions: [difficulty]
+    route: develop
+  - role: gameplay
+    dimensions: [gameplay, feel]
+    route: develop
+  - role: environment-artist
+    dimensions: [environment-3d, lighting-material]
+    route: develop
+  - role: artist-2d
+    dimensions: [art-2d]
+    route: develop
+  - role: ui
+    dimensions: [ui]
+    route: develop
+  - role: audio-designer
+    dimensions: [audio]
+    route: develop
+  - role: sdk
+    dimensions: [platform]
+    route: develop
+  - role: copywriter
+    dimensions: [store-copy]
+    route: listing
+
+# What owns a finding nothing below maps: the generalist.
+default_dimension: gameplay
+
+# Route order across a build's groups. `design` first: a scope or content increase the
+# design must state changes what every other group would be built on, so the others are
+# deferred and measured again on the rebuilt game. `assets` before the develop specialists:
+# develop integrates what assets made. A route this loop cannot take (`listing` before G4)
+# holds its findings for the step that can, and says so.
+route_order: [design, assets, develop]
+
+# Words a producer uses that mean different dimensions in 2D and in 3D, resolved by the
+# design's `engine.dimension`. A 3D scene's art is the environment artist's (models,
+# materials, the dressed world); a 2D game's is the 2D artist's.
+by_engine_dimension:
+  art: {2d: art-2d, 3d: environment-3d}
+  environment: {2d: art-2d, 3d: environment-3d}
+  composition: {2d: art-2d, 3d: environment-3d}
+  lighting: {2d: art-2d, 3d: lighting-material}
+
+# How each producer's failures become findings. `checks` keys are a check id, or a prefix
+# ending in "." (the longest match wins); values are a dimension or a word above. `route`
+# is the finding's route when the producer does not state one per failure.
+producers:
+  playability-report:
+    step: playability
+    route: develop
+    checks:
+      content.: content
+      difficulty.: difficulty
+      idle.grace: difficulty
+      progression.: progression
+      act.acknowledged: feel
+      start.objective: ui
+      restart.works: ui
+      entities.: art
+      frames.: lighting
+      probe.: gameplay
+      start.playable: gameplay
+      win.reachable: gameplay
+      lose.reachable: gameplay
+    acceptance: playability plays the next build and measures `{check}` PASS{bar_clause}.
+
+  production-quality-report:
+    step: production-quality
+    # Each check states its own route (assets | develop).
+    checks:
+      assets.: art
+      scene.no_primitives: art
+      scene.contrast: lighting
+      ui.: ui
+      audio.: audio
+    default: art
+    acceptance: production-quality judges the next build and measures `{check}` PASS{bar_clause}.
+
+  visual-qa-report:
+    step: visual-qa
+    # Findings carry their own route; scores and state questions take the rubric's
+    # (core/reference/visual-qa-rubric.yaml). `major` and `minor` findings the judge raised
+    # travel with the failing ones to the same owner: a build is judged whole.
+    findings:
+      assets: art
+      ui: ui
+      composition: composition
+      readability: lighting
+      consistency: art
+      debug: gameplay
+    scores:
+      art_completeness: art
+      character_readability: art
+      environment: environment
+      ui_polish: ui
+      typography: ui
+      composition: composition
+      consistency: art
+      no_debug: gameplay
+    states:
+      entities_recognisable: art
+      primitives_or_placeholders: art
+      lighting_materials_coherent: lighting-material
+      typography_readable: ui
+      buttons_polished: ui
+      objective_obvious: ui
+      outcome_understandable: ui
+    look: art
+    default: art
+    acceptance: visual-qa judges frames of the next build and no longer fails `{check}`{bar_clause}.
+
+  content-sufficiency-report:
+    step: content-sufficiency
+    # Its findings name their own dimension (content, level-design, difficulty,
+    # progression); a `design-gap` finding routes `design` with the gap it carries.
+    checks:
+      content.: content
+    default: content
+    acceptance: content-sufficiency counts the next build and `{check}` PASSes{bar_clause}.
+
+  review-report:
+    step: review
+    route: develop
+    default: gameplay
+    acceptance: the next review of the build no longer raises blocker `{check}`.
+
+  qa-report:
+    step: verify
+    route: develop
+    # A defect named for a platform is the platform integrator's.
+    platform_defect: platform
+    default: gameplay
+    acceptance: verify runs the next build and `{check}` no longer fails.
+
+  listing-validation-report:
+    step: listing-validation
+    route: listing
+    sections:
+      metadata: store-copy
+      grounding: store-copy
+      platforms: platform
+      screenshots: art-2d
+      video: art-2d
+      assets: art-2d
+    default: store-copy
+    acceptance: listing-validation judges the next listing and `{check}` PASSes{bar_clause}.
+
+  quality-report:
+    step: quality-gate
+    # The quality gate's dimensions (core/reference/quality-floor.yaml) mapped onto the
+    # routing dimensions; its findings name the quality dimension, a `design-gap` finding
+    # routes `design` and an `assets` one `assets` (1.2.0).
+    dimensions:
+      gameplay: gameplay
+      content: content
+      variety: level-design
+      progression: progression
+      visual: art
+      ui: ui
+      audio: audio
+      consistency: art
+      polish: feel
+      technical: gameplay
+      platform: platform
+      store: store-copy
+    default: gameplay
+    acceptance: the quality gate scores the next build and `{check}` meets its minimum{bar_clause}.
+
+  decision-record:
+    step: prototype-review
+    # A person's findings at G4 name their own dimension; their route is their owner's,
+    # unless the person asks for `design`.
+    default: gameplay
+    acceptance: the person deciding G4 checks it on the next verified build.

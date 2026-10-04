@@ -26,6 +26,9 @@
 #              which production-quality refuses: the run loops back to assets and blocks
 #   visual-qa  a read-only headless Claude Code judge reads the captured frames and returns
 #              scores; the step decides. Without a judge visual-qa BLOCKS
+#   listing    after a person passes G4, a read-only headless Claude Code copywriter writes
+#              the store copy in every required locale from the build's measured facts;
+#              at the release tier listing-validation refuses copy the template wrote
 #   G2, G3     approved by the run (reversible gates)
 #   init       a LOCAL project from the pinned template: no GitHub repository, no remote
 #   budget     caps the developer sessions at 12 / US$60 per run; the tech plan derives what
@@ -263,3 +266,35 @@ factory:
         - "2"
       timeout_seconds: 900
       idle_timeout_seconds: null
+
+  listing:
+    # The copywriter (core/roles/roles.yaml): at the release tier the store copy is the
+    # agent's (core/reference/store-listing.yaml `writer`); the template writer's fails
+    # listing-validation (metadata.writer). It runs after G4, which a person decides.
+    writer:
+      kind: command
+      text_from: stdout
+      argv:
+        - claude
+        - -p
+        - "{prompt}"
+        - --model
+        - sonnet
+        - --safe-mode
+        - --strict-mcp-config
+        - --tools
+        - "Read"
+        - --allowedTools
+        - "Read"
+        - --disallowedTools
+        - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+        - --permission-mode
+        - dontAsk
+        - --no-session-persistence
+        - --output-format
+        - text
+        - --max-turns
+        - "10"
+        - --max-budget-usd
+        - "1"
+      timeout_seconds: 600

@@ -6,8 +6,13 @@ that must not get through. The toolchain checks are the game repository's own sc
 the same commands its CI runs - so a green here predicts a green there.
 
 Each check yields a `CheckResult` with status passed / failed / skipped. Skipped is only for
-something genuinely unavailable on this machine (no browser for Playwright), never for a
-failure, and the report says so.
+something genuinely unavailable on this machine (no browser for Playwright, a script the
+package.json lacks), never for a failure, and the report says so. A skipped check measured
+nothing, so it is never a pass: at a tier where core/reference/quality-policy.yaml rule 5
+holds skipped checks not passed (the release tier), a skip is `required` and blocks the build
+like a failure, with a finding naming what was missing - unless the policy declares that check
+optional for the tier and platforms. At any other tier it is reported as skipped and does not
+hold the build up (wgflib.check_strength).
 
 The toolchain checks run code the developer wrote (package.json scripts, tests, the
 Playwright webServer), so they get wgflib.agentenv's game-code environment - the allowlist
@@ -34,8 +39,8 @@ from .repository import ExactEnv
 from .seam import sdk_owned_findings, seam_findings
 from .settings import DEFAULTS, PACKAGE_FIELDS
 
-__all__ = ["CheckResult", "run_checks", "conformance", "package_findings", "read_report",
-           "TOOLCHAIN"]
+__all__ = ["CheckResult", "run_checks", "apply_skip_policy", "conformance", "package_findings",
+           "read_report", "TOOLCHAIN"]
 
 # A dependency a developer adds must come from the registry: a version range, never a path
 # (file:, link:), a URL, a git or GitHub reference, an alias (npm:) or a workspace package -
@@ -161,20 +166,35 @@ def _template_scene_findings(root):
 
 class CheckResult:
     def __init__(self, check_id, status, summary, output_tail=None, duration_s=None,
-                 findings=None):
+                 findings=None, required=False):
         self.id = check_id
         self.status = status
         self.summary = summary
         self.output_tail = output_tail
         self.duration_s = duration_s
         self.findings = list(findings or [])
+        # Only meaningful for a skip: a skipped check this run's tier does not let pass.
+        self.required = required
 
     @property
     def failed(self):
         return self.status == "failed"
 
+    @property
+    def skipped(self):
+        return self.status == "skipped"
+
+    @property
+    def blocking(self):
+        """Not passed: a failure, or a skip the run's tier holds against the build."""
+        return self.failed or (self.skipped and self.required)
+
     def to_dict(self):
         data = {"id": self.id, "status": self.status, "summary": self.summary}
+        if self.skipped:
+            data["required"] = bool(self.required)
+            if self.required:
+                data["blocking"] = True
         if self.findings:
             data["findings"] = self.findings
         if self.duration_s is not None:
@@ -468,9 +488,48 @@ def _script_names(root):
         return set()
 
 
-def run_checks(root, brief, settings, runner, git, logger=None):
+def _skip_finding(result, why):
+    """What a required skip says the developer must make true for the check to run."""
+    script = TOOLCHAIN.get(result.id, (None, None))[1]
+    if result.summary.startswith("package.json has no"):
+        cause = (f"package.json has no {script!r} script, so the {result.id} check did not run")
+    elif result.summary.startswith("not available"):
+        cause = (f"no browser for Playwright on this machine, so the {result.id} check did not "
+                 f"run (install one: `{_PM} exec playwright install chromium`)")
+    else:
+        cause = f"the {result.id} check did not run ({result.summary})"
+    return f"{cause}; {why}"
+
+
+def apply_skip_policy(results, strength, steps=("develop",), platforms=()):
+    """Mark every skipped result `required` when `strength` (a wgflib.check_strength
+    SkipPolicy) holds it not passed, with a finding naming what was missing. Never touches a
+    result that is not a skip."""
+    if strength is None:
+        return results
+    for result in results:
+        if not result.skipped:
+            continue
+        result.required = strength.required(result.id, steps, platforms)
+        if result.required:
+            why = (f"at quality tier {strength.tier} a check that did not run is not passed "
+                   f"(core/reference/quality-policy.yaml skipped_checks)")
+            finding = _skip_finding(result, why)
+            result.findings.append(finding)
+            # The next brief carries a failure's summary and output tail: the finding with it.
+            result.output_tail = (f"{finding}\n{result.output_tail}" if result.output_tail
+                                  else finding)
+            result.summary += f" - not passed at quality tier {strength.tier}"
+    return results
+
+
+def run_checks(root, brief, settings, runner, git, logger=None, strength=None,
+               steps=("develop",), platforms=()):
     """Run the configured checks in order. A failure stops the toolchain checks after it
-    only where a later one depends on it (install -> everything, build -> smoke)."""
+    only where a later one depends on it (install -> everything, build -> smoke).
+
+    `strength` (wgflib.check_strength.SkipPolicy for the run's tier) decides whether a skip
+    is held against the build; None reports skips without holding them (apply_skip_policy)."""
     results = []
     scripts = _script_names(root)
     stop_all = False
@@ -531,7 +590,10 @@ def run_checks(root, brief, settings, runner, git, logger=None):
                                    f"request(s) refused: {', '.join(refused['targets'][:5])})")
             if check_id == "install" and result.failed:
                 stop_all = True
-        if logger is not None:
-            logger.info("develop check", check=result.id, status=result.status)
         results.append(result)
+    apply_skip_policy(results, strength, steps, platforms)
+    if logger is not None:
+        for result in results:
+            logger.info("develop check", check=result.id, status=result.status,
+                        **({"required": result.required} if result.skipped else {}))
     return results

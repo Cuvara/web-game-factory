@@ -318,7 +318,40 @@ step's `features.*` checks, and G4 shown the cut and deferred lists.
 No agent, command, workflow, role, machine or gate was added or removed; the manifest goes to
 1.9.0 for the new reads.
 
-## The portal publisher as built (binding manifest 1.10.0)
+## `/new-game`: the quality policy (WS-12)
+
+Generated from `scripts/gen-adapters.sh` like the rest of the entry point; no binding field
+changed, so the manifest version stays.
+
+- Preflight: for a new run without `--mock`, the surface reads `quality` from
+  `wgf where --json` and stops, reporting each reason, when `quality.refused` lists any -
+  the engine would refuse to start the run (core/reference/quality-policy.yaml `preflight`:
+  a built-in design author at the release tier). The fix (an `agent` design author, or tier
+  `mvp`, which makes the run development) is the person's.
+- Report: a completed run's draft is called a release only when `quality.release_ready` is
+  true in `wgf status --json`; a `development` run is never a release
+  (docs/new-game-quality-inheritance.md).
+
+## Specialist routing (binding manifest 1.10.0)
+
+A quality finding is routed to the discipline that owns it (docs/quality-gap-audit-2026-10.md
+WS-8, docs/specialist-routing.md): the `triage` step of `new-game` normalizes the current
+build's failures into quality findings (`core/artifacts/shared/quality-finding.schema.json`),
+groups them by owner (`core/reference/specialist-routing.yaml`) and routes one group per
+develop visit, whose brief is then that specialist's. The specialists are roles in
+`core/roles/roles.yaml` (charter `core/roles/specialists.md`); a specialist visit is a develop
+visit, not a new surface.
+
+- `core/roles/specialists.md`, `core/reference/specialist-routing.yaml` and
+  `core/artifacts/shared/quality-finding.schema.json` are added to the `must_read` of the
+  `gameplay` agent, which now also consumes `triage-report`, and its execution notes say what
+  a brief opening with *This visit* means, in `core/bindings/adapter-binding.yaml` and the
+  `scripts/gen-adapters.sh` tables alike.
+
+No agent, command, workflow or gate was added or removed; the manifest goes to 1.10.0 for the
+new reads.
+
+## The portal publisher as built (binding manifest 1.11.0)
 
 The publish surfaces follow the portal publisher as it landed
 (`docs/portal-publishing-architecture.md` Part 0, `docs/publish-module.md`) rather than the
@@ -350,7 +383,8 @@ earlier "authorize and prepare submissions" wording.
   after an upload, for the person's submit confirmation, and its gate rule gains the two
   waiting states of the `publish` group. It still answers no gate.
 No agent, command, workflow, role, machine or gate was added or removed; the manifest goes to
-1.10.0 for the new reads and the publish command's `must_read`.
+1.11.0 for the new reads and the publish command's `must_read` (written as 1.10.0 beside
+specialist routing's 1.10.0, and numbered after it when the two merged).
 
 ## Not covered, deliberately
 

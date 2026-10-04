@@ -4,8 +4,10 @@
       -> the playability bot's records under the run (no replay): the traverse, the survey of
          every unit entered through the probe's unit link, the probe snapshots with their
          entities; and the content data file of the commit it played (records_dir/content/)
-      -> audit.audit, against core/reference/quality-benchmark.yaml at the design's tier, the
-         genre family's bars and core/reference/content-sufficiency.yaml
+      -> audit.audit, against core/reference/quality-benchmark.yaml at the design's tier - the
+         copy the run pinned when it started (new-game `pinned_references`), so an edit made
+         while it runs applies to the next run - the genre family's bars and
+         core/reference/content-sufficiency.yaml
       -> content-sufficiency-report, with typed findings
 
     PASS      every required check passed                                SUCCESS
@@ -13,7 +15,8 @@
               route `design-gap` when the design itself is short of a bar it failed (the
               design must grow; its findings carry the design gaps), else `develop` (the
               build is short of a design that meets the bar)
-    BLOCKED   there is nothing to judge: the playability step was blocked or left no records
+    BLOCKED   there is nothing to judge: the playability step was blocked or left no records;
+              or the run's pinned benchmark is gone or was edited after the start
 
 It never plays the game and never touches the checkout: it reads what playability recorded of
 the same commit, so every gate judges one build. Automation evidence (`measurement_class:
@@ -26,12 +29,13 @@ import os
 
 from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
-from wgflib.yamllite import YamlError
+from wgflib.workflow import references as pinned_references
+from wgflib.yamllite import YamlError, load as load_yaml
 
 from . import audit as auditing
 
 __all__ = ["ContentSufficiencyStep", "REQUIRED_INPUTS", "RECORDS", "ROUTE_ORDER",
-           "CONTENT_COPY", "load_records", "read_data"]
+           "CONTENT_COPY", "BENCHMARK", "load_records", "read_data", "run_benchmark"]
 
 REQUIRED_INPUTS = ("playability-report", "game-design", "scaffold-record")
 # The bot's records per viewport this step reads (scripts/wgf_playability/bot.spec.ts).
@@ -41,6 +45,9 @@ RECORDS = ("first-session", "act", "traverse", "survey")
 CONTENT_COPY = os.path.join("content", "units.json")
 # The design must grow before the build can catch up with it.
 ROUTE_ORDER = ("design-gap", "develop")
+# The bars, as the run pinned them when it started (new-game `pinned_references`): an edit
+# made while the run is going applies to the next run, never to this one's build.
+BENCHMARK = "core/reference/quality-benchmark.yaml"
 
 
 def _utc_now():
@@ -60,6 +67,14 @@ def load_records(directory, projects):
         if found:
             records[project] = found
     return records
+
+
+def run_benchmark(context):
+    """core/reference/quality-benchmark.yaml as the run pinned it (the live file for a run
+    that pinned none). Raises PinError when the run's copy is gone or was edited."""
+    text, _digest, _pinned = pinned_references.read(
+        BENCHMARK, getattr(context, "environment", None), getattr(context, "run_dir", None))
+    return load_yaml(text)
 
 
 def read_data(directory):
@@ -111,7 +126,11 @@ class ContentSufficiencyStep(WorkflowStep):
                 data, problem = read_data(directory)
                 try:
                     result = auditing.audit(design, strategy, data, records,
+                                            benchmark=run_benchmark(context),
                                             data_problem=problem)
+                except pinned_references.PinError as exc:
+                    blocked = (f"the quality benchmark this run started under cannot be read "
+                               f"({exc}): nothing is held to bars edited after the start")
                 except (OSError, YamlError, ValueError) as exc:
                     blocked = (f"the content bars could not be read ({exc}): nothing can be "
                                "held to them, and no bar is defaulted in code")

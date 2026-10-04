@@ -293,9 +293,16 @@ not Y8-specific (`scripts/wgf_publish/identity.py`):
    stops for a person). The registry records `DRAFT_CREATED` with the ids.
 2. The step routes `platform-ids` (after every waiting platform is answered) to `sdk`, which
    writes the registry's ids into the platform's entry in game.config.yaml, committed with
-   its integration (a keyed sdk commit). sdk-review, verify, G4, the store listing and
-   release make the build again; `wgf publish --run <id> --force` validates the new release
-   and asks G5 and G6 again (the manifest changed, so the old G6 is stale by rule 1).
+   its integration (a keyed sdk commit). The route leaves the `publish` slice, so the run
+   ends naming `sdk` next and a person continues it: `wgf sdk --run <id> --force` writes the
+   ids; `wgf new-game --run <id>` runs sdk-review, verify, quality-gate, G4, the store
+   listing and release on the new build (nothing before sdk: develop's build is unchanged);
+   `wgf publish --run <id>` validates the new release and asks G5 and G6 again (the manifest
+   changed, so the old G6 is stale by rule 1). Until those checks have passed the new build,
+   the quality floor (core/reference/quality-policy.yaml, rule 1) refuses submit: the
+   checks it rests on passed the old one. A later submit visit with nothing changed - a
+   person's `submit` after an upload, the next platform, `--track` - is not refused
+   (scripts/tests/test_quality_inheritance.py `SubmitReentry`).
 3. `platform-validate`'s guard `platform_ids_present` is RED for a build that lacks an id
    the registry holds, or carries another value; GREEN before the game exists (the submit
    visit uploads nothing then) and for every portal without issued ids.
@@ -355,6 +362,12 @@ there). `live` uploads and saves the draft and then waits for a person's `submit
 when the Factory's environment also has `WGF_PUBLISH_LIVE=1`. Production submission is opted
 into twice, never by one edit, and the irreversible request is a person's answer on top of
 both. A `--track` visit is a dry run that may change nothing, not even on the fixture.
+
+A `development`-class run (tier `mvp`, a weakening configuration, a workflow the Factory
+does not ship: core/reference/quality-policy.yaml, [new-game-quality-inheritance.md](new-game-quality-inheritance.md))
+never reaches the submit step while `mode` is `live`: the engine refuses it before it
+executes (BLOCKED `quality-floor`), every visit - the first, a person's `submit` and
+`--track` alike. It may still rehearse a dry run.
 
 ## Adapters: where everything platform-specific lives
 

@@ -7,13 +7,15 @@
     "id": "content-sufficiency-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "producer": "title:prototype",
     "consumers": [
       "title:design",
       "title:prototype",
       "title:prototype-review",
-      "release:qa"
+      "release:qa",
+      "release:draft",
+      "release:store-listing"
     ],
     "repo_path": "<game-repo>/qa/content-sufficiency/<commit>.json",
     "run_path": "<storage>/workflows/<run-id>/artifacts/content-sufficiency-report/v<n>.json",

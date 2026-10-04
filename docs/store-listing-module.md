@@ -13,7 +13,8 @@ bin/wgf new-game                                  # ... verify -> G4 -> store-li
 bin/wgf store-listing --run <run-id>              # capture the run's verified build again
 bin/wgf listing-validation --run <run-id>         # judge the run's newest listing
 python3 scripts/wgf-listing.py validate <package-dir>        # the judge, outside a run
-python3 scripts/wgf-listing.py copy --design game-design.json --dist ../my-game/dist
+python3 scripts/wgf-listing.py copy --design game-design.json --dist ../my-game/dist \
+        [--sufficiency content-sufficiency-report.json] [--tier release]
 python3 scripts/wgf-listing.py requirements [PLATFORM ...]   # what each profile asks, and what is UNKNOWN
 ```
 
@@ -123,7 +124,9 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
    locale) may write instead; its texts go through the same grounding check and a refused
    answer is asked once more with its problems, then the template text stands in
    (`writer.fallback: true`). Texts are fitted to the canonical bounds at sentence or word
-   boundaries, never mid-word.
+   boundaries, never mid-word. Which writer writes is the run tier's (`writer.kind: auto`,
+   the default; see [Copy grounded in the build](#copy-grounded-in-the-build-ws-9)): the
+   copywriter agent at the release tier, the template for development runs.
 6. **Grounding** (`grounding.py`). Every text is checked against the claim vocabulary
    (`claims`): a term that promises a capability - multiplayer, leaderboards, cloud save,
    achievements, controller, 3D, levels, story, bosses, endless, offline - needs its backing
@@ -135,7 +138,11 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
    locale is read from the game's own strings), or "no buttons" beside a control that names
    a button. A count of a subset ("the last two courses") or of something else ("ten gems
    per course") is not one. The template writer leaves out a design sentence the build
-   contradicts instead of quoting it.
+   contradicts instead of quoting it. Where the build was measured, every count is held to
+   the measurement instead (`count-mismatch`, `unmeasured-count`), a feature the design's
+   evaluation cut may not be named (`excluded-feature`), and a bullet in another language
+   than its source is grounded on the source's numbers (`bullet-number-unbacked`), not on
+   shared words - below.
    A person may write a locale's copy themselves: `<copy_dir>/<locale>.json` (a localeCopy;
    default `workspace/titles/<title_id>/listing-copy/` in the project) is used instead of the
    writer for that locale, recorded in `copy.supplied`, and grounded like any other text. A
@@ -166,7 +173,64 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
    the trailer a video within bounds (or an honestly reported fallback, which fails only
    where a platform requires a video); no unbacked claim in any text that reaches a platform;
    every platform rendition against its requirement list. A requirement a profile leaves
-   `null` is **UNKNOWN**: listed per platform in `unknown`, never counted as passed.
+   `null` is **UNKNOWN**: listed per platform in `unknown`, never counted as passed. The
+   copy is judged against the build at the run's tier (below): its counts, its controls,
+   each required locale's full description, its subtitle and its writer.
+
+## Copy grounded in the build (WS-9)
+
+The two 2026-10 validation listings shipped copy a person replaced
+([quality-gap-audit-2026-10.md](quality-gap-audit-2026-10.md) I-23, WS-9): it said "six
+floating-island courses" beside a build of twelve, its controls line named touch while the
+build also took the mouse and the keyboard, the `ru` description Yandex requires was the
+in-game objective line, the Russian copy carried English words to pass the cross-locale
+check, and a subtitle said only the genre. Each is now a check, built from reference data
+(`core/reference/store-listing.yaml` 1.2.0 `counts`, `controls`, `copy.full_description`,
+`copy.subtitle_generic_words`, `writer`) and the run's own reports - never from a game:
+
+| What | Read from | Check (listing-validation) | Required when |
+|---|---|---|---|
+| Every count of a counted noun (units, groups, climax units, modes) equals the build's | the content-sufficiency report of the listed build - its commit, or the development commit the sdk commit sits on (`facts.measured`); modes from the design's features the WS-5 evaluation included | `grounding.counts.<locale>`: `count-mismatch` always; `unmeasured-count` (a count nothing measured) | mismatch always; unmeasured where the tier holds `quality-benchmark.yaml` `store_listing.copy_counts_match_build` (a warning otherwise) |
+| A cut or deferred feature is never named | `features[].evaluation` (`facts.features_excluded`) | `grounding.<locale>` (`excluded-feature`) | always |
+| The controls text names every input the build accepts | the design's MVP `build_spec.controls.actions` per device, and the probe's `inputs` while the listing was captured (`facts.probe_inputs`: a pointer on the mobile viewport is touch, on the desktop one the mouse; a key the keyboard) | `metadata.<locale>.controls`; a language with no device words is UNKNOWN | `controls_cover_all_inputs` |
+| Every required locale (en and each targeted platform's) is a full description | `copy.full_description`: title, short, long (at least `long_description.min_chars`, several sentences, not the short again), controls | `metadata.<locale>.full_description` | `full_description_per_required_locale` |
+| A bullet in another language than its source fact is grounded on the source's numbers and the measured counts, not on shared English words | the bullet's `source` | `grounding.<locale>` (`bullet-number-unbacked`) | always |
+| The subtitle names this game, not only its genre | `copy.subtitle_generic_words`, the genre labels, the tags | `metadata.<locale>.subtitle` | always |
+| The copywriter agent wrote it at the release tier | `writer.by_tier` | `metadata.writer`: `fix: configure` when no agent is configured (BLOCKED for a person), `rewrite` when its text was refused and the template's stands in | the release tier |
+
+The run's tier is the step's `with: quality_tier`, else the run's quality snapshot
+(`core/reference/quality-policy.yaml`), else the design's or strategy's content tier; with
+none stated the listing is a development one. The listing records it with the bars in force
+(`facts.quality`), and listing-validation judges at it. Russian number words and the
+unit's word in each locale (read from the game's own strings, "Course {n}" / "Трасса {n}")
+are understood; a count of a subset ("the last two levels") or per unit ("ten gems per
+level") is not a count of these; the head noun of the phrase is what is counted ("six
+floating-island courses" counts courses).
+
+**The writer.** `factory.listing.writer.kind: auto` (the shipped default) takes
+`writer.by_tier`: the copywriter agent (`command`) at the release tier, the template at
+`mvp` and for a run whose tier is unstated. The copywriter's brief carries its role's focus
+(`core/roles/roles.yaml` `copywriter`), the measured counts as the only counts it may
+state, every device the build accepts, what a full description is in a required locale,
+what the design cut, and - re-entered through triage - the store-copy findings
+listing-validation raised against the previous copy for that locale. Its answer is refused
+(and asked once more) for an ungrounded text, a count the build did not measure, a device
+left out of the controls, a generic subtitle, or a required locale that is not a full
+description. The autonomous profile configures it (`workspace/config/profiles/autonomous.yaml`
+`listing.writer`, the shipped commented example verbatim). At the release tier with no
+agent configured the template writes and validation blocks on `metadata.writer`: configure
+the agent, or supply the copy (`copy_dir`) - a person's copy is never re-judged as the
+writer's.
+
+**The route.** listing-validation's FAIL (`listing`) goes to `listing-triage` - the triage
+step ([specialist-routing.md](specialist-routing.md)) after G4 - which normalizes the
+report into quality findings (`metadata` and `grounding` checks are store copy, the
+copywriter's; screenshots and branding the 2D artist's; a platform rendition the
+integrator's) and routes them as ONE store-listing pass (`listing`): one capture, one
+render, one rewrite, the copywriter briefed with the store-copy findings
+(`copy.writer.findings`). The pass is bounded on store-listing
+(`max_visits_by_route: listing-triage.listing: 2`) and on listing-triage
+(`listing-validation.listing: 2`).
 
 ## Outcomes
 
@@ -178,10 +242,10 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
 | | FAILED (not retryable) | the verification did not pass, or the qa-report and verification-report name different commits |
 | | FAILED (retryable) | the capture timed out or crashed |
 | `listing-validation` | SUCCESS (PASS) | no required check failed; `unknown` lists what the profiles do not state |
-| | FAILED, route `listing` | a required check failed that the step can act on (`fix`: recapture, rerender, rewrite): the workflow routes it back to `store-listing`, twice |
-| | BLOCKED | every failed check needs a person (`fix: configure`): a required locale with no writer, a missing age rating, a format no encoder writes, a profile asking for more than any master; or the listing itself is blocked |
+| | FAILED, route `listing` | a required check failed that the step can act on (`fix`: recapture, rerender, rewrite): the workflow routes it through `listing-triage` back to `store-listing`, twice, the copywriter briefed with the store-copy findings |
+| | BLOCKED | every failed check needs a person (`fix: configure`): a required locale with no writer, no copywriter agent at the release tier, a missing age rating, a format no encoder writes, a profile asking for more than any master; or the listing itself is blocked |
 
-The route back to `store-listing` is bounded (`max_visits_by_route: listing-validation.listing: 2`);
+The route back to `store-listing` is bounded (`max_visits_by_route: listing-triage.listing: 2`);
 G4's `iterate` comes through both steps again, so each carries develop's bound plus its own.
 
 ## The release step
@@ -247,8 +311,9 @@ and `python3 scripts/wgf-listing.py requirements` lists what is still unknown. A
 
 `factory.listing` in `workspace/config/factory.yaml` (every key optional; a step's `with:`
 overrides any): `capture.kind` (`browser` | `none` - BLOCKED), `capture.node`,
-`capture.timeout_seconds`, `capture.trailer`, `capture.viewports`; `writer.kind` (`template` |
-`command`), `writer.argv` (`{brief}` `{output}` `{prompt}`), `writer.text_from`,
+`capture.timeout_seconds`, `capture.trailer`, `capture.viewports`; `writer.kind` (`auto` -
+the default, the run tier's writer - | `template` | `command`), `writer.argv` (`{brief}`
+`{output}` `{prompt}`), `writer.text_from`,
 `writer.timeout_seconds`, `writer.idle_timeout_seconds`; `platforms`; `locales`;
 `reference`; `age_rating` (per platform id or `default`); `copy_dir` (a person's own copy,
 `{title_id}` substituted, relative to the project; null turns it off). The capture runs with the game
@@ -284,6 +349,15 @@ the gate, the checkout, the bundle, a failed verification, a command writer refu
 replaced); validation (PASS with unknowns, FAIL routed back, grounding, BLOCKED for a
 person, a video a platform requires); the mock steps; both steps through the real engine;
 the release step shipping the listing and refusing without it; the bundle server.
+`scripts/tests/test_listing_build.py` holds the copy to the build (WS-9): the audit's
+regressions fail - "six courses" beside twelve measured (in English and Russian), a controls
+line naming touch only, an objective line as the `ru` description, a genre-only subtitle, a
+Russian bullet held to numbers instead of shared words, a cut feature named, the template
+writer at the release tier - a correct `en` + `ru` listing by a fake copywriter passes at
+the release tier, a report of another build measures nothing, and the copywriter route is
+taken: listing-validation's FAIL through listing-triage (route `listing`, one pass) back to
+store-listing, whose brief carries the findings, also through the shipped workflow with mock
+steps.
 `RealBuild` captures a real build when `WGF_LISTING_BROWSER=1` and `WGF_LISTING_REPO` name a
 checkout with `dist/` and Playwright. The golden runs (`WGF_GOLDEN=1`) run both steps on the
 replayed games for real and assert a complete, validated, shipped listing (`summary.listing`).

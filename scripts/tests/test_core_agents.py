@@ -836,8 +836,10 @@ class Registration(unittest.TestCase):
         self.assertEqual(ids[ids.index("review") + 1], "sdk")
         self.assertEqual(ids[ids.index("sdk") + 1], "sdk-review")
         self.assertEqual(ids[ids.index("sdk-review") + 1], "verify")
-        self.assertEqual(review.on, {"request-changes": "develop"})
-        self.assertEqual(definition.step("sdk-review").on, {"request-changes": "develop"})
+        # Through triage, which routes the blockers to develop as the generalist's.
+        self.assertEqual(review.on, {"request-changes": "triage"})
+        self.assertEqual(definition.step("sdk-review").on, {"request-changes": "triage"})
+        self.assertEqual(definition.step("triage").on["gameplay"], "develop")
         # qa-report: an open verify failure is shown to the reviewer (report.verify_failure).
         self.assertEqual(set(review.inputs), {"prototype-report", "game-design",
                                               "scaffold-record", "qa-report"})

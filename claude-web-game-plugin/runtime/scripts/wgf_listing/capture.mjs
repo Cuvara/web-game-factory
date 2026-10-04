@@ -60,8 +60,12 @@ fs.mkdirSync(job.out, { recursive: true });
 const result = { browser: null, proxied: Boolean(PROXY_SERVER), viewports: [], trailer: null, branding: [], derived: [], ffmpeg: null, errors: [] };
 const log = (line) => process.stdout.write(`[capture] ${line}\n`);
 
-function snap(page) {
-  return page.evaluate(() => {
+// The inputs the probe reported while the current viewport was played: {pointer: [action
+// ids], key: [action ids]}. The store copy's controls line is checked against it.
+let seenInputs = null;
+
+async function snap(page) {
+  const s = await page.evaluate(() => {
     const play = window.__wgf__?.play;
     try {
       return play && typeof play.snapshot === "function" ? play.snapshot() : null;
@@ -69,6 +73,16 @@ function snap(page) {
       return { error: String(error) };
     }
   });
+  if (seenInputs && Array.isArray(s?.inputs)) {
+    for (const move of s.inputs) {
+      const type = move?.input?.type;
+      if ((type === "pointer" || type === "key") && typeof move.action === "string") {
+        seenInputs[type] ??= [];
+        if (!seenInputs[type].includes(move.action)) seenInputs[type].push(move.action);
+      }
+    }
+  }
+  return s;
 }
 
 async function settle(page, maxMs) {
@@ -225,7 +239,8 @@ async function captureViewport(browser, viewport) {
   const context = await browser.newContext(options);
   const page = await context.newPage();
   const record = { id: viewport.id, width: viewport.width, height: viewport.height, mobile: Boolean(viewport.mobile),
-                   ran: false, errors: [], shots: [], start: null, play: null, showcase: null };
+                   ran: false, errors: [], shots: [], start: null, play: null, showcase: null, inputs: {} };
+  seenInputs = record.inputs;
   page.on("pageerror", (e) => record.errors.push(String(e.message).slice(0, 300)));
   const touch = Boolean(viewport.mobile);
   const shots = record.shots;
@@ -280,6 +295,7 @@ async function captureViewport(browser, viewport) {
   } catch (error) {
     record.errors.push(`capture: ${String(error.message).slice(0, 300)}`);
   } finally {
+    seenInputs = null;
     await context.close();
   }
   result.viewports.push(record);

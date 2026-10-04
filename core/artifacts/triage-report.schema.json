@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/triage-report.schema.json",
+  "title": "Triage Report",
+  "description": "What sent the build back, as specialist work: the failures of the gates that judged the current build (and the typed findings a person gave at G4) normalized into quality findings (shared/quality-finding.schema.json), grouped by the specialist that owns each dimension, and the one group this visit routes.\n\nThe triage step sits between the gates and the work. A gate that fails a build, and G4's iterate, route to it; it routes on by the owner of the findings - `design` when the design must state a scope or content increase first, `assets` when an asset must be made again, and otherwise the specialist's own label, which the workflow maps to `develop` (core/workflows/new-game.workflow.yaml). The develop visit it routes is that specialist's: its brief carries only the selected group's findings, the specialist's craft playbooks and its writable scope (core/roles/roles.yaml). Groups of the same build that are not this visit's are `pending`: the develop step returns `next-specialist` and the next triage routes the next group, in core/reference/specialist-routing.yaml `order`, before the gates measure the build again.\n\n`ledger` is the record per specialist visit: the findings it was given, the session cost develop recorded, and what the producer that raised each finding measured on a later build - resolved, unresolved, or not yet measured. A human finding is re-measured by the person at the next G4.",
+
+  "x-wgf": {
+    "id": "triage-report",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.0.1",
+    "producer": "title:prototype",
+    "consumers": ["title:prototype", "title:design", "title:prototype-review", "release:store-listing"],
+    "updated_by": ["release:store-listing"],
+    "run_path": "<storage>/workflows/<run-id>/artifacts/triage-report/v<n>.json",
+    "required_for_gates": []
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "entered_by", "mode", "findings", "groups", "selected", "pending", "held", "ledger", "lifecycle", "routing", "verdict"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": "string" },
+    "entered_by": {
+      "type": ["string", "null"],
+      "description": "The entry that brought the run to this triage, `<source>.<route>` (verify.fail, visual-qa.develop, prototype-review.iterate, assets.success, develop.next-specialist)."
+    },
+    "source": {
+      "type": ["string", "null"],
+      "description": "The gate entry the findings came from: entered_by for a fresh triage, carried unchanged through a chain of specialist visits (develop.next-specialist) and an assets pass the triage itself routed."
+    },
+    "mode": {
+      "enum": ["fresh", "continued", "first-pass"],
+      "description": "fresh: the findings were normalized from the current build's failing reports. continued: the previous triage's pending groups, routed on. first-pass: entered by ordinary progression with nothing failing - the run's first build."
+    },
+    "commit": { "type": ["string", "null"], "description": "The build the findings were measured on: the newest prototype-report's commit." },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "./shared/quality-finding.schema.json#/$defs/finding" }
+    },
+    "groups": {
+      "type": "array",
+      "description": "Every group of this build's findings, in visit order.",
+      "items": { "$ref": "#/$defs/group" }
+    },
+    "selected": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/group" }],
+      "description": "The group this visit routes; null when nothing is routed (first-pass, or every finding held)."
+    },
+    "pending": {
+      "type": "array",
+      "description": "Groups after `selected`, routed by the next triages of this chain.",
+      "items": { "$ref": "#/$defs/group" }
+    },
+    "deferred": {
+      "type": "array",
+      "description": "Groups dropped because a design route was taken: the design changes first, and the gates measure the rebuilt game again.",
+      "items": { "$ref": "#/$defs/group" }
+    },
+    "held": {
+      "type": "array",
+      "description": "Findings no route of this loop can take - store copy before the listing exists - with why.",
+      "items": {
+        "type": "object",
+        "required": ["finding", "reason"],
+        "properties": {
+          "finding": { "type": "string" },
+          "reason": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "ledger": {
+      "type": "array",
+      "description": "One entry per specialist develop visit of this run, oldest first.",
+      "items": { "$ref": "#/$defs/visit" }
+    },
+    "lifecycle": {
+      "type": "array",
+      "description": "The run's finding ledger: every finding any triage of this run has seen, with its status (detected, classified, assigned, implemented, verified, closed), every transition, and the verification evidence - carried from each triage-report to the next, so the newest one is the run's ledger. A finding is verified or closed only on the re-measurement of the producer that raised it, never on the specialist's report.",
+      "items": { "$ref": "./shared/quality-finding.schema.json#/$defs/record" }
+    },
+    "routing": {
+      "type": "object",
+      "required": ["reference", "version"],
+      "properties": {
+        "reference": { "type": "string", "description": "core/reference/specialist-routing.yaml" },
+        "version": { "type": "string" },
+        "content_hash": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "verdict": {
+      "enum": ["routed", "clear", "held"],
+      "description": "routed: `selected` names the route this visit takes. clear: nothing failed (the first pass). held: findings exist and no route of this loop can take any of them - the run stops for a person."
+    },
+    "message": { "type": "string" }
+  },
+
+  "$defs": {
+    "group": {
+      "type": "object",
+      "required": ["owner", "route", "label", "findings"],
+      "properties": {
+        "owner": { "type": "string", "description": "The specialist role id." },
+        "route": { "$ref": "./shared/quality-finding.schema.json#/$defs/route" },
+        "label": { "type": "string", "description": "The route label the triage step returns for this group, which the workflow's `on:` maps to a step." },
+        "findings": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "playbooks": { "type": "array", "items": { "type": "string" }, "description": "The craft playbooks the specialist reads (core/roles/roles.yaml `reads`)." },
+        "writable_paths": { "type": "array", "items": { "type": "string" }, "description": "The specialist's writable scope (roles.yaml `writes`), intersected by develop with the installation's writable paths." }
+      },
+      "additionalProperties": false
+    },
+    "visit": {
+      "type": "object",
+      "required": ["specialist", "findings_in", "resolved", "unresolved", "unmeasured"],
+      "properties": {
+        "develop_visit": { "type": ["integer", "null"], "minimum": 1 },
+        "prototype_report": { "type": ["string", "null"], "description": "The artifact id of the prototype-report the visit produced." },
+        "prototype_seq": { "type": ["integer", "null"], "description": "Run-local production order of that prototype-report: a report produced after it re-measures the visit." },
+        "commit": { "type": ["string", "null"] },
+        "specialist": { "type": "string" },
+        "findings_in": { "type": "array", "items": { "type": "string" } },
+        "resolved": { "type": "array", "items": { "type": "string" } },
+        "unresolved": { "type": "array", "items": { "type": "string" } },
+        "unmeasured": { "type": "array", "items": { "type": "string" }, "description": "Not yet re-measured by the producer that raised it (a human finding waits for the next G4)." },
+        "sessions": { "type": ["integer", "null"], "minimum": 0 },
+        "cost_usd": { "type": ["number", "null"], "minimum": 0, "description": "Developer session cost of the visit, as develop recorded it; null when unknown." }
+      },
+      "additionalProperties": false
+    }
+  }
+}

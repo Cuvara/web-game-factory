@@ -10,6 +10,12 @@
     python3 scripts/wgf-publish.py readiness --manifest FILE [--publication FILE]
                                                                  the publication guards on a
                                                                  release-manifest (and a record)
+    python3 scripts/wgf-publish.py registry show <title> [--json]
+                                                                 the portal games known for a
+                                                                 title (portals.json)
+    python3 scripts/wgf-publish.py registry associate <title> <platform> <external-id> --note TEXT
+                                                                 a person links a portal game
+                                                                 they created by hand
 
 `capture` is how a console platform's credential comes to exist: the publication profile
 names the variable (`submission.credential.env`) that must hold PATH, and the installation
@@ -30,7 +36,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from wgflib import procs, publication, redact  # noqa: E402
+from wgflib import paths, procs, publication, redact  # noqa: E402
 from wgflib.workspace import WorkspaceError, load_platform_profile  # noqa: E402
 
 
@@ -145,6 +151,45 @@ def cmd_readiness(args):
     return 0 if all(r.value for r in results.values()) else 1
 
 
+def cmd_registry_show(args):
+    from wgf_publish import registry
+    try:
+        reg = registry.load(args.title)
+    except registry.RegistryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(reg.document, indent=2, ensure_ascii=False))
+        return 0
+    print(f"{reg.title_id}: {reg.path}")
+    if not reg.platforms():
+        print("  no portal game recorded (every platform NOT_CREATED)")
+    for platform in reg.platforms():
+        entry = reg.get(platform)
+        last = entry["history"][-1]
+        print(f"  {platform:<16} {entry['status']:<15} id={entry.get('external_game_id') or '-'}"
+              f"  {entry.get('association') or '-'}  release={entry.get('release_id') or '-'}"
+              f"  last change {last['at']} by {last['by']}")
+    return 0
+
+
+def cmd_registry_associate(args):
+    from wgf_publish import registry
+    if not os.path.isfile(os.path.join(paths.PLATFORMS, f"{args.platform}.yaml")):
+        print(f"error: no platform profile {args.platform!r} (core/reference/platforms/)",
+              file=sys.stderr)
+        return 2
+    try:
+        reg = registry.load(args.title)
+        entry = reg.associate(args.platform, args.external_id, by="human", note=args.note)
+    except registry.RegistryError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"{args.title} {args.platform}: {entry['external_game_id']} associated "
+          f"({entry['status']}); {reg.path}")
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--extra", action="append", help="another publication profiles directory")
@@ -164,6 +209,18 @@ def main(argv=None):
     readiness.add_argument("--manifest", required=True)
     readiness.add_argument("--publication")
     readiness.set_defaults(run=cmd_readiness)
+    registry_cmd = sub.add_parser("registry")
+    registry_sub = registry_cmd.add_subparsers(dest="registry_command", required=True)
+    show = registry_sub.add_parser("show")
+    show.add_argument("title")
+    show.add_argument("--json", action="store_true")
+    show.set_defaults(run=cmd_registry_show)
+    associate = registry_sub.add_parser("associate")
+    associate.add_argument("title")
+    associate.add_argument("platform")
+    associate.add_argument("external_id")
+    associate.add_argument("--note", required=True)
+    associate.set_defaults(run=cmd_registry_associate)
     args = parser.parse_args(argv)
     return args.run(args)
 

@@ -251,6 +251,35 @@ release-manifest stays `not-claimed`: a portal's moderation verdict is transcrib
 person into the record (`in-review`, `live`, `rejected` with its compliance finding), never
 inferred by automation.
 
+## The portal registry
+
+A title has at most one game on each portal. `workspace/titles/<title-id>/portals.json`
+(`core/artifacts/portal-registry.schema.json`; a mutable cursor like `state`, no provenance)
+holds one entry per platform: the portal game id (`external_game_id`, `app_id`,
+`other_ids`), slug and URL, a `status` (NOT_CREATED, DRAFT_CREATED, DRAFT, PENDING_REVIEW,
+VERIFIED, REJECTED, PUBLISHED, BLOCKED, UNKNOWN), the portal's own submission and
+publication wording, the build and listing hashes last applied, the release, how the game
+became known (`created-by-factory`, `associated-by-person`, `observed`), evidence, and an
+append-only `history` saying who changed what, in which run.
+
+`scripts/wgf_publish/registry.py` is the only writer: `load(title)`, `get(platform)`,
+`record(platform, ..., by, run_id, note)`, `associate(platform, id, note=...)`,
+`lookup_candidates(platform, config_game_id, config_app_id)` (the ids find-game tries, in
+order: the registry's, then `game.config.yaml`'s) and `invalidate_if_changed(platform,
+build_hash, campaign_hash)`. Its transition table is data in the module. PENDING_REVIEW,
+VERIFIED, PUBLISHED and REJECTED are entered only with the portal's status text as
+evidence; an automated write never changes a recorded game id; every write is validated
+against the schema and replaces the file atomically. Entries are independent: a rejection
+on one platform leaves the others as they were. A person links a game created by hand:
+
+```bash
+python3 scripts/wgf-publish.py registry associate <title> <platform> <portal-game-id> --note "why"
+python3 scripts/wgf-publish.py registry show <title> [--json]
+```
+
+The `submit` step does not read the registry yet; wiring find-game and the read-back into
+it is the next step (`docs/portal-publishing-architecture.md`, 2.5).
+
 ## Configuration
 
 ```yaml
@@ -278,7 +307,8 @@ reaching a record or the event log); the whole group through the real engine; an
 `WGF_PUBLISH_BROWSER_TEST=1`, real Chromium against `scripts/tests/fixtures/publish/portal.py`
 (dry run uploads and never submits, live finds the draft by key and submits once, a second
 live run submits nothing again, expired session / CAPTCHA / ambiguous state stop for a
-person, a refused upload is a platform error). No test contacts a real portal; the
+person, a refused upload is a platform error). `scripts/tests/test_publish_registry.py`
+(RELEASE) covers the portal registry. No test contacts a real portal; the
 acceptance job holds no portal credential.
 
 ## What stays with a person

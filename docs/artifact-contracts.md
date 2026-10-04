@@ -128,6 +128,7 @@ design:
 | `listing-validation-report` | release draft (the `listing-validation` step) | the listing step (on a failure routed back), release draft, approved, validating, submitting | G6 |
 | `release-manifest` | release draft | QA, rc, validating, submitting, live | G5, G6 |
 | `platform-publication` | validating | submitting, partially-live, live | — |
+| `portal-registry` | submitting (`scripts/wgf_publish/registry.py`; a person links a game with `wgf-publish.py registry associate`) | submitting (the find-game phase) | — |
 | `performance-review` | live | live, production, market-scan | G7 |
 | `decision-record` | every gate (x-wgf `producer: gate`): a person via `wgf-state.py`, or a workflow checkpoint naming the gate, on every decided outcome | audit, resume, portfolio learning; the title's `decisions/` when `factory.lifecycle.sync` is on | — |
 

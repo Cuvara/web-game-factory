@@ -178,7 +178,7 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `platform-validate` | `platform-validate` | `release-manifest`, `verification-report`, `qa-report`, `sdk-report`, `scaffold-record` | `platform-publication` |
 | `release-review` | `human-checkpoint` | `qa-report`, `verification-report`, `release-manifest` | `decision-record` |
 | `publish-review` | `human-checkpoint` | `release-manifest`, `platform-publication`, `store-listing`, `listing-validation-report` | `decision-record` |
-| `submit` | `publish` | `release-manifest`, `platform-publication`, `decision-record`, `scaffold-record` | `platform-publication` |
+| `submit` | `publish` | `release-manifest`, `platform-publication`, `decision-record`, `scaffold-record`, `verification-report`, `store-listing`, `listing-validation-report` | `platform-publication` |
 <!-- io-contract:end -->
 
 A `human-checkpoint` lists the artifacts its gate is decided on (gates.yaml

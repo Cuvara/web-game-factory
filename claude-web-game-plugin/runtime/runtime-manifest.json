@@ -149,7 +149,7 @@
     "scripts/wgf-guard.py": "sha256:e105057aeb5c4e31f5aa00deb0a529afb6bae164b5aea1b38f3591074fc573d7",
     "scripts/wgf-hash.py": "sha256:61ecff71fa3ee07944e86e7fdba0676cf2a260b3a6de44fdb687ad9277c1109d",
     "scripts/wgf-model.py": "sha256:00e41e99ab90070b76a185b0646b803568b499d10fb4e9dd0ebe8035ce6d9c6f",
-    "scripts/wgf-publish.py": "sha256:2a788e766f04dc9023eb419552195c8f226ae88e1be2e90e48d6103f43705d30",
+    "scripts/wgf-publish.py": "sha256:2c8cdbe3e955551cc08d92369fc32fb1777a88f0c8ede2a15fe56cd645d6b741",
     "scripts/wgf-state.py": "sha256:13f3e02ce139d05a77d781724833b43515c27c83b1221194b4ca8c0d821e64a9",
     "scripts/wgf-template.py": "sha256:75c3226d603dc210d4b6abf8785c83e27eb80cce0769f6cad0f07ac26c2e00f6",
     "scripts/wgf.py": "sha256:1a221f448d362ef778b9d8ca73608612078e5d9e5f814c1e272a8ecf19b38528",

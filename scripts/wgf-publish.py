@@ -162,9 +162,21 @@ def cmd_observe(args):
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return observe.EXIT_USAGE
+    if args.url or args.allow_origin:
+        # Discovery of a console the profile does not describe yet (or describes wrongly): the
+        # person names the console and the origins to record; the profile is untouched.
+        profile = dict(profile or {}, id=args.platform)
+        submission = dict(profile.get("submission") or {})
+        console = dict(submission.get("console") or {})
+        if args.url:
+            console["url"] = args.url
+        if args.allow_origin:
+            console["allowed_origins"] = list(args.allow_origin)
+        submission["console"] = console
+        profile["submission"] = submission
     if profile is None:
         print(f"error: no publication profile for {args.platform!r} "
-              f"(core/reference/publication/)", file=sys.stderr)
+              f"(core/reference/publication/); give --url and --allow-origin", file=sys.stderr)
         return observe.EXIT_USAGE
     checkout = os.path.abspath(os.path.expanduser(args.checkout))
     out = os.path.abspath(os.path.expanduser(args.out)) if args.out else         observe.default_out(args.platform)
@@ -224,6 +236,10 @@ def main(argv=None):
                                          "<UTC timestamp>/")
     observing.add_argument("--login-timeout-s", type=int, default=900)
     observing.add_argument("--max-minutes", type=float, default=30)
+    observing.add_argument("--url", help="the console url to open (default the profile's)")
+    observing.add_argument("--allow-origin", action="append", default=[],
+                           help="an origin whose pages are recorded (repeatable; default the "
+                                "profile's allowed_origins)")
     observing.add_argument("--authenticated-url",
                            help="a regex the console's url (origin + path) matches once logged "
                                 "in; default the profile's session.authenticated_url")

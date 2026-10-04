@@ -121,8 +121,8 @@
     },
 
     "outcome": {
-      "enum": ["UNKNOWN", "READY", "BLOCKED", "HUMAN_REQUIRED", "SUBMITTING", "SUBMITTED", "VERIFIED", "RETRYABLE_FAILURE", "PLATFORM_ERROR", "AUTH_REQUIRED", "CAPTCHA_REQUIRED", "INVALID_BUILD", "INVALID_METADATA", "REJECTED", "DRY_RUN"],
-      "description": "Since 1.1.0. The last publication attempt's result in the one vocabulary every adapter maps its platform's failures into. SUBMITTED means the portal was observed holding the submission; VERIFIED that its state was read back after; UNKNOWN that the portal state could not be observed - never a success."
+      "enum": ["UNKNOWN", "READY", "BLOCKED", "HUMAN_REQUIRED", "SUBMITTING", "SUBMITTED", "VERIFIED", "RETRYABLE_FAILURE", "PLATFORM_ERROR", "AUTH_REQUIRED", "CAPTCHA_REQUIRED", "INVALID_BUILD", "INVALID_METADATA", "REJECTED", "DRY_RUN", "UPLOAD_COMPLETE", "IDS_ISSUED"],
+      "description": "Since 1.1.0. Since 1.2.0 also UPLOAD_COMPLETE (the build is on the portal's draft and saved; a person decides whether to request review) and IDS_ISSUED (a create-before-build portal issued the ids the build must carry). The last publication attempt's result in the one vocabulary every adapter maps its platform's failures into. SUBMITTED means the portal was observed holding the submission; VERIFIED that its state was read back after; UNKNOWN that the portal state could not be observed - never a success."
     },
 
     "human_required": {
@@ -130,9 +130,26 @@
       "description": "Since 1.1.0. Present when a person must act before publication continues, and why. The step stopped here; it never worked around it.",
       "required": ["reason", "detail"],
       "properties": {
-        "reason": { "enum": ["login", "captcha", "two-factor", "security-challenge", "terms-unconfirmed", "no-automated-method", "credential-missing", "ambiguous-portal-state", "platform-rejection", "manual-submission", "legal", "declaration", "ai-text-policy", "duplicate-candidate", "review-pending", "drift-irreversible", "anti-bot"], "description": "Since 1.2.0 also: legal (terms, tax, payment, identity, commercial terms), declaration (ownership, licensing, AI use, age rating - a person makes it), ai-text-policy (the portal forbids generated copy, or its policy is unknown and the copy is generated), duplicate-candidate (find_game matched a game this title never recorded), review-pending (the game is under review: nothing uploads over it, nothing cancels it), drift-irreversible (an irreversible intent's profile locator did not match: never resolved adaptively), anti-bot (an anti-bot interstitial)." },
+        "reason": { "enum": ["login", "captcha", "two-factor", "security-challenge", "terms-unconfirmed", "no-automated-method", "credential-missing", "ambiguous-portal-state", "platform-rejection", "manual-submission", "legal", "declaration", "ai-text-policy", "duplicate-candidate", "review-pending", "drift-irreversible", "anti-bot", "submit-confirmation"], "description": "Since 1.2.0 also: submit-confirmation (the upload is complete; a person decides submit, hold or abandon), legal (terms, tax, payment, identity, commercial terms), declaration (ownership, licensing, AI use, age rating - a person makes it), ai-text-policy (the portal forbids generated copy, or its policy is unknown and the copy is generated), duplicate-candidate (find_game matched a game this title never recorded), review-pending (the game is under review: nothing uploads over it, nothing cancels it), drift-irreversible (an irreversible intent's profile locator did not match: never resolved adaptively), anti-bot (an anti-bot interstitial)." },
         "detail": { "type": "string" },
         "resume_with": { "type": "string", "description": "What a person does next, e.g. `wgf decide <run> done` after submitting by hand." }
+      },
+      "additionalProperties": false
+    },
+
+    "waiting": {
+      "type": "object",
+      "description": "Since 1.2.0. The waiting state the last visit ended in, when a person must act. Never a failure.",
+      "required": ["state", "portal", "step", "reason", "action", "resume"],
+      "properties": {
+        "state": { "enum": ["WAITING_FOR_HUMAN_LOGIN", "WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION", "WAITING_FOR_HUMAN"] },
+        "portal": { "type": "string" },
+        "step": { "type": "string", "description": "The publish phase the visit was in." },
+        "url": { "type": "string", "description": "Origin and path only, when safe to record (never a login page's query)." },
+        "reason": { "type": "string" },
+        "action": { "type": "string", "description": "What the person does." },
+        "resume": { "type": "string", "description": "The condition or command that continues." },
+        "at": { "type": "string", "format": "date-time" }
       },
       "additionalProperties": false
     },

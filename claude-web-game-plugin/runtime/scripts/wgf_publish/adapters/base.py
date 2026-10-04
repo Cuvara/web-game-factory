@@ -53,7 +53,9 @@ class Publication:
 
     def __init__(self, outcome, message, *, state=None, draft_id=None, found_existing=False,
                  verified_state=None, evidence=(), human_reason=None, resume_with=None,
-                 submitted=False, measurement_class="automation-console"):
+                 submitted=False, measurement_class="automation-console", found_game=None,
+                 created_ids=None, uploaded=False, saved=False, status_text=None,
+                 login_handoffs=(), actions_log=None, phase_reached=None):
         if outcome not in outcomes.OUTCOMES:
             raise ValueError(f"unknown publication outcome {outcome!r}")
         self.outcome = outcome
@@ -67,6 +69,24 @@ class Publication:
         self.resume_with = resume_with
         self.submitted = submitted
         self.measurement_class = measurement_class
+        # What the console run observed, for the step (wave 2 interface):
+        #   found_game     {"id", "title", "status_text", "source": registry|config|key|title}
+        #                  or None when the lookup ran and matched nothing
+        #   created_ids    {"external_game_id", "app_id", ...} the portal issued on create
+        #   uploaded/saved the build reached the draft / the draft was saved, read back
+        #   status_text    the portal's own status words for the game, as read
+        #   login_handoffs [{"at", "url" (origin+path), "reason", "action", "resume",
+        #                    "resolved_at" or None}] - each WAITING_FOR_HUMAN_LOGIN period
+        #   actions_log    run-relative path of this visit's actions.jsonl
+        #   phase_reached  the last phase that completed
+        self.found_game = found_game
+        self.created_ids = dict(created_ids or {})
+        self.uploaded = bool(uploaded)
+        self.saved = bool(saved)
+        self.status_text = status_text
+        self.login_handoffs = list(login_handoffs)
+        self.actions_log = actions_log
+        self.phase_reached = phase_reached
 
 
 class PublicationAdapter:

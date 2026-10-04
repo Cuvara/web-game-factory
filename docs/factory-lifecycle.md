@@ -100,7 +100,11 @@ the strategy committed, the release was the MVP by construction, and both valida
 had to be raised to a release by hand after a person called the unattended build "a demo,
 not a game" (`docs/quality-gap-audit-2026-10.md`, findings 1 and 5). A run meant to stop
 at G4 - a prototype to test the bet - sets `quality_tier: mvp`, and its budget is the MVP's
-units. The tier changes what the strategy commits to, never a gate's bar.
+units. The tier changes what the strategy commits to, never a gate's bar. A run snapshots
+its tier when it starts (`params.quality`), and strategy and assets read it from there; a
+run at a tier whose class is `development` (`mvp`) is reported development, never a
+release, and is never submitted (core/reference/quality-policy.yaml,
+[new-game-quality-inheritance.md](new-game-quality-inheritance.md)).
 
 **`design` has no gate of its own.** Design and tech-plan approve together at G3. Splitting
 them adds a gate to a cycle that already has too many, and approving a design whose plan does

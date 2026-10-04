@@ -56,6 +56,7 @@ all optional fields):
 | `packages[].checksum` / `content_digest` / `files` | sha256 of the archive; sha256 over its entry names and contents; entry count |
 | `template` | template repository and commit (scaffold-record) and version, with where the version was read |
 | `workflow` | run id, workflow, step, visit, execution, idempotency key |
+| `evidence.quality` | since 1.4.0: the drafting run's quality class (`release` or `development`), tier, policy and benchmark versions, and why it is development (core/reference/quality-policy.yaml, [new-game-quality-inheritance.md](new-game-quality-inheritance.md)). A `development` manifest is never a release: its run cannot reach `release:submitting` |
 
 ## When it refuses
 

@@ -218,6 +218,12 @@ to before design starts — the genre family, `unit_kind`, `progression`, `diffi
 whether research decided it (`research`) or the family's default did (`default`). Design
 starts from this rather than inventing a shape. Optional; 1.3.0 artifacts remain valid.
 
+**`release-manifest` 1.4.0** adds `evidence.quality`: the class of the run that drafted it
+(`release` or `development`), its tier, the quality policy and benchmark versions it started
+under, and why it is development (core/reference/quality-policy.yaml,
+[new-game-quality-inheritance.md](new-game-quality-inheritance.md)). A `development` manifest
+is never a release. Optional; 1.3.0 manifests remain valid.
+
 **`title-strategy` 1.5.0** adds `concept.content_model.quality_tier` (`mvp` | `release`, from
 `factory.strategy.quality_tier`, default `release`) and `concept.content_model.budget`: the
 content committed for that tier - `units`, `groups` (`kind`, `count`, `min_units_per_group`;

@@ -591,10 +591,10 @@ class InputContracts(EngineCase):
 class ContinueIn(EngineCase):
     def test_continue_in_skips_completed_steps_and_refuses_running_or_cancelled(self):
         engine = self.engine(LINEAR)
-        run = engine.start(scope="middle")
+        run = engine.start()
         self.script.calls.clear()
         state = engine.continue_in(run.run_id, None)
-        self.assertEqual(self.script.executed(), ["a"])
+        self.assertEqual(self.script.executed(), [])
         self.assertEqual(state.status, RunStatus.COMPLETED)
 
         crashed = self.store.load(run.run_id)

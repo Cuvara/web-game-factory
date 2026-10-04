@@ -44,6 +44,16 @@ Invariants the engine keeps:
   * A run started with `on_hung: cancel` has its step's child tree terminated once the
     child has written nothing for `hung_output_seconds`; the step then ends, not retryably,
     and a STEP_LOG warning says why.
+  * A step that already succeeded is skipped by `continue_in` only while it is current: no
+    step before it has succeeded since. One whose upstream was redone (a re-plan, a new
+    build) executes again, gate or not.
+  * The quality policy (core/reference/quality-policy.yaml, applied by .quality) holds
+    every run that is not a mock: a step at a stage the floor is enforced at does not
+    execute until every required step before it is current, and a production-only step
+    does not execute in a development-class run - either stops the run BLOCKED with
+    blocked_reason kind `quality-floor`. A configuration that makes a run development is
+    recorded (QUALITY_DOWNGRADED) when a drive begins, and every artifact carries the class
+    it was written under.
 """
 
 import contextlib
@@ -55,7 +65,7 @@ import secrets
 import time
 
 from .. import procs
-from . import integrity
+from . import integrity, quality
 from ..hashing import CanonicalizationError, content_hash
 from .context import StepLogger, WorkflowContext
 from .contracts import check_lineage
@@ -137,7 +147,8 @@ _STEP_EVENT = {
 class WorkflowEngine:
     def __init__(self, definition, registry, store, *, runtime=None, config=None,
                  clock=utc_now, sleep=time.sleep, monotonic=time.monotonic,
-                 run_id_factory=default_run_id, subscribers=(), artifact_validator=None):
+                 run_id_factory=default_run_id, subscribers=(), artifact_validator=None,
+                 quality_policy=None):
         self.definition = definition
         self.registry = registry
         self.store = store
@@ -150,6 +161,11 @@ class WorkflowEngine:
         # (artifact_type, content) -> [problems]. Optional so the engine stays testable
         # without core/; the API always supplies contracts.ArtifactContracts.
         self.artifact_validator = artifact_validator
+        # core/reference/quality-policy.yaml as quality.load_policy reads it. Optional so the
+        # engine stays testable without core/; the API always supplies it. A run's own
+        # snapshot (params.quality) is held to it too, whichever is stricter.
+        self.quality_policy = quality_policy
+        self._quality_class = None
         self.event_log_error = None
         # The executing step's hung-child watchdog ({} while none is armed); see _run_once.
         self._watchdog = {}
@@ -508,6 +524,59 @@ class WorkflowEngine:
                 f"beginning, or resume a run that passed it with --resume <run-id> "
                 f"--from {start_at}.")
 
+    # -- the quality policy -------------------------------------------------------------
+
+    def _quality_held(self, state):
+        """The policy lists this run is held to; None for a mock run, and for a run without
+        a snapshot under an engine without a policy."""
+        params = state.params if isinstance(state.params, dict) else {}
+        if params.get("mock"):
+            return None
+        return quality.effective(params, self.quality_policy)
+
+    def _note_quality(self, state):
+        """Record, once, every development_when condition the configuration this drive runs
+        under meets that the run has not recorded yet (QUALITY_DOWNGRADED), and settle the
+        class the run's artifacts are stamped with. A configuration only lowers a run."""
+        params = state.params if isinstance(state.params, dict) else {}
+        events = list(self.store.read_events(state.run_id))
+        policy = self.quality_policy
+        if (policy is not None and not params.get("mock")
+                and isinstance(params.get(quality.PARAM), dict)):
+            known = set(params[quality.PARAM].get("reasons") or ()) | set(
+                quality.downgrades(events))
+            new = [r for r in quality.config_reasons(policy, self.config) if r not in known]
+            if new:
+                data = {"reasons": new, "policy": policy.get("version")}
+                self._emit(state, Events.QUALITY_DOWNGRADED, step_id=state.cursor, data=data)
+                events.append({"event": Events.QUALITY_DOWNGRADED, "data": data})
+        self._quality_class = quality.run_class(params, events)[0]
+
+    def _refuse_below_floor(self, state, step_def):
+        """Stop the run BLOCKED before `step_def` executes when the quality policy forbids
+        it (quality.floor_problems, quality.production_problems). True when it stopped."""
+        held = self._quality_held(state)
+        if held is None:
+            return False
+        problems = quality.floor_problems(state, self.definition, step_def, held)
+        problems += quality.production_problems(
+            step_def, held, self._quality_class, bool((state.params or {}).get("mock")),
+            self.quality_policy, self.config)
+        if not problems:
+            return False
+        step_state = state.step(step_def.id)
+        step_state.status = StepStatus.BLOCKED
+        step_state.message = "quality floor: " + "; ".join(problems)
+        message = (f"quality floor: {step_def.id} will not run - " + "; ".join(problems)
+                   + ". Resume from the earliest of them (wgf resume <run-id> --from STEP); "
+                     "see core/reference/quality-policy.yaml")
+        self._emit(state, Events.STEP_BLOCKED, step_id=step_def.id,
+                   status=StepStatus.BLOCKED,
+                   data={"message": message, "problems": problems})
+        return self._finish(state, RunStatus.BLOCKED, Events.WORKFLOW_BLOCKED, message,
+                            blocked_reason={"kind": quality.FLOOR, "step": step_def.id,
+                                            "problems": problems})
+
     def continue_in(self, run_id, scope, force=False):
         """Run `scope` inside an existing run, reusing what the run already produced.
 
@@ -698,6 +767,7 @@ class WorkflowEngine:
             state.message = None
             state.blocked_reason = None
             self._save(state)
+            self._note_quality(state)
             while True:
                 if self._honour_requests(state):
                     return state
@@ -706,14 +776,21 @@ class WorkflowEngine:
                 step_def = self.definition.step(step_id)
                 step_state = state.step(step_id)
 
-                stale_gate = (skip and step_state.status == StepStatus.SUCCESS
-                              and self._is_gate(step_def)
-                              and (self._gate_superseded(state, step_id)
-                                   or not self._gate_passed(state, step_id)))
-                if stale_gate:
-                    # Its approval predates work redone upstream, or its last answer did not
-                    # pass it (work sent back): not "already completed". A new visit, so the
-                    # old decision (bound to its visit) cannot answer it.
+                stale = (skip and step_state.status == StepStatus.SUCCESS
+                         and (self._gate_superseded(state, step_id)
+                              or (self._is_gate(step_def)
+                                  and not self._gate_passed(state, step_id))))
+                if stale:
+                    # Work before it was redone since it last succeeded - a re-plan, a new
+                    # build - or, for a gate, its last answer did not pass it (work sent
+                    # back): not "already completed". A step whose inputs may have changed
+                    # runs again, and a gate is asked again at a new visit, so the old
+                    # decision (bound to its visit) cannot answer it.
+                    if not self._is_gate(step_def):
+                        self._emit(state, Events.STEP_LOG, step_id=step_id, level="info",
+                                   message="not skipped: work before it was redone since it "
+                                           "last succeeded",
+                                   data={"redone": self._gate_superseded(state, step_id)})
                     needs_enter = True
                 elif skip and step_state.status == StepStatus.SUCCESS and step_id not in skipped:
                     skipped.add(step_id)
@@ -732,6 +809,8 @@ class WorkflowEngine:
                         return state
                 needs_enter, route_in = False, None
 
+                if self._refuse_below_floor(state, step_def):
+                    return state
                 result = self._execute_visit(state, step_def)
                 if self._honour_cancel(state):
                     return state
@@ -1263,7 +1342,7 @@ class WorkflowEngine:
                 checksum=checksum, produced_by=step_def.id, created_at=self.clock(),
                 content_hash=digest, schema_version=schema_version,
                 metadata=dict(output.metadata) if output.metadata else None,
-                seq=seq,
+                seq=seq, quality=self._quality_class,
             )
             seq += 1
             planned.append(ref)

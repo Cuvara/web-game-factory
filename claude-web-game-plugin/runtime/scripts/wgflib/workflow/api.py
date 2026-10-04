@@ -14,7 +14,7 @@ import re
 import unicodedata
 
 from .. import budget, gate_evidence, paths, procs
-from . import checkpoint, integrity, mock
+from . import checkpoint, integrity, mock, quality
 from .config import ConfigError, load_config
 from .definition import WORKFLOWS, load_definition
 from .engine import EngineError, WorkflowEngine
@@ -297,6 +297,27 @@ class WorkflowAPI:
             mock.register(registry)  # registered last, so mocks replace real modules
         return registry
 
+    def quality_policy(self):
+        """core/reference/quality-policy.yaml (wgflib.workflow.quality). Fail closed: no run
+        is started or driven without it."""
+        try:
+            return quality.load_policy()
+        except quality.PolicyError as exc:
+            raise ConfigError(f"the quality policy cannot be read: {exc}; no run is started "
+                              f"or driven without it")
+
+    def quality(self, state):
+        """quality.report for `state`: its tier, class, why, and whether it is release-ready.
+        A policy or definition that cannot be read costs the readiness, never the run."""
+        events = self.store.read_events(state.run_id, [])
+        try:
+            definition = self.definition_for(state)
+            policy = quality.load_policy()
+        except (OSError, ValueError):
+            klass, reasons = quality.run_class(state.params, events)
+            return {"class": klass, "reasons": reasons, "release_ready": False}
+        return quality.report(state, definition, events, policy)
+
     def engine(self, use_mock, workflow_ref=None):
         overrides = dict(self._overrides)
         if use_mock:
@@ -311,6 +332,7 @@ class WorkflowAPI:
             config=self.config.data,
             subscribers=self.subscribers,
             artifact_validator=ArtifactContracts(untyped=definition.untyped_artifacts),
+            quality_policy=self.quality_policy(),
             **overrides,
         )
 
@@ -434,6 +456,16 @@ class WorkflowAPI:
         develop_budget = self.config.develop_budget
         if develop_budget is not None:
             params[budget.PARAM] = develop_budget
+        # The quality policy, snapshotted the same way: the tier the run builds to, its class
+        # (release or development) and why, and the policy and benchmark versions it started
+        # under. Every step that budgets or judges content reads the tier from here, never
+        # from a configuration changed since; a later configuration only lowers the class
+        # (QUALITY_DOWNGRADED, recorded by the engine when a drive begins).
+        try:
+            params[quality.PARAM] = quality.snapshot(engine.quality_policy, self.config.data,
+                                                     engine.definition, mock=request.mock)
+        except quality.PolicyError as exc:
+            raise ConfigError(str(exc))
 
         scope = request.scope
         if scope == engine.definition.id:

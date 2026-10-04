@@ -11,6 +11,7 @@ import re
 
 from wgflib import paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+from wgflib.workflow.quality import run_tier
 
 from .planner import DEFAULT_QUALITY_TIER, Policy, StrategyRefused, plan_strategy
 from .profiles import load_profiles, load_vocabulary
@@ -71,6 +72,12 @@ class StrategyStep(WorkflowStep):
             params.update(self.params or {})
             platforms = params.pop("platforms", None)
             tier = params.pop("quality_tier", None)
+            # The tier the run was started with (its quality snapshot) outranks the live
+            # configuration: a project config changed mid-run does not re-tier a run. Only
+            # the step's own `with:` - the workflow's - is read before it.
+            started = run_tier(getattr(context, "environment", None))
+            if started and "quality_tier" not in (self.params or {}):
+                tier = started
             policy = Policy.from_params(params)
             body = plan_strategy(opportunity, load_profiles(self.profiles_dir), title_id,
                                  policy, load_vocabulary(), platforms=platforms,

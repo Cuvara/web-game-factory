@@ -1,0 +1,122 @@
+# Quality policy: what every workflow run inherits, whatever started it.
+#
+# A run of `new-game` - from `wgf new-game`, the plugin's /new-game, `wgf resume`, `wgf <step>
+# --run`, `--from`, `--force`, `wgf decide`, the autonomous profile or a project's config
+# overlay - is held to the same quality floor. This file states that floor as data; the
+# engine applies it without naming a step (scripts/wgflib/workflow/quality.py), and
+# docs/new-game-quality-inheritance.md lists every entry point and what it can and cannot
+# skip.
+#
+# Three rules, all read from here:
+#
+#   1. The floor. Before a step whose `stage` is under `floor.enforce_at` executes, every
+#      step under `floor.required_steps` that the run's workflow contains and that comes
+#      before it must be CURRENT: its latest visit succeeded, and no step before it has
+#      succeeded since. A required step that was skipped, stepped over by `--from`, failed
+#      on its last visit, or ran on work that was redone afterwards stops the run BLOCKED
+#      (blocked_reason kind `quality-floor`) instead of letting a gate or a release read
+#      stale evidence. Every run is held to it except a `--mock` run, whose steps are
+#      placeholders that judge nothing.
+#   2. The class. A run is `release` or `development`, decided when it starts and recorded
+#      in its params (snapshotted like the auto-approve windows; a resume corroborates it).
+#      It is `development` when it is a mock run, when its tier's class is `development`,
+#      when its workflow lacks a required step that is not `pending`, or when a condition
+#      under `development_when` holds of the configuration - at the start or at any later
+#      resume (a configuration only ever lowers a run's class, never raises it). Every
+#      artifact the run writes carries the class it was written under, and `wgf status`
+#      reports the run's class and whether it is release-ready.
+#   3. Production only. A step whose `stage` is under `production_only` does not execute in
+#      a run whose class is `development` (unless it is a mock run) while a condition under
+#      `production_only_when` holds - while the submission would be live: a development
+#      build is never submitted to a portal.
+#
+# `pending` names the required steps that no workflow contains yet. They are enforced by
+# rule 1 from the first definition that adds them, with nothing else to change, and until
+# then `wgf status` lists them as not yet enforced.
+#
+# Changing this file is a change to what every future run is held to: bump `version`, and
+# never remove a required step or a condition to let one run through.
+
+version: 1.0.0
+
+# The quality bars a release-tier run is judged against. A run records the version it
+# started under, so a later recalibration does not silently re-judge it.
+benchmark: core/reference/quality-benchmark.yaml
+
+# The run's quality tier: `factory.strategy.quality_tier`, snapshotted when the run starts and
+# read from the run by every step that budgets or judges content (strategy, assets), never
+# from the live configuration again.
+tier:
+  config: strategy.quality_tier
+  default: release
+  classes:
+    release: release
+    mvp: development
+
+floor:
+  enforce_at: [title:prototype-review, release:draft, release:validating, release:submitting]
+  required_steps:
+    - research
+    - design
+    - greybox-playability
+    - playability
+    - production-quality
+    - visual-qa
+    - review
+    - sdk-review
+    - verify
+    - listing-validation
+    - content-sufficiency
+    - quality-gate
+  pending: [content-sufficiency, quality-gate]
+
+production_only: [release:submitting]
+# Only while the submission would be real: a dry-run submit (the shipped
+# factory.publish.mode) records what it would do and publishes nothing, so a development run
+# may rehearse it. Same condition syntax as development_when; none listed = always.
+production_only_when:
+  - config: publish.mode
+    equals: live
+
+# A run is release-ready - what `wgf status` reports, and the only state in which it says
+# "release" - when its class is `release` and its step at this stage passed, is current,
+# and met the floor. Anything else is reported as development or not ready, never release.
+release_ready_at: release:draft
+
+# Configuration that makes a run `development`. `config` is a dotted path under `factory:`;
+# a condition holds when the value `equals` the one given, is `in` the list given, or - for
+# a list setting - `lacks` any of the values given. `why` is reported with the class.
+development_when:
+  - config: quality.mode
+    equals: development
+    why: the installation marked this run development (factory.quality.mode)
+  - config: release.allow_unreviewed
+    equals: true
+    why: a release may ship a commit no reviewer approved (factory.release.allow_unreviewed)
+  - config: visualqa.judge.kind
+    in: [baseline]
+    why: visual QA compares frames with approved frames instead of judging them against the rubric (factory.visualqa.judge.kind baseline)
+  - config: develop.checks
+    lacks: [install, conformance, typecheck, lint, unit, build, smoke]
+    why: develop runs fewer than the Factory's build checks (factory.develop.checks)
+  - config: visualqa.rubric
+    set: true
+    why: visual QA judges against an installation's rubric instead of core/reference/visual-qa-rubric.yaml (factory.visualqa.rubric)
+  - config: listing.reference
+    set: true
+    why: the store listing is validated against an installation's reference instead of core/reference/store-listing.yaml (factory.listing.reference)
+  - config: sdk.run_tests
+    equals: false
+    why: the platform SDK integration is committed without its tests (factory.sdk.run_tests)
+  - config: sdk.typecheck
+    equals: false
+    why: the platform SDK integration is committed without a typecheck (factory.sdk.typecheck)
+  - config: sdk.report
+    set: true
+    why: the SDK conformance is read from a file instead of run on the commit (factory.sdk.report)
+
+# A workflow the Factory does not ship (`--workflow PATH`, or factory.workflow.default naming
+# a file outside core/workflows/) may weaken any step through its `with:` blocks, so a run of
+# one is `development`. A project that needs another workflow changes core's, where every
+# run inherits it.
+shipped_workflows_only: true

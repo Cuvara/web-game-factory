@@ -38,6 +38,7 @@ import shutil
 
 from wgflib import agentenv, checkout, provenance
 from wgflib import template_contract as contract
+from wgflib.workflow import quality as run_quality
 from wgflib.workflow import ArtifactOutput, StepOutcome, StepResult, WorkflowStep
 from wgflib.workflow.contracts import ArtifactContracts
 from wgflib.yamllite import YamlError, load_file
@@ -122,6 +123,32 @@ def _read_json(path):
             return json.load(handle)
     except (OSError, ValueError):
         return None
+
+
+def _run_quality(context):
+    """evidence.quality: the class of the run drafting this manifest, as the quality policy
+    holds it (wgflib.workflow.quality) - its snapshot and every downgrade it recorded. A run
+    without a snapshot is `development`: nothing says it was held to the release tier."""
+    environment = getattr(context, "environment", None)
+    environment = environment if isinstance(environment, dict) else {}
+    read = getattr(context, "read_events", None)
+    try:
+        events = list(read()) if callable(read) else []
+    except Exception:  # an unreadable log costs the downgrades, so never claim release
+        events = None
+    klass, reasons = run_quality.run_class(environment, events or [])
+    if events is None:
+        klass, reasons = run_quality.DEVELOPMENT, reasons + [
+            "the run's event log could not be read"]
+    taken = environment.get(run_quality.PARAM)
+    taken = taken if isinstance(taken, dict) else {}
+    out = {"class": klass}
+    for key in ("tier", "policy", "benchmark"):
+        if isinstance(taken.get(key), str) and taken[key]:
+            out[key] = taken[key]
+    if reasons:
+        out["reasons"] = [str(r) for r in reasons if r]
+    return out
 
 
 class _Refused(Exception):
@@ -723,6 +750,7 @@ class ReleaseStep(WorkflowStep):
             artifact["evidence"]["store_listing"] = listing_evidence
         if workflow.get("run_id"):
             artifact["workflow"] = workflow
+        artifact["evidence"]["quality"] = _run_quality(context)
         template = self._template(root, loaded.get("scaffold-record"))
         if template:
             artifact["template"] = template

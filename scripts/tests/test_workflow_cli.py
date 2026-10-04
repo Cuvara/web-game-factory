@@ -191,8 +191,11 @@ class IndividualCommands(CliCase):
                 self.assertEqual(state["status"], "COMPLETED")
 
     def test_commands_chain_inside_one_run_and_do_not_redo_work(self):
-        self.wgf("plan", "--mock", "--quiet")
+        # Research first: a step is skipped by `--run` only while nothing before it has run
+        # since (WS-12), so a plan made before research would rightly be made again.
+        self.wgf("research", "--mock", "--quiet")
         run_id = self.state()["run_id"]
+        self.wgf("plan", "--run", run_id, "--quiet")
         self.wgf("init", "--run", run_id, "--quiet")
         self.wgf("init", "--run", run_id, "--quiet")
         state = self.state(run_id)
@@ -208,7 +211,17 @@ class IndividualCommands(CliCase):
         state = self.state(run_id)
         self.assertEqual(state["status"], "COMPLETED")
         self.assertEqual(state["steps"]["strategy"]["executions"], 1)
+        self.assertEqual(state["steps"]["init"]["executions"], 1)
         self.assertEqual(state["steps"]["release"]["status"], "SUCCESS")
+
+    def test_a_plan_made_before_research_is_made_again_when_research_runs(self):
+        """WS-12: `--run` skips a step only while it is current. A strategy made with no
+        research behind it is made again once research has run in the run."""
+        self.wgf("plan", "--mock", "--quiet")
+        run_id = self.state()["run_id"]
+        self.wgf("new-game", "--run", run_id, "--quiet", expect=3)
+        state = self.state(run_id)
+        self.assertEqual(state["steps"]["strategy"]["executions"], 2)
 
 
 class FailureAndResume(CliCase):

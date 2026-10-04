@@ -3,26 +3,156 @@
 # factory.publish.profiles_extra; the console url is set per test
 # (factory.publish.platforms.generic-web.console_url) and the adapter is the fixture's.
 # Automated console use is permitted: the portal is ours.
+#
+# Written in the 2.0.0 form (core/artifacts/shared/publication-profile.schema.json): the
+# console flow as intents, each with a phase and a class. Every locator ladder names the
+# fixture's markup (role or label first where the fixture has one, its css as the fallback),
+# so the executor that runs profile intents (workstream 3) drives it unchanged.
 
 id: generic-web
-version: 0.0.1
+version: 2.0.0
 status: verified
 docs: null
 
 submission:
   method: console
   automation_terms: permitted
+  content_policy:
+    ai_generated_text: allowed
+    ai_generated_assets: allowed
+    note: The fixture portal is ours; it states no policy and needs none.
   console:
     url: http://127.0.0.1:1/
     allowed_origins: [http://127.0.0.1:1]
-    upload_max_mb: 50
     upload_timeout_s: 60
   credential:
     kind: storage-state
     env: WGF_PUBLISH_FIXTURE_STORAGE_STATE
-  human_required: [login]
-  verification:
+  human_required: [login, declaration, age-rating]
+
+  adaptive: allowed
+  adaptive_bounds: {max_per_intent: 3, max_per_visit: 10}
+  dismissable: [Close, Got it, Skip, Not now]
+  deny: [Supprimer, Soumettre]
+
+  session:
+    logged_in: [{css: "#dashboard"}]
+    login: [{css: "form#login"}, {css: "input[type=password]"}]
+    captcha: [{css: "#captcha"}]
+    two_factor: [{css: "#two-factor"}]
+
+  identity:
+    portal_id_from: [registry, config:game_id, idempotency-key, title]
+    list_url: /console
+    game_url: /console/draft/{id}
+    row: [{css: "tr.draft"}]
+    row_title: [{role: cell, index: 0}, {css: "td"}]
+    row_id: {attr: data-id}
+    title_match: exact-casefold
+    basis: observed
+
+  flow:
+    - id: create.open
+      phase: create_game
+      class: reversible
+      action: navigate
+      url: /console/new
+      expect: {url_matches: "/console/new"}
+      basis: observed
+    - id: create.name
+      phase: create_game
+      class: reversible
+      action: fill
+      value: identity.title
+      target: [{role: textbox, name: "Name"}, {css: "input[name=name]"}]
+      names: [Name, Game name]
+      expect: {value_equals: identity.title}
+      basis: observed
+    - id: upload.archive
+      phase: upload_build
+      class: reversible
+      action: upload
+      value: package.file
+      target: [{label: "Archive"}, {css: "input[type=file]"}]
+      names: [Build file, Game file]
+      basis: observed
+    - id: upload.start
+      phase: upload_build
+      class: reversible
+      action: click
+      target: [{role: button, name: "Upload"}, {css: "button#upload"}]
+      names: [Upload]
+      expect: {visible: [{css: "#draft-id"}]}
+      basis: observed
+    - id: field.title
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.title
+      target: [{role: textbox, name: "Title"}, {css: "input[name=title]"}]
+      names: [Title, Game title]
+      expect: {value_equals: listing.title}
+      basis: observed
+    - id: field.description
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.<locale>.description
+      per_locale: true
+      target: [{role: textbox, name: "Description"}, {css: "textarea[name=description]"}]
+      names: [Description]
+      expect: {value_equals: listing.text.<locale>.description}
+      basis: observed
+    - id: declare.ownership
+      phase: human_fields
+      class: human
+      note: Ownership and licensing declaration - a person makes it in their own browser.
+      url: /console
+    - id: declare.age_rating
+      phase: human_fields
+      class: human
+      note: Age rating questionnaire - a person answers it.
+      url: /console
+    - id: draft.save
+      phase: save_draft
+      class: reversible
+      action: click
+      target: [{role: button, name: "Save"}, {css: "button#save"}]
+      names: [Save, Save draft]
+      expect: {visible: [{css: "#saved"}]}
+      basis: observed
+    - id: review.request
+      phase: request_review
+      class: irreversible
+      action: click
+      target: [{role: button, name: "Submit for moderation"}, {css: "button#submit"}]
+      expect: {status_in: submitted_states}
+      basis: observed
+    - id: status.read
+      phase: verify
+      class: reversible
+      action: read
+      target: [{css: "#status"}]
+      expect: {status_in: states}
+      basis: observed
+
+  status:
+    read: [{css: "#status"}]
     states: [Created, Waiting for moderation, Live, Rejected]
     submitted_states: [Waiting for moderation]
     live_states: [Live]
     rejected_states: [Rejected]
+    pending_states: [Waiting for moderation]
+
+  constraints:
+    one_moderation_at_a_time: true
+    archive_root_index: true
+    upload_max_mb: 50
+
+  fields:
+    title: {required: true, max: 50, locales: shared, listing: listing.title, basis: observed}
+    description: {required: true, max: 2000, locales: per-locale, listing: listing.text.<locale>.description, basis: observed}
+
+  restrictions:
+    - rule: A submitted draft cannot be submitted again (409).
+      source: scripts/tests/fixtures/publish/portal.py

@@ -5,12 +5,15 @@
 # and the text and stops HUMAN_REQUIRED (reason manual-submission); a person sends it.
 
 id: gamevui
-version: 1.0.0
+version: 2.0.0
 status: unverified
 docs: null
 
 submission:
   method: email
   automation_terms: permitted   # nothing automated touches the portal: a person emails
+  content_policy:
+    ai_generated_text: unknown
+    ai_generated_assets: unknown
   human_required: [email, review]
   notes: Submission by email to the portal's publishing contact; no console exists to drive.

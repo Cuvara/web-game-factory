@@ -7,6 +7,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Fac
 released as a whole (`v1.0.0` is Core v1, frozen); schemas still carry their own versions,
 and `core/` is still the contract.
 
+## [Unreleased]
+
+**Publication profile 2.0.0** (workstream 2 of
+[docs/portal-publishing-architecture.md](docs/portal-publishing-architecture.md)). The
+console flow becomes data: `submission.flow` holds ordered intents, each with a phase and a
+class (`reversible` | `irreversible` | `human`), a locator ladder, a value that is a path into
+the shipped listing (never free text) and a post-condition; `session` and `identity` name how
+the session and an existing game are recognised; `status` (was `verification`) gains
+`pending_states` and `approved_states`; `constraints.upload_max_mb` (was
+`console.upload_max_mb`); `fields` with the console's limits; `content_policy` for generated
+text and assets (required; every shipped console says `unknown`); `adaptive`,
+`adaptive_bounds` (at most 3 per intent, 10 per visit), `dismissable` and `deny`; top-level
+`sources` and `unknowns`. **Breaking** for a 1.x profile: rename `verification` to `status`,
+move `console.upload_max_mb` to `constraints`, add `content_policy`, and for a console add
+`adaptive`. Every shipped profile is migrated to 2.0.0; the console profiles (CrazyGames, Y8,
+Yandex, GameDistribution, GameMonetize) were written from public pages only, name what a
+person must log in to learn under `unknowns`, and stay `status: unverified`.
+`check-integrity.py` checks every profile's flow (`wgflib.publication.flow_problems`): no
+cancel, withdraw or delete intent; every irreversible intent has a profile ladder; every
+intent has a class; adaptive names outside the deny vocabulary; status words consistent.
+`platform-publication` 1.2.0 (additive): `submission.portal_game_id`, the `human_required`
+reasons `legal`, `declaration`, `ai-text-policy`, `duplicate-candidate`, `review-pending`,
+`drift-irreversible`, `anti-bot`, and `measurement_class: automation-console-adaptive`. The
+console adapter reads `status` and `constraints.upload_max_mb`; nothing else changes
+behaviour yet - the executor runs profile intents from workstream 3.
+
 ## [2.7.0] - 2026-10-03
 
 Research that proposes several opportunities from a coded game corpus, and designs that say

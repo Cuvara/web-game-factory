@@ -215,6 +215,31 @@ from a public document. Until a person records that finding
 before contacting the portal. The selector maps of `crazygames` and `yandex` are hypotheses
 to be corrected from the console in dry-run before the profile is bumped to `verified`.
 
+**Profile 2.0.0** (`x-wgf.version`; every shipped profile is at `version: 2.0.0`) makes the
+console flow data, as `docs/portal-publishing-architecture.md` Part 2.4 designs it:
+
+| Key under `submission` | What it says |
+|---|---|
+| `flow` | Ordered intents: `id`, `phase` (check_session ... request_review, verify), `class` (`reversible` \| `irreversible` \| `human`), `action` (click, fill, select, upload, navigate, read - no tick action exists), a locator `target` ladder (role > label > placeholder/text > testid > css > xpath with a reason; one kind per rung), `value` (a path into the shipped listing, manifest, package or identity - never free text), `names` an adaptive resolution may match, `expect` (the post-condition), `basis` (`observed` \| `documented` \| `hypothesis`) |
+| `session`, `identity` | Locators for logged in / login / CAPTCHA / 2FA / anti-bot; how `find_game` looks for the game (`portal_id_from`: registry, config ids, idempotency key, exact case-folded title) |
+| `status` | Was `verification`: `states`, `submitted_states`, `approved_states` (Yandex's Verified), `live_states`, `rejected_states`, and `pending_states` - the words `status_gate` never uploads over |
+| `constraints` | Now also `upload_max_mb` (was `console.upload_max_mb`), `max_new_game_requests`, `resubmission_cooldown` |
+| `fields` | What the console asks for, with `min`/`max`/`max_count`, `locales`, sizes; `null` where nobody has seen the console |
+| `content_policy` | `ai_generated_text`, `ai_generated_assets`: `allowed` \| `disclose` \| `forbidden` \| `unknown` (required for every method; every shipped console says `unknown`) |
+| `adaptive`, `adaptive_bounds`, `dismissable`, `deny` | Whether drift may be resolved here, the budget (at most 3 per intent, 10 per visit; down, never up), the overlays that may be dismissed, and the console's own words for the deny vocabulary |
+
+Top level, `sources` (url, date read) and `unknowns` (what a person must log in to learn)
+make every gap explicit. `check-integrity.py` adds the rules a schema cannot state
+(`wgflib.publication.flow_problems`, shared with the executor to come): no intent cancels,
+withdraws, deletes, removes or unpublishes anything; every irreversible intent has a profile
+ladder and no adaptive `names`; every `request_review` intent is irreversible; every intent
+has a class; adaptive `names` and `dismissable` stay outside the deny vocabulary
+(`DENY_VOCABULARY` plus the profile's `deny`); every `*_states` word is a `states` word, and a
+flow that requests review names its `pending_states`. Today the executor still runs the
+adapter's selector map (above); running the profile's `flow` is workstream 3 of the
+architecture. The shipped console profiles were written from public pages only - no locator
+is `observed`, every one stays `status: unverified`.
+
 ## Authentication and secrets
 
 The automation never logs in. A person captures the portal session once, in a headed

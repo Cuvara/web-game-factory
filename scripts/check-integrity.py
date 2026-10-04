@@ -396,6 +396,36 @@ def check_template_profiles(directory, profiles):
                 "version; template-side divergence, init vendors the core copy")
 
 
+def check_publication_profiles(directory=os.path.join("core", "reference", "publication"),
+                               platforms_dir=os.path.join("core", "reference", "platforms")):
+    """Publication profiles (2.0.0): the id is the filename stem and names a platform profile,
+    and the console flow keeps the rules the schema cannot state - no cancel, withdraw or
+    delete intent; every irreversible intent has a profile locator ladder; every intent has
+    a class; adaptive names and dismissable overlays outside the deny vocabulary; the status
+    words consistent (wgflib.publication.flow_problems). Returns the profiles checked."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from wgflib.publication import flow_problems
+    from wgflib.yamllite import YamlError, load_file
+
+    checked = []
+    for path in sorted(glob.glob(os.path.join(directory, "*.yaml"))):
+        stem = os.path.basename(path)[:-5]
+        try:
+            profile = load_file(path)
+        except (OSError, YamlError, ValueError) as exc:
+            ERRORS.append(f"{path}: does not parse: {exc}")
+            continue
+        if not isinstance(profile, dict) or profile.get("id") != stem:
+            ERRORS.append(f"{path}: id is not the filename stem {stem!r}")
+            continue
+        if not os.path.isfile(os.path.join(platforms_dir, f"{stem}.yaml")):
+            ERRORS.append(f"{path}: no platform profile {platforms_dir}/{stem}.yaml")
+        for problem in flow_problems(profile):
+            ERRORS.append(f"{path}: {problem}")
+        checked.append(stem)
+    return checked
+
+
 def check_provider_independence():
     """core/ is AI-provider independent. This is the rule the whole adapter split exists to
     protect, and it degrades silently — one convenient mention of a specific runtime and the
@@ -487,6 +517,7 @@ def main():
     check_charters()
     check_templates()
     platforms = check_platforms()
+    publication = check_publication_profiles()
     check_provider_independence()
     check_no_readme_only_dirs()
     check_plugin_version()
@@ -496,6 +527,7 @@ def main():
     print(f"artifacts   {len(artifacts)}")
     print(f"roles       {len(roles)}")
     print(f"platforms   {', '.join(sorted(platforms))}")
+    print(f"publication {len(publication)} profile(s)")
     print(f"machines    {len(glob.glob('core/lifecycle/*.machine.yaml'))}")
     print(f"stages      {len(glob.glob('core/lifecycle/stages/*.md'))}")
     print(f"workflows   {len(workflows)}")

@@ -2,6 +2,11 @@
 
 Status: **design, not implemented.** Written 2026-10-04. Nothing in this document changes
 behaviour; the rules it supersedes stay in force until the workstreams in Part 4 land.
+Landed: workstream 2 (publication profile 2.0.0, `platform-publication` 1.2.0, the flow
+rules in `check-integrity.py`; `docs/publish-module.md`, "Publication profiles"). Beyond
+the sketch in 2.4: the budget is `adaptive_bounds` beside the `adaptive` switch, the deny
+words and dismissable overlays are `submission.deny` and `submission.dismissable`, and an
+intent's adaptive vocabulary is its `names`.
 
 ## The decision this document implements
 

@@ -35,6 +35,7 @@ ROOT = os.path.dirname(SCRIPTS)
 sys.path.insert(0, SCRIPTS)
 
 from wgf_strategy import Policy, StrategyRefused, StrategyStep, plan_strategy  # noqa: E402
+from wgf_strategy import planner  # noqa: E402
 from wgf_strategy.profiles import load_profiles  # noqa: E402
 from wgflib import paths  # noqa: E402
 from wgflib.guards import GuardContext, evaluate_guard  # noqa: E402
@@ -577,22 +578,14 @@ class QualityTierBudget(unittest.TestCase):
 
 
 class OutOfScopeReconciled(unittest.TestCase):
-    """`out_of_scope` is reconciled against the scope it sits beside (plugin dogfood F08:
-    an MVP of unlockable planes beside "no customization or cosmetics")."""
+    """`out_of_scope` is reconciled against the scope it sits beside. Unlocks the brief asks
+    for (plugin dogfood F08) are GroundedInTheBrief's; the release budget's content sets are
+    QualityTierBudget's."""
 
     def strategy(self, brief):
         opp = opportunity(research=research_block(genre="endless-runner", family="arcade"))
         opp["brief"] = brief
         return plan(opp)
-
-    def test_earned_unlocks_narrow_the_cosmetics_exclusion(self):
-        body = self.strategy("A paper plane glider where you unlock new planes by flying far")
-        self.assertNotIn("Character or skin customization and a cosmetics shop",
-                         body["out_of_scope"])
-        self.assertIn("A cosmetics shop or purchasable skins; unlocks the player earns "
-                      "through play are progression and stay in scope", body["out_of_scope"])
-        self.assertTrue(any(d.startswith("Exclusion narrowed to fit the scope (customization)")
-                            for d in body["production_scope"]["scope_decisions"]))
 
     def test_a_brief_that_needs_an_excluded_system_keeps_it(self):
         body = self.strategy("A runner where you dress up your character in skins")
@@ -603,6 +596,88 @@ class OutOfScopeReconciled(unittest.TestCase):
         body = self.strategy("A runner on a neon highway")
         self.assertIn("Character or skin customization and a cosmetics shop",
                       body["out_of_scope"])
+# The live brief of validation run B (docs/handoff/2026-10-03-two-game-validation.md).
+MARBLE = ("A 3D low-poly marble-roll game (Three.js): tilt/steer a marble across floating "
+          "sky-island courses, ramps, moving platforms, gaps and bumpers; collect gems, beat "
+          "the par time for stars; 3 themed worlds of hand-designed courses, unlocks and saved "
+          "progress, a time-trial mode with personal bests. Chase camera, desktop keys and "
+          "mobile touch.")
+BOILERPLATE = "Difficulty comes from one data-driven ramp, not hand-built levels."
+
+
+class GroundedInTheBrief(unittest.TestCase):
+    """Validation finding 2 (and plugin F08): the strategy wrote fixed sentences whatever the
+    brief asked. Its text now follows the brief intents of core/reference/mechanic-lexicon.yaml,
+    and `contradictions` refuses a strategy whose statements still contradict them."""
+
+    def test_a_hand_designed_brief_never_gets_the_ramp_sentence(self):
+        body = plan(opportunity(brief=MARBLE))
+        direction = body["concept"]["gameplay_direction"]
+        self.assertNotIn("not hand-built", direction)
+        self.assertNotIn(BOILERPLATE, direction)
+        self.assertIn("Content: hand-designed courses, as the brief asks, with difficulty "
+                      "authored per course.", direction)
+        self.assertIn("Hand-designed courses, as the brief asks, with difficulty authored per "
+                      "course", body["mvp"])
+        self.assertNotIn("One content set with a data-driven difficulty ramp", body["mvp"])
+        self.assertIn("Content as data: every designed course with its difficulty values",
+                      body["production_scope"]["reusable_systems"])
+        self.assertEqual(planner.contradictions(body), [])
+
+    def test_a_hand_designed_brief_makes_the_family_content_authored(self):
+        # The arcade family's default shape is a time ramp; the brief asks for hand-designed
+        # courses, and the family allows authored difficulty, so the brief decides it.
+        body = plan(opportunity(brief=MARBLE, research=research_block(
+            genre="endless-runner", family="arcade", genre_model="arcade")))
+        self.assertEqual(body["concept"]["content_model"]["difficulty_shape"], "level-authored")
+        applied = [a for a in body["research"]["applied"]
+                   if a["field"] == "concept.content_model" and a["source"] == "brief"]
+        self.assertEqual(len(applied), 1)
+        self.assertIn("authored-content", applied[0]["detail"])
+        self.assertEqual(planner.contradictions(body), [])
+
+    def test_unlocks_and_a_mode_the_brief_asks_for_are_not_excluded(self):
+        body = plan(opportunity(brief=MARBLE))
+        out = " ".join(body["out_of_scope"])
+        self.assertNotIn("Character or skin customization and a cosmetics shop", out)
+        self.assertIn("the unlocks the brief asks for are earned in play", out)
+        self.assertNotIn("A second mode or content set", out)
+        self.assertTrue(any("(content)" in r["description"] for r in body["risks"]))
+
+    def test_without_a_brief_the_text_is_unchanged(self):
+        body = plan()
+        self.assertIn(BOILERPLATE, body["concept"]["gameplay_direction"])
+        self.assertIn("Character or skin customization and a cosmetics shop", body["out_of_scope"])
+        self.assertIn("Data-driven difficulty ramp", body["production_scope"]["reusable_systems"])
+
+    def test_a_statement_that_contradicts_the_brief_is_found(self):
+        body = plan(opportunity(brief=MARBLE))
+        body["concept"]["gameplay_direction"] += " " + BOILERPLATE
+        body["out_of_scope"].append("Character or skin customization and a cosmetics shop")
+        found = planner.contradictions(body)
+        # The ramp sentence carries two contradicting phrases; each is reported.
+        self.assertEqual(len(found), 3, found)
+        self.assertTrue(any("concept.gameplay_direction" in f and "authored-content" in f
+                            for f in found), found)
+        self.assertTrue(any("out_of_scope" in f and "unlocks" in f for f in found), found)
+
+    def test_a_statement_that_contradicts_the_content_model_is_found(self):
+        # No brief: a level-authored content model is enough.
+        body = plan(opportunity(research=research_block(genre="tower-defense",
+                                                        family="strategy",
+                                                        genre_model="strategy")))
+        self.assertEqual(planner.contradictions(body), [])
+        body["mvp"].append("One content set with a data-driven difficulty ramp")
+        found = planner.contradictions(body)
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("the content model (level-authored)", found[0])
+
+    def test_a_contradicting_strategy_is_refused(self):
+        with mock.patch.object(planner, "contradictions",
+                               return_value=["mvp says \"x\" (y), which contradicts the brief"]):
+            with self.assertRaises(StrategyRefused) as caught:
+                plan(opportunity(brief=MARBLE))
+        self.assertIn("contradicts", str(caught.exception))
 
 
 # -- the step ----------------------------------------------------------------------------

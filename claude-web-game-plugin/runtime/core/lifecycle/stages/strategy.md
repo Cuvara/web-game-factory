@@ -78,7 +78,15 @@ each such decision, and each one that fell back to a default because research ha
    `risks` carries the opportunity's risks forward and adds the ones this plan introduces;
    `assumptions` names what the plan takes as true and what would show it false.
 
-8. **Commit the content budget for the run's quality tier** (`concept.content_model`
+8. **Say only what the brief and the content model allow.** A run started from a game idea
+   carries it as `brief`. What the brief asks of the game - hand-designed levels, unlocks, a
+   second mode - is read through the `brief_intents` of `core/reference/mechanic-lexicon.yaml`
+   and shapes the text: hand-designed content is authored content, and what the brief asks
+   for is not listed in `out_of_scope`. A statement that contradicts the brief or the
+   resolved content model (a "data-driven ramp, not hand-built levels" for a brief of
+   hand-designed courses) is refused, not handed to G2.
+
+9. **Commit the content budget for the run's quality tier** (`concept.content_model`
    `quality_tier` and `budget`). The tier is the installation's
    (`factory.strategy.quality_tier`: `mvp` or `release`, default `release`). At `release`
    the budget is the content a published title carries: units, groups where the genre family
@@ -89,9 +97,8 @@ each such decision, and each one that fell back to a default because research ha
    records both numbers behind each quantity, and `justification` says why the volume is
    enough: session length, progression structure, mechanics, replayability and what the
    target platforms expect. At `mvp` the budget is the prototype's units, for a run that
-   ends at G4. Then reconcile `out_of_scope` against it: an exclusion the brief, the MVP or
-   the progression depends on is dropped and carried as a risk, and one they partly
-   contradict (earned unlocks beside "no cosmetics") is narrowed to what stays excluded.
+   ends at G4. At `release`, `out_of_scope` no longer excludes "a second content set" - the
+   budget's groups are content sets - only a second mode.
 
 ## Optimize for rapid production
 

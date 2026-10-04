@@ -43,13 +43,13 @@ runs continued; the game runs merged an integration branch (`integ/val-fixes`) b
 | # | Defect and evidence | Status |
 |---|---|---|
 | 1 | Research `idea_match` counted one generic word: the marble brief's verb `collect` selected the Endless Runner archetype, and the brief was silently replaced. | PR #25 |
-| 2 | `wgf_strategy` always writes "Difficulty comes from one data-driven ramp, not hand-built levels", even when the brief asks for hand-designed levels (A). The plugin run saw the same sentence, plus an unlock-vs-no-cosmetics contradiction (F08). | **open** |
-| 3 | `design_adds_no_foreign_mechanic`: the agent author's repair rounds rename words to dodge the check (A). | **open** (see 8) |
+| 2 | `wgf_strategy` always writes "Difficulty comes from one data-driven ramp, not hand-built levels", even when the brief asks for hand-designed levels (A). The plugin run saw the same sentence, plus an unlock-vs-no-cosmetics contradiction (F08). | Fixed on `dyCuong03/design-mechanic-consistency`: brief intents in `core/reference/mechanic-lexicon.yaml` shape the text, and `wgf_strategy.contradictions` refuses a strategy that contradicts the brief or content model |
+| 3 | `design_adds_no_foreign_mechanic`: the agent author's repair rounds rename words to dodge the check (A). | Fixed with 8: a synonym is the same mechanic id, and a control-driven mechanic the lexicon does not know is `unrecognised` |
 | 4 | The installed Claude plugin was stale (0.3.0, 2026-09-22): no `/new-game`, no runtime. The repository plugin is 2.6.0 (F01). | **open**: no PR adds update instructions |
 | 5 | The `new-game` surface said the workflow ends at the drafted release and that G5/G6 belong to game CI, which contradicts workflow v7's `publish` group. No plugin surface drove `wgf publish --run` (`gen-adapters.sh:350`; F02). | PR #31 |
 | 6 | Shipped defaults cannot carry an off-catalog idea. Research accepts `design_archetype: agent` regardless of `factory.design.author`. The archetype author falls back to `archetypes.select()`, which ignores `rendering: 2d`, so a 2D brief became a 3D arena-dodge and design FAILED (F09). | PR #36 (no `/new-game` preflight warning yet) |
 | 7 | The autonomous profile's `Edit(/{draft})`, `Edit(/{out}/**)`, `Edit(/{dir}/**)` rules break on Windows: they render as `/C:\...`, which Claude Code reads as project-relative and denies. The design author "left the draft unchanged"; asset authors failed the same way (F11). | PR #36 |
-| 8 | `design_adds_no_foreign_mechanic` flags a paraphrase of the brief ("tap hops" read as `jump`; `gate`). Seen in A, B and D: the check matches words, not mechanics (F14). | **open** |
+| 8 | `design_adds_no_foreign_mechanic` flags a paraphrase of the brief ("tap hops" read as `jump`; `gate`). Seen in A, B and D: the check matches words, not mechanics (F14). | Fixed on `dyCuong03/design-mechanic-consistency`: design-consistency-rules 2.0.0 compares mechanic ids (brief included), plus `pillar_realized_by_mechanic` |
 | 9 | The retention hook enum has `daily_quest` only. The brief's "daily challenge" plus rule `short_session_no_daily_quest` made the design drop the hook (F13). | **open** |
 | 10 | `new-game.md` had no `allowed-tools`, so auto mode blocked the surface reading `wgf status`/`logs` as `[Self-Modification]` (F15). | PR #31 (not live-verified, per the PR) |
 | 11 | The template's `playwright.config.ts` fixes preview port 4173 with `--strictPort`. Concurrent runs on one host fail smoke/e2e; B's greybox FAILED three times while A's suite ran. | PR #28 |
@@ -159,7 +159,7 @@ are still outstanding.
 
 ### Still open
 
-- 2, 3/8, 9, 19, 22 above.
+- 9, 19, 22 above (2 and 3/8 fixed on `dyCuong03/design-mechanic-consistency`).
 - Listing copy: the controls line lists touch only (desktop mouse and keys are not stated).
   The `ru` copy from the template writer is the in-game objective line only. A real
   description needs the agent copywriter or copy supplied by a person.

@@ -9,8 +9,11 @@ The rules are written against a projection, not the raw artifact:
                               produces it and the same rule is re-read against it at G3
     platform.*                one REQUIRED platform profile at a time; capabilities.ads
                               includes `iap` when the profile's capabilities.iap is true
-    concept.*                 the ruleset's `concept_terms` found in the strategy's concept
-                              and in the design's own statement of its game (concept_view)
+    concept.*                 the brief, the strategy and the design as mechanic ids of
+                              core/reference/mechanic-lexicon.yaml (concept_view): what the
+                              brief and strategy imply against what the design builds - its
+                              build_spec mechanics, the content units that use them and the
+                              controls that drive them - and the pillars they realize
 
 A rule that reads `platform.*` is evaluated once per required platform and is breached if it
 is breached on any of them. A platform whose profile holds no value for the rule (no ads,
@@ -20,20 +23,34 @@ checked" are opposite conclusions and only one is safe to act on (see wgflib/cri
 """
 
 import os
-import re
 
-from wgflib import paths
+from wgflib import mechanics, paths
 from wgflib.criteria import MISSING, Unevaluable, evaluate_named, resolve
 from wgflib.yamllite import load_file
 
-__all__ = ["RULES_PATH", "load_rules", "projection", "concept_view", "evaluate",
-           "breach_problems"]
+__all__ = ["RULES_PATH", "load_rules", "load_lexicon", "projection", "concept_view",
+           "evaluate", "breach_problems"]
 
 RULES_PATH = os.path.join(paths.REFERENCE, "design-consistency-rules.yaml")
 
 
 def load_rules(path=None):
     return load_file(path or RULES_PATH)
+
+
+def load_lexicon(ruleset=None):
+    """The mechanic lexicon the ruleset pins (`lexicon: {id, version}`). A lexicon at another
+    version is refused: the words decide what is foreign, so changing them is a ruleset change
+    and is recorded as one."""
+    ruleset = ruleset if ruleset is not None else load_rules()
+    pin = ruleset.get("lexicon")
+    if not isinstance(pin, dict):
+        return {}
+    lexicon = mechanics.load(os.path.join(paths.REFERENCE, f"{pin.get('id')}.yaml"))
+    if str(lexicon.get("version")) != str(pin.get("version")):
+        raise ValueError(f"design-consistency-rules pins {pin.get('id')} {pin.get('version')}, "
+                         f"the file is {lexicon.get('version')}: bump the ruleset with it")
+    return lexicon
 
 
 def _paths(expression):
@@ -48,24 +65,6 @@ def _paths(expression):
                 yield expression[key]
 
 
-# Features every design carries whatever the game is: they state no core mechanic.
-_GENERIC_FEATURES = ("game-flow", "telemetry", "platform-integration", "localization")
-# Acceptance lines the author folds in from the strategy MVP (authors.py): the strategy's
-# words, not the design's, so they cannot show the design carries a mechanic.
-_FROM_STRATEGY = "Strategy MVP:"
-
-
-def _terms_in(text, concept_terms):
-    text = text.lower()
-    found = set()
-    for mechanic, words in concept_terms.items():
-        for word in words:
-            if re.search(r"(?<![a-z0-9])" + re.escape(str(word).lower()) + r"(?![a-z0-9])", text):
-                found.add(mechanic)
-                break
-    return found
-
-
 def _strategy_concept(strategy):
     concept = strategy.get("concept") or {}
     return " ".join(str(p) for p in (strategy.get("one_liner"), concept.get("core_mechanic"),
@@ -73,8 +72,10 @@ def _strategy_concept(strategy):
 
 
 def _strategy_all(strategy):
+    """Everything the brief and the strategy say the game is: what a design may build."""
     concept = strategy.get("concept") or {}
-    parts = [_strategy_concept(strategy), concept.get("gameplay_direction") or ""]
+    parts = [str(strategy.get("brief") or ""), _strategy_concept(strategy),
+             concept.get("gameplay_direction") or ""]
     model = concept.get("content_model") or {}
     parts += [str(model.get(k) or "") for k in ("unit_kind", "progression", "family")]
     parts += [str(item) for item in strategy.get("mvp") or []]
@@ -82,37 +83,88 @@ def _strategy_all(strategy):
     return " ".join(parts)
 
 
-def _design_own(design):
-    """The design's own statement of its game: core loop, the MVP mechanics it defines, the
-    MVP controls. Features copied from the strategy MVP and generic features are left out."""
-    parts = [design.get("core_loop") or ""]
-    for feature in design.get("features") or []:
-        fid = feature.get("id", "")
-        if (feature.get("tier") != "mvp" or fid in _GENERIC_FEATURES
-                or fid.startswith(("strategy-", "monetization-"))):
-            continue
-        parts += [feature.get("name", ""), feature.get("description", "")]
-        parts += [a for a in feature.get("acceptance") or [] if not str(a).startswith(_FROM_STRATEGY)]
-    for action in ((design.get("build_spec") or {}).get("controls") or {}).get("actions") or []:
-        if action.get("tier") == "mvp":
-            parts += [action.get("action", ""), action.get("touch", "")]
-    return " ".join(str(p) for p in parts)
+def _mvp(items):
+    return [i for i in items or [] if isinstance(i, dict) and i.get("tier") == "mvp"]
 
 
-def concept_view(design, strategy, concept_terms, detail_terms=()):
-    """`uncarried`: mechanics the strategy's concept names that the design's own text does not.
-    `foreign`: mechanics the design's own text names that the strategy nowhere does - minus
-    `detail_terms`, the words most games have (a wall, a crash, a lock) that count for
-    `uncarried` but never make a design a different game."""
-    wanted = _terms_in(_strategy_concept(strategy), concept_terms)
-    named = _terms_in(_strategy_all(strategy), concept_terms)
-    designed = _terms_in(_design_own(design), concept_terms)
-    return {"strategy_terms": sorted(wanted), "design_terms": sorted(designed),
-            "uncarried": sorted(wanted - designed),
-            "foreign": sorted(designed - named - set(detail_terms or ()))}
+def concept_view(design, strategy, lexicon=None):
+    """The brief, the strategy and the design as mechanic ids (core/reference/mechanic-lexicon.yaml).
+
+    `implied`    the ids the brief and the strategy name anywhere: what the design may build.
+    `uncarried`  defining and detail ids the strategy's concept (one-liner, core mechanic,
+                 core loop) names that no MVP mechanic (its name, description or rules) or
+                 MVP control of the design builds.
+    `foreign`    defining ids of the design's core mechanics - an MVP mechanic a content unit
+                 uses, a control drives or the design calls `core`; every MVP mechanic when the
+                 design lists no content - and of its MVP controls, that nothing implies; plus
+                 `<id> (unrecognised)` for a mechanic a control drives that the lexicon does not
+                 know and whose own words the brief and strategy never use. A paraphrase is the
+                 same id and never foreign; a renamed mechanic is still the id it is, or it is
+                 unrecognised.
+    `pillars_asked` / `pillars_unrealized`  the lexicon pillars the brief, the strategy or the
+                 design's pillars name, and those no MVP mechanic a content unit uses builds a
+                 `realized_by` id of."""
+    lexicon = lexicon if lexicon is not None else mechanics.load()
+    spec = design.get("build_spec") or {}
+    built = _mvp(spec.get("mechanics"))
+    actions = _mvp((spec.get("controls") or {}).get("actions"))
+    units = [u for u in (spec.get("content") or {}).get("units") or [] if isinstance(u, dict)]
+    used = {m for u in units for m in u.get("mechanics") or []}
+    driven = {a.get("mechanic") for a in actions if a.get("mechanic")}
+    # What a mechanic IS (its id and name; its description when they name nothing) decides
+    # foreign. What it BUILDS - the same plus its description and rules, its specification -
+    # decides what it carries and which pillar it realizes: "each gate adds time to the
+    # clock" builds a clock into the gates.
+    ids = {m.get("id"): mechanics.mechanic_ids(m, lexicon) for m in built}
+    builds = {m.get("id"): ids[m.get("id")] | mechanics.ids_in(
+        " ".join([str(m.get("description") or "")] + [str(r) for r in m.get("rules") or []]),
+        lexicon) for m in built}
+
+    def is_core(m):
+        return (not units or m.get("id") in used or m.get("id") in driven
+                or m.get("progression_role") == "core")
+
+    allowed_text = _strategy_all(strategy)
+    implied = mechanics.ids_in(allowed_text, lexicon)
+    wanted = {i for i in mechanics.ids_in(_strategy_concept(strategy), lexicon)
+              if mechanics.kind(i, lexicon) != "generic"}
+    carried = set().union(*builds.values()) if builds else set()
+    for action in actions:
+        carried |= mechanics.ids_in(f"{action.get('action', '')} {action.get('touch', '')}",
+                                    lexicon)
+
+    core_ids = set()
+    for m in built:
+        if is_core(m):
+            core_ids |= ids[m.get("id")]
+    for action in actions:
+        core_ids |= mechanics.ids_in(action.get("action", ""), lexicon)
+    foreign = sorted(i for i in core_ids - implied if mechanics.kind(i, lexicon) == "defining")
+    words = mechanics.stems(allowed_text)
+    for m in built:
+        own = mechanics.stems(f"{m.get('id', '')} {m.get('name', '')}")
+        if m.get("id") in driven and not ids[m.get("id")] and not own & words:
+            foreign.append(f"{m.get('id')} (unrecognised)")
+
+    pillars = lexicon.get("pillars") or {}
+    pillar_text = " ".join([allowed_text] + [str(p) for p in design.get("pillars") or []])
+    asked = sorted(pid for pid, entry in pillars.items()
+                   if mechanics.phrases_in(pillar_text, (entry or {}).get("phrases")))
+    in_play = set()
+    for m in built:
+        if not units or m.get("id") in used:
+            in_play |= builds[m.get("id")]
+    unrealized = [pid for pid in asked
+                  if not in_play & set((pillars[pid] or {}).get("realized_by") or [])]
+
+    return {"strategy_terms": sorted(wanted), "design_terms": sorted(carried | core_ids),
+            "implied": sorted(implied),
+            "uncarried": sorted(wanted - carried),
+            "foreign": foreign,
+            "pillars_asked": asked, "pillars_unrealized": unrealized}
 
 
-def projection(design, strategy, platform=None, concept_terms=None, detail_terms=()):
+def projection(design, strategy, platform=None, lexicon=None, concept=None):
     spec = design.get("build_spec") or {}
     cost = sum(item.get("est_cost", 0) for item in (spec.get("assets") or []) + (spec.get("audio") or []))
     return {
@@ -124,7 +176,7 @@ def projection(design, strategy, platform=None, concept_terms=None, detail_terms
         "audience": strategy.get("audience") or {},
         "asset_manifest": {"total_est_cost": cost},
         "platform": _platform_view(platform),
-        "concept": concept_view(design, strategy, concept_terms or {}, detail_terms),
+        "concept": concept if concept is not None else concept_view(design, strategy, lexicon),
     }
 
 
@@ -156,8 +208,7 @@ def _measured(value):
 def evaluate(design, strategy, platforms, evaluated_at, rules=None):
     """Return the `consistency` block for `design`."""
     ruleset = rules or load_rules()
-    terms = ruleset.get("concept_terms") or {}
-    details = tuple(ruleset.get("detail_terms") or ())
+    concept = concept_view(design, strategy, load_lexicon(ruleset))
     required = [p for p in platforms if p.required]
     results = []
     blocking_breached = []
@@ -165,13 +216,11 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None):
     for rule in ruleset["rules"]:
         reads_platform = any(p.startswith("platform.") for p in _paths(rule["when"]))
         if not reads_platform:
-            result = _evaluate_once(rule, projection(design, strategy, concept_terms=terms,
-                                                     detail_terms=details))
+            result = _evaluate_once(rule, projection(design, strategy, concept=concept))
         else:
             per_platform, notes, breached = [], [], False
             for platform in required:
-                context = projection(design, strategy, platform, concept_terms=terms,
-                                     detail_terms=details)
+                context = projection(design, strategy, platform, concept=concept)
                 absent = [p for p in _paths(rule["when"])
                           if p.startswith("platform.") and resolve(p, context) in (MISSING, None)]
                 if absent:

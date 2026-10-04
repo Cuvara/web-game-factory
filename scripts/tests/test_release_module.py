@@ -474,7 +474,11 @@ class Drafting(ReleaseCase):
         self.assertIn("exited", context.events)
 
     def test_evidence_is_carried_never_upgraded(self):
-        manifest = self.release().artifacts[0].content
+        result = self.release()
+        manifest = result.artifacts[0].content
+        # The release decision states the class: PASS_MOCK is never read as PASS (MV-4).
+        self.assertIn("evidence PASS_MOCK (observed only against stand-ins", result.message)
+        self.assertIn("not a PASS", result.message)
         evidence = manifest["evidence"]
         self.assertEqual(evidence["status"], "PASS_MOCK")
         self.assertEqual({p["platform_id"]: (p["evidence_status"], p["portal_status"])

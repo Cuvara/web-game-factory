@@ -282,6 +282,9 @@ class ReleaseStep(WorkflowStep):
         review = evidence["review"]["status"]
         message = (f"release {release_id} drafted at {head[:12]}: {len(artifact['packages'])} "
                    f"package(s), evidence {evidence['status']}"
+                   # The evidence class, stated: a weaker class never reads as a stronger one.
+                   + (" (observed only against stand-ins, not real devices, browsers or "
+                      "SDKs: not a PASS)" if evidence["status"] == "PASS_MOCK" else "")
                    + (f" ({platforms})" if platforms else "")
                    + ("; UNREVIEWED (review skipped; factory.release.allow_unreviewed)"
                       if review == "skipped" else

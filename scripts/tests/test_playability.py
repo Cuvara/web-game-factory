@@ -102,7 +102,7 @@ class Judge(unittest.TestCase):
 
     def judge(self, design=DESIGN):
         checks = analysis.judge(self.records, self.frames, design, self.rules, experience_rules(),
-                                "desktop")
+                                "desktop", kinds_required=getattr(self, "kinds_required", None))
         return {c["id"]: c for c in checks}
 
     def failed(self):
@@ -424,6 +424,34 @@ class Content(Judge):
         check = self.judge(design)["content.variety"]
         self.assertEqual(check["status"], "FAIL")
         self.assertEqual(check["measured"]["changed_pairs_share"], 0.0)
+
+    # core/reference/quality-policy.yaml rule 5: kinds omitted while a unit is in play.
+
+    def _no_kinds(self):
+        self.records["traverse"] = traverse(units=((1, "w-01", 0.3, ()), (2, "w-02", 0.25, ()),
+                                                   (3, "w-03", 0.6, ())))
+
+    def test_at_the_release_tier_a_probe_without_kinds_fails_variety(self):
+        self._no_kinds()
+        self.kinds_required = "at quality tier release a check that measured nothing is not passed"
+        check = self.judge()["content.variety"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertTrue(check["required"])
+        self.assertIn("no `entities[].kind` while a content unit is in play", check["summary"])
+        self.assertIn("quality tier release", check["summary"])
+        self.assertEqual(check["measured"]["kinds_reported"], [])
+        self.assertIn("content.variety", self.failed())
+
+    def test_below_the_release_tier_a_probe_without_kinds_is_unmeasured_not_failed(self):
+        self._no_kinds()
+        check = self.judge()["content.variety"]
+        self.assertEqual(check["status"], "WARNING")
+        self.assertFalse(check["required"])
+        self.assertIn("could not be measured", check["summary"])
+
+    def test_at_the_release_tier_kinds_reported_are_judged_as_before(self):
+        self.kinds_required = "at quality tier release a check that measured nothing is not passed"
+        self.assertEqual(self.judge()["content.variety"]["status"], "PASS")
 
     def test_persisted_progress_survives_reload(self):
         check = self.judge()["progression.persists"]
@@ -884,6 +912,34 @@ class TheShowcase(unittest.TestCase):
             self.assertEqual(before, judge.judge())
         finally:
             judge.doCleanups()
+
+
+class TheStepsTier(unittest.TestCase):
+    """Which tier holds content.variety to the probe's kinds: the run's, else the design's."""
+
+    def kinds_required(self, environment=None, design=DESIGN, step="playability"):
+        context = types.SimpleNamespace(environment=environment, current_step=step)
+        return PlayabilityStep._kinds_required(context, design)
+
+    def test_the_runs_release_tier_requires_kinds(self):
+        why = self.kinds_required({"quality": {"tier": "release"}})
+        self.assertIn("quality tier release", why)
+        self.assertIn("skipped_checks", why)
+
+    def test_the_runs_mvp_tier_does_not(self):
+        self.assertIsNone(self.kinds_required({"quality": {"tier": "mvp"}}))
+
+    def test_without_a_run_tier_the_designs_tier_decides(self):
+        design = copy.deepcopy(CONTENT_DESIGN)
+        design["build_spec"]["content"]["quality_tier"] = "release"
+        self.assertIsNotNone(self.kinds_required(None, design))
+        design["build_spec"]["content"]["quality_tier"] = "mvp"
+        self.assertIsNone(self.kinds_required(None, design))
+
+    def test_no_tier_at_all_keeps_the_unmeasured_warning(self):
+        design = copy.deepcopy(CONTENT_DESIGN)
+        design["build_spec"]["content"].pop("quality_tier", None)
+        self.assertIsNone(self.kinds_required(None, design))
 
 
 class TheStep(unittest.TestCase):

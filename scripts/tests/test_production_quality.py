@@ -345,6 +345,39 @@ class Judge(unittest.TestCase):
                      if c["id"] == "assets.runtime")
         self.assertEqual(chain["measured"]["striker"]["failed_at"], "rendered")
 
+    def test_a_fast_mover_is_judged_on_its_own_size_inside_the_box_it_swept(self):
+        # Brick Breaker Worlds, 2026-10-04: a falling ember (~22x30) swept a 23x230 box while
+        # the screenshot was taken; over the whole box its pixels fell below the bar, so the
+        # staged ember was "named, not drawn". A window of its own size along the box is.
+        frames = tempfile.mkdtemp(prefix="wgf-pq-showcase-")
+        self.addCleanup(shutil.rmtree, frames, ignore_errors=True)
+        write_frame(frames, "state-showcase-striker", sprites=True)
+        recs = self.showcase(self.later_level_records(), "state-showcase-striker")
+        striker = next(e for e in recs["showcase"]["ui"]["showcase-striker"]["entities"]
+                       if e["id"] == "striker")
+        striker["w"], striker["h"] = 200, 900  # swept down past the bottom of the viewport
+        diluted = next(c for c in self.judge({"desktop": copy.deepcopy(recs)},
+                                             frames={"desktop": frames}) if c["id"] == "assets.runtime")
+        self.assertEqual(diluted["measured"]["striker"]["failed_at"], "rendered")
+        striker["own"] = [60, 80]
+        chain = next(c for c in self.judge({"desktop": recs}, frames={"desktop": frames})
+                     if c["id"] == "assets.runtime")
+        measured = chain["measured"]["striker"]
+        self.assertTrue(measured["rendered"] and measured["visible"] and measured["showcase"], measured)
+        self.assertAlmostEqual(measured["visible_measured"]["largest_area_fraction"],
+                               round(60 * 80 / (393 * 851), 4))
+
+    def test_a_window_of_its_own_size_over_bare_background_still_credits_nothing(self):
+        frames = tempfile.mkdtemp(prefix="wgf-pq-showcase-")
+        self.addCleanup(shutil.rmtree, frames, ignore_errors=True)
+        write_frame(frames, "state-showcase-striker", sprites=False)
+        recs = self.showcase(self.later_level_records(), "state-showcase-striker")
+        for e in recs["showcase"]["ui"]["showcase-striker"]["entities"]:
+            e["h"], e["own"] = 900, [e["w"], 80]
+        chain = next(c for c in self.judge({"desktop": recs}, frames={"desktop": frames})
+                     if c["id"] == "assets.runtime")
+        self.assertEqual(chain["measured"]["striker"]["failed_at"], "rendered")
+
     def test_a_game_without_a_showcase_is_judged_as_before(self):
         before = self.judge({"desktop": self.later_level_records()})
         recs = self.later_level_records()

@@ -98,9 +98,9 @@ bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; ex
                                           # (0 ok/running/ended by G4 kill, 1 failed/blocked/
                                           # cancelled, 3 waiting/paused); also logs, runs, pause, cancel
 
-# The Core Acceptance Suite: WORKFLOW, AGENTS, CONTRACTS, VERIFY, RELEASE, 2D/3D GOLDEN,
-# PROCESS CLEANUP, SECURITY. MISSING or FAIL exits 1; SKIP is never PASS: skipped tests are
-# listed and the summary says INCOMPLETE. --strict also exits 4 on a skipped category.
+# The Core Acceptance Suite: WORKFLOW, AGENTS, CONTRACTS, VERIFY, RELEASE, QUALITY,
+# 2D/3D GOLDEN, PROCESS CLEANUP, SECURITY. MISSING or FAIL exits 1; SKIP is never PASS:
+# skipped tests are listed and the summary says INCOMPLETE. --strict also exits 4 on a skipped category.
 bin/wgf test-core [--only WORKFLOW] [--json] [--strict]
 WGF_GOLDEN=1 bin/wgf test-core --strict   # the release gate: real 2D + 3D goldens, no SKIP category
 
@@ -513,6 +513,10 @@ seen by the engine — validate what you write there with ajv.
   market cells (demand, supply, saturation, competition, trend), counted patterns, the five
   opportunity generators, capability gaps, the research handoff strategy and design read,
   what the shipped corpus supports, and what is not implemented
+- `docs/quality-consistency-tests.md` — WS-13: the Core Acceptance Suite's QUALITY category.
+  The shipped new-game run on six genres through the real gates (fixture designer, developer
+  and bot only), ten intentional degradations each detected, blocking, typed and routed,
+  recovery by re-measurement, anti-gaming, and the gaps it found
 - `docs/new-game-quality-inheritance.md` — WS-12: every entry point and resume path of
   `new-game` (CLI, plugin, `--run`, `--from`, `--force`, `decide`, autonomous profile, config
   overlays, auto-approve), what each could skip, and how `core/reference/quality-policy.yaml`

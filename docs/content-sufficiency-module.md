@@ -17,13 +17,20 @@ quantity is measured, who owns a failure, its severity and its route are data:
 `core/reference/content-sufficiency.yaml`. No bar is written in code, and nothing branches on
 a family or a game.
 
+The benchmark is the copy the run pinned when it started (new-game `pinned_references`,
+`scripts/wgflib/workflow/references.py`), the same copy the quality gate scores against: an
+edit to `core/reference/quality-benchmark.yaml` made while a run is going applies to the next
+run, never to this one's build. A run that pinned nothing reads the live file. Before WS-13
+the step read the live file, so a bar lowered mid-run reached the running build - and through
+this report, its quality gate ([quality-consistency-tests.md](quality-consistency-tests.md)).
+
 | | |
 |---|---|
 | Step type | `content-sufficiency` (`scripts/wgf_sufficiency/step.py`) |
 | Measurement | `scripts/wgf_sufficiency/audit.py` |
 | Reference data | `core/reference/content-sufficiency.yaml` (1.0.0), `core/reference/quality-benchmark.yaml` (1.4.0) |
 | Output | `content-sufficiency-report` (`core/artifacts/content-sufficiency-report.schema.json`, 1.0.0) |
-| Tests | `scripts/tests/test_content_sufficiency.py` |
+| Tests | `scripts/tests/test_content_sufficiency.py`; end to end, `scripts/tests/test_quality_consistency.py` |
 
 ## Why it exists
 
@@ -53,7 +60,7 @@ This step closes those gaps. It is workstream WS-4 of the audit.
 |---|---|
 | `PASS`: every required check passed | `SUCCESS` |
 | `FAIL`: a required check failed | `FAILED`, not retryable. The route is `design-gap` when any failure is the design's (the design is short of the bar), else `develop` |
-| `BLOCKED`: playability was blocked or left no records | `BLOCKED` |
+| `BLOCKED`: playability was blocked or left no records; or the run's pinned benchmark is gone or was edited after the start | `BLOCKED` |
 
 The step never plays the game and never opens the checkout. It reads what playability
 recorded of the same commit, so every gate judges one build. The evidence is automation

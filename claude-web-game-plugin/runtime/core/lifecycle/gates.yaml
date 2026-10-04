@@ -27,7 +27,7 @@
 # `required_artifacts` is what a gate is decided on. A workflow checkpoint for the gate
 # lists them as its inputs, and waits for input - asks nobody - until the run holds them.
 
-version: 1.3.0  # 1.1.0: G3 and G4 required_artifacts (Factory 2.0.0); 1.2.0: G6 decided on the store listing too; 1.3.0: G4 reads playability and review (2.7.0)
+version: 1.4.0  # 1.1.0: G3 and G4 required_artifacts (Factory 2.0.0); 1.2.0: G6 decided on the store listing too; 1.3.0: G4 reads playability and review (2.7.0); 1.4.0: G3 shows the derived develop budget and any planned shortfall
 
 defaults:
   approvers: [portfolio-owner]
@@ -94,6 +94,7 @@ gates:
       must_show:
         - The design consistency result, including any rule that was close to failing.
         - Milestone estimates against the timebox.
+        - The develop budget the plan derives from the tasks its quality tier builds before G4, against the installation's cap; a cap below the need is a planned shortfall.
         - Asset cost and how much of it is not yet sourced.
     rejection_routes_to: [design]
     note: >

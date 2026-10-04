@@ -139,11 +139,11 @@ def _loop(context):
     return loop
 
 
-def _sessions(context):
+def _sessions(context, tech_plan=None):
     """What the run's developer budget has spent before this visit, for the brief; None when
     the run has no budget. Read before the brief is written: the brief used to show only
     develop's max_visits loop guard, which a reader took for the session budget."""
-    budget = Budget.load(context)
+    budget = Budget.load(context, tech_plan)
     return budget.summary() if budget.active else None
 
 
@@ -401,7 +401,7 @@ class DevelopStep(WorkflowStep):
                 writable_paths=settings.writable_paths,
                 package_changes=settings.package_changes,
                 loop=_loop(context),
-                sessions=_sessions(context),
+                sessions=_sessions(context, tech_plan),
                 developer=settings.developer,
             )
             _write(checkout, brief_json, json.dumps(brief, indent=2, ensure_ascii=False) + "\n")
@@ -422,7 +422,7 @@ class DevelopStep(WorkflowStep):
                 # A paid agent session: counted against the run's budget from its event
                 # log - which a resume does not reset - and refused, before anything is
                 # spawned, once the budget is spent or when the run has none.
-                budget = Budget.load(context)
+                budget = Budget.load(context, tech_plan)
                 missing = budget.missing(context.run_id)
                 if missing:
                     context.logger.warning("develop budget missing", **budget.summary())

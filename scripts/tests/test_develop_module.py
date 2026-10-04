@@ -2353,7 +2353,7 @@ class ThroughTheEngine(unittest.TestCase):
                                             "title-strategy", "tech-plan", "qa-report",
                                             "review-report", "playability-report",
                                             "production-quality-report", "visual-qa-report",
-                                            "content-sufficiency-report"})
+                                            "content-sufficiency-report", "quality-report"})
         self.assertEqual(list(step.outputs), ["prototype-report"])
 
 

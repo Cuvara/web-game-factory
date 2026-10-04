@@ -31,7 +31,8 @@ from wgflib.yamllite import YamlError, load_file
 from .devplan import Estimates, build_dev_plan
 from .registration import RegistrationError, load_registrations, registered_entry
 from .selection import (DIMENSION_FOR_ENGINE, EngineError, PhysicsError, PlatformError,
-                        pin_platforms, select_engine, select_physics, tightest_bundle_mb)
+                        pin_platforms, require_adapters, select_engine, select_physics,
+                        tightest_bundle_mb)
 
 __all__ = ["TechPlanStep", "TechPlanSettings", "SettingsError", "SCHEMA_VERSION", "ROLE"]
 
@@ -181,7 +182,8 @@ class TechPlanStep(WorkflowStep):
             return StepResult.failed(str(exc), retryable=False)
         try:
             platforms = pin_platforms(strategy, self.platforms_dir)
-        except PlatformError as exc:
+            require_adapters(platforms, template_pin.platform_adapters())
+        except (PlatformError, template_pin.TemplateError) as exc:
             return StepResult.blocked(str(exc))
         try:
             registrations = load_registrations(title_id, self.titles_dir)

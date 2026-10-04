@@ -54,6 +54,8 @@ import math
 import re
 
 from wgflib import genre_models, mechanics
+from wgflib import template as template_pin
+from wgflib.template import adapter_missing
 
 __all__ = ["Policy", "StrategyRefused", "plan_strategy", "contradictions", "brief_intents",
            "PLANNABLE_STATES", "QUALITY_TIERS", "DEFAULT_QUALITY_TIER",
@@ -357,6 +359,8 @@ class _Plan:
         self.assumptions = []
         self.decisions = []
         self.operator = None
+        # The platform ids the pinned template can build (wgflib.template.platform_adapters).
+        self.adapters = ()
         # Set by content(): the content shape the title commits to, or None when no genre
         # family covers the opportunity.
         self.content_model = None
@@ -786,6 +790,11 @@ class _Plan:
             if missing:
                 raise StrategyRefused(f"the chosen platforms {', '.join(missing)} have no "
                                       f"platform profile in core/reference/platforms/")
+            unbuildable = [p for p in self.operator if p not in self.adapters]
+            if unbuildable:
+                raise StrategyRefused("; ".join(
+                    f"{adapter_missing(self.profiles[p].get('name') or p)} - {p} is not among "
+                    f"the pinned template's adapters" for p in unbuildable))
             if len(self.operator) > int(self.policy.max_platforms):
                 raise StrategyRefused(f"{len(self.operator)} platforms chosen, policy "
                                       f"max_platforms is {int(self.policy.max_platforms)}: "
@@ -805,9 +814,20 @@ class _Plan:
                 self.risk(f"Candidate platform {platform_id!r} has no profile and was left "
                           f"out", "low", "Add a profile before considering it again")
                 continue
+            if platform_id not in self.adapters:
+                # A build for it could not start: the template's createPlatform() throws.
+                compatibility[platform_id] = {
+                    "id": platform_id, "profile_version": str(profile.get("version")),
+                    "compatible": False,
+                    "issues": [adapter_missing(profile.get("name") or platform_id)]}
+                self.risk(f"Candidate platform {platform_id!r} has no SDK adapter at the "
+                          f"pinned template and was left out", "low",
+                          adapter_missing(profile.get("name") or platform_id))
+                continue
             candidates.append(platform_id)
         if not candidates:
-            raise StrategyRefused("none of the candidate platforms has a platform profile")
+            raise StrategyRefused("none of the candidate platforms has a platform profile and "
+                                  "an SDK adapter at the pinned template")
 
         def carriers(placement):
             return [p for p in candidates if _placement_supported(self.profiles[p], placement)]
@@ -1449,13 +1469,15 @@ class _Plan:
 
 
 def plan_strategy(opportunity, profiles, title_id, policy=None, vocabulary=None,
-                  platforms=None, quality_tier=None, benchmark=None):
+                  platforms=None, quality_tier=None, benchmark=None, adapters=None):
     """The body of a title-strategy for `opportunity`. Raises StrategyRefused.
     `vocabulary` maps research codes onto strategy terms: {"control_schemes": {control id:
     scheme}} (the research vocabulary's `control_scheme` attributes). `platforms` is a
     person's choice of target platform ids, first = required (see operator_platforms); None
     ranks the opportunity's candidates. `quality_tier` is the run's tier (mvp | release; None
-    = release); `benchmark` is core/reference/quality-benchmark.yaml, read when None."""
+    = release); `benchmark` is core/reference/quality-benchmark.yaml, read when None;
+    `adapters` the platform ids the pinned template has an SDK adapter for, the template
+    lock's when None - no other platform is ever targeted."""
     if not isinstance(opportunity, dict):
         raise StrategyRefused("opportunity content is not a JSON object")
     tier = resolve_quality_tier(quality_tier)
@@ -1464,6 +1486,13 @@ def plan_strategy(opportunity, profiles, title_id, policy=None, vocabulary=None,
         benchmark = load_benchmark()
     plan = _Plan(opportunity, profiles, title_id, policy or Policy(), vocabulary,
                  tier=tier, benchmark=benchmark)
+    if adapters is None:
+        try:
+            adapters = template_pin.platform_adapters()
+        except template_pin.TemplateError as exc:
+            raise StrategyRefused(f"which platforms the pinned template can build is "
+                                  f"unknown: {exc}")
+    plan.adapters = tuple(adapters)
     plan.operator = operator_platforms(platforms)
     plan.check_opportunity()
     plan.scope()

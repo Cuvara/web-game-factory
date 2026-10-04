@@ -363,7 +363,43 @@ def check_platforms():
             ERRORS.append(f"game.config.yaml (pinned template): platform '{pid}' has no "
                           "profile in core")
     check_template_profiles(directory, profiles)
+    check_template_adapters(directory, profiles)
     return profiles
+
+
+def check_template_adapters(directory, profiles):
+    """The lock's platform_adapters is the pinned template's adapter registry: the list
+    strategy and tech-plan refuse every other platform by. A profile without an adapter at the
+    pin is allowed - it describes a portal before the template can build for it - and named
+    as a note, because no title can target it until a person releases a template carrying the
+    adapter and moves the pin."""
+    from wgflib import template
+
+    try:
+        lock = template.load_lock()
+        adapters = template.platform_adapters(lock)
+    except template.TemplateError as exc:
+        ERRORS.append(f"template pin: {exc}")
+        return
+    if template.expected_commit(lock) != lock["commit"]:
+        NOTES.append("platform adapters not compared: WGF_TEMPLATE_COMMIT points away from "
+                     "the lock, whose platform_adapters describe its own commit")
+        return
+    found = template.registry_adapter_ids(directory)
+    if found is None:
+        # test_template_contract's drift test requires the registry at the pin; a checkout
+        # without one is not a template this list can be held against.
+        NOTES.append("platform adapters not compared: the template checkout has no adapter "
+                     "registry (KNOWN_PLATFORM_IDS)")
+        return
+    if sorted(found) != sorted(adapters):
+        ERRORS.append(f"workspace/config/template.lock.json platform_adapters "
+                      f"{sorted(adapters)} is not the pinned template's adapter registry "
+                      f"{sorted(found)}")
+    for pid in sorted(set(profiles) - set(found)):
+        NOTES.append(f"platform '{pid}' has a profile but no SDK adapter at the pinned template: "
+                     "strategy and tech-plan refuse it until a template release carrying it "
+                     "is pinned")
 
 
 def check_template_profiles(directory, profiles):

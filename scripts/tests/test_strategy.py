@@ -35,6 +35,7 @@ ROOT = os.path.dirname(SCRIPTS)
 sys.path.insert(0, SCRIPTS)
 
 from wgf_strategy import Policy, StrategyRefused, StrategyStep, plan_strategy  # noqa: E402
+from wgflib import template as template_pin  # noqa: E402
 from wgf_strategy import planner  # noqa: E402
 from wgf_strategy.profiles import load_profiles  # noqa: E402
 from wgflib import paths  # noqa: E402
@@ -217,6 +218,30 @@ class Planner(unittest.TestCase):
         with self.assertRaises(StrategyRefused):
             plan_strategy(opportunity(), PROFILES, "neon-drift", Policy(max_platforms=1),
                           platforms=["yandex", "crazygames"])
+
+    def test_a_platform_the_pinned_template_cannot_build_is_never_chosen(self):
+        # GamePix has a profile, but the pinned template has no SDK adapter for it.
+        message = ("GamePix needs a template release carrying its SDK adapter "
+                   "(HUMAN_ACTION_REQUIRED: release and pin)")
+        self.assertIn("gamepix", PROFILES)
+        with self.assertRaises(StrategyRefused) as caught:
+            plan_strategy(opportunity(), PROFILES, "neon-drift", None,
+                          platforms=["gamepix", "yandex"])
+        self.assertIn(message, str(caught.exception))
+        body = plan(opportunity(candidate_platforms=["gamepix", "yandex"]))
+        self.assertEqual([p["id"] for p in body["platform_set"]], ["yandex"])
+        dropped = next(c for c in body["platform_compatibility"] if c["id"] == "gamepix")
+        self.assertFalse(dropped["compatible"])
+        self.assertEqual(dropped["issues"], [message])
+        self.assertTrue(any("gamepix" in r["description"] for r in body["risks"]))
+        with self.assertRaises(StrategyRefused):
+            plan(opportunity(candidate_platforms=["gamepix"]))
+
+    def test_the_adapters_come_from_the_pin_and_a_pin_carrying_one_allows_it(self):
+        adapters = template_pin.platform_adapters() + ("gamepix",)
+        body = plan_strategy(opportunity(), PROFILES, "neon-drift", None,
+                             platforms=["gamepix"], adapters=adapters)
+        self.assertEqual([p["id"] for p in body["platform_set"]], ["gamepix"])
 
     def test_a_malformed_platform_choice_is_refused(self):
         for value in ([], "yandex", ["yandex", "yandex"], [""]):

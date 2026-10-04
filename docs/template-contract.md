@@ -35,7 +35,11 @@ template that predates them is now refused, which is exactly what a major means.
 Factory's `publish` group, behind a person's G6 (`docs/publish-module.md`) - so
 `.github/workflows/publish.yml` and `scripts/publish/` are no longer required. A repository
 without them is accepted; the pinned template (v1.2.0) still ships both, and the drift test
-still passes against it because removing an assumption never breaks it.
+still passes against it because removing an assumption never breaks it. Also unversioned:
+`PLATFORM_REGISTRY` names the adapter registry `SOURCE_PATHS` already required, because its
+`KNOWN_PLATFORM_IDS` are now read - `workspace/config/template.lock.json` `platform_adapters`
+records them for the pin, `check-integrity.py` and `test_core_template` hold the two equal,
+and strategy and tech-plan refuse a platform outside the list (`docs/techplan-module.md`).
 
 Like all of `wgflib`, the module names no renderer or portal (`test_core_security.Coupling`).
 The engines are the `engine.type` enum of `core/artifacts/tech-plan.schema.json` (the list
@@ -48,7 +52,7 @@ by the template's naming convention: `packages/<engine without "js">-framework/`
 | Kind | Names | Read by |
 |---|---|---|
 | Required paths (`INFRASTRUCTURE`) | root config, `packages/*`, `config/platforms/`, `scripts/{verify,release}/`, `tests/{unit,integration,e2e,verify}/`, `.github/workflows/*` | init's `missing_infrastructure` |
-| Template source (`SOURCE_PATHS`) | `src/main.ts`, `src/rendering/*`, `src/game/boot-scene.ts`, `src/platform/`, `tests/e2e/smoke.spec.ts`, platform-sdk `types.ts`/`registry.ts` | develop brief and checks, SDK inspector |
+| Template source (`SOURCE_PATHS`) | `src/main.ts`, `src/rendering/*`, `src/game/boot-scene.ts`, `src/platform/`, `tests/e2e/smoke.spec.ts`, platform-sdk `types.ts`/`registry.ts` (`PLATFORM_REGISTRY`) | develop brief and checks, SDK inspector, the lock's `platform_adapters` |
 | Package manager | `pnpm`, `pnpm-lock.yaml` | verify, sdk, release |
 | npm scripts (`NPM_SCRIPTS`) | `build`, `typecheck`, `lint`, `format`, `format:write`, `test`, `test:unit`, `test:integration`, `test:e2e`, `test:verify`, `sdk:conformance`, `test:sdk:browser`, `release:package`, `release:manifest` | verify, develop, sdk, release |
 | Forwarded flags (`SCRIPT_FLAGS`) | `release:package --release --platform`; `release:manifest --release --version --kind --state` | release |

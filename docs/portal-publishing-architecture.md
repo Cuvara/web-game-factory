@@ -750,8 +750,10 @@ to moderators: a person writes it or leaves it empty).
 
 **A person must log in to learn:** the whole dashboard form, image sizes, the upload widget,
 statuses, the developer agreement, payment and tax forms, CAPTCHA or 2FA. GamePix is also
-blocked in code: no SDK adapter at the pinned template (template#23 on main) and no platform
-or publication profile.
+blocked in code: no SDK adapter at the pinned template (template#23 on main). Its platform
+and publication profiles exist since 2026-10-04 (the developer agreement, sign-up and
+declarations: `docs/platform-targets-2026-10.md`, GamePix), and strategy and tech-plan refuse
+the platform until a template release carrying the adapter is pinned.
 
 **Human intents:** the agreement, "Allow Distribution" (a commercial choice), payment and tax.
 

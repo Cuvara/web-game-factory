@@ -1,0 +1,139 @@
+# Publication profile - GamePix (docs/publish-module.md)
+#
+# 2.0.0 (core/artifacts/shared/publication-profile.schema.json). Written from public pages
+# only, read 2026-10-04 (docs/platform-targets-2026-10.md, GamePix): nobody has logged in,
+# created an account, uploaded or submitted for this file. GamePix publishes no upload or
+# submission API (its API is for publishers pulling the catalogue); games are submitted in the
+# GamePix Dashboard behind a login. The public pages name no dashboard control, so the flow
+# holds no automated intent: every phase is a person's, and the publish step stops
+# HUMAN_REQUIRED.
+#
+# Domain: none required - the developer sign-up asks for no website, and GamePix hosts the
+# game ("GamePix will host your games on secure servers", developers page).
+#
+# GamePix is not a target yet: the pinned template has no GamePix SDK adapter, so strategy and
+# tech-plan refuse it (core/reference/platforms/gamepix.yaml). This file exists so the portal
+# is described the day the pin moves, not so it can be published to today.
+
+id: gamepix
+version: 2.0.0
+status: unverified
+docs: https://partners.gamepix.com/developers
+
+sources:
+  - {url: "https://partners.gamepix.com/developers", read: "2026-10-04", note: "Create an account on the GamePix Dashboard, add the SDK and submit; 45% revenue share; hosting on GamePix servers."}
+  - {url: "https://partners.gamepix.com/guidelines/submission", read: "2026-10-04", note: "Submission guidelines: testkit on my.gamepix, Allow Distribution, icon, cover, description, complete games only."}
+  - {url: "https://partners.gamepix.com/sdk/doc/javascript", read: "2026-10-04"}
+  - {url: "https://partners.gamepix.com/join-us?t=developer", read: "2026-10-04", note: "Developer sign-up: name, surname, email, date of birth (18 or older), public username, individual or company, country, and the terms checkbox. No website or domain field. The page's LOGIN opens https://my.gamepix.com/login."}
+  - {url: "https://public.gamepix.com/partners/terms-conditions/developer-tc.pdf", read: "2026-10-04", note: "License and Distribution Agreement - the developer terms the sign-up accepts (undated). Platform my.gamepix.com; declarations on every upload and update (4.9 child-directed, 4.10 AI); 50% revenue share (5.1), EUR 100 carry-forward (5.5)."}
+  - {url: "https://gamepix.blob.core.windows.net/gpxlib/docs/tos.html", read: "2026-10-04", note: "An older terms page naming a separate Game Uploading Agreement; its date is unknown."}
+
+unknowns:
+  - The whole dashboard submission form - every field, its label and its limits.
+  - The icon and cover sizes and formats; whether screenshots, a video, categories or tags are asked for.
+  - The build upload widget (zip or files) and its size limit; the HTML5 upload format (only the Unity plugin's .gpx file is documented).
+  - Whether the dashboard issues an id the build must carry (none is documented for the JavaScript SDK).
+  - The status labels the dashboard shows, and the review's length.
+  - Whether the developer terms permit automated use of the dashboard (the License and Distribution Agreement does not address it).
+  - Where and how the dashboard takes the child-directed, AI-system and AI-assisted-asset declarations.
+  - "Which revenue share holds: 45% (developers page) or 50% (the agreement, 5.1)."
+  - The payment and tax forms.
+  - Whether a CAPTCHA, a second factor or an anti-bot check protects the dashboard login.
+  - The session markers (logged in, login form, challenges) on the dashboard.
+
+submission:
+  method: console
+  automation_terms: unverified
+  content_policy:
+    ai_generated_text: disclose
+    ai_generated_assets: disclose
+    source: https://public.gamepix.com/partners/terms-conditions/developer-tc.pdf (4.10)
+    note: >
+      4.10(d): "You shall inform us where any asset submitted to us, including artwork, icons,
+      banners, promotional images, audio or textual descriptions, has been created or
+      materially altered with the assistance of generative AI tools." 4.10(a): declare on
+      upload and on each update whether the game incorporates an AI System. Disclosed only
+      from a person's recorded statement.
+  terms_checked:
+    at: "2026-10-04"
+    source: https://public.gamepix.com/partners/terms-conditions/developer-tc.pdf
+    note: Read for this file, not established - automated use of the platform is not addressed.
+  console:
+    url: https://my.gamepix.com/
+    allowed_origins: [https://my.gamepix.com]
+    upload_timeout_s: 900
+  credential:
+    kind: storage-state
+    env: WGF_PUBLISH_GAMEPIX_STORAGE_STATE
+  human_required: [login, terms, payout-setup, review, declaration]
+  adaptive: forbidden
+
+  identity:
+    portal_id_from: [registry, title]
+    title_match: exact-casefold
+    basis: hypothesis
+
+  flow:
+    - id: declare.distribution
+      phase: human_fields
+      class: human
+      note: >
+        Choose "Allow Distribution" when uploading, or not: with it the game is also
+        distributed on third-party sites; without it the game is published exclusively on
+        gamepix.com. A commercial choice.
+      basis: documented
+      source: https://partners.gamepix.com/guidelines/submission
+    - id: declare.child-directed
+      phase: human_fields
+      class: human
+      note: >
+        Declare through the platform, on upload and on each update, whether the game is
+        child-directed under the COPPA Rule - when uncertain, declare it child-directed - and
+        accept the restrictions that brings (4.9).
+      basis: documented
+      source: https://public.gamepix.com/partners/terms-conditions/developer-tc.pdf
+    - id: declare.ai
+      phase: human_fields
+      class: human
+      note: >
+        Declare whether the game incorporates an AI System (4.10a), and inform GamePix of every
+        submitted asset - artwork, icons, banners, promotional images, audio, descriptions -
+        made or materially altered with generative AI (4.10d).
+      basis: documented
+      source: https://public.gamepix.com/partners/terms-conditions/developer-tc.pdf
+    - id: declare.testkit
+      phase: human_fields
+      class: human
+      note: Validate the integration with the testkit on my.gamepix before submitting.
+      basis: documented
+      source: https://partners.gamepix.com/guidelines/submission
+
+  status:
+    states: []
+
+  constraints:
+    upload_max_mb: null
+
+  fields:
+    title: {required: true, max: null, locales: null, listing: listing.title, basis: documented, note: "Consistent across the namespace and display, and with the title on the icon and cover."}
+    description: {required: true, max: null, locales: null, basis: documented, note: "Matches the game - theme, mission, characters, how to play - with the game's title."}
+    icon: {required: true, formats: null, size: null, basis: documented}
+    cover: {required: true, formats: null, size: null, basis: documented}
+
+  restrictions:
+    - rule: Only complete games; drafts or demos will not be approved.
+      source: https://partners.gamepix.com/guidelines/submission
+    - rule: A game already in the GamePix catalogue may not be approved.
+      source: https://partners.gamepix.com/guidelines/submission
+    - rule: The submitter assumes full responsibility for trademarks, copyrights and image rights in the game and its promotional images.
+      source: https://partners.gamepix.com/guidelines/submission
+    - rule: Without "Allow Distribution" the game is exclusive to gamepix.com.
+      source: https://partners.gamepix.com/guidelines/submission
+    - rule: The game on GamePix is always identical to its latest version published elsewhere, in English at least, with no link outside the platform and no network endpoint other than GamePix's.
+      source: https://public.gamepix.com/partners/terms-conditions/developer-tc.pdf (3.3, 4.9c)
+    - rule: The complete source code is delivered to GamePix on request, with every later update.
+      source: https://public.gamepix.com/partners/terms-conditions/developer-tc.pdf (3.3)
+    - rule: The account holder is 18 or older; registering for a company, they are authorised to bind it.
+      source: https://partners.gamepix.com/join-us?t=developer
+    - rule: Revenue share 50% of net revenues monthly (the developers page says 45%); balances under EUR 100 carry forward.
+      source: https://public.gamepix.com/partners/terms-conditions/developer-tc.pdf (5.1, 5.5)

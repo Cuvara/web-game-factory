@@ -1,0 +1,105 @@
+# Content sufficiency: how the content-sufficiency step measures the content of the BUILT game.
+#
+# The design step holds a design to its quality tier on what it declares (content.tier_*,
+# scripts/wgf_design/content.py). Nothing held the build to it: a twelve-level build with one
+# element passed every gate (docs/quality-gap-audit-2026-10.md, finding 2). The
+# content-sufficiency step (scripts/wgf_sufficiency, docs/content-sufficiency-module.md)
+# measures the build itself - the content data file it ships (public/content/units.json) and
+# what its play probe reports while the playability bot plays and surveys every unit - and
+# holds that to the bars of core/reference/quality-benchmark.yaml at the design's quality
+# tier (`content`, `progression`), the genre family's (core/reference/genre-models.yaml
+# `units`, `budget`, `variety`) and the design's own commitments.
+#
+# This file holds no bar. It holds how a quantity is measured (what is a unit's layout, how
+# alike two units must be to be the same unit), how long the bot may spend surveying, and for
+# each check the discipline that owns a failure, its severity and where it routes. No consumer
+# branches on a family id or a game: everything a family changes is in genre-models.yaml.
+#
+# Read by:
+#   scripts/wgf_sufficiency/audit.py     every block
+#   scripts/wgf_playability/step.py      `survey` (the bot's survey test, bot.spec.ts)
+
+version: 1.0.0
+
+survey:
+  # The playability step's `survey` test (step `with: {survey: true}`): every unit the design
+  # lists (except `optional` ones) is entered directly through the probe's unit link
+  # (`?wgf-probe=1&wgf-unit=<unit id>`, core/artifacts/shared/play-probe.schema.json) and
+  # played by the oracle for at most `unit_s`, so units past the first few the traverse
+  # reaches are measured too: the unit the probe reports, the entity kinds and assets drawn,
+  # the difficulty in force, and how long the oracle took to complete it. Content is the same
+  # on every viewport, so only `projects` are surveyed. `total_s` caps the whole test; a unit
+  # it cannot reach in time is recorded as not entered, with the reason.
+  projects: [desktop]
+  unit_s: 12
+  total_s: 480
+
+layout:
+  # A unit's layout is what its content data says about it beyond these descriptive keys -
+  # its board, grid, wave list, track pieces, spawn table, tuning - wherever the data puts it
+  # (game-design `units[].parameters` is the design's place for it). Every other key of the
+  # unit, at any depth, is part of its layout signature. A number outside any list - a speed,
+  # a count, a width - counts only where it sits, never its value: two units that differ only
+  # in a tuning number have one layout. A number inside a list (a cell, a position) is the
+  # layout itself.
+  descriptive_keys:
+    - id
+    - index
+    - tier
+    - purpose
+    - objective
+    - objective_kind
+    - group
+    - structure
+    - elements
+    - mechanics
+    - introduces
+    - difficulty
+    - expected_duration_s
+    - success
+    - failure
+    - acceptance
+    - art
+    - variation_from_previous
+    - start_state
+    - end_state
+    - name
+    - title
+    - notes
+    - unlock
+  # Two units are the same unit with other numbers - repeated - when they share their
+  # structure kind, their combination of elements and their objective kind, and their
+  # layouts are at least this alike (Jaccard similarity of the layouts' leaf values by path).
+  # Identical layouts are always repeated.
+  near_identical_similarity: 0.85
+
+probe:
+  # Entities of these roles carry `kind` (play-probe entities[].kind) in a game with
+  # authored content: a kind is how the build shows which element is on screen, so without
+  # it element variety on the build cannot be counted.
+  kind_roles: [threat, goal, target, projectile, collectible, hazard]
+  # Roles that are the player or the interface: their kinds are not content elements.
+  not_content_roles: [player, ui]
+
+# Every check: the quality dimension it scores, the discipline that owns a failure, its
+# severity, and its route. `route: develop` - the build is short of what was designed;
+# `route: by-design` - the same quantity is measured on the design's own declaration first:
+# when the design is short of the bar, the failure routes `design-gap` (the design must
+# grow), else `develop` (the build must catch up). `design_field` is where a design gap
+# points.
+checks:
+  content.contract: {dimension: content, owner: game-design, severity: blocker, route: design-gap, design_field: "build_spec.content"}
+  content.data_present: {dimension: content, owner: level-design, severity: blocker, route: develop}
+  content.units_shipped: {dimension: content, owner: level-design, severity: blocker, route: by-design, design_field: "build_spec.content.units"}
+  content.units_reachable: {dimension: progression, owner: gameplay, severity: blocker, route: develop}
+  content.entity_kinds: {dimension: content, owner: gameplay, severity: major, route: develop}
+  content.elements: {dimension: content, owner: level-design, severity: major, route: by-design, design_field: "build_spec.content.elements"}
+  content.combinations: {dimension: level-design, owner: level-design, severity: major, route: by-design, design_field: "build_spec.content.units[].elements"}
+  content.structure: {dimension: level-design, owner: level-design, severity: major, route: by-design, design_field: "build_spec.content.units[].structure"}
+  content.groups: {dimension: content, owner: level-design, severity: major, route: by-design, design_field: "build_spec.content.groups"}
+  content.difficulty: {dimension: difficulty, owner: level-design, severity: major, route: by-design, design_field: "build_spec.content.units[].difficulty"}
+  content.objectives: {dimension: level-design, owner: level-design, severity: major, route: by-design, design_field: "build_spec.content.units[].objective_kind"}
+  content.climax: {dimension: content, owner: level-design, severity: major, route: by-design, design_field: "build_spec.content.units[].art"}
+  content.progression: {dimension: progression, owner: game-design, severity: major, route: by-design, design_field: "build_spec.progression.steps"}
+  content.playtime: {dimension: content, owner: level-design, severity: major, route: by-design, design_field: "build_spec.content.units[].expected_duration_s"}
+  content.drift: {dimension: content, owner: level-design, severity: blocker, route: develop}

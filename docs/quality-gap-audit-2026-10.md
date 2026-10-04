@@ -245,8 +245,10 @@ WS-1 -> WS-2 -> WS-3 / WS-4 -> WS-7 -> WS-8, then WS-9.
 
 [`core/reference/quality-benchmark.yaml`](../core/reference/quality-benchmark.yaml) 1.0.0
 holds the release-tier bars, which are genre-neutral and name no game. WS-10 wired
-`presentation.assets.distinct_climax_art` (the assets step, 1.2.0); WS-2, WS-4, WS-7 and WS-9
-wire the rest.
+`presentation.assets.distinct_climax_art` (the assets step, 1.2.0). WS-4 wired `content` and
+`progression` on the built content (the `content-sufficiency` step, 1.4.0,
+[content-sufficiency-module.md](content-sufficiency-module.md)). WS-2, WS-7 and WS-9 wire the
+rest.
 
 ### 5.1 Sources and measurements per bar
 

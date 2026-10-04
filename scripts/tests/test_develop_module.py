@@ -2352,7 +2352,8 @@ class ThroughTheEngine(unittest.TestCase):
         self.assertEqual(set(step.inputs), {"game-design", "asset-manifest", "scaffold-record",
                                             "title-strategy", "tech-plan", "qa-report",
                                             "review-report", "playability-report",
-                                            "production-quality-report", "visual-qa-report"})
+                                            "production-quality-report", "visual-qa-report",
+                                            "content-sufficiency-report"})
         self.assertEqual(list(step.outputs), ["prototype-report"])
 
 

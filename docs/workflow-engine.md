@@ -53,10 +53,11 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
                └─► CLI progress, and later a UI / monitor / agent host
 
   research → strategy → [G2] → design → tech-plan → [G3] → init → greybox → greybox-playability
-    → assets → develop → playability → production-quality → visual-qa → review → sdk → sdk-review
-    → verify → [G4] → store-listing → listing-validation → release
+    → assets → develop → playability → production-quality → visual-qa → content-sufficiency
+    → review → sdk → sdk-review → verify → [G4] → store-listing → listing-validation → release
 
   greybox, develop     design-gap       → design (then tech-plan, [G3], greybox again)
+  content-sufficiency  develop / design-gap → develop / design (as above)
   greybox-playability  fail             → greybox
   listing-validation   listing          → store-listing
   playability          fail             → develop
@@ -510,6 +511,10 @@ never what a loop meets first; every step after develop (playability, production
 visual-qa, review, sdk, sdk-review, verify, prototype-review), each visited at most once per
 develop visit, carries 21 as well, and so do store-listing and listing-validation, which add
 listing-validation's own route back into store-listing (`listing-validation.listing: 2`).
+Workflow 9 adds `content-sufficiency` after visual-qa, with a route into each:
+`content-sufficiency.develop: 2` on develop and `content-sufficiency.design-gap: 1` on design
+(docs/content-sufficiency-module.md). The bounds grow by the same rule: design 4, greybox 6
+(three returns), develop 24, and 24 for every step after develop.
 A reviewer that never approves blocks the run on its own
 third request for changes; a verification that always fails, on its third failure; a third
 G4 iterate stops for a person too; none spends another's budget. What a whole run may spend

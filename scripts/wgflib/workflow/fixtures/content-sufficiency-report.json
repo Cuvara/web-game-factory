@@ -1,0 +1,27 @@
+{
+  "title_id": "mock-title",
+  "commit": "0000000000000000000000000000000000000000",
+  "measurement_class": "automation-bot",
+  "quality_tier": "mvp",
+  "generation_mode": "authored",
+  "checks": [
+    {
+      "id": "content.units_shipped",
+      "status": "PASS",
+      "required": true,
+      "summary": "the build ships every unit the design owes (mock)"
+    },
+    {
+      "id": "content.units_reachable",
+      "status": "PASS",
+      "required": true,
+      "summary": "every shipped unit was entered (mock)"
+    }
+  ],
+  "findings": [],
+  "failed": [],
+  "routes": [],
+  "skipped_checks": [],
+  "blocked_reason": null,
+  "verdict": "PASS"
+}

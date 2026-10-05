@@ -404,6 +404,95 @@ class Content(Judge):
         self.assertEqual(check["status"], "FAIL")
         self.assertIn("ended at 0.3, started at 0.3", check["summary"])
 
+    # A release-tier design escalates over every release unit (the design rule
+    # content.axes_monotone_with_relief); its MVP, a prefix, may hold an escalating axis flat.
+    @staticmethod
+    def release_design(mvp=(0.3, 0.3, 0.3), tier="release"):
+        design = copy.deepcopy(CONTENT_DESIGN)
+        content = design["build_spec"]["content"]
+        content["quality_tier"] = tier
+        for entry, value in zip(content["units"], mvp):
+            entry["difficulty"]["enemy-count"] = value
+        for index, value in ((4, 0.4), (5, 0.5), (6, 0.7)):
+            extra = unit(index, f"w-0{index}", f"Hold wave {index} at the breach.",
+                         {"enemy-count": value})
+            extra["tier"] = "release"
+            content["units"].append(extra)
+        return design
+
+    @staticmethod
+    def flat_traverse(last=0.3):
+        return traverse(units=((1, "w-01", 0.3, ("rusher",)),
+                               (2, "w-02", 0.3, ("rusher", "shield")),
+                               (3, "w-03", last, ("elite",))))
+
+    @staticmethod
+    def survey(values):
+        return {"applies": True, "asked": [f"w-0{i}" for i in range(1, 7)],
+                "visits": [{"asked": f"w-0{i}", "entered": True, "reported": [f"w-0{i}"],
+                            "index": i, "difficulty": {"enemy-count": v}, "won": True}
+                           for i, v in enumerate(values, start=1)]}
+
+    def test_release_design_holding_an_axis_flat_on_its_mvp_passes_a_matching_build(self):
+        self.records["traverse"] = self.flat_traverse()
+        check = self.judge(self.release_design())["difficulty.axes_progress"]
+        self.assertEqual(check["status"], "PASS", check["summary"])
+        self.assertEqual(check["measured"]["held_by_design"], ["enemy-count"])
+        self.assertEqual(check["measured"]["quality_tier"], "release")
+        # No survey ran: the release curve is named as not judged, never as passed.
+        self.assertIn("release curve was not judged", check["summary"])
+
+    def test_release_design_flat_mvp_with_a_mismatching_build_fails(self):
+        self.records["traverse"] = self.flat_traverse(last=0.42)
+        check = self.judge(self.release_design())["difficulty.axes_progress"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("w-03 enemy-count: the build reports 0.42, the design states 0.3",
+                      check["summary"])
+
+    def test_release_design_whose_mvp_rises_still_holds_the_build_to_the_rise(self):
+        self.records["traverse"] = self.flat_traverse()
+        check = self.judge(self.release_design(mvp=(0.3, 0.25, 0.6)))["difficulty.axes_progress"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("ended at 0.3, started at 0.3", check["summary"])
+        self.assertNotIn("held_by_design", check["measured"])
+
+    def test_flat_mvp_axis_at_tier_mvp_still_fails(self):
+        self.records["traverse"] = self.flat_traverse()
+        for tier in ("mvp", None):
+            design = self.release_design(tier=tier)
+            if tier is None:
+                design["build_spec"]["content"].pop("quality_tier")
+            check = self.judge(design)["difficulty.axes_progress"]
+            self.assertEqual(check["status"], "FAIL", tier)
+            self.assertIn("ended at 0.3, started at 0.3", check["summary"])
+            self.assertNotIn("quality_tier", check["measured"])
+
+    def test_release_survey_is_held_to_the_design_and_the_rise_over_the_release(self):
+        self.records["traverse"] = self.flat_traverse()
+        self.records["survey"] = self.survey((0.3, 0.3, 0.3, 0.4, 0.5, 0.7))
+        check = self.judge(self.release_design())["difficulty.axes_progress"]
+        self.assertEqual(check["status"], "PASS", check["summary"])
+        self.assertEqual(check["measured"]["release"]["enemy-count"],
+                         [0.3, 0.3, 0.3, 0.4, 0.5, 0.7])
+        self.assertNotIn("release_partial", check["measured"])
+        # A surveyed unit off the design fails, and a release that never rises fails.
+        self.records["survey"] = self.survey((0.3, 0.3, 0.3, 0.3, 0.3, 0.3))
+        check = self.judge(self.release_design())["difficulty.axes_progress"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("w-06 enemy-count: the build reports 0.3, the design states 0.7",
+                      check["summary"])
+        self.assertIn("enemy-count: ended the release at 0.3, started it at 0.3",
+                      check["summary"])
+
+    def test_a_survey_short_of_the_release_does_not_judge_its_curve(self):
+        self.records["traverse"] = self.flat_traverse()
+        survey = self.survey((0.3, 0.3, 0.3, 0.4, 0.5, 0.7))
+        survey["visits"][-1]["entered"] = False
+        self.records["survey"] = survey
+        check = self.judge(self.release_design())["difficulty.axes_progress"]
+        self.assertEqual(check["status"], "PASS", check["summary"])
+        self.assertIn("w-06", check["measured"]["release_partial"]["reason"])
+
     def test_required_axis_absent_from_probe_fails(self):
         # The family says enemy-variety is reported by the build (`probe: required`).
         design = copy.deepcopy(CONTENT_DESIGN)

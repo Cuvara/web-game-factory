@@ -23,6 +23,9 @@
 // assets drawn too. It is never used to play or to judge play. When the design's time ramp is
 // promised by a mode it includes (an endless mode beside authored units), one test enters that
 // mode through the probe's optional play.mode and plays it, so the ramp is read on its run.
+// The recordings the timing-sensitive checks read carry their host's health, and one made on a
+// degraded host is made again (Health, finish; core/reference/visual-quality.yaml
+// `environment`).
 // Factory tooling: it contains no game, and is not part of one.
 
 import { test, type Page } from "@playwright/test";
@@ -103,6 +106,18 @@ const CFG = JSON.parse(fs.readFileSync(process.env.WGF_PLAY_CONFIG as string, "u
   survey_ms?: number;
   kind_roles?: string[];
   not_content_roles?: string[];
+  // Whether the host could measure anything (core/reference/visual-quality.yaml
+  // `environment`): the bars a recording's health is judged degraded by, and how many
+  // attempts the recordings in retry_records may take. The step's analysis re-judges every
+  // attempt from the numbers; the bot only decides whether to make a recording again.
+  environment?: { tick_ms: number; stall_ms: number; max_stall_ms: number; max_stalled_share: number;
+                  max_server_wait_ms: number; max_attempts: number };
+  retry_records?: string[];
+  // The traverse plays on in the unit it stops inside while that unit has shown fewer than
+  // min_new_kinds kinds no earlier unit showed, for at most variety_extend_ms
+  // (visual-quality.yaml `sample`). 0: never.
+  min_new_kinds?: number;
+  variety_extend_ms?: number;
 };
 const URL = "/?wgf-probe=1";
 
@@ -115,6 +130,195 @@ function dir(project: string): string {
 function write(project: string, name: string, data: unknown): void {
   fs.writeFileSync(path.join(dir(project), `${name}.json`), JSON.stringify(data, null, 1));
 }
+
+// -- the measurement's own validity ---------------------------------------------------------
+//
+// A recording is only as good as the host it was made on. Each attempt of a recording carries
+// its `health`, measured on what the game cannot cause: a timer in the bot's own process and
+// one in a worker thread inside the page, each expected every tick_ms (how late it fired, the
+// longest lag and the time lost to lags of stall_ms or more), and how long the local preview
+// server - a static file server - took to start answering the page's requests. Beside them,
+// as evidence only, the navigation breakdown (time to first byte, DOMContentLoaded, load, the
+// page's first frame, the first probe answer, play) and the page's requestAnimationFrame
+// gaps: those are the game's own, and a game that blocks its main thread is a defect the
+// checks fail, never a degraded host.
+
+type Beat = { max_lag_ms: number; stalled_ms: number; ticks: number; elapsed_ms: number };
+
+class Heartbeat {
+  private last = performance.now();
+  private readonly t0 = performance.now();
+  private max = 0;
+  private stalled = 0;
+  private ticks = 0;
+  private readonly timer: ReturnType<typeof setInterval>;
+
+  constructor(private readonly tick: number, private readonly stall: number) {
+    this.timer = setInterval(() => {
+      const now = performance.now();
+      const lag = now - this.last - this.tick;
+      if (lag > this.max) this.max = lag;
+      if (lag >= this.stall) this.stalled += lag;
+      this.ticks += 1;
+      this.last = now;
+    }, tick);
+  }
+
+  stop(): Beat {
+    clearInterval(this.timer);
+    return { max_lag_ms: Math.round(this.max), stalled_ms: Math.round(this.stalled), ticks: this.ticks,
+             elapsed_ms: Math.round(performance.now() - this.t0) };
+  }
+}
+
+// Installed before every navigation of the page (start() adds it once): the page's frame gaps,
+// its first frame, and the worker's timer.
+function installHealth(cfg: { tick: number; stall: number }): void {
+  const w = window as unknown as { __wgfHealth?: Record<string, unknown> };
+  if (w.__wgfHealth) return;
+  const h: Record<string, unknown> = { first_frame_ms: null, frames: 0, frame_gap_max_ms: 0, frame_stalls: 0 };
+  w.__wgfHealth = h;
+  let last: number | null = null;
+  const loop = (t: number): void => {
+    if (h.first_frame_ms === null) h.first_frame_ms = Math.round(t);
+    if (last !== null) {
+      const gap = t - last;
+      if (gap > (h.frame_gap_max_ms as number)) h.frame_gap_max_ms = Math.round(gap);
+      if (gap >= cfg.stall) h.frame_stalls = (h.frame_stalls as number) + 1;
+    }
+    last = t;
+    h.frames = (h.frames as number) + 1;
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+  try {
+    const source = `const t0=performance.now();let last=t0,max=0,stalled=0,ticks=0;
+setInterval(()=>{const now=performance.now();const lag=now-last-${cfg.tick};if(lag>max)max=lag;
+if(lag>=${cfg.stall})stalled+=lag;ticks++;last=now},${cfg.tick});
+onmessage=()=>postMessage({max_lag_ms:Math.round(max),stalled_ms:Math.round(stalled),ticks,
+elapsed_ms:Math.round(performance.now()-t0)})`;
+    h.worker = new Worker(globalThis.URL.createObjectURL(new Blob([source], { type: "text/javascript" })));
+  } catch (error) {
+    h.worker_error = String(error).slice(0, 200);
+  }
+}
+
+// What the page measured: the navigation breakdown, its frames, and the worker's timer (null
+// when the page does not answer within 5 s, or never had the script).
+async function pageHealth(page: Page): Promise<Record<string, unknown> | null> {
+  const read = page.evaluate(async () => {
+    const h = (window as unknown as { __wgfHealth?: Record<string, unknown> }).__wgfHealth;
+    if (!h) return null;
+    const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    const waits = (performance.getEntriesByType("resource") as PerformanceResourceTiming[])
+      .concat(nav ? [nav] : [])
+      .filter((e) => e.responseStart > 0 && e.requestStart > 0)
+      .map((e) => e.responseStart - e.requestStart);
+    const worker = h.worker as Worker | undefined;
+    const beat = worker ? await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), 2000);
+      worker.onmessage = (event) => { clearTimeout(timer); resolve(event.data); };
+      worker.postMessage(0);
+    }) : null;
+    return {
+      nav: nav ? { ttfb_ms: Math.round(nav.responseStart - nav.startTime),
+                   dom_content_loaded_ms: Math.round(nav.domContentLoadedEventEnd),
+                   load_ms: Math.round(nav.loadEventEnd), first_frame_ms: h.first_frame_ms,
+                   server_wait_max_ms: waits.length ? Math.round(Math.max(...waits)) : null,
+                   requests: waits.length } : null,
+      frames: { count: h.frames, gap_max_ms: h.frame_gap_max_ms, stalls: h.frame_stalls },
+      worker: beat, worker_error: h.worker_error ?? null,
+    };
+  });
+  return Promise.race([read.catch(() => null), new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))]);
+}
+
+// One attempt's health, and whether it is degraded against CFG.environment (the step's
+// analysis.environment_health judges the same numbers the same way, and decides).
+class Health {
+  private readonly beat: Heartbeat | null;
+
+  constructor() {
+    const env = CFG.environment;
+    this.beat = env ? new Heartbeat(env.tick_ms, env.stall_ms) : null;
+  }
+
+  async read(page: Page, started?: { firstSnapshotMs: number | null; playingMs: number | null }):
+    Promise<{ health: Record<string, unknown>; degraded: boolean; reasons: string[] }> {
+    const inPage = await pageHealth(page);
+    const bot = this.beat ? this.beat.stop() : null;
+    const nav = (inPage?.nav ?? null) as Record<string, unknown> | null;
+    const health: Record<string, unknown> = {
+      bot, worker: inPage?.worker ?? null, worker_error: inPage?.worker_error ?? null,
+      nav: nav ? { ...nav, first_probe_ms: started?.firstSnapshotMs ?? null, playing_ms: started?.playingMs ?? null } : null,
+      frames: inPage?.frames ?? null,
+    };
+    const env = CFG.environment;
+    const reasons: string[] = [];
+    if (env) {
+      for (const [name, beat] of [["bot", bot], ["worker", inPage?.worker]] as [string, Beat | null | undefined][]) {
+        if (!beat) continue;
+        if (beat.max_lag_ms >= env.max_stall_ms) reasons.push(`the ${name} timer stalled ${beat.max_lag_ms} ms at once`);
+        if (beat.elapsed_ms > 0 && beat.stalled_ms / beat.elapsed_ms >= env.max_stalled_share) {
+          reasons.push(`the ${name} timer lost ${beat.stalled_ms} ms of ${beat.elapsed_ms} ms to stalls`);
+        }
+      }
+      const wait = nav?.server_wait_max_ms;
+      if (typeof wait === "number" && wait >= env.max_server_wait_ms) {
+        reasons.push(`the local server took ${wait} ms to start answering a request`);
+      }
+    }
+    return { health, degraded: reasons.length > 0, reasons };
+  }
+}
+
+// A recording the step's timing-sensitive checks read is made again, in a fresh browser (a
+// Playwright retry), while its host was degraded and attempts remain; the record finally
+// written is the last attempt's, with every attempt's health in `attempts`. A retry that was
+// not asked for here (a test that threw) is skipped: it records nothing, as before.
+function pending(project: string, name: string): string {
+  return path.join(dir(project), `.${name}.attempts.json`);
+}
+
+async function finish(page: Page, info: { project: { name: string }; retry: number }, name: string,
+                      data: Record<string, unknown>, health: Health): Promise<void> {
+  const project = info.project.name;
+  const started = data as { firstSnapshotMs?: number | null; playingMs?: number | null };
+  const now = await health.read(page, { firstSnapshotMs: started.firstSnapshotMs ?? null,
+                                        playingMs: started.playingMs ?? null });
+  const marker = pending(project, name);
+  const before = fs.existsSync(marker) ? JSON.parse(fs.readFileSync(marker, "utf8")) as unknown[] : [];
+  const attempts = [...before, { attempt: before.length + 1, degraded: now.degraded, reasons: now.reasons,
+                                 health: now.health }];
+  const allowed = CFG.environment?.max_attempts ?? 1;
+  // Written on every attempt: should the attempt made again never finish, the degraded one
+  // stands, and is judged as degraded.
+  write(project, name, { ...data, health: now.health, attempts });
+  if (now.degraded && attempts.length < allowed && (CFG.retry_records ?? []).includes(name)) {
+    fs.writeFileSync(marker, JSON.stringify(attempts));
+    throw new Error(`the host was degraded while the ${name} recording was made (${now.reasons.join("; ")}); ` +
+                    "it is made again");
+  }
+  if (fs.existsSync(marker)) fs.rmSync(marker);
+}
+
+// Every retry Playwright makes is one finish() asked for, or none at all.
+test.beforeEach(async ({ page }, info) => {
+  const name = RECORD_OF[info.title];
+  const asked = name !== undefined && fs.existsSync(pending(info.project.name, name));
+  test.skip(info.retry > 0 && !asked, "made again only when its host was degraded");
+  if (CFG.environment) {
+    await page.addInitScript(installHealth, { tick: CFG.environment.tick_ms, stall: CFG.environment.stall_ms });
+  }
+});
+
+// The recordings made again on a degraded host, by test title (CFG.retry_records).
+const RECORD_OF: Record<string, string> = {
+  "first session: objective, and no failure before the grace": "first-session",
+  "win: the oracle plays well": "win",
+  "lose and restart: the anti-oracle plays badly, then retries": "lose",
+  "traverse: the oracle plays unit after unit": "traverse",
+};
 
 // The roles a glimpse is taken for, and how many a test takes.
 const GLIMPSE_ROLES = new Set(["player", "threat", "goal", "target", "projectile", "collectible", "hazard"]);
@@ -594,6 +798,7 @@ async function start(page: Page, touch: boolean, watch: Watch, screens = false, 
 }
 
 test("first session: objective, and no failure before the grace", async ({ page }, info) => {
+  const health = new Health();
   const project = info.project.name;
   const frames: string[] = [];
   const watch = new Watch(page, project, frames);
@@ -635,8 +840,8 @@ test("first session: objective, and no failure before the grace", async ({ page 
     }
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   }
-  write(project, "first-session", { ...started, texts: [...new Set(texts)], states, lostAtMs, ...watch.record(),
-                                    audio_unfocused: unfocused, frames });
+  await finish(page, info, "first-session", { ...started, texts: [...new Set(texts)], states, lostAtMs,
+                                             ...watch.record(), audio_unfocused: unfocused, frames }, health);
 });
 
 test("act: every action is acknowledged on screen", async ({ page }, info) => {
@@ -684,6 +889,7 @@ test("act: every action is acknowledged on screen", async ({ page }, info) => {
 });
 
 test("win: the oracle plays well", async ({ page }, info) => {
+  const health = new Health();
   const project = info.project.name;
   const frames: string[] = [];
   const watch = new Watch(page, project, frames);
@@ -738,10 +944,12 @@ test("win: the oracle plays well", async ({ page }, info) => {
       await watch.screen(reached);
     }
   }
-  write(project, "win", { ...started, reached, inputs, series: series.filter((_, i) => i % 5 === 0 || i === series.length - 1), sampled, ...watch.record(), frames });
+  await finish(page, info, "win", { ...started, reached, inputs, series: series.filter((_, i) => i % 5 === 0 || i === series.length - 1),
+                                   sampled, ...watch.record(), frames }, health);
 });
 
 test("lose and restart: the anti-oracle plays badly, then retries", async ({ page }, info) => {
+  const health = new Health();
   const project = info.project.name;
   const frames: string[] = [];
   const watch = new Watch(page, project, frames);
@@ -890,8 +1098,8 @@ test("lose and restart: the anti-oracle plays badly, then retries", async ({ pag
       }
     }
   }
-  write(project, "lose", { ...started, initial, initialContent, reached, endedAtMs, contentAtEnd,
-                           series, wrongPresses, resetInUnit, restart, ...watch.record(), frames });
+  await finish(page, info, "lose", { ...started, initial, initialContent, reached, endedAtMs, contentAtEnd,
+                                    series, wrongPresses, resetInUnit, restart, ...watch.record(), frames }, health);
 });
 
 // The pause screen, when the game offers one: the probe's pause input, else a visible pause
@@ -955,6 +1163,7 @@ interface UnitRecord {
 // a player would, and never jumps to a unit it has not finished. Only recorded: which unit was
 // in play, what it asked for, what was drawn in it, and the difficulty in force.
 test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
+  const health = new Health();
   const project = info.project.name;
   const frames: string[] = [];
   const watch = new Watch(page, project, frames);
@@ -974,16 +1183,40 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
   let unitCountReported = 0;
   let stopped = "window";
   let losses = 0;
+  // When the traverse stops (its window, its unit count) inside a unit that has not yet shown
+  // the new kinds the family asks of every unit, it plays on in that unit - never into the
+  // next - for up to CFG.variety_extend_ms: a kind that arrives later in the unit was
+  // otherwise never seen, and the cut, not the build, would decide content.variety.
+  let cutAt: number | null = null;
+  let cutIndex: number | null = null;
+  let extendedMs = 0;
   if (started.playingMs !== null) {
     const t0 = Date.now();
     let current: number | null = null;
     let ended: { ms: number; how: string } | null = null;
     const shot = new Set<number>();
-    while (Date.now() - t0 < CFG.traverse_ms) {
+    const kindsShort = (): boolean => {
+      const unit = units.find((u) => u.index === current);
+      if (!CFG.min_new_kinds || !unit || unit.won || units.length < 2) return false;
+      const earlier = new Set(units.filter((u) => u.index < unit.index).flatMap((u) => u.kinds));
+      return unit.kinds.filter((k) => !earlier.has(k)).length < CFG.min_new_kinds;
+    };
+    for (;;) {
+      const elapsed = Date.now() - t0;
+      if (cutAt === null && elapsed >= CFG.traverse_ms) {
+        cutAt = elapsed;
+        cutIndex = current;
+      }
+      if (cutAt !== null) {
+        if (!kindsShort() || elapsed - cutAt >= (CFG.variety_extend_ms ?? 0)) break;
+        extendedMs = elapsed - cutAt;
+      }
       const s = watch.saw(await snap(page));
       if (!s) break;
       const ms = Date.now() - t0;
       const index = s.content?.unit_index ?? 0;
+      // Only the unit the traverse stopped inside is played on: never one after it.
+      if (cutAt !== null && index > 0 && index !== cutIndex) break;
       unitCountReported = Math.max(unitCountReported, s.content?.unit_count ?? 0);
       const difficulty = difficultyOf(s);
       const kinds = kindsOf(s);
@@ -1026,6 +1259,8 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
       if (s.state === "won" || progressDone(s)) {
         if (unit) unit.won = true;
         ended = { ms, how: s.state === "won" ? "won" : "progress" };
+        // Playing on past the cut: the unit is seen whole now, and the next is not entered.
+        if (cutAt !== null) break;
         const advance = advanceOf(s);
         if (advance) await act(page, advance, touch);
         else if (s.state === "won") await retry(page, s, touch);
@@ -1044,9 +1279,11 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
         await page.waitForTimeout(250);
         continue;
       }
-      if (units.length >= CFG.max_units) {
+      if (cutAt === null && units.length >= CFG.max_units) {
         stopped = "max units";
-        break;
+        cutAt = ms;
+        cutIndex = current;
+        if (!kindsShort()) break;
       }
       if (s.oracle) {
         await act(page, s.oracle, touch);
@@ -1058,9 +1295,10 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
   } else {
     stopped = "play never began";
   }
-  write(project, "traverse", { ...started, applies: true, snapshots, transitions,
-                               per_unit: units, unit_count_reported: unitCountReported, losses,
-                               stopped, ...watch.record(), frames });
+  await finish(page, info, "traverse", { ...started, applies: true, snapshots, transitions,
+                                        per_unit: units, unit_count_reported: unitCountReported, losses,
+                                        stopped, ...(extendedMs ? { extended_ms: extendedMs } : {}),
+                                        ...watch.record(), frames }, health);
 });
 
 // What the game remembers. The oracle plays until something the design says persists has

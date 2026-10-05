@@ -9,7 +9,10 @@
 #
 # Measured on frames captured during play at the device's viewport, desktop and mobile.
 
-version: 1.0.0
+# 1.1.0: `environment` (a recording made on a degraded host is played again, and judged only
+# on a healthy attempt) and `sample` (a negative read on a unit the traverse cut short is
+# played on, never decided by where the cut fell).
+version: 1.1.0
 
 frames:
   # What is lit: the share of a frame's pixels at or above `lit_luminance` (relative
@@ -51,3 +54,64 @@ budgets:
   # metric to rise) and for a loss, in seconds.
   win_s: 180
   lose_s: 90
+
+environment:
+  # Whether the machine the bot played on could measure anything. A playability bot shares
+  # its host with other work - a build, a second run, several agents - and a host that stops
+  # scheduling for seconds turns a game that starts in 0.3 s into one that "starts" in 10 s,
+  # and an oracle that wins every time into one that loses after three inputs (a live 2D run,
+  # game commit 68a12b7: start.playable 10339 ms and win.reachable lost after 3 inputs on
+  # desktop, where the build with the same gameplay measured 309-574 ms and won after 26).
+  #
+  # Health is measured only on what the game cannot cause, so a slow game is still a slow
+  # game: the bot's own process (a timer that should fire every `tick_ms`), a worker thread
+  # inside the page (the same timer, off the game's main thread), and how long the local
+  # preview server - a static file server - took to start answering any request of the page
+  # (responseStart - requestStart, navigation and every resource). Every record also carries
+  # the navigation breakdown and the page's requestAnimationFrame gaps, but those are the
+  # game's own and only evidence: a game that blocks its main thread is a defect the checks
+  # fail, never a degraded host.
+  #
+  # Calibrated on this module's own measurements (2026-10-05, a 20-core WSL2 host that
+  # was running other agents' work, the bot's own Chromium):
+  # - a canvas page, 15 s: idle, the longest timer lag was 1 ms in the bot and 0 ms in the
+  #   page's worker; with 40 and 80 busy processes on the 20 cores (2x and 4x
+  #   oversubscribed), 15-20 ms and 6-19 ms, nothing at or over 100 ms; with the page's main
+  #   thread blocked for 3 s every second (a game defect), still 1 ms and 0 ms - while the
+  #   frame gap was 3000 ms and a probe read took 2972 ms;
+  # - the bot itself on the 2D validation game (brick-breaker-worlds 68a12b7: first session,
+  #   win, traverse, desktop): timer lags 4-10 ms in the bot and 5-8 ms in the worker, the
+  #   server's longest wait 58-412 ms over 55-68 requests - and the page's own frame gaps
+  #   867-1083 ms, 61-270 of them over 100 ms: a healthy run of a healthy game, which is why
+  #   frame gaps are never read as the host's.
+  # A one-second stall is then 50x anything contention produced and a two-second server
+  # wait 5x the slowest seen, and both are of the order the degraded runs show: start times
+  # of 3.3-19.2 s against the same build's 0.1-0.7 s in its other tests of that viewport
+  # (val-2d and val-3d run stores; their records predate these fields, so they are judged
+  # as they always were).
+  tick_ms: 50
+  # A timer lag at or above this counts as a stall.
+  stall_ms: 100
+  # Degraded: one stall at least this long, in the bot or in the page's worker ...
+  max_stall_ms: 1000
+  # ... or stalls adding up to this share of the attempt's wall clock ...
+  max_stalled_share: 0.05
+  # ... or the local server taking this long to start answering a request.
+  max_server_wait_ms: 2000
+  # A recording judged degraded is made again, in a fresh browser, at most this many
+  # attempts in all; if every attempt is degraded, the checks read from it are unmeasured
+  # (`environment-degraded`) - never passed. Only the recordings the timing-sensitive checks
+  # read are made again: first-session, win, lose and traverse (analysis.EVIDENCE).
+  max_attempts: 2
+
+sample:
+  # A family that asks each unit for a new entity kind (genre-models qa.min_new_kinds_per_unit)
+  # is judged on the kinds the traverse saw in each unit. The unit in play when the traverse
+  # stops (its window, or its unit count) is cut short, and a kind that arrives later in it
+  # was not seen: a live 2D run read "unit 3: 0 new kind(s)" off 1.4 s of unit 3, whose new
+  # kind first arrived 3.0-19.6 s after the unit began in each of the 21 traversals of that
+  # run that saw it arrive (val-2d, new-game-20261005-002926). So the bot plays on in that
+  # unit - never into the next - while it has shown fewer new kinds than the family asks,
+  # for at most this long (19.6 s and a margin); a unit still short then is unmeasured,
+  # never a failure or a pass.
+  variety_extend_s: 30

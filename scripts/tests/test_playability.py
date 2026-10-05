@@ -903,7 +903,10 @@ class AuthoredPuzzle(Judge):
         check = self.judge()["content.variety"]
         self.assertEqual(check["status"], "WARNING")
         self.assertFalse(check["required"])
-        self.assertEqual(check["measured"]["changed_pairs_share"], 0.25)
+        # Four pairs, the last into the level still in play when the traverse stopped: that
+        # one is unchanged only as far as the cut, so it is not counted (`sample-cut`).
+        self.assertEqual(check["measured"]["changed_pairs_share"], 0.333)
+        self.assertEqual(check["measured"]["unmeasured_pairs"], ["4->5"])
         self.assertEqual(check["measured"]["reason"],
                          "variety is not visible in entity kinds for this family (layout, "
                          "rules, objectives)")
@@ -1100,7 +1103,7 @@ class TheAntiOracle(unittest.TestCase):
         with open(path, encoding="utf-8") as handle:
             source = handle.read()
         start = source.index('test("lose and restart')
-        cls.source = source[start:source.index('write(project, "lose"', start)]
+        cls.source = source[start:source.index('finish(page, info, "lose"', start)]
 
     def has(self, fragment):
         self.assertIn(fragment, self.source, f"the anti-oracle no longer contains {fragment!r}")
@@ -1448,6 +1451,257 @@ class TheReport(unittest.TestCase):
         self.assertEqual(captured["verdict"], "FAIL")
         self.assertEqual(captured["failed_checks"], ["desktop:frames.readable"])
         self.assertEqual(ArtifactContracts()("playability-report", captured), [])
+
+
+# -- the measurement's own validity (visual-quality.yaml 1.1.0 `environment`, `sample`) ------
+
+def health(bot_lag=1, worker_lag=0, stalled=0, elapsed=60000, wait=4, frame_gap=17):
+    """One attempt's health as bot.spec.ts records it. The defaults are a healthy host."""
+    return {"bot": {"max_lag_ms": bot_lag, "stalled_ms": stalled, "ticks": 1200,
+                    "elapsed_ms": elapsed},
+            "worker": {"max_lag_ms": worker_lag, "stalled_ms": 0, "ticks": 1200,
+                       "elapsed_ms": elapsed},
+            "nav": {"ttfb_ms": 3, "dom_content_loaded_ms": 40, "load_ms": 90,
+                    "first_frame_ms": 60, "server_wait_max_ms": wait, "requests": 30,
+                    "first_probe_ms": 200, "playing_ms": 200},
+            "frames": {"count": 3000, "gap_max_ms": frame_gap, "stalls": 0}}
+
+
+DEGRADED = health(bot_lag=4200, worker_lag=3900, stalled=9000)
+
+
+def attempts(*healths):
+    """A record's `attempts` and its own `health` (the last attempt's)."""
+    return {"attempts": [{"attempt": i, "health": h} for i, h in enumerate(healths, start=1)],
+            "health": healths[-1]}
+
+
+class TheHost(Judge):
+    """A recording made on a degraded host is made again and judged on the healthy attempt;
+    one degraded on every attempt is unmeasured, never passed; a healthy run that fails still
+    fails. The live 2D run (game commit 68a12b7): desktop start.playable 10339 ms and
+    win.reachable lost after 3 inputs, where the same gameplay measured 309-574 ms and won."""
+
+    def test_health_is_read_only_from_what_the_game_cannot_cause(self):
+        bars = self.rules["environment"]
+        self.assertEqual(analysis.environment_health(health(), bars), (False, []))
+        degraded, reasons = analysis.environment_health(DEGRADED, bars)
+        self.assertTrue(degraded)
+        self.assertTrue(any("bot timer stalled 4200 ms" in r for r in reasons), reasons)
+        # Time lost to many shorter stalls is a degraded host too.
+        self.assertTrue(analysis.environment_health(health(bot_lag=400, stalled=6000), bars)[0])
+        # A local static server that takes seconds to answer.
+        self.assertTrue(analysis.environment_health(health(wait=2500), bars)[0])
+        # The game blocking its own main thread for 3 s: the frame gap is the game's, and
+        # the timers off its thread did not move - a defect to fail, not a degraded host.
+        self.assertEqual(analysis.environment_health(health(frame_gap=3000), bars), (False, []))
+        # A record made before health was measured claims nothing about its host, nor does
+        # one whose page and bot answered nothing.
+        self.assertEqual(analysis.environment_health(None, bars), (None, []))
+        self.assertEqual(analysis.environment_health(
+            {"bot": None, "worker": None, "nav": None, "frames": None}, bars), (None, []))
+
+    def test_a_degraded_attempt_made_again_is_judged_on_the_healthy_one(self):
+        self.records["win"].update(attempts(DEGRADED, health()))
+        check = self.judge()["win.reachable"]
+        self.assertEqual(check["status"], "PASS")
+        seen = check["measured"]["environment"]["win"]
+        self.assertEqual([a["degraded"] for a in seen], [True, False])
+        self.assertTrue(seen[0]["reasons"])
+        self.assertNotIn("unmeasured", check["measured"])
+
+    def test_a_degraded_attempt_made_again_still_fails_a_real_defect(self):
+        self.records["win"].update(attempts(DEGRADED, health()), reached="lost", inputs=3)
+        check = self.judge()["win.reachable"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("environment", check["measured"])
+
+    def test_every_attempt_degraded_is_unmeasured_never_passed(self):
+        # The win the degraded attempt reached is not passed either: not measured is not passed.
+        self.records["win"].update(attempts(DEGRADED, DEGRADED))
+        checks = self.judge()
+        for cid in ("win.reachable", "entities.visible", "entities.projectile"):
+            check = checks[cid]
+            self.assertEqual(check["status"], "WARNING", cid)
+            self.assertFalse(check["required"])
+            self.assertEqual(check["measured"]["unmeasured"], analysis.ENVIRONMENT_DEGRADED)
+            self.assertEqual(check["measured"]["judged_as"], "PASS")
+            self.assertIn("not judged: the host was degraded on every attempt", check["summary"])
+        # Checks read from other recordings are judged as always.
+        self.assertEqual(checks["start.playable"]["status"], "PASS")
+        self.assertNotIn("environment", checks["lose.reachable"].get("measured") or {})
+
+    def test_every_attempt_degraded_blocks_where_unmeasured_is_not_passed(self):
+        self.records["first-session"].update(attempts(DEGRADED, DEGRADED), playingMs=10339)
+        held = {"start.playable": "at quality tier release a check that measured nothing is "
+                                  "not passed (core/reference/quality-policy.yaml skipped_checks)"}
+        checks = analysis.judge(self.records, self.frames, DESIGN, self.rules,
+                                experience_rules(), "desktop", unmeasured_held=held)
+        check = {c["id"]: c for c in checks}["start.playable"]
+        self.assertEqual(check["status"], "BLOCKED")
+        self.assertTrue(check["required"])
+        self.assertEqual(check["measured"], {
+            "value": 10339, "unmeasured": analysis.ENVIRONMENT_DEGRADED, "judged_as": "FAIL",
+            "environment": check["measured"]["environment"]})
+        self.assertIn("quality tier release", check["summary"])
+
+    def test_a_healthy_slow_start_still_fails(self):
+        self.records["first-session"].update(attempts(health()), playingMs=10339)
+        check = self.judge()["start.playable"]
+        self.assertEqual(check["status"], "FAIL")
+        # One healthy attempt: the check reads exactly as it always did.
+        self.assertEqual(check["measured"], 10339)
+
+    def test_a_game_that_stalls_its_own_frames_still_fails(self):
+        self.records["first-session"].update(attempts(health(frame_gap=9000)), playingMs=10339)
+        self.assertEqual(self.judge()["start.playable"]["status"], "FAIL")
+
+    def test_a_healthy_lost_good_play_still_fails(self):
+        self.records["win"].update(attempts(health()), reached="lost", inputs=3)
+        self.assertEqual(self.judge()["win.reachable"]["status"], "FAIL")
+
+    def test_a_record_made_before_health_is_judged_as_before(self):
+        self.records["first-session"]["playingMs"] = 10339
+        self.records["win"].update(reached="lost", inputs=3)
+        checks = self.judge()
+        self.assertEqual(checks["start.playable"]["status"], "FAIL")
+        self.assertEqual(checks["start.playable"]["measured"], 10339)
+        self.assertEqual(checks["win.reachable"]["status"], "FAIL")
+
+    def test_the_step_blocks_on_a_held_unmeasured_check_and_fails_on_a_real_one(self):
+        unmeasured = {"id": "win.reachable", "project": "desktop", "status": "BLOCKED",
+                      "required": True, "summary": "not judged: the host was degraded",
+                      "measured": {"unmeasured": analysis.ENVIRONMENT_DEGRADED}}
+        result = TheReport.finish([unmeasured])
+        report = result.artifacts[0].content
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertEqual(report["verdict"], "BLOCKED")
+        self.assertIn("desktop:win.reachable", report["blocked_reason"])
+        self.assertEqual(ArtifactContracts()("playability-report", report), [])
+        # A real failure beside it still sends the build back.
+        failed = {"id": "frames.readable", "project": "mobile", "status": "FAIL",
+                  "required": True, "summary": "play-2s: mean luminance 6.84"}
+        result = TheReport.finish([unmeasured, failed])
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        # Below the tier that holds it, unmeasured is a warning: neither blocked nor passed.
+        warned = dict(unmeasured, status="WARNING", required=False)
+        result = TheReport.finish([warned])
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS)
+        self.assertEqual(result.artifacts[0].content["failed_checks"], [])
+
+
+class TheCutUnit(Content):
+    """content.variety on a unit the traverse stopped inside: what it showed counts, what it
+    had not shown yet decides nothing. The live 2D run read "unit 3: 0 new kind(s)" off 1.4 s
+    of unit 3, whose new kind arrives 3.0-19.6 s into it."""
+
+    def cut(self, kinds=(), extended=None, stopped="window", units=None):
+        record = traverse(units=units or ((1, "w-01", 0.3, ("rusher",)),
+                                          (2, "w-02", 0.25, ("rusher", "shield")),
+                                          (3, "w-03", 0.6, tuple(kinds) or ("rusher",))))
+        record["per_unit"][-1].update(won=False, duration_ms=1369)
+        record["stopped"] = stopped
+        if extended:
+            record["extended_ms"] = extended
+        self.records["traverse"] = record
+        return record
+
+    def test_a_negative_read_off_the_cut_is_not_a_failure_or_a_pass(self):
+        self.cut()
+        check = self.judge()["content.variety"]
+        self.assertEqual(check["status"], "WARNING")
+        self.assertFalse(check["required"])
+        self.assertEqual(check["measured"]["unmeasured"], analysis.SAMPLE_CUT)
+        self.assertEqual(check["measured"]["new_kinds_short"], [])
+        self.assertIn("unit 3: 0 new kind(s) in the 1369 ms seen", check["summary"])
+        self.assertNotIn("content.variety", self.failed())
+
+    def test_where_unmeasured_is_not_passed_the_cut_blocks(self):
+        self.cut()
+        self.kinds_required = "at quality tier release a check that measured nothing is not passed"
+        check = self.judge()["content.variety"]
+        self.assertEqual(check["status"], "BLOCKED")
+        self.assertTrue(check["required"])
+        self.assertEqual(check["measured"]["unmeasured"], analysis.SAMPLE_CUT)
+
+    def test_a_kind_the_cut_unit_did_show_counts(self):
+        # Played on past the cut (bot.spec.ts), the unit showed its new kind.
+        self.cut(kinds=("rusher", "elite"), extended=4200)
+        check = self.judge()["content.variety"]
+        self.assertEqual(check["status"], "PASS", check["summary"])
+        self.assertNotIn("unmeasured_units", check["measured"])
+
+    def test_a_unit_seen_whole_without_a_new_kind_still_fails(self):
+        # Unit 2 was completed and introduced nothing: a real defect, whatever was cut after.
+        self.cut(units=((1, "w-01", 0.3, ("rusher",)), (2, "w-02", 0.25, ("rusher",)),
+                        (3, "w-03", 0.6, ("rusher",))))
+        check = self.judge()["content.variety"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertEqual(check["measured"]["new_kinds_short"], ["unit 2: 0 new kind(s)"])
+        self.assertEqual(len(check["measured"]["unmeasured_units"]), 1)
+
+    def test_enough_units_seen_whole_decide_without_the_cut_one(self):
+        # The traverse is held to the family's qa.min_units_traversed (3 for a shooter): with
+        # three units seen whole, a fourth cut short is listed, not judged.
+        record = self.cut(units=((1, "w-01", 0.3, ("rusher",)),
+                                 (2, "w-02", 0.25, ("rusher", "shield")),
+                                 (3, "w-03", 0.6, ("elite",)), (4, "w-03", 0.6, ("elite",))),
+                          stopped="max units")
+        record["per_unit"][-1]["index"] = 4
+        check = self.judge()["content.variety"]
+        self.assertEqual(check["status"], "PASS", check["summary"])
+        self.assertEqual(len(check["measured"]["unmeasured_units"]), 1)
+        self.assertIn("not judged, cut short", check["summary"])
+
+    def test_a_unit_completed_is_never_the_cut(self):
+        record = self.cut()
+        record["per_unit"][-1]["won"] = True
+        check = self.judge()["content.variety"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertEqual(check["measured"]["new_kinds_short"], ["unit 3: 0 new kind(s)"])
+
+
+class TheBotsValidity(unittest.TestCase):
+    """What the step hands the bot, and what the bot does with it (bot.spec.ts)."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(SCRIPTS, "wgf_playability", "bot.spec.ts"), encoding="utf-8") as h:
+            cls.source = h.read()
+
+    def test_every_retried_recording_is_finished_through_its_health(self):
+        for name in analysis.RETRIED_RECORDS:
+            self.assertIn(f'await finish(page, info, "{name}"', self.source, name)
+            self.assertIn(f': "{name}",', self.source, f"RECORD_OF names {name}")
+        self.assertIn("test.skip(info.retry > 0 && !asked", self.source)
+
+    def test_the_traverse_plays_on_only_inside_the_cut_unit(self):
+        self.assertIn("if (cutAt !== null && index > 0 && index !== cutIndex) break;", self.source)
+        self.assertIn("if (cutAt !== null) break;", self.source)
+
+    def test_the_settings_carry_the_bars_and_only_a_family_asking_for_kinds_extends(self):
+        rules = load_rules()
+        on = PlayabilityStep._validity_settings(
+            rules, {"genre": {"min_new_kinds_per_unit": 1}}, {"content_applies": True})
+        self.assertEqual(on["environment"]["max_attempts"], 2)
+        self.assertEqual(on["retry_records"], list(analysis.RETRIED_RECORDS))
+        self.assertEqual(on["variety_extend_ms"], 30000)
+        off = PlayabilityStep._validity_settings(
+            rules, {"genre": {"min_new_kinds_per_unit": 0}}, {"content_applies": True})
+        self.assertEqual((off["min_new_kinds"], off["variety_extend_ms"]), (0, 0))
+
+    def test_the_process_timeout_allows_every_attempt(self):
+        settings = {"environment": {"max_attempts": 2}, "idle_ms": 10000, "win_ms": 180000,
+                    "lose_ms": 90000, "traverse_ms": 120000, "start_timeout_ms": 30000,
+                    "variety_extend_ms": 30000}
+        self.assertEqual(PlayabilityStep._again_s(settings), 520.0 + 60.0)
+        settings["environment"]["max_attempts"] = 1
+        settings["variety_extend_ms"] = 0
+        self.assertEqual(PlayabilityStep._again_s(settings), 0.0)
+
+    def test_the_config_retries_as_many_times_as_the_rules_allow(self):
+        from wgf_playability.step import CONFIG
+        self.assertIn("retries: 1,", CONFIG.format(port=1, proxy_var="X", bypass="", retries=1))
 
 
 if __name__ == "__main__":

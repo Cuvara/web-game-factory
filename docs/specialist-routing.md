@@ -21,7 +21,7 @@ translation data.
 |---|---|---|
 | The finding contract | `core/artifacts/shared/quality-finding.schema.json` | `finding`: id, dimension, severity, source (producer, step, check, viewport, artifact), summary, measured, bar, evidence refs, owner, task (change, acceptance, design field), route, assets. `request`: what a person types at G4. |
 | The specialists | `core/roles/roles.yaml` 1.1.0, charter `core/roles/specialists.md` | Each specialist is an implementer with `focus`, `reads` (its craft playbooks in `core/craft/`) and `writes` (its writable scope in the game repository). |
-| Ownership and order | `core/reference/specialist-routing.yaml` 1.0.0 | The dimensions, the one owner of each, the visit order, the 2D/3D words, and each producer's table: check id, VQA category, score, state question or listing section, mapped to a dimension. |
+| Ownership and order | `core/reference/specialist-routing.yaml` 1.4.0 | The dimensions, the one owner of each, the visit order, the 2D/3D words, and each producer's table: check id, VQA category, score, state question or listing section, mapped to a dimension; `split` for a check whose failing items take different routes. |
 | The triage step | `scripts/wgf_triage/`, step `triage` in `new-game` | Normalizes, groups, routes. Writes a `triage-report` (`core/artifacts/triage-report.schema.json`). |
 | The specialist visit | `scripts/wgf_develop/specialist.py` | The develop visit routed as `triage.<role>`: the specialist's brief, scope and record. |
 
@@ -71,6 +71,42 @@ A finding id is `<producer>:<check>[@<viewport>]`, for example
 `visual-qa-report:score:environment` or `playability-report:content.variety@mobile`. It stays
 the same across measurements. Acceptance is the producer's own words: "visual-qa judges frames
 of the next build and no longer fails `score:environment` (bar: 3)".
+
+### A check split by route
+
+One check can fail items that different routes fix. production-quality's `assets.runtime`
+follows every required asset along exists -> referenced -> loaded -> rendered -> visible: an
+asset that fails at `exists` is the assets step's to make, one that exists but is not drawn
+or not seen is the game's code. The check itself routes `assets` when any asset fails at
+`exists` - the art must exist before its use can be judged - and that stays as it is. But
+as one finding, routed `assets`, the triage after the assets pass dropped it as handled, and
+the items that fail at `visible` or `rendered` reached no specialist until a later report
+happened to have no `exists` failure (the live 2D run: present in production-quality
+reports 1-3, routed to a specialist only by triage 14).
+
+A producer table's `split` names such checks (specialist-routing.yaml 1.4.0):
+
+```yaml
+production-quality-report:
+  split:
+    assets.runtime: {item: failed_at, routes: {exists: assets}, default: develop}
+```
+
+Each failing item of the check (its `assets`, else every key of `measured`) is routed by the
+value `measured.<item>.<item field>` names - `failed_at` here - through `routes`, else
+`default`; the check becomes one finding per route, each naming only its items (`assets`,
+`measured`, summary), with the check id, dimension, bar and evidence unchanged. Its id is
+`<producer>:<check>/<route>[@<viewport>]`, for example
+`production-quality-report:assets.runtime/develop`, and a split check's findings carry the
+suffix even when every failing item takes one route, so an id names the same part on every
+measurement. The assets part is then handed to the assets pass like any `assets` finding;
+the develop part is routed to its owner (the dimension's: the 2D artist or the environment
+artist) by the triage after that pass. The ledger tracks each part on its own: the assets
+part is verified when no item fails at `exists`, the develop part only when none fails at a
+later link - a part does not close while any item it routes still fails. A check with
+nothing per item to split (no failing item names a value) stays one finding under the
+unsuffixed id. `Routing.problems()` refuses a `split` rule that names a route outside the
+quality-finding `route` enum.
 
 ## How the triage step routes
 

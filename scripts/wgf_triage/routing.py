@@ -27,6 +27,8 @@ ROLES_PATH = os.path.join(paths.CORE, "roles", "roles.yaml")
 DEVELOP = "develop"
 # Routes whose step does one pass over every finding routed to it, whoever owns each.
 WHOLE_PASS = ("design", "assets", "listing")
+# The routes a finding can take (quality-finding.schema.json `$defs.route`).
+ROUTES = (DEVELOP, "assets", "design", "listing")
 _SEVERITY_ORDER = {"blocker": 0, "major": 1, "minor": 2}
 
 
@@ -88,6 +90,16 @@ class Routing:
             for playbook in spec.get("reads") or ():
                 if not os.path.isfile(os.path.join(paths.ROOT, *playbook.split("/"))):
                     out.append(f"role {role!r} reads {playbook!r}, which does not exist")
+        for kind, table in (self.data.get("producers") or {}).items():
+            for check, rule in ((table or {}).get("split") or {}).items():
+                if not isinstance(rule, dict):
+                    out.append(f"producers.{kind}.split.{check} is not a mapping")
+                    continue
+                for value in list((rule.get("routes") or {}).values()) + (
+                        [rule["default"]] if rule.get("default") else []):
+                    if value not in ROUTES:
+                        out.append(f"producers.{kind}.split.{check} routes to {value!r}, "
+                                   f"not one of {', '.join(ROUTES)}")
         for word, table in (self.data.get("by_engine_dimension") or {}).items():
             for value in (table or {}).values():
                 if value not in self.dimensions:

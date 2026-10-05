@@ -1,0 +1,218 @@
+# Art style families: how a 3D (and 2D) look is built, per family of visual identity.
+#
+# A visual identity (game-design build_spec.visual_identity) names its family in
+# `style_family`; a design without one is placed by the words of its concept, shape language
+# and texture (`words`, below - the family with the most whole-word matches; `default` when
+# none matches). The family decides the material language, how much may glow, the lighting
+# rig, and the worked example a model author is shown (`examples`): a request for a sunlit
+# paper diorama is never shown a neon car as the way models look.
+#
+# Read by the model author (scripts/wgf_assets/model_author.py: the request's `style_family`
+# and `example`, and the emissive cap a spec is refused over) and by the design step (the
+# identity kits carry their family). The prose behind each number is the craft playbook,
+# core/craft/production-art-3d.md section 2a ("Materials and light by style family"); the
+# 2D counterpart is core/craft/production-art-2d.md.
+#
+# Examples are model specs (core/artifacts/shared/model-spec.schema.json) of generic
+# objects, never a game's asset. Within a family, the example whose `fits` words a
+# requirement names (its id, role, description or readability line) is chosen; otherwise
+# the family's first. Every example validates against the schema and the spec rules
+# (scripts/tests/test_style_families.py).
+#
+# Changing a number, a word or an example is a version bump: it changes what every later
+# model request is shown and refused for.
+
+version: 1.0.0
+
+default: lit-stylized
+
+families:
+  neon-emissive:
+    label: Neon / emissive night
+    summary: >-
+      A dark scene lit by its own objects: dark bodies, emissive edges, one hot accent for
+      the player, the danger colour for threats. Light comes from emissive materials and
+      additive halos, not from lamps.
+    words: [neon, glow, glowing, synthwave, cyber, cyberpunk, night, emissive, scanline, signage, laser, hum, hums, electric, arcade-night]
+    materials:
+      metallic: [0.1, 0.9]
+      roughness: [0.1, 0.6]
+      # Emissive strength encodes importance: world lines 0.35-0.8, trims 2-3, engines,
+      # lamps and beacons 4-6.
+      max_emissive_strength: 6
+      # Share of a model's parts whose material emits (above 0.05): trims and engines, not
+      # the body.
+      max_emissive_part_share: 0.6
+    lighting:
+      rig: hemisphere (coloured shadow side) + white key + accent rim; no shadows, no point lights
+      exposure: dark ground and sky; at least 1 % of pixels lit (visual gate)
+      fog: linear, in a dark palette colour matching the sky at the horizon
+    examples:
+      - id: craft
+        object: a hover craft or vehicle
+        fits: [craft, ship, vehicle, car, racer, hover, jet, kart, bike]
+        spec:
+          parts:
+            - {id: hull, shape: box, size: [0.42, 0.2, 1.0], position: [0, 0.1, -0.05], taper: [0.62, 0.8], bevel: 0.035, material: paint}
+            - {id: keel, shape: box, size: [0.3, 0.08, 0.86], position: [0, -0.02, -0.08], taper: [1.25, 1.0], bevel: 0.02, material: hull-dark}
+            - {id: nose, shape: cone, size: [0.36, 0.48, 0.16], position: [0, 0.17, 0.7], rotation: [90, 0, 0], segments: 8, material: paint}
+            - {id: canopy, shape: sphere, size: [0.24, 0.14, 0.4], position: [0, 0.24, 0.08], segments: 14, material: glass}
+            - {id: wing, shape: box, size: [0.5, 0.045, 0.46], position: [0.4, 0.08, -0.2], rotation: [0, -22, -7], taper: [1.0, 0.7], bevel: 0.012, mirror: x, material: paint}
+            - {id: wing-trim, shape: box, size: [0.5, 0.02, 0.03], position: [0, 0.03, -0.2], parent: wing, material: trim}
+            - {id: thruster, shape: cylinder, size: [0.16, 0.22, 0.16], position: [0.17, 0.11, -0.66], rotation: [-90, 0, 0], segments: 12, mirror: x, material: metal}
+            - {id: thruster-glow, shape: cone, size: [0.13, 0.16, 0.13], position: [0.17, 0.11, -0.8], rotation: [-90, 0, 0], segments: 10, mirror: x, material: glow}
+          materials:
+            - {id: paint, color: "#FF2E88", metallic: 0.35, roughness: 0.35}
+            - {id: hull-dark, color: "#16162A", metallic: 0.5, roughness: 0.45}
+            - {id: glass, color: "#2EF2FF", roughness: 0.1, emissive: "#2EF2FF", emissive_strength: 0.6, opacity: 0.82}
+            - {id: metal, color: "#8A8AA3", metallic: 0.9, roughness: 0.3}
+            - {id: trim, color: "#EDEBFF", emissive: "#FF2E88", emissive_strength: 2.5}
+            - {id: glow, color: "#2EF2FF", emissive: "#2EF2FF", emissive_strength: 4}
+          pivot: base-center
+          fit: {size: 1.5, axis: z}
+          collision: {shape: box}
+          budget: {max_triangles: 3000}
+      - id: barrier
+        object: a wall, barrier or gate a player must avoid
+        fits: [barrier, wall, gate, obstacle, block, hazard]
+        spec:
+          parts:
+            - {id: post, shape: box, size: [0.12, 0.9, 0.12], position: [0.44, 0, 0], taper: [0.8, 0.85], bevel: 0.02, mirror: x, material: hull-dark}
+            - {id: beam, shape: box, size: [1.0, 0.16, 0.1], position: [0, 0.62, 0], bevel: 0.02, material: hull-dark}
+            - {id: panel, shape: box, size: [0.76, 0.3, 0.04], position: [0, 0.3, 0.02], bevel: 0.01, material: hazard}
+            - {id: chevron, shape: extrude, outline: [[0, 0], [0.5, 0.5], [0, 1], [0.25, 0.5]], size: [0.14, 0.03, 0.22], position: [0, 0.3, 0.05], rotation: [90, 0, 90], material: ink}
+            - {id: neon, shape: box, size: [0.96, 0.025, 0.025], position: [0, 0.71, 0.05], material: neon}
+            - {id: lamp, shape: sphere, size: [0.07, 0.07, 0.07], position: [0.44, 0.94, 0], segments: 8, mirror: x, material: lamp}
+          materials:
+            - {id: hull-dark, color: "#16162A", metallic: 0.5, roughness: 0.45}
+            - {id: hazard, color: "#FFB020", roughness: 0.5, emissive: "#FFB020", emissive_strength: 0.45}
+            - {id: ink, color: "#0B0B12", roughness: 0.6}
+            - {id: neon, color: "#FFB020", emissive: "#FFB020", emissive_strength: 3}
+            - {id: lamp, color: "#FFB020", emissive: "#FFB020", emissive_strength: 5}
+          pivot: base-center
+          fit: {size: 1.0, axis: x}
+          collision: {shape: box}
+          budget: {max_triangles: 1000}
+
+  lit-stylized:
+    label: Lit stylized (diorama, paper, clay, sunlit low-poly)
+    summary: >-
+      A scene lit by a sun: matte coloured materials, form shown by the key light and the
+      shade it leaves, depth by layered value and fog. Colour lives in the albedo; almost
+      nothing glows. A lit object reads by silhouette and value contrast against the surface
+      it stands on, not by emission.
+    words: [paper, diorama, cut-paper, papercraft, clay, sunlit, sun, sunny, noon, cozy, handmade, pop-up, layered, desert, lacquer, lacquered, brass, warm, pastel, storybook, wooden, toy, tabletop, sky, island, islands, meadow, garden, felt]
+    materials:
+      metallic: [0.0, 0.3]
+      roughness: [0.6, 1.0]
+      # Only a real light source in the world (a lantern's flame, a beacon, a window) emits,
+      # and faintly: a goal or a body that glows reads as a lamp and flattens the lighting.
+      max_emissive_strength: 1.2
+      max_emissive_part_share: 0.15
+    lighting:
+      rig: warm directional key (the sun) high and to one side + cool hemisphere fill; one contact shadow or a soft decal under each standing object
+      exposure: bright sky; shade side one or two value steps down, never black
+      fog: linear, in the sky's horizon colour, starting past the play space
+    examples:
+      - id: ball
+        object: a ball, marble or orb the player rolls
+        fits: [ball, marble, orb, sphere, bead, pearl, bubble]
+        spec:
+          parts:
+            - {id: shell, shape: icosphere, size: [1.0, 1.0, 1.0], position: [0, 0, 0], segments: 8, material: body}
+            - {id: band, shape: lathe, profile: [[0.5, 0], [0.53, 0.5], [0.5, 1]], size: [1.08, 0.2, 1.08], position: [0, -0.1, 0], rotation: [0, 0, 24], segments: 16, material: band, parent: shell}
+            - {id: stripe, shape: lathe, profile: [[0.5, 0], [0.52, 0.5], [0.5, 1]], size: [1.05, 0.1, 1.05], position: [0, -0.05, 0], rotation: [90, 0, 0], segments: 16, material: accent, parent: shell}
+            - {id: core-dot, shape: sphere, size: [0.22, 0.22, 0.08], position: [0, 0.18, 0.49], segments: 10, material: accent, parent: shell}
+          materials:
+            - {id: body, color: "#E4572E", roughness: 0.55}
+            - {id: band, color: "#F7F1E3", roughness: 0.8}
+            - {id: accent, color: "#2B3A55", roughness: 0.7}
+          pivot: origin
+          fit: {size: 1.0, axis: y}
+          collision: {shape: convex}
+          budget: {max_triangles: 2000}
+      - id: arch
+        object: a goal, checkpoint or finish arch the player passes through
+        fits: [goal, finish, gate, arch, checkpoint, portal, door, exit]
+        spec:
+          parts:
+            - {id: foot, shape: box, size: [0.5, 0.16, 0.5], position: [1.3, 0, 0], bevel: 0.04, mirror: x, material: stone}
+            - {id: post, shape: box, size: [0.3, 2.4, 0.3], position: [1.3, 0.16, 0], taper: [0.85, 0.85], bevel: 0.04, mirror: x, material: wood}
+            - {id: lintel, shape: box, size: [3.2, 0.3, 0.4], position: [0, 2.5, 0], bevel: 0.05, material: wood}
+            - {id: sign, shape: box, size: [1.4, 0.5, 0.08], position: [0, 2.05, 0.14], bevel: 0.02, material: banner}
+            - {id: pennant, shape: extrude, outline: [[0, 0], [1, 0.5], [0, 1]], size: [0.5, 0.03, 0.3], position: [0.15, 0.5, 0], rotation: [90, 0, 0], parent: flagpole, material: accent}
+            - {id: flagpole, shape: cylinder, size: [0.05, 0.8, 0.05], position: [1.3, 2.56, 0], segments: 8, mirror: x, material: wood}
+          materials:
+            - {id: stone, color: "#7FB685", roughness: 0.95}
+            - {id: wood, color: "#26211C", roughness: 0.85}
+            - {id: banner, color: "#F2A900", roughness: 0.8}
+            - {id: accent, color: "#E4572E", roughness: 0.8}
+          pivot: base-center
+          fit: {size: 3.4, axis: x}
+          collision: {shape: box}
+          budget: {max_triangles: 1500}
+
+  toon:
+    label: Toon / flat / print
+    summary: >-
+      Flat colour in two or three value bands, bold dark outlines and chunky proportions;
+      saturated accents on a quiet ground. Nothing metallic, nothing glossy, nothing glows:
+      a toon object reads by outline and colour block.
+    words: [toon, cel, cartoon, comic, riso, risograph, print, ink, halftone, flat, brutal, brutalism, bold, blocky, chunky, sticker, slab, graphic, poster]
+    materials:
+      metallic: [0.0, 0.0]
+      roughness: [0.85, 1.0]
+      max_emissive_strength: 0.8
+      max_emissive_part_share: 0.1
+    lighting:
+      rig: one strong directional key + bright hemisphere; flat shading (`smooth` off) keeps facets as colour bands
+      exposure: mid-to-bright; shade side one value step down
+      fog: none or very light; the background is a flat colour field
+    examples:
+      - id: character
+        object: a character or creature the player controls or meets
+        fits: [character, hero, player, creature, avatar, keeper, runner, robot, critter, enemy]
+        spec:
+          parts:
+            - {id: torso, shape: box, size: [0.5, 0.55, 0.34], position: [0, 0.62, 0], taper: [1.15, 1.0], bevel: 0.06, material: shirt}
+            - {id: head, shape: sphere, size: [0.42, 0.4, 0.4], position: [0, 0.62, 0], parent: torso, segments: 12, material: skin}
+            - {id: eye, shape: sphere, size: [0.07, 0.1, 0.04], position: [0.09, 0.05, 0.19], parent: head, segments: 8, mirror: x, material: ink}
+            - {id: arm, shape: capsule, size: [0.13, 0.46, 0.13], position: [0.33, 0.05, 0], rotation: [0, 0, 12], parent: torso, segments: 8, mirror: x, material: shirt}
+            - {id: hand, shape: sphere, size: [0.15, 0.15, 0.15], position: [0, -0.04, 0], parent: arm, segments: 8, material: skin}
+            - {id: leg, shape: capsule, size: [0.16, 0.5, 0.16], position: [0.13, 0.1, 0], segments: 8, mirror: x, material: trousers}
+            - {id: boot, shape: box, size: [0.2, 0.12, 0.3], position: [0.13, 0, 0.04], bevel: 0.04, mirror: x, material: ink}
+          materials:
+            - {id: shirt, color: "#FF48B0", roughness: 1.0}
+            - {id: skin, color: "#F4EDE1", roughness: 1.0}
+            - {id: trousers, color: "#0078BF", roughness: 1.0}
+            - {id: ink, color: "#1C1A17", roughness: 1.0}
+          pivot: base-center
+          fit: {size: 1.6, axis: y}
+          collision: {shape: convex}
+          budget: {max_triangles: 2500}
+      - id: pickup
+        object: a coin, gem, star or token the player collects
+        fits: [pickup, coin, gem, star, token, collectible, crystal, reward]
+        spec:
+          parts:
+            - {id: disc, shape: cylinder, size: [0.8, 0.14, 0.8], position: [0, 0, 0], rotation: [90, 0, 0], segments: 16, bevel: 0.03, material: gold}
+            - {id: rim, shape: lathe, profile: [[0.42, 0], [0.5, 0.5], [0.42, 1]], size: [0.86, 0.18, 0.86], position: [0, 0, 0], rotation: [90, 0, 0], segments: 16, material: ink}
+            - {id: emblem, shape: extrude, outline: [[0.5, 0], [0.62, 0.38], [1, 0.38], [0.69, 0.62], [0.81, 1], [0.5, 0.76], [0.19, 1], [0.31, 0.62], [0, 0.38], [0.38, 0.38]], size: [0.44, 0.04, 0.44], position: [0, 0, 0.08], rotation: [90, 0, 0], material: ink}
+          materials:
+            - {id: gold, color: "#F2C14E", roughness: 0.9}
+            - {id: ink, color: "#1C1A17", roughness: 1.0}
+          pivot: origin
+          fit: {size: 0.8, axis: x}
+          collision: {shape: convex}
+          budget: {max_triangles: 800}
+
+# Identity kits (scripts/wgf_design/identity.py KITS) and the family each belongs to; the
+# design step writes it into visual_identity.style_family. A kit missing here is placed by
+# its words.
+kits:
+  neon-night: neon-emissive
+  paper-diorama: lit-stylized
+  solar-bleach: lit-stylized
+  lacquer-brass: lit-stylized
+  riso-arcade: toon
+  signal-brutal: toon

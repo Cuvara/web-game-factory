@@ -9,9 +9,20 @@ visual QA.
 
 `production-art-and-ui.md` states the bar; `3d-assets-and-animation.md` and
 `3d-scene-and-physics.md` cover loading, animation and the update order. This playbook is
-how the reference 3D port (a neon arena racer) went from boxes on a grid helper to a scene a
-stranger takes for a product: models as data, then a light, fog and camera set-up that lets
-them read on a phone.
+how a 3D game goes from boxes on a grid helper to a scene a stranger takes for a product:
+models as data, assembled so their parts hold together and clear the camera, then a material
+language, light, fog and camera set-up that fit the game's **style family** and let them read
+on a phone.
+
+Its first worked case was a neon arena racer, and a playbook distilled from one look teaches
+every game that look: a sunlit paper-diorama marble game built from it got glowing goal drums
+and emissive lanterns. The material language and the light are therefore given **per style
+family** (section 2a; `core/reference/art-style-families.yaml`): neon / emissive, lit stylized
+(diorama, paper, clay, sunlit low-poly) and toon. The design names its family in
+`build_spec.visual_identity.style_family`; the model author is shown that family's example
+specs and refused a spec that glows more than the family allows. Sections 1 and 2 (parts,
+assembly, scale), 5 (camera) and 6 (building) hold for every family; 3 and 4 give the neon
+numbers, and 2a what changes in the other families.
 
 ## 1. Models are specs: decompose by what a player recognises
 
@@ -32,6 +43,11 @@ part shapes (`models.min_composed_parts`, `.min_distinct_pieces`).
 | Pickup | a disc or gem with a raised rim and an emblem | a shape that is round where threats are angular |
 | Prop (pylon) | base, tapered mast, arm, lamp (capsule), ring | it may be simple: props are not readable roles |
 
+**Decompose by what the player does with it, not only by what it is.** A goal the player rolls
+through is an arch with an opening wider than the player and a top above the camera's path;
+a checkpoint is a marker beside the track, not a ring across it; a pickup is small and round
+where threats are angular.
+
 **Shape every part.** The tools that turn primitives into objects:
 
 - `taper [x, z]` scales the top of a part: a hull `[0.62, 0.8]` narrows to the front; a keel
@@ -48,7 +64,9 @@ part shapes (`models.min_composed_parts`, `.min_distinct_pieces`).
   large disc. Low segment counts are the style; visible faceting on a
   silhouette edge that should be round is not.
 
-Four of the reference craft's 13 parts, verbatim, and its whole-model fields:
+Four parts of a neon-family craft, and its whole-model fields (each family's full examples are
+in `core/reference/art-style-families.yaml`; copy a family's *structure*, never another
+family's materials):
 
 ```json
 {"parts": [
@@ -71,13 +89,77 @@ for anything that stands or drives; `origin` for a tiling module. `fit` the long
 world size (craft 1.5 m along z, wall 1.0 m along x) so code never scales by guesswork. Add
 `collision: {"shape": "box"}` so the game collides with a proxy, not the visual mesh.
 
-**Budgets** (`budget.max_triangles`; the reference shipped well under them): player 3000
+**Budgets** (`budget.max_triangles`; the first reference shipped well under them): player 3000
 (shipped 1754), threat 1000 (548), track module 4000 (1062), backdrop 6000. Generated textures at 64-256 px
 (`checker`, `stripes`) instead of image files.
 
-## 2. Materials: dark bodies, emissive edges
+## 2. Assembly: attachment, intersections, camera clearance, scale
 
-The palette's roles become materials. The reference set (a dark-neon identity):
+A model can pass every per-part check and still read as broken in the game: a flag floating
+beside its pole, a band sunk inside the ball it should wrap, a beam at the camera's height
+that the chase camera flies into. The model checks judge parts; these rules judge the object.
+
+**Attachment.** Every part touches or overlaps its parent or a neighbour by a few centimetres.
+Nothing floats: a flag sits on its pole (`parent: flagpole`, its edge at the pole's axis), a
+lamp on its post, a beam rests on both posts, a pennant hangs from the lintel. A gap that is
+clear in the three-quarter render opens wider at gameplay distance, where the parts read as
+two objects. Parent attachments so they move and mirror with what they hang from.
+
+**Intersections.** Parts may overlap to join, never to hide.
+- A part meant to be seen - a band, a stripe, an emblem, a trim - sits **on** the surface and
+  stands proud of it (a band 3-8 % larger than the shell it wraps). One sunk inside, or
+  coplanar with its face, is invisible or flickers (z-fighting): the marble whose swirl band
+  sat inside its shell read as a plain ball.
+- Two parts never share a face plane; offset the visible one by at least 1 % of the model.
+- A long part through another (an axle, a pole through a sign) shows on both sides or is two
+  parts.
+
+**Camera clearance.** Know where the camera flies (section 5) and keep it clear.
+- What the player passes through or under - a gate, an arch, a checkpoint - is open at the
+  camera's height: its top well above the camera's path, its opening wider than the camera's
+  view at that distance. A checkpoint flag or beam at camera height fills the frame as the
+  camera passes it.
+- Markers that must not occlude (checkpoints, signs) stand beside the track, leaning in, not
+  across it.
+- Tall props near the track are lower than the camera or far enough off it that the chase
+  camera never clips them on a bend.
+
+**Scale relative to the player.** Size every model against the player's `fit`, and check the
+set side by side (the model author's set render): a pickup about 0.4-0.6 of the player's
+height, a goal arch at least 3x the player's width and 2.5x its height, threats near the
+player's own size, props sized to the world (a tree is not a bush). A goal smaller than the
+player, or a gem as tall as the marble, is read wrongly before its shape is.
+
+## 2a. Materials and light by style family
+
+The palette's roles become materials, in the family's language. Use the family the design
+names (`visual_identity.style_family`); its numbers are in
+`core/reference/art-style-families.yaml` (`materials`, `lighting`).
+
+| | Neon / emissive | Lit stylized (diorama, paper, clay, sunlit) | Toon / flat / print |
+|---|---|---|---|
+| Bodies | dark, metallic 0.1-0.9, roughness 0.1-0.6 | matte colour, metallic 0-0.3, roughness 0.6-1 | flat colour, metallic 0, roughness 0.85-1 |
+| What reads | emissive edges on dark bodies | silhouette and value against the surface it stands on | outline and colour block |
+| Emissive | importance: 0.35-0.8 lines, 2-3 trims, 4-6 engines and lamps (max 6) | only real light sources (a lantern flame, a beacon), at most 1.2, on at most 15 % of the parts | none to speak of: at most 0.8, 10 % of the parts |
+| Light | hemisphere + white key + accent rim, no shadows | warm sun key high to one side + cool hemisphere fill, a contact shadow or decal | one strong key + bright fill, flat shading |
+| Sky and fog | dark gradient, dark fog | bright sky, fog in its horizon colour past the play space | flat colour field, little or no fog |
+
+**Good and bad, per family.**
+- Neon: good - a near-black hull with a pink edge strip and cyan thrusters, readable against
+  a dark track. Bad - the body itself emissive (a glowing blob without form).
+- Lit stylized: good - a cream paper arch with a marigold sign and a coral pennant, lit by the
+  sun, its shade side a step darker. Bad - an emissive drum for a goal, lanterns glowing at
+  strength 3 in daylight: they read as lamps, flatten the light and look pasted in.
+- Toon: good - a pink character in two value bands with ink boots and eyes. Bad - glossy
+  metal or a bloom glow on a flat-coloured world: two rendering styles in one frame.
+
+In every family: **the player owns one accent; threats own the danger colour**, never
+swapped, never used as decoration; the environment stays darker (neon) or quieter (lit, toon)
+than both. `model.palette` checks material colours lie within distance 48 of a palette colour.
+
+### The neon / emissive family in full
+
+The first reference set (a dark-neon identity):
 
 | Material | Colour | Metallic / roughness | Emissive | Used for |
 |---|---|---|---|---|
@@ -98,10 +180,30 @@ Rules:
   4-6 for engines, lamps and beacons - the brightest things on screen are the ones that
   matter.
 - **Dark bodies, lit edges.** A mostly dark object with emissive trim along its outline reads
-  at any distance against a dark scene, without real lights.
-- `model.palette` checks material colours lie within distance 48 of a palette colour.
+  at any distance against a dark scene, without real lights. This is the neon family's rule
+  only: in a lit or toon look the same object is a coloured, lit body.
 
-## 3. Lighting rig
+### The lit stylized family
+
+- Materials are colour: paper, clay, wood, stone as roughness 0.7-0.95 and the palette's
+  hues; a highlight is a lighter shade, not emission.
+- One sun: a directional key, warm, high and to one side (about 40-60 degrees up), intensity
+  1.5-2.5, and a cool hemisphere fill (0.6-1.0) so the shade side is coloured, never black.
+  A soft decal or one cheap contact shadow under each standing object grounds it.
+- Value contrast with the play surface carries readability: a cream bumper on a cream track
+  disappears however well it is modelled; put the danger or accent colour on what the player
+  must read, and darken the surface under it.
+- Bright sky gradient, fog in the horizon colour starting past the play space, layered
+  backdrop silhouettes for depth.
+
+### The toon family
+
+- Flat-shaded parts (`smooth` off) whose facets become value bands under one strong key;
+  two or three bands, no gloss.
+- Ink-coloured detail parts (boots, eyes, emblem rims) do the outline's work.
+- A flat or two-tone background field; fog only to separate far layers.
+
+## 3. Lighting rig (the neon family; the others above)
 
 Three lights, no shadows, no point lights - every light is paid for in every lit pixel on a
 phone:
@@ -123,6 +225,10 @@ phone:
   (luminance >= 64) and a luminance spread (std >= 18). The reference sits at 1.3-4.3 % lit.
 
 ## 4. Fog, sky and ground
+
+The numbers below are the neon family's; the rules (fog matches the sky at the horizon, a
+backdrop beyond the fog, never a void, speed read from the ground) hold for every family -
+in a lit look the fog and sky are bright (section 2a).
 
 - **Linear fog in a dark purple of the palette**: `Fog(0x1A1030, 16, 62)` - near geometry
   crisp, far geometry fades into the sky colour, depth for free.
@@ -182,6 +288,14 @@ python3 scripts/wgf-model.py inspect craft.glb --spec craft.model.json --role pl
 
 ## Failure modes
 
+- **One family's look on another's game.** Emissive goals and glowing lanterns in a sunlit
+  diorama; dark bodies with neon trims in a paper world.
+- **Floating or sunk parts.** A flag beside its pole, a band inside its shell, a lamp in
+  mid-air beside its post.
+- **Camera-height obstructions.** A checkpoint beam or flag the chase camera flies through,
+  filling the frame.
+- **Wrong scale against the player.** A goal arch the player barely fits, a pickup as big as
+  the player.
 - **Primitive-only models.** A box craft, a box wall, a grid helper floor - the reference's
   starting point, and what the gate refuses.
 - **Too dark.** No hemisphere light, no emissive edges, a black sky: unreadable on a phone.
@@ -192,7 +306,12 @@ python3 scripts/wgf-model.py inspect craft.glb --spec craft.model.json --role pl
 
 ## Distilled from
 
-The template's reference 3D port, `examples/neon-drift-arena/wgf-golden/` in the template
+The style families, assembly and scale rules: the critique of a 3D validation game in the
+lit-stylized family (2026-10-05: a plain marble with its band inside the shell, a goal-gate
+emissive drum with floating lanterns, a detached checkpoint flag and beam at camera height,
+a cream bumper on a cream track) and the identity kits the design step offers.
+
+The neon family: the template's reference 3D port, `examples/neon-drift-arena/wgf-golden/` in the template
 repository: `library/models/craft.model.json`, `wall.model.json`, `arena-track.model.json`,
 `arena-skyline.model.json`, `library/build-models.sh` (build and inspect commands),
 `library/textures/make-textures.py` (sky gradient), `src/rendering/threejs/arena-view.ts`

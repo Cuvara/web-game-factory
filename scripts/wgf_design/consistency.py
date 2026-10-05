@@ -34,10 +34,11 @@ from wgflib import mechanics, paths
 
 from . import commitments as brief_commitments
 from . import existing
+from . import vfx as vfx_contract
 from wgflib.criteria import MISSING, Unevaluable, evaluate_named, resolve
 from wgflib.yamllite import load_file
 
-__all__ = ["RULES_PATH", "load_rules", "load_lexicon", "load_commitments", "projection",
+__all__ = ["RULES_PATH", "load_rules", "load_lexicon", "load_commitments", "load_vfx", "projection",
            "concept_view", "evaluate", "breach_problems"]
 
 RULES_PATH = os.path.join(paths.REFERENCE, "design-consistency-rules.yaml")
@@ -70,6 +71,20 @@ def load_commitments(ruleset=None):
     if not isinstance(pin, dict):
         return {}
     data = brief_commitments.load(os.path.join(paths.REFERENCE, f"{pin.get('id')}.yaml"))
+    if str(data.get("version")) != str(pin.get("version")):
+        raise ValueError(f"design-consistency-rules pins {pin.get('id')} {pin.get('version')}, "
+                         f"the file is {data.get('version')}: bump the ruleset with it")
+    return data
+
+
+def load_vfx(ruleset=None):
+    """The visual effect contract the ruleset pins (`vfx: {id, version}`), refused at another
+    version like the lexicon. {} when the ruleset pins none."""
+    ruleset = ruleset if ruleset is not None else load_rules()
+    pin = ruleset.get("vfx")
+    if not isinstance(pin, dict):
+        return {}
+    data = vfx_contract.load(os.path.join(paths.REFERENCE, f"{pin.get('id')}.yaml"))
     if str(data.get("version")) != str(pin.get("version")):
         raise ValueError(f"design-consistency-rules pins {pin.get('id')} {pin.get('version')}, "
                          f"the file is {data.get('version')}: bump the ruleset with it")
@@ -187,7 +202,8 @@ def concept_view(design, strategy, lexicon=None):
             "pillars_asked": asked, "pillars_unrealized": unrealized}
 
 
-def projection(design, strategy, platform=None, lexicon=None, concept=None, stated=None):
+def projection(design, strategy, platform=None, lexicon=None, concept=None, stated=None,
+               effects=None):
     spec = design.get("build_spec") or {}
     cost = sum(item.get("est_cost", 0) for item in (spec.get("assets") or []) + (spec.get("audio") or []))
     return {
@@ -202,6 +218,7 @@ def projection(design, strategy, platform=None, lexicon=None, concept=None, stat
         "concept": concept if concept is not None else concept_view(design, strategy, lexicon),
         "commitments": stated if stated is not None else brief_commitments.view(design, strategy),
         "adopted": existing.floor_view(design),
+        "vfx": effects if effects is not None else vfx_contract.view(design, strategy, lexicon=lexicon),
     }
 
 
@@ -237,6 +254,9 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None):
     vocabulary = load_commitments(ruleset)
     stated = (brief_commitments.view(design, strategy, vocabulary) if vocabulary
               else {"stated": [], "unmet": [], "deferred": []})
+    contract = load_vfx(ruleset)
+    effects = (vfx_contract.view(design, strategy, contract) if contract
+               else {"problems": [], "implied": [], "declared": []})
     required = [p for p in platforms if p.required]
     results = []
     blocking_breached = []
@@ -245,12 +265,12 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None):
         reads_platform = any(p.startswith("platform.") for p in _paths(rule["when"]))
         if not reads_platform:
             result = _evaluate_once(rule, projection(design, strategy, concept=concept,
-                                                     stated=stated))
+                                                     stated=stated, effects=effects))
         else:
             per_platform, notes, breached = [], [], False
             for platform in required:
                 context = projection(design, strategy, platform, concept=concept,
-                                     stated=stated)
+                                     stated=stated, effects=effects)
                 absent = [p for p in _paths(rule["when"])
                           if p.startswith("platform.") and resolve(p, context) in (MISSING, None)]
                 if absent:

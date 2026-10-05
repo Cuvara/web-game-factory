@@ -12,7 +12,7 @@
 # artifact plus the resolved platform profiles. Keep them few and obvious — a rule nobody
 # understands gets waived, and a waived rule is worse than no rule.
 
-version: 2.1.1  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms; 2.0.0: mechanics, not words (below); 2.1.0: brief commitments and the existing-content floor (below); 2.1.1: brief-commitments 1.1.0 (the probe floor)
+version: 2.2.0  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms; 2.0.0: mechanics, not words (below); 2.1.0: brief commitments and the existing-content floor (below); 2.1.1: brief-commitments 1.1.0 (the probe floor); 2.2.0: the visual effect contract (below)
 
 # 2.0.0. The concept rules compared words: "tap hops" in a design read as a foreign `jump`
 # for a brief that asked for hops, a goal gate read as a checkpoint `gate`, and an author
@@ -37,6 +37,15 @@ lexicon: { id: mechanic-lexicon, version: 1.0.0 }
 # recorded in game-design.existing_content with the commit it was counted at). The ruleset
 # pins the vocabulary like the lexicon: its words decide what a brief committed to.
 commitments: { id: brief-commitments, version: 1.1.0 }
+
+# 2.2.0. A release-tier game shipped with a gem pickup that left a few flat flecks, no trail at
+# speed, a checkpoint ring that filled the screen and a result card over the goal and its
+# celebration: no design asked for an effect, so no gate looked for one. `vfx.*` is the design's
+# build_spec.vfx against core/reference/vfx.yaml (scripts/wgf_design/vfx.py): the interaction
+# kinds the design has (pickup, impact, checkpoint, goal, fail, trail), each needing an effect
+# at the tiers the contract binds, within its kind's screen-share ceiling. Pinned like the
+# lexicon.
+vfx: { id: vfx, version: 1.0.0 }
 
 rules:
   - id: rewarded_ads_need_reward_moments
@@ -173,6 +182,22 @@ rules:
       A run that adopts a game is improving it. A design below what the repository already
       ships plans a regression, and every later gate would measure the build against the
       smaller design and pass it.
+
+  - id: vfx_covers_interactions
+    label: Every interaction the design has fires a designed effect (release tier)
+    severity: blocking
+    # `vfx.problems`: at a quality tier core/reference/vfx.yaml `binds_at_tiers` names, every
+    # interaction kind the design implies (a collectible -> pickup, a threat -> impact, a gate
+    # -> checkpoint, a win -> goal, a lose -> fail, steering or racing -> trail) with no
+    # build_spec.vfx effect, every effect whose max_screen_share is above its kind's ceiling,
+    # and every effect naming an asset or audio cue the design does not have. [] below the
+    # binding tiers.
+    when: { left: vfx.problems, op: neq, right: [] }
+    rationale: >
+      Feedback is half of what makes an interaction feel like one. An effect nobody designed
+      is built as a placeholder or not at all, and a release is judged by the moment a gem is
+      taken and the goal is reached - exactly where a missing or screen-filling effect, or a
+      result card over the celebration, is most visible.
 
   - id: first_reward_within_first_session
     label: First reward must land inside the first session

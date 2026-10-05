@@ -50,8 +50,9 @@ interface Snapshot {
   state: string;
   metrics: Record<string, number>;
   content?: Content;
-  entities: { id: string; kind?: string; role: string; x: number; y: number; w: number; h: number; visible: boolean; asset?: string | null; render?: string }[];
+  entities: { id: string; kind?: string; role: string; x: number; y: number; w: number; h: number; visible: boolean; asset?: string | null; render?: string; vfx?: string }[];
   inputs: Move[];
+  events?: { seq: number; kind: string; vfx?: string }[];
   assets_loaded?: string[];
   audio?: { music: string | null; playing: boolean; level: number; muted?: boolean };
   oracle?: Move | null;
@@ -123,6 +124,19 @@ const GLIMPSES = 6;
 // may take to stage and to report its asset drawn.
 const SHOWCASE_MAX = 16;
 const SHOWCASE_STAGE_MS = 6000;
+// Visual effects (Watch.effect): at most this many effects framed per test, how many tries a
+// short effect gets to be on screen through a whole screenshot, and how many sighting times
+// are kept per effect.
+const EFFECTS_MAX = 8;
+const EFFECT_TRIES = 4;
+const EFFECT_SIGHTINGS = 120;
+
+// One visual effect the probe reported drawing (an entity of role `vfx`), by its
+// build_spec.vfx id: when it was drawn, the largest share of the viewport its bounds covered,
+// its frame while drawn (`vfx-<id>`, with its box swept across the shot) and a frame of the
+// same place after it ended (`vfx-<id>-after`).
+type Effect = { seen_ms: number[]; max_share: number; samples: number; tries: number;
+                frame?: string; box?: number[]; frame_ms?: number; after?: string };
 
 // What one test saw beside play itself: page errors, every response for a file under
 // /assets/ (and the runtime manifest's body), the runtime asset ids the probe reported
@@ -134,6 +148,13 @@ class Watch {
   loaded = new Set<string>();
   ui: Record<string, unknown> = {};
   glimpsed = new Set<string>();
+  // The interactions the probe reported (`events`, each once by its seq) and the effects it
+  // drew (entities of role `vfx`), for the production gate's vfx checks; and the screen at
+  // the moment play was won, measured before anything settles (`celebration`).
+  events: { seq: number; kind: string; vfx: string | null; ms: number; state: string }[] = [];
+  lastSeq = 0;
+  effects: Record<string, Effect> = {};
+  celebration: Record<string, unknown> | null = null;
   audio: { ms: number; state: string; music: string | null; playing: boolean; level: number; muted: boolean | null }[] = [];
   readonly t0 = Date.now();
 
@@ -159,6 +180,22 @@ class Watch {
 
   saw(s: Snapshot | null): Snapshot | null {
     for (const id of s?.assets_loaded ?? []) this.loaded.add(id);
+    const ms = Date.now() - this.t0;
+    for (const e of s?.events ?? []) {
+      if (typeof e?.seq !== "number" || e.seq <= this.lastSeq) continue;
+      this.lastSeq = e.seq;
+      if (this.events.length < 400) this.events.push({ seq: e.seq, kind: e.kind, vfx: e.vfx ?? null, ms, state: s!.state });
+    }
+    const viewport = this.page.viewportSize();
+    const area = viewport ? viewport.width * viewport.height : 0;
+    for (const e of s?.entities ?? []) {
+      if (e.role !== "vfx" || !e.visible) continue;
+      const id = e.vfx ?? e.kind ?? e.id;
+      const fx = this.effects[id] ??= { seen_ms: [], max_share: 0, samples: 0, tries: 0 };
+      fx.samples += 1;
+      if (fx.seen_ms.length < EFFECT_SIGHTINGS) fx.seen_ms.push(ms);
+      if (area) fx.max_share = Math.max(fx.max_share, Math.round((e.w * e.h / area) * 10000) / 10000);
+    }
     if (s?.audio && this.audio.length < 600) {
       this.audio.push({ ms: Date.now() - this.t0, state: s.state, music: s.audio.music, playing: s.audio.playing,
                         level: s.audio.level, muted: s.audio.muted ?? null });
@@ -204,6 +241,52 @@ class Watch {
     this.ui[name] = { probe_state: shot.state, frame: `state-${name}`, viewport: shot.viewport,
                       elements: [], texts: [], overlaps: [], probe_ui: [], glimpse: true,
                       entities: shot.entities };
+  }
+
+  // The first moments a visual effect is drawn: its frame `state-vfx-<id>` and its box (swept
+  // across the shot, as a glimpse), and - once it is no longer drawn - a frame of the same
+  // place, `state-vfx-<id>-after`. The production gate compares the two inside the box and
+  // holds the effect to the share of the screen the design allows it. A short effect gone
+  // before the shot ends is tried again at its next appearance, EFFECT_TRIES times.
+  async effect(s: Snapshot | null): Promise<void> {
+    if (!s) return;
+    const drawn = new Set(s.entities.filter((e) => e.role === "vfx" && e.visible).map((e) => e.vfx ?? e.kind ?? e.id));
+    for (const [id, fx] of Object.entries(this.effects)) {
+      if (fx.frame && !fx.after && !drawn.has(id)) {
+        fx.after = `vfx-${id}-after`;
+        await frame(this.page, this.project, `state-${fx.after}`, this.frames);
+      }
+    }
+    const framed = Object.values(this.effects).filter((fx) => fx.frame).length;
+    if (framed >= EFFECTS_MAX) return;
+    const fresh = [...drawn].find((id) => this.effects[id] && !this.effects[id].frame && this.effects[id].tries < EFFECT_TRIES);
+    if (!fresh) return;
+    const fx = this.effects[fresh];
+    fx.tries += 1;
+    const shot = await this.capture(`vfx-${fresh}`);
+    const mine = (shot?.entities ?? []).filter((e) => e.role === "vfx" && e.visible && (e.vfx ?? e.kind ?? e.id) === fresh);
+    if (!mine.length) return;
+    const x = Math.min(...mine.map((e) => e.x)), y = Math.min(...mine.map((e) => e.y));
+    fx.box = [x, y, Math.max(...mine.map((e) => e.x + e.w)) - x, Math.max(...mine.map((e) => e.y + e.h)) - y];
+    fx.frame = `vfx-${fresh}`;
+    fx.frame_ms = Date.now() - this.t0;
+    this.frames.push(`state-${fx.frame}`);
+  }
+
+  // The screen at the moment play is won, before any entrance settles: the frame
+  // `state-won-enter`, what the probe drew in it (the goal, the celebration's `vfx`), and
+  // which parts of the viewport the DOM paints over the game's canvas (measureCover) - so the
+  // production gate can tell a result card that covers the celebration while it plays.
+  async celebrate(): Promise<void> {
+    if (this.celebration) return;
+    const at = Date.now() - this.t0;
+    const goal = [...this.events].reverse().find((e) => e.kind === "goal");
+    const cover = await measureCover(this.page);
+    const shot = await this.capture("won-enter");
+    if (!shot) return;
+    this.frames.push("state-won-enter");
+    this.celebration = { frame: "state-won-enter", ms: at, ms_after_goal: goal ? at - goal.ms : null,
+                         viewport: shot.viewport, cover, entities: shot.entities };
   }
 
   // A frame `state-<name>.png` of the screen now, with the entities the probe reports in it.
@@ -279,7 +362,8 @@ class Watch {
 
   record(): Record<string, unknown> {
     return { errors: this.errors, asset_requests: this.requests, runtime_assets: this.runtimeAssets,
-             assets_loaded: [...this.loaded].sort(), ui: this.ui, audio: this.audio };
+             assets_loaded: [...this.loaded].sort(), ui: this.ui, audio: this.audio,
+             events: this.events, effects: this.effects, celebration: this.celebration };
   }
 }
 
@@ -457,6 +541,51 @@ async function measureUI(page: Page): Promise<unknown> {
     }
     return { viewport: [innerWidth, innerHeight], elements, texts, overlaps };
   });
+}
+
+// Which parts of the viewport the page paints over the game, on a grid of cells: for each
+// cell centre, the elements stacked there from the top down to the game's canvas, and whether
+// any of them paints - an opaque-enough background, a background image, an image, an svg,
+// video or another canvas - at an opacity a player sees. "1" covered, "0" the game shows
+// through. A transparent container (a full-screen overlay holding a card) covers nothing by
+// itself; the card it holds does.
+async function measureCover(page: Page, cols = 32, rows = 32): Promise<unknown> {
+  return page.evaluate(({ cols, rows }) => {
+    const alphaOf = (value: string): number => {
+      const m = value.match(/rgba?\(([^)]+)\)/);
+      if (!m) return 0;
+      const p = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+      return p.length > 3 ? p[3] : 1;
+    };
+    const opacity = (el: Element): number => {
+      let o = 1;
+      for (let n: Element | null = el; n; n = n.parentElement) o *= Number(getComputedStyle(n).opacity);
+      return o;
+    };
+    const paints = (el: Element): boolean => {
+      const tag = el.tagName.toLowerCase();
+      if (tag === "html" || tag === "body") return false;
+      const s = getComputedStyle(el);
+      if (s.visibility === "hidden" || opacity(el) < 0.3) return false;
+      if (["img", "svg", "video", "canvas"].includes(tag)) return true;
+      if (s.backgroundImage && s.backgroundImage !== "none") return true;
+      return alphaOf(s.backgroundColor) >= 0.5;
+    };
+    const game = document.querySelector("canvas");
+    let cells = "";
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = (c + 0.5) * innerWidth / cols, y = (r + 0.5) * innerHeight / rows;
+        let covered = false;
+        for (const el of document.elementsFromPoint(x, y)) {
+          if (el === game) break;
+          if (paints(el)) { covered = true; break; }
+        }
+        cells += covered ? "1" : "0";
+      }
+    }
+    return { cols, rows, viewport: [innerWidth, innerHeight], cells };
+  }, { cols, rows });
 }
 
 // One input, as a player's device makes it: a tap, click or key press, or - with hold_ms -
@@ -714,7 +843,9 @@ test("win: the oracle plays well", async ({ page }, info) => {
       const s = watch.saw(await snap(page));
       if (!s) break;
       series.push({ ms: Date.now() - t0, value: s.metrics?.[CFG.goal_metric] ?? null, state: s.state });
+      if (s.state === "won") await watch.celebrate();
       await watch.glimpse(s);
+      await watch.effect(s);
       if (s.state === "won" || s.state === "lost") {
         reached = s.state;
         break;
@@ -804,6 +935,7 @@ test("lose and restart: the anti-oracle plays badly, then retries", async ({ pag
         series.push({ ms: Date.now() - t0, state: s.state, metrics: s.metrics ?? {},
                       content: s.content ?? null });
       }
+      await watch.effect(s);
       if (s.state === "lost" || s.state === "won") {
         reached = s.state;
         endedAtMs = Date.now() - t0;

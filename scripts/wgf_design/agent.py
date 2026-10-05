@@ -225,7 +225,16 @@ PROMPT_ART = (
     " button's fill and text as palette tokens that contrast, its radius, and the surface"
     " token, within the request's `production_art` bars. Set visual_identity.primitive_style"
     " (with a reason) only when the art direction itself is geometric - a character is never"
-    " a cube for convenience. The craft guide is the request's `craft`."
+    " a cube for convenience. visual_identity.style_family names the look's art style family"
+    " (neon-emissive, lit-stylized or toon; core/reference/art-style-families.yaml): its"
+    " material language and how much may glow. build_spec.vfx states the effect each"
+    " interaction fires (core/reference/vfx.yaml): one per kind the game has - pickup, impact,"
+    " checkpoint, goal, fail, trail - what it draws in this look, its duration_ms and the"
+    " largest share of the screen it may cover (max_screen_share, within the kind's"
+    " ceiling); the goal's celebration stays in view for its duration, so the result screen"
+    " waits for it or sits clear of it. At a release quality tier every kind the game has"
+    " needs one (rule vfx_covers_interactions)."
+    " The craft guide is the request's `craft`."
     " The request's `quality_bar` lists frames of finished games: open them - the level of"
     " finish (a composed frame, one visual language, designed typography and UI) is the bar"
     " your art direction must make reachable; their style is not this game's."
@@ -377,6 +386,8 @@ def _kits(locales):
         look = {key: copy.deepcopy(kit.get(key)) for key in (
             "concept", "palette", "typography", "shape_language", "motion", "texture",
             "avoid", "ui")}
+        if identity.style_family(kit_id):
+            look["style_family"] = identity.style_family(kit_id)
         look, _swapped = identity.cover(look, list(locales or []), coverage)
         out[kit_id] = look
     return out

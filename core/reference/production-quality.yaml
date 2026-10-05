@@ -9,7 +9,7 @@
 # through the play probe's measured output level (`audio`) and the files the page fetched.
 # See docs/production-architecture.md and docs/production-quality-module.md.
 
-version: 1.2.0
+version: 1.3.0  # 1.3.0: vfx (the design's interaction effects, measured in play)
 
 entities:
   # Roles a player must recognise (play probe `entities[].role`). In production each is
@@ -93,3 +93,39 @@ audio:
   # delivered (missing, a placeholder) routes `assets`.
   min_level: 0.005
   max_muted_level: 0.001
+
+vfx:
+  # The design's visual effects (game-design build_spec.vfx, core/reference/vfx.yaml), measured
+  # in play. Each check routes `develop`: the game's code fires, places and times an effect.
+  # The bot records the probe's interaction `events` and the entities of role `vfx` it draws
+  # (naming their effect), frames each effect while it is drawn (`state-vfx-<id>`) and the
+  # same place once it has ended (`state-vfx-<id>-after`), and measures the screen the moment
+  # play is won (`state-won-enter`, with which parts the page paints over the game).
+  #
+  # vfx.fires: after an event of its kind, the effect is drawn within its duration_ms plus
+  # `window_ms`; in its frame at least `min_changed_share` of the pixels in its box differ by
+  # `min_pixel_delta` from the after-frame (from the frame's dominant colour when no
+  # after-frame was caught) - the probe's word that it drew something is not enough. A trail
+  # has no event: it fires when it is drawn. An effect whose interaction never happened in
+  # play is reported, not judged. A probe without `events` and `vfx` entities fails: the
+  # effects cannot be seen from outside. The pixel bars are `visible`'s: an effect in its
+  # frame is held to what any drawn entity is.
+  window_ms: 1000
+  min_changed_share: 0.1
+  min_pixel_delta: 24
+  # vfx.screen_share: an effect's bounds never cover more of the viewport than its
+  # max_screen_share, give or take `share_tolerance` (bounds are rounded by the probe).
+  share_tolerance: 0.1
+  # The design tiers whose effects are judged (build_spec.vfx effects[].tier).
+  judged_tiers: [mvp, post-mvp]
+  celebration:
+    # vfx.celebration: at the moment play is won, at most this share of the region the probe
+    # draws the goal and the goal effect in may be painted over - by a DOM element above the
+    # game's canvas or canvas-drawn UI - while the goal effect's duration_ms (else
+    # `default_duration_ms`) lasts. Calibrated 2026-10-05 (docs/production-quality-module.md,
+    # "VFX calibration"): the 3D validation game's result card covered 24 % of the desktop
+    # frame and 65 % of the mobile one, centred where the goal is, from the first frame of
+    # the win - the goal and the celebration were hidden; the 2D game's card took the lower
+    # half of its play field (13 % of the desktop frame) and left the upper half in view.
+    max_covered_share: 0.25
+    default_duration_ms: 1200

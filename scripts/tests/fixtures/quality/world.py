@@ -704,7 +704,8 @@ class FixturePlayabilityStep(PlayabilityStep):
         with open(target, "w", encoding="utf-8") as handle:
             json.dump(self.world.content_data(build), handle)
 
-    def _play(self, repo, out, logs, settings, context, bot_total_s=0, survey_s=0):
+    def _play(self, repo, out, logs, settings, context, bot_total_s=0, survey_s=0,
+              extend_s=0):
         build = self.world.build_of(self._commit)
         items = self.world.manifest_items()
         for project in VIEWPORTS:

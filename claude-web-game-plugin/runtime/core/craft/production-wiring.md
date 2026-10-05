@@ -106,6 +106,24 @@ does not draw is still caught. `show` stages a state through the game's own syst
 same loading, rendering and assets a player meets there - never a test scene drawn for the
 bot.
 
+### A mode beside the main play
+
+A design that includes an endless mode beside its authored units promises its time ramp in
+that mode: the playability bot reads `depth.ramp` on a run of it, never on an authored level.
+Declare how to enter it, only with `?wgf-probe=1`:
+
+```ts
+play.mode = {
+  modes: () => ["endless"],
+  // Start a fresh run of the mode through the same code path as its menu entry; true once
+  // snapshot() reports `playing` in it. A retry after a loss there stays in the mode.
+  enter: async (mode) => mode === "endless" && (await game.startEndless(), true),
+};
+```
+
+Without it the ramp is unmeasured, which fails a release-tier build. The oracle keeps naming
+the input that succeeds now in that mode, so the bot can play it for the minute it reads.
+
 ## 3. The regression guard: an end-to-end test that fails without the art
 
 Ship one Playwright test in the game repository that proves the art is wired, and keep it.

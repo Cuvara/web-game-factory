@@ -87,7 +87,9 @@ workflow:
   # build, so the last specialist fix is verified by the gate that raised it though no
   # triage runs after it, and is BLOCKED while a blocking finding a gate raised is open;
   # release refuses while any is (it reads the triage-report and decision-record too).
-  version: 14
+  # 15: greybox-playability says it plays the greybox (`with: {phase: greybox}`): the MVP
+  # build, so a time ramp promised by a post-mvp mode is not owed by it.
+  version: 15
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -240,11 +242,15 @@ workflow:
       on:
         design-gap: design
 
+    # `phase: greybox`: the build carries the MVP tier only, whatever the run's quality tier
+    # builds later - a mode the design tiers post-mvp is not played or owed here.
     - id: greybox-playability
       type: playability
       stage: title:prototype
       inputs: [prototype-report, game-design, scaffold-record]
       outputs: [playability-report]
+      with:
+        phase: greybox
       max_visits: 3
       on:
         fail: greybox

@@ -83,7 +83,15 @@ class Release:
             with open(os.path.join(self.release_dir, "listing", name), "wb") as handle:
                 handle.write(PNG)
         # The shipped campaign every listing value and medium comes from (wgf_publish.campaign).
-        campaign_fixture.write_campaign(self.release_dir, pid)
+        extra = []
+        if pid == "crazygames":
+            # CrazyGames' three documented covers, one rendition each (its image ids).
+            for cid, (w, h) in (("cover-16x9", (96, 54)), ("cover-2x3", (60, 90)),
+                                ("cover-1x1", (64, 64))):
+                extra.append((dict(id=cid, rel=f"platforms/{pid}/{cid}.png", format="png",
+                                   width=w, height=h, kind="thumbnail", source="thumbnail",
+                                   requirement=cid), campaign_fixture.png_bytes(w, h, seed=3)))
+        campaign_fixture.write_campaign(self.release_dir, pid, rendition_extra=extra)
         self.metadata = {"title": TITLE, "descriptions": {"en": "A fixture."},
                          "icon": "listing/icon.png", "cover": "listing/cover.png",
                          "screenshots": ["listing/shot-1.png", "listing/shot-2.png"],

@@ -197,7 +197,12 @@ class Campaign:
         return [(f, origin) for f in chosen]
 
     def all_media_records(self, name):
-        """([record], origin) of listing.media.<name> in every locale."""
+        """([record], origin) of listing.media.<name> in every locale. A name that is one of
+        the platform's own image requirements (its store_listing block's id, e.g. CrazyGames'
+        `cover-2x3`) names exactly the rendition files rendered for it."""
+        exact = [f for f in self.rendition_files() if f.get("requirement") == name]
+        if exact:
+            return exact, "rendition"
         kinds, orientation = _media_name(name)
         for origin, files in (("rendition", self.rendition_files()),
                               ("canonical", self.canonical_files())):

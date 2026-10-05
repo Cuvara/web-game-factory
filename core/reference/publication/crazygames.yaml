@@ -15,7 +15,7 @@
 # (factory.publish.platforms.crazygames.terms_confirmed) and bumps this file.
 
 id: crazygames
-version: 2.2.0  # 2.2.0: the CrazyGames adapter's flow - the submission form, both upload
+version: 2.3.0  # 2.3.0: the three documented covers as three upload intents. 2.2.0: the CrazyGames adapter's flow - the submission form, both upload
                 #        shapes, Basic/Full Launch words, all as hypotheses
 status: unverified
 docs: https://docs.crazygames.com/
@@ -140,13 +140,33 @@ submission:
       names: [Controls, Instructions]
       expect: {value_equals: listing.text.en.how_to_play}
       basis: hypothesis
-    - id: media.cover
+    # Three covers are required (landscape 16:9, portrait 2:3, square 1:1:
+    # https://docs.crazygames.com/requirements/game-covers/); each is its own rendition
+    # (platform store_listing image ids). How the console takes them - three inputs, one
+    # multi-file input - is unknown until a person observes it: these labels are hypotheses.
+    - id: media.cover_landscape
       phase: upload_media
       class: reversible
       action: upload
-      value: listing.media.cover
-      target: [{label: "Cover"}]
-      names: [Cover]
+      value: listing.media.cover-16x9
+      target: [{label: "Landscape cover"}, {label: "Cover"}]
+      names: [Landscape cover, Cover]
+      basis: hypothesis
+    - id: media.cover_portrait
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.cover-2x3
+      target: [{label: "Portrait cover"}]
+      names: [Portrait cover]
+      basis: hypothesis
+    - id: media.cover_square
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.cover-1x1
+      target: [{label: "Square cover"}]
+      names: [Square cover]
       basis: hypothesis
     - id: draft.save
       phase: save_draft

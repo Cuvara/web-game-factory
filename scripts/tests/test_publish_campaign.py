@@ -120,6 +120,21 @@ class Mapping(CampaignCase):
         shipped = self.ship(icon=False, canonical_extra={"branding": {"method": "none", "items": []}})
         self.assertEqual(campaign.resolve(shipped, "listing.media.icon"), (None, None))
 
+    def test_a_platform_image_requirement_names_its_own_rendition(self):
+        # CrazyGames asks for three covers (16:9, 2:3, 1:1): each intent names one by the
+        # platform block's image id, never the kind (which would hand all three to one input).
+        from campaign_fixture import png_bytes
+        extra = [(dict(id="cover-2x3", rel="platforms/generic-web/cover-2x3.png", format="png",
+                       width=80, height=120, kind="thumbnail", source="thumbnail",
+                       requirement="cover-2x3"), png_bytes(80, 120, seed=7))]
+        shipped = self.ship(rendition_extra=extra)
+        rendition = os.path.join(self.release_dir, "listing", "platforms", "generic-web")
+        self.assertEqual(campaign.resolve(shipped, "listing.media.cover-2x3")[1],
+                         [os.path.join(rendition, "cover-2x3.png")])
+        self.assertEqual(campaign.resolve(shipped, "listing.media.cover-1")[1],
+                         [os.path.join(rendition, "cover.png")])
+        self.assertEqual(len(campaign.resolve(shipped, "listing.media.cover")[1]), 2)
+
     def test_a_locales_own_media_else_the_shared(self):
         own = png_bytes(64, 36, seed=90)
         shipped = self.ship(rendition_extra=[({"id": "shot-ru", "kind": "screenshot",

@@ -24,7 +24,7 @@ What each flavor adds (its own profile's flow, and its own behaviour):
                       new games waiting; a Published game shows "Create draft" (the live
                       version stays); a Verified game shows "Publish" - counted, a person's
     crazygames        "Submit a game" -> the form (Game name, Create); Game zip (or Game files
-                      in mode `files-upload`), Description, Controls, Cover, Save draft, a QA
+                      in mode `files-upload`), Description, Controls, the three covers, Save draft, a QA
                       tool link; "Submit for QA" -> In review; "Request Full Launch" -
                       counted, never the automation's
     y8                no Studio (mode `no-studio`): the console shows "Create your Studio" and
@@ -263,7 +263,9 @@ class CrazyGames(Flavor):
         inner = (build + text_input("Description", "description", listing.get("description", ""),
                                     area=True)
                  + text_input("Controls", "controls", listing.get("controls", ""), area=True)
-                 + file_input("Cover", "cover", "image/png,image/jpeg"))
+                 + file_input("Landscape cover", "cover", "image/png,image/jpeg")
+                 + file_input("Portrait cover", "cover_portrait", "image/png,image/jpeg")
+                 + file_input("Square cover", "cover_square", "image/png,image/jpeg"))
         return (self.form(game, inner, "Save draft")
                 + f"<a href='/console/game/{esc(game['id'])}/qa'>QA tool</a>"
                 + self.button(game, "request", "Submit for QA")

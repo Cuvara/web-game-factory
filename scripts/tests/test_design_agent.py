@@ -7,6 +7,7 @@ through wgflib.procs), so the tests are deterministic and offline.
     python -m unittest discover scripts/tests
 """
 
+import copy
 import hashlib
 import json
 import os
@@ -126,6 +127,35 @@ elif mode == "gaps":
                    "seeded_keys": sorted(seeded)}, handle)
     draft = seeded
     draft["build_spec"]["content"]["units"][0]["parameters"]["answered"] = 1
+elif mode in ("gaps-invalid", "gaps-repairs", "gaps-marked", "gaps-half-marked"):
+    # A gap visit: what each round was given, then its answer.
+    with open(draft_path, encoding="utf-8") as handle:
+        draft = json.load(handle)
+    with open(request["previous_design"], encoding="utf-8") as handle:
+        previous = json.load(handle)
+    stem = os.path.basename(draft_path)[:-len(".draft.json")]
+    with open(os.path.join(os.path.dirname(draft_path), f"seen-{stem}.json"), "w") as handle:
+        json.dump({"first_key": list(request)[0], "repair": request.get("repair"),
+                   "instructions": request.get("instructions"), "draft": draft_path,
+                   "seeded": draft, "previous": previous}, handle)
+    if mode == "gaps-marked":
+        # Every gap is obsolete: nothing to edit, each marked with its reason.
+        draft["gaps_answered"] = [{"id": g["id"], "reason": "obsolete since a Factory fix"}
+                                  for g in request["gaps"]]
+    elif mode == "gaps-half-marked":
+        draft["gaps_answered"] = [{"id": "gap-1", "reason": "answered at its field already"},
+                                  {"id": "gap-2", "reason": " "}]
+    elif "repair" not in request:
+        # Answers the gap, and breaks a content value the checks refuse.
+        draft["build_spec"]["content"]["units"][0]["parameters"]["answered"] = 1
+        draft["build_spec"]["controls"]["primary_input"] = "tap"
+    elif mode == "gaps-repairs":
+        # Shown the problems first, fixes exactly them and keeps the answer.
+        draft["build_spec"]["controls"]["primary_input"] = \
+            previous["build_spec"]["controls"]["primary_input"]
+    else:
+        # gaps-invalid on a repair round: sees every gap answered and edits nothing.
+        sys.exit(0)
 elif mode == "edit-in-place":
     # Edits the seeded file rather than reproducing the request's starting draft.
     with open(draft_path, encoding="utf-8") as handle:
@@ -378,7 +408,11 @@ class TheModuleStillJudges(AgentCase):
             draft["build_spec"]["content"]["units"][0]["parameters"]["answered"], 1)
         request = self.request_of("1-1-gaps")
         self.assertEqual(request["gaps"], seen["gaps"])
-        self.assertEqual(request["previous_design"], request["draft"])
+        # The design the gaps were found in is a file of its own, not the draft the agent edits:
+        # a repair round's draft is not that design.
+        self.assertNotEqual(request["previous_design"], request["draft"])
+        with open(request["previous_design"], encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle)["fantasy"], previous["fantasy"])
         # A gap repair keeps the identity it has: no kits are offered, and the strategy is a
         # file of its own.
         self.assertNotIn("identity_kits", request)
@@ -780,6 +814,141 @@ class ARevisionStartsFromTheRunsDesign(AgentCase):
         request = self.request_of("1-1-gaps")
         self.assertNotIn("revision", request)
         self.assertEqual([g["field"] for g in request["gaps"]], [gaps[0]["field"]])
+
+
+class AGapVisitIsJudgedAgainstItsBase(AgentCase):
+    """Found live (2026-10-05, a 3D run): design visit 2 answered its 15 gaps from greybox
+    but failed a content rule after its repair rounds. Resumed, it restarted from that visit's
+    last failed draft - which already held the answers - with the gaps first and the problems
+    last; the agent reported every gap answered, edited nothing, and the step failed as "left
+    the draft unchanged, so none of the 15 design gaps is answered". The draft that answered
+    the gaps could not pass, and the round that could repair it was judged on "changed".
+
+    A gap visit is judged against the design the gaps were found in (the game-design the build
+    was made against), a repair round of it leads with the validation problems, and a gap made
+    obsolete may be marked answered with a reason."""
+
+    GAPS = [{"field": "build_spec.content.units[seg-opening].parameters",
+             "question": "What row gap does the opening segment use?", "severity": "blocking"},
+            {"field": "build_spec.tutorial", "question": "Which hint shows first?",
+             "severity": "minor"}]
+
+    def setUp(self):
+        super().setUp()
+        self.run_dir = os.path.join(self.scratch, "run")
+        self.strategy = design_tests.load_strategy()
+        first = design_tests.run_step(self.strategy)
+        self.assertEqual(first.outcome, StepOutcome.SUCCESS, first.error)
+        self.accepted = first.artifacts[0].content
+        location = "artifacts/game-design/v1.json"
+        path = os.path.join(self.run_dir, *location.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(self.accepted, handle)
+        self.ref = ArtifactRef(id="game-design", type="game-design", version=1,
+                               location=location, checksum="-",
+                               content_hash=self.accepted["provenance"]["content_hash"])
+
+    def visit(self, mode, gaps=None):
+        """The design step in visit 2, re-entered through `design-gap` with GAPS."""
+        report = {"design_gaps": copy.deepcopy(gaps or self.GAPS),
+                  "provenance": {"artifact_id": "wgf:prototype-report:mock-title:20261005-01",
+                                 "content_hash": "sha256:" + "cd" * 32}}
+        context = design_tests.FakeContext(self.config(mode), run_dir=self.run_dir,
+                                           previous_outputs=[self.ref], visit=2)
+        step = design_tests.FixedClockStep(design_tests.FakeDefinition())
+        return step.execute(design_tests.FakeInputs(self.strategy,
+                                                    extra={"prototype-report": report}),
+                            context)
+
+    def seen(self, stem):
+        with open(os.path.join(self.run_dir, "design", f"seen-{stem}.json"),
+                  encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def base(self):
+        return {k: v for k, v in self.accepted.items() if k not in ("provenance", "consistency")}
+
+    def test_a_draft_that_answers_the_gaps_but_is_invalid_is_repaired_problems_first(self):
+        result = self.visit("gaps-repairs")
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        repair = self.seen("2-1-gaps-repair1")
+        # A validation repair: the problems are the request's first key and the instruction's
+        # first sentence, and the draft named is the one holding this visit's answers.
+        self.assertEqual(repair["first_key"], "repair")
+        self.assertTrue(any("primary_input" in p for p in repair["repair"]["problems"]))
+        self.assertTrue(repair["instructions"].startswith("This round repairs the draft"))
+        self.assertEqual(repair["repair"]["previous_draft"], repair["draft"])
+        self.assertEqual(
+            repair["seeded"]["build_spec"]["content"]["units"][0]["parameters"]["answered"], 1)
+        # Its base is still the accepted design, not the failed draft.
+        self.assertEqual(repair["previous"], self.base())
+        design = result.artifacts[0].content
+        self.assertEqual(design["build_spec"]["content"]["units"][0]["parameters"]["answered"],
+                         1)
+        self.assertEqual(design["build_spec"]["controls"]["primary_input"],
+                         self.accepted["build_spec"]["controls"]["primary_input"])
+
+    def test_a_repair_round_left_as_seeded_goes_back_to_the_checks_not_unchanged(self):
+        from wgf_design.step import MAX_REPAIR_ROUNDS
+        result = self.visit("gaps-invalid")
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertNotIn("unchanged", result.error)
+        self.assertIn("not a valid game-design", result.error)
+        self.assertIn("primary_input", result.error)
+        rounds = [n for n in os.listdir(os.path.join(self.run_dir, "design"))
+                  if n.endswith(".request.json")]
+        self.assertEqual(len(rounds), MAX_REPAIR_ROUNDS + 1, rounds)
+
+    def test_a_resumed_gap_visit_is_judged_against_the_accepted_design(self):
+        failed = self.visit("gaps-invalid")
+        self.assertEqual(failed.outcome, StepOutcome.FAILED)
+        self.assertTrue(os.path.isfile(os.path.join(self.run_dir, "design",
+                                                    "2-last-draft.json")))
+        # The live case: resumed on the failed draft, the agent edits nothing. That draft
+        # answers the gaps (it differs from the accepted design), so it is not "unchanged":
+        # the step's checks name its problems again.
+        stalled = self.visit("nothing")
+        self.assertEqual(stalled.outcome, StepOutcome.FAILED)
+        self.assertNotIn("unchanged", stalled.error)
+        self.assertIn("primary_input", stalled.error)
+        # Resumed with an agent that repairs: the base it is given is the accepted design,
+        # and the problems lead.
+        result = self.visit("gaps-repairs")
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        resumed = self.seen("2-1-gaps-repair0")
+        self.assertEqual(resumed["first_key"], "repair")
+        self.assertEqual(resumed["previous"], self.base())
+        self.assertNotIn("answered",
+                         resumed["previous"]["build_spec"]["content"]["units"][0]["parameters"])
+        self.assertEqual(resumed["seeded"]["build_spec"]["controls"]["primary_input"], "tap")
+        self.assertEqual(
+            result.artifacts[0].content["build_spec"]["content"]["units"][0]["parameters"]
+            ["answered"], 1)
+
+    def test_a_draft_unchanged_from_the_accepted_design_still_fails(self):
+        result = self.visit("nothing")
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("unchanged, so none of the 2 design gap(s) it was given is answered",
+                      result.error)
+
+    def test_obsolete_gaps_marked_answered_with_a_reason_stand_when_the_design_passes(self):
+        result = self.visit("gaps-marked")
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertNotIn("gaps_answered", result.artifacts[0].content)
+        with open(os.path.join(self.run_dir, "design", "2-gaps-answered.json"),
+                  encoding="utf-8") as handle:
+            kept = json.load(handle)
+        self.assertEqual(kept["answered"], {"gap-1": "obsolete since a Factory fix",
+                                            "gap-2": "obsolete since a Factory fix"})
+
+    def test_a_gap_neither_answered_nor_marked_with_a_reason_fails_by_name(self):
+        result = self.visit("gaps-half-marked")
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("1 of the 2 design gap(s) it was given are neither answered nor marked",
+                      result.error)
+        self.assertIn("gap-2 at build_spec.tutorial", result.error)
+        self.assertNotIn("gap-1 at", result.error)
 
 
 class TheStrategyDelta(unittest.TestCase):

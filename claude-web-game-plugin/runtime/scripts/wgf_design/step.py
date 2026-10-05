@@ -46,7 +46,10 @@ since that design (revision.py). The design it produces records the one it revis
 `provenance.supersedes` and the artifact metadata's `revises` (that design's version). This is
 not the resume of a visit: a resumed execution of the same visit continues the repair of its
 own last draft (LAST_DRAFT), whose base is the same revision. A design-gap return keeps its own
-base (the design the gaps were found in) and is not a revision.
+base (the design the gaps were found in) and is not a revision. A resumed gap visit continues
+the repair of its last rejected draft too: that draft already answers the gaps, so the agent is
+shown its validation problems first, and "unchanged" is judged against the base - the game-design
+the build was made against - never against the resumed draft (agent.py).
 """
 
 import copy

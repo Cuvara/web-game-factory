@@ -18,7 +18,8 @@ JSON: strategy, resolved platforms, title id, and the starting draft - the built
 archetype's draft as a schema-shaped starting point for a first design, or, when the run
 already holds a game-design, that design to revise, with the strategy's change since it in
 `revision`: revision.py; on a design-gap repair, the gaps first, then the instructions, with the
-previous design named as the draft file and the strategy as a file of its own), {draft}
+previous design - the one the gaps were found in - and the strategy as files of their own,
+named by path; on a repair round of a gap visit, the validation problems before the gaps), {draft}
 (where to write the draft JSON), {prompt} (a
 one-paragraph instruction), and {request_rule} / {draft_rule}: the same paths as a host
 permission rule names them, `//` and the POSIX form (`//c/Users/...` on Windows;
@@ -43,6 +44,15 @@ and one still invalid after the last fails the step, not retryably. The request 
 schema (`schema`) so the agent can keep to it in the first place. A host that fails, times out or goes silent
 raises `AgentRunFailed`, which the engine retries like any other transient failure. Not
 configured is an `AuthorError`.
+
+A draft left unchanged is an `AuthorError` - except on a design-gap visit, which is judged
+against the design the gaps were found in, never against the draft a round (or a resumed
+execution) was seeded with: a repair round's draft already answers the gaps, so one returned
+as it was goes back to the step's checks. A gap visit fails as unchanged only when its draft
+equals that design and some gap is neither answered nor marked answered: the agent may name a
+gap the design already answers, or one made obsolete since it was raised, in the draft's
+top-level `gaps_answered` (id and reason); the list is removed before the step judges the
+draft and kept, per visit, in `<visit>-gaps-answered.json`.
 """
 
 import copy
@@ -169,12 +179,30 @@ PROMPT_GAPS = (
     "This visit repairs {count} design gap(s) the build found in this game's design. They are"
     " listed, each with its id and the field it names, in {gaps} (also the request's first"
     " key, `gaps`): questions the developer could not answer from the design, or bars it fell"
-    " short of (observed vs bar). {draft} holds the design they were found in (the request's"
-    " `previous_design` names that file). Answer each gap at the field it names - a number, a"
-    " rule, a unit, a state - and change nothing else: this is the same game, specified"
-    " further. The rest of the request at {request} is reference (the strategy is in its own"
-    " file, named by the request's `strategy`); it is large, so search it rather than page"
-    " through it. What follows is how the design is judged."
+    " short of (observed vs bar). {previous} holds the design they were found in (the"
+    " request's `previous_design`); {draft} is the file you edit. Answer each gap at the field"
+    " it names - a number, a rule, a unit, a state - and change nothing else: this is the same"
+    " game, specified further. A gap the design as it stands already answers, or one made"
+    " obsolete since it was raised, is not edited: name it in the draft's top-level"
+    " `gaps_answered` list as {{\"id\": ..., \"reason\": ...}}, the reason saying where the"
+    " design answers it or why it no longer applies; the module removes the list before it"
+    " judges the design. The rest of the request at {request} is reference (the strategy is"
+    " in its own file, named by the request's `strategy`); it is large, so search it rather"
+    " than page through it. What follows is how the design is judged."
+)
+# Put FIRST instead when a gap visit's draft answered the gaps but the module found it
+# invalid: that round is a validation repair. Found live (2026-10-05, a 3D run): with the gaps
+# first and the problems last, an agent resumed on such a draft saw every gap answered, edited
+# nothing, and the content-rule problems were never fixed.
+PROMPT_GAPS_REPAIR = (
+    "This round repairs the draft at {draft}: it is this visit's answer to {count} design"
+    " gap(s) (listed in {gaps}), and the module found it invalid for the reasons in the"
+    " request's first key, `repair.problems`. Fix each of those problems first, at the field"
+    " it names, and keep every gap's answer: a draft that answers the gaps but is invalid is"
+    " not done, and left as it is it fails the same checks again. {previous} holds the design"
+    " the gaps were found in (the request's `previous_design`). The rest of the request at"
+    " {request} is reference; search it rather than page through it. What follows is how the"
+    " design is judged."
 )
 
 # Appended always: the finished design is a game-design artifact, validated against its schema.
@@ -446,17 +474,25 @@ class AgentAuthor(DesignAuthor):
         request = {}
         gaps_path = os.path.join(directory, f"{stem}.gaps.json")
         strategy_path = os.path.join(directory, f"{stem}.strategy.json")
+        previous_path = os.path.join(directory, f"{stem}.previous.json")
         if gaps:
             # What this visit must act on comes first and small; the bulk is reference. The
-            # draft file holds the previous design, so it is named, not copied in twice, and
-            # the strategy is a file of its own.
+            # design the gaps were found in (the base every round is judged against) and the
+            # strategy are files of their own, named, not copied in. On a repair round the
+            # problems come first: the draft file already holds this visit's gap answers.
+            if repair:
+                request["repair"] = {"problems": repair.get("problems") or [],
+                                     "previous_draft": draft_path}
             request.update({
                 "gaps": gaps,
                 "gaps_file": gaps_path,
-                "instructions": PROMPT_GAPS.format(count=len(gaps), gaps=gaps_path,
-                                                   draft=draft_path, request=request_path),
+                "instructions": (PROMPT_GAPS_REPAIR if repair else PROMPT_GAPS).format(
+                    count=len(gaps), gaps=gaps_path, draft=draft_path, previous=previous_path,
+                    request=request_path),
                 "draft": draft_path,
-                "previous_design": draft_path})
+                "previous_design": previous_path})
+            with open(previous_path, "w", encoding="utf-8", newline="\n") as handle:
+                json.dump(starting, handle, indent=2, ensure_ascii=False, default=str)
             with open(strategy_path, "w", encoding="utf-8", newline="\n") as handle:
                 json.dump(brief.get("strategy"), handle, indent=2, ensure_ascii=False,
                           default=str)
@@ -531,7 +567,7 @@ class AgentAuthor(DesignAuthor):
             request["identity_kits"] = _kits((starting.get("scope") or {}).get("locales"))
         if idea:
             request["brief"] = idea
-        if repair:
+        if repair and not gaps:
             request["repair"] = {"problems": repair.get("problems") or [],
                                  "previous_draft": repair.get("previous_draft")}
         constraints = ((brief.get("strategy") or {}).get("research") or {}).get(
@@ -603,16 +639,26 @@ class AgentAuthor(DesignAuthor):
             # A revision of a design whose strategy did not change may stand as it was.
             unchanged_ok = (bool(revision) and not repair and
                             (revision.get("strategy_delta") or {}).get("unchanged") is True)
-            if text == seed and not unchanged_ok:
-                if gaps:
-                    raise AuthorError(
-                        f"the design agent left the draft at {draft_path} unchanged, so none "
-                        f"of the {len(gaps)} design gap(s) it was given is answered: "
-                        + "; ".join(f"{g['id']} at {g.get('field')}" for g in gaps[:12])
-                        + (f"; and {len(gaps) - 12} more" if len(gaps) > 12 else "")
-                        + f" (gaps: {gaps_path}; log: {log_path})")
+            if text == seed and not unchanged_ok and not gaps:
                 raise AuthorError(f"the design agent left the draft at {draft_path} "
                                   f"unchanged")
+        if gaps and isinstance(draft, dict):
+            # A gap visit is judged against the design the gaps were found in, never against
+            # the draft a round was seeded with: a repair round's (or a resumed visit's) draft
+            # already answers the gaps, and one left as it is goes back to the step's checks,
+            # which name its problems again.
+            marked = self._gaps_answered(draft, gaps, directory, brief.get("visit", 1))
+            unanswered = [g for g in gaps if g["id"] not in marked]
+            if unanswered and draft == json.loads(json.dumps(starting, default=str)):
+                raise AuthorError(
+                    f"the design agent left the draft at {draft_path} unchanged, so "
+                    + (f"none of the {len(gaps)} design gap(s) it was given is answered: "
+                       if len(unanswered) == len(gaps) else
+                       f"{len(unanswered)} of the {len(gaps)} design gap(s) it was given are "
+                       f"neither answered nor marked answered with a reason: ")
+                    + "; ".join(f"{g['id']} at {g.get('field')}" for g in unanswered[:12])
+                    + (f"; and {len(unanswered) - 12} more" if len(unanswered) > 12 else "")
+                    + f" (gaps: {gaps_path}; log: {log_path})")
         problems = check_shape(draft)
         if problems:
             hint = (" - in stdout mode this is usually a reply cut by the host's output limit; "
@@ -620,6 +666,32 @@ class AgentAuthor(DesignAuthor):
             raise AuthorError("the design draft does not have the required shape: "
                               + "; ".join(problems[:8]) + hint)
         return draft
+
+    @staticmethod
+    def _gaps_answered(draft, gaps, directory, visit):
+        """The gap ids the agent marked answered without an edit - the draft's top-level
+        `gaps_answered`, each with an id and a reason - removed from the draft and kept, with
+        the earlier rounds' marks of this visit, in `<visit>-gaps-answered.json`: the evidence,
+        and what a later round's draft is judged with. A mark without a reason, or for a gap
+        this visit was not given, does not count. The step's checks still judge the draft."""
+        ids = {g["id"] for g in gaps}
+        path = os.path.join(directory, f"{visit}-gaps-answered.json")
+        kept = {}
+        try:
+            with open(path, encoding="utf-8") as handle:
+                loaded = json.load(handle)
+            kept = {k: v for k, v in (loaded.get("answered") or {}).items() if k in ids}
+        except (OSError, ValueError, AttributeError):
+            pass
+        marks = draft.pop("gaps_answered", None)
+        for mark in marks if isinstance(marks, list) else []:
+            if (isinstance(mark, dict) and mark.get("id") in ids
+                    and isinstance(mark.get("reason"), str) and mark["reason"].strip()):
+                kept[mark["id"]] = mark["reason"].strip()
+        if marks is not None:
+            with open(path, "w", encoding="utf-8", newline="\n") as handle:
+                json.dump({"answered": kept}, handle, indent=2, ensure_ascii=False)
+        return kept
 
 
 register_author(AgentAuthor.name, AgentAuthor)

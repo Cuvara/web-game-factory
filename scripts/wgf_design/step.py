@@ -498,7 +498,15 @@ class DesignStep(WorkflowStep):
         repository ships content data that cannot be counted."""
         previous = self._previous_design(context) or {}
         if isinstance(previous.get("existing_content"), dict):
-            return previous["existing_content"]
+            kept = previous["existing_content"]
+            # Recorded unmeasured (the checkout ships no content data file): the shipped
+            # build has been played since, and its probe floor is the run's - never the
+            # content data file the run's own build may have gained.
+            probed = existing.run_probe_floor(getattr(context, "run_dir", None), kept)
+            if probed is not None:
+                context.logger.info("existing-content floor", floor=probed.get("reason"))
+                return probed
+            return kept
         floor, note = existing.read_floor(context.config, title_id, git=self.floor_git)
         if floor is not None or "adopt" not in note:
             context.logger.info("existing-content floor", floor=note)

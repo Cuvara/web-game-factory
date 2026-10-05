@@ -589,45 +589,67 @@ def _playtime_problems(view, bars):
 REGRESSION = "content.regression"
 
 
-def regression_check(design, data, data_problem=None):
+def regression_check(design, data, data_problem=None, records=None, playability=None):
     """`content.regression`, or None when the design records no existing-content floor: the
     build ships no fewer units, groups, climax units or elements than the adopted repository
     shipped at the commit the floor was counted at (wgf_design/existing.py), each counted on
-    the build by the floor's own method."""
-    floor = (design or {}).get("existing_content")
-    if not isinstance(floor, dict):
+    the build by the floor's own method - its content data file, or, for a floor counted
+    through the play probe on a build without one, the probe in `records`. A floor the run
+    has not measured yet (`playability`, the playability-report, carries the probe floor once
+    it is) is SKIPPED as unmeasured: never a pass, and the quality gate holds it as a
+    blocker."""
+    floor = existing.effective(design, playability)
+    if floor is None:
         return None
     commit = str((floor.get("source") or {}).get("commit") or "")[:12]
+    if not existing.measured(floor):
+        return _skip(REGRESSION,
+                     f"UNMEASURED FLOOR: the adopted repository ships no "
+                     f"{(floor.get('source') or {}).get('path') or 'content data file'} at "
+                     f"{commit}, and its shipped build has not been counted through the play "
+                     f"probe in this run, so what this build may not drop below is unknown - "
+                     f"unmeasured, never a pass")
+    design = dict(design or {}, existing_content=floor)
     expected = {q: floor[q] for q in existing.QUANTITIES if isinstance(floor.get(q), int)}
-    if data is None:
+    probe = existing.method(floor) == existing.PROBE
+    if data is None and not probe:
         return _check(REGRESSION, "FAIL",
                       f"QUALITY REGRESSION: the build ships no content data "
                       f"({data_problem or 'absent'}); the adopted repository shipped "
                       f"{floor.get('units')} unit(s) at {commit}",
                       expected=expected, route="develop")
-    problems, measured = existing.regression(floor, data)
+    if data is not None:
+        # Counted on the content data file - also for a floor the probe counted earlier: the
+        # file a build gains is held to that floor, never made the floor itself.
+        problems, measured = existing.regression(floor, data)
+        how = "its content data file"
+    else:
+        problems, measured = existing.regression_counts(floor, existing.probe_count(records))
+        how = "the play probe"
     planned = existing.floor_view(design)["short"]
     if not problems:
         return _check(REGRESSION, "PASS",
-                      f"the build ships no less than the adopted repository did at {commit}: "
+                      f"the build ships no less than the adopted repository did at {commit} "
+                      f"(counted on {how}): "
                       + ", ".join(f"{q} {measured[q]} >= {n}" for q, n in expected.items()),
                       measured=measured, expected=expected)
     return _check(REGRESSION, "FAIL",
                   "QUALITY REGRESSION: the build ships less content than the adopted "
-                  "repository already shipped - " + "; ".join(problems),
+                  f"repository already shipped (counted on {how}) - " + "; ".join(problems),
                   measured=measured, expected=expected, evidence=planned or None,
                   route="design-gap" if planned else "develop")
 
 
 def audit(design, strategy, data, records, rules=None, benchmark=None, models=None,
-          data_problem=None):
+          data_problem=None, playability=None):
     """{tier, mode, checks, findings, metrics} for one build.
 
     `data` is the build's content data file (or None, with `data_problem` saying why), and
-    `records` the playability bot's records per viewport ({project: {test: record}})."""
+    `records` the playability bot's records per viewport ({project: {test: record}}), and
+    `playability` the playability-report they belong to (the probe floor it carries)."""
     rules = load_rules() if rules is None else rules
     out = _audit(design, strategy, data, records, rules, benchmark, models, data_problem)
-    check = regression_check(design, data, data_problem)
+    check = regression_check(design, data, data_problem, records, playability)
     if check is None:
         return out
     out["checks"].append(check)

@@ -74,6 +74,12 @@ Each criterion is measured by an evaluator kind - `checks`, `verdict`, `scores`,
 never a pass) or DEFERRED (the store, before its listing exists). It scores 0-100: the share
 of what it measures that met the minimum (per viewport, the worse viewport counts).
 
+A `checks` criterion with `applies: reported` applies only to a build whose report lists one
+of its checks in any status: `floor.existing_content` reads `content.regression`, which only
+a run that adopted a repository reports. Reported but SKIPPED - the adopted checkout shipped
+no content data file and its shipped build was never counted through the play probe - it is
+an UNMEASURED blocker at every tier: a null floor never means no floor.
+
 A dimension's score is the mean of its measured criteria. A dimension is **at its floor**
 only when
 

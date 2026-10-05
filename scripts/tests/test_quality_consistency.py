@@ -271,7 +271,12 @@ class MultiGenreConsistency(_Case):
         by_layer = {}
         for criterion in report["criteria"]:
             by_layer.setdefault(criterion["layer"], set()).add(criterion["id"])
-        self.assertEqual(len(by_layer["universal"]), contract["universal"])
+        # Every universal criterion, but one that applies only where its check is reported
+        # (`applies: reported`: floor.existing_content, a run that adopted a repository).
+        conditional = {c["id"] for c in floor["universal"]
+                       if (c.get("evaluate") or {}).get("applies") == "reported"}
+        self.assertEqual(len(by_layer["universal"] - conditional),
+                         contract["universal"] - len(conditional))
         self.assertEqual(by_layer["genre"],
                          {c["id"] for c in floor["genres"][family]["criteria"]})
         self.assertEqual("render" in by_layer, genre["dimension"] == "3d", sorted(by_layer))

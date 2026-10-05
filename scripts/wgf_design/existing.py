@@ -18,20 +18,63 @@ that already shipped 32 units in 4 worlds with 4 bosses.
 
 The floor is read from the commit, never the working tree, and records that commit: an
 uncommitted edit is not what the repository ships.
+
+A checkout whose HEAD ships no content data file still has a floor - a null floor never means
+no floor. Observed (2026-10-05, the 3D run): the adopted checkout predated the content
+contract, its 12 courses lived in source code, and the design, the regression check and
+develop's floor check all held it to nothing. Such a floor is recorded `status: unmeasured`
+at that commit and measured on the shipped build itself:
+
+    probe_count(records)        units, groups, climax units and element kinds the play probe
+                                reached in the playability records of one visit
+    probe_floor(floor, records, commit, report=None, step=None)
+                                (floor, note): the unmeasured floor measured on the records of
+                                a visit that played its commit - or (None, why not)
+    effective(design, playability=None)
+                                the floor the run holds the build to: the design's when it is
+                                measured, else the probe floor a playability-report carries,
+                                else the design's unmeasured one (None: the run adopted nothing)
+    measured(floor)             whether the floor holds numbers
+    content_modules(paths)      the shipped source files of content modules among `paths`: what
+                                a commit may not delete while no content data file counts the
+                                build (brief-commitments.yaml `existing_content.unmeasured`)
+
+A floor once measured is the run's: a build that gains a content data file is held to the
+earlier count, never re-floored on its own file.
 """
 
+import glob
 import json
 import os
 import re
 
-from wgflib import checkout, mechanics
+from wgflib import checkout, mechanics, paths
+from wgflib.yamllite import load_file
 
 from . import commitments
 
-__all__ = ["measure", "read_floor", "floor_view", "regression", "QUANTITIES"]
+__all__ = ["measure", "read_floor", "floor_view", "regression", "QUANTITIES", "UNMEASURED",
+           "PROBE", "measured", "method", "probe_count", "probe_floor", "effective",
+           "content_modules", "regression_counts", "run_probe_floor"]
 
 # The quantities a floor holds, in report order, with their design-side reading.
 QUANTITIES = ("units", "groups", "climax_units", "elements")
+# A floor recorded at a commit whose content data file does not exist: no number yet.
+UNMEASURED = "unmeasured"
+# How a floor is counted (source.method): on the content data file, or on the played build.
+CONTENT_DATA, PROBE = "content-data", "probe"
+# The entity roles that carry a content kind, read where the content-sufficiency step reads
+# them (its own `probe` block): one vocabulary for the floor and the build it holds.
+SUFFICIENCY_PATH = os.path.join(paths.REFERENCE, "content-sufficiency.yaml")
+
+
+def measured(floor):
+    """Whether `floor` holds numbers: a dict that is not `status: unmeasured`."""
+    return isinstance(floor, dict) and floor.get("status") != UNMEASURED
+
+
+def method(floor):
+    return ((floor or {}).get("source") or {}).get("method") or CONTENT_DATA
 
 
 def _units(data):
@@ -129,7 +172,16 @@ def read_floor(config, title_id, git=None, data=None, environ=None):
         return None, f"{root} has no commit: nothing shipped to floor"
     text = reader.file_at(commit, path)
     if text is None:
-        return None, f"{root} at {commit[:12]} ships no {path}: nothing to floor"
+        # Its content lives somewhere else (source code that predates the content contract):
+        # the floor exists and is measured on the shipped build through the probe.
+        reason = (f"{root} at {commit[:12]} ships no {path}: the floor is measured on the "
+                  f"shipped build through the play probe, by the first greybox-playability "
+                  f"visit, which plays this commit before any developer change")
+        return ({"status": UNMEASURED,
+                 "source": {"method": PROBE, "path": path, "commit": commit,
+                            "checkout": root.replace(os.sep, "/"), "located_by": source},
+                 "ruleset": f"brief-commitments@{data.get('version')}",
+                 "reason": reason}, reason)
     try:
         content = json.loads(text)
     except ValueError as exc:
@@ -138,7 +190,7 @@ def read_floor(config, title_id, git=None, data=None, environ=None):
     if not isinstance(content, dict):
         raise ValueError(f"{path} at {commit[:12]} of the adopted checkout is not an object")
     counted = measure(_units(content), data)
-    floor = {"source": {"path": path, "commit": commit,
+    floor = {"source": {"method": CONTENT_DATA, "path": path, "commit": commit,
                         "checkout": root.replace(os.sep, "/"), "located_by": source},
              "ruleset": f"brief-commitments@{data.get('version')}"}
     floor.update({k: counted[k] for k in QUANTITIES if counted.get(k) is not None})
@@ -186,7 +238,12 @@ def floor_view(design):
 def regression(floor, content, data=None):
     """(problems, measured): what the build's content data file ships below the floor, each
     quantity counted on the build by the method the floor was counted by."""
-    counted = measure(_units(content), data)
+    return regression_counts(floor, measure(_units(content), data))
+
+
+def regression_counts(floor, counted):
+    """(problems, measured): `counted` - measure() of a content data file, or probe_count()
+    of a played build - below each quantity and shipped unit of the floor."""
     commit = str((floor.get("source") or {}).get("commit") or "")[:12]
     problems = []
     for q in QUANTITIES:
@@ -195,15 +252,224 @@ def regression(floor, content, data=None):
         if not isinstance(want, int):
             continue
         if have is None:
-            problems.append(f"{q}: the build's content data no longer states them "
+            problems.append(f"{q}: the build no longer states them "
                             f"({(floor.get('measured_by') or {}).get(q)}); {want} shipped at "
                             f"{commit}")
         elif have < want:
             problems.append(f"{q}: the build ships {have}, {want} shipped at {commit}")
-    gone = sorted(set(floor.get("unit_ids") or []) - set(counted["unit_ids"]))
+    gone = sorted(set(floor.get("unit_ids") or []) - set(counted.get("unit_ids") or []))
     if gone:
         problems.append(f"shipped units gone: {', '.join(gone[:12])}"
                         + (f" and {len(gone) - 12} more" if len(gone) > 12 else ""))
-    measured = {q: counted.get(q) for q in QUANTITIES}
-    measured["missing_unit_ids"] = gone[:40]
-    return problems, measured
+    measured_now = {q: counted.get(q) for q in QUANTITIES}
+    measured_now["missing_unit_ids"] = gone[:40]
+    return problems, measured_now
+
+
+# -- the floor of a checkout with no content data file: measured on the shipped build -------
+
+def _kind_roles(path=None):
+    probe = (load_file(path or SUFFICIENCY_PATH) or {}).get("probe") or {}
+    return set(probe.get("kind_roles") or []), set(probe.get("not_content_roles") or [])
+
+
+def _number(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def probe_count(records, data=None, roles=None):
+    """{units, groups, climax_units, elements, unit_ids, reported_unit_count, measured_by} of
+    a played build, over the playability records {project: {test: record}}: the distinct
+    units the probe reported in play, the largest unit count it stated, groups by the unit id
+    pattern, climax units by a climax term in the probe's objective, and the distinct kinds of
+    content-role entities drawn while a unit was in play. A quantity nothing showed is None."""
+    data = data if data is not None else commitments.load()
+    rules = data.get("existing_content") or {}
+    kind_roles, not_content = roles if roles is not None else _kind_roles()
+    ids, objectives, kinds = [], {}, set()
+    reported = 0
+
+    def saw_unit(uid, objective=None):
+        if not uid:
+            return
+        uid = str(uid)
+        if uid not in ids:
+            ids.append(uid)
+        if objective:
+            objectives.setdefault(uid, []).append(str(objective))
+
+    def saw_snapshot(snapshot):
+        if not isinstance(snapshot, dict):
+            return 0
+        content = snapshot.get("content") if isinstance(snapshot.get("content"), dict) else {}
+        if content.get("unit_id"):
+            saw_unit(content["unit_id"], content.get("objective"))
+            for entity in snapshot.get("entities") or []:
+                if isinstance(entity, dict) and entity.get("role") in kind_roles \
+                        and entity.get("kind"):
+                    kinds.add(str(entity["kind"]))
+        return _number(content.get("unit_count")) or 0
+
+    for record in (records or {}).values():
+        record = record or {}
+        first = record.get("first-session") or {}
+        for sample in first.get("samples") or []:
+            reported = max(reported, saw_snapshot(sample))
+        for acted in (record.get("act") or {}).get("acted") or []:
+            if isinstance(acted, dict):
+                reported = max(reported, saw_snapshot(acted.get("before")),
+                               saw_snapshot(acted.get("after")))
+        traverse = record.get("traverse") or {}
+        reported = max(reported, _number(traverse.get("unit_count_reported")) or 0)
+        for snapshot in traverse.get("snapshots") or []:
+            if isinstance(snapshot, dict) and snapshot.get("unit_id"):
+                saw_unit(snapshot["unit_id"])
+                kinds.update(str(k) for k in snapshot.get("kinds") or [])
+        for played in traverse.get("per_unit") or []:
+            if not isinstance(played, dict) or not played.get("unit_id"):
+                continue
+            saw_unit(played["unit_id"], played.get("objective"))
+            kinds.update(str(k) for k in played.get("kinds") or [])
+        for visit in (record.get("survey") or {}).get("visits") or []:
+            if not isinstance(visit, dict) or not visit.get("entered"):
+                continue
+            saw_unit(visit.get("unit_id") or visit.get("asked"))
+            for role, found in (visit.get("kinds_by_role") or {}).items():
+                if role not in not_content:
+                    kinds.update(str(k) for k in found or [])
+
+    out = {"unit_ids": ids, "reported_unit_count": reported or None, "measured_by": {}}
+    if not ids and not reported:
+        out.update({q: None for q in QUANTITIES})
+        return out
+    out["units"] = max(len(ids), reported)
+    out["measured_by"]["units"] = (
+        f"the play probe: {len(ids)} distinct content.unit_id reached"
+        + (f", content.unit_count {reported} reported by the build" if reported else ""))
+    group = rules.get("group") or {}
+    out["groups"] = None
+    if group.get("id_pattern") and ids:
+        pattern = re.compile(group["id_pattern"])
+        found = [pattern.match(uid.lower()) for uid in ids]
+        if all(found) and len({m.group(1) for m in found}) >= 2:
+            out["groups"] = len({m.group(1) for m in found})
+            out["measured_by"]["groups"] = (f"the play probe: unit id prefix "
+                                            f"{group['id_pattern']} over the units reached")
+    terms = (data.get("quantities") or {}).get("climax") or {}
+    phrases = list(terms.get("singular") or []) + list(terms.get("plural") or [])
+    if objectives and phrases:
+        out["climax_units"] = sum(1 for uid in ids if mechanics.phrases_in(
+            " ".join(objectives.get(uid) or []), phrases))
+        out["measured_by"]["climax_units"] = ("the play probe: a climax term in "
+                                              "content.objective of the units reached")
+    else:
+        out["climax_units"] = None
+    if kinds:
+        out["elements"] = len(kinds)
+        out["measured_by"]["elements"] = ("the play probe: distinct entity kinds of a content "
+                                          "role drawn while a unit was in play")
+    else:
+        out["elements"] = None
+    return out
+
+
+def _same_commit(a, b):
+    a, b = str(a or ""), str(b or "")
+    return bool(a and b) and (a.startswith(b) or b.startswith(a))
+
+
+def probe_floor(floor, records, commit, report=None, step=None, data=None, roles=None):
+    """(floor, note). The unmeasured `floor` counted on `records`, the playability records of
+    a visit that played `commit` - which must be the floor's own commit: the shipped build,
+    before any developer change. (None, why) when it is not, or the probe reached no unit."""
+    if not isinstance(floor, dict) or measured(floor):
+        return None, "no unmeasured floor to measure"
+    at = str((floor.get("source") or {}).get("commit") or "")
+    if not _same_commit(at, commit):
+        return None, (f"the visit played {str(commit)[:12]}, not the shipped build "
+                      f"{at[:12]}: the floor stays unmeasured")
+    data = data if data is not None else commitments.load()
+    counted = probe_count(records, data, roles)
+    if counted.get("units") is None:
+        return None, (f"the shipped build at {at[:12]} reported no content unit through the "
+                      "play probe: the floor stays unmeasured")
+    source = dict(floor.get("source") or {})
+    source.update(method=PROBE, commit=commit)
+    if report:
+        source["report"] = report
+    if step:
+        source["step"] = step
+    out = {"status": "measured", "source": source,
+           "ruleset": f"brief-commitments@{data.get('version')}",
+           "reason": (f"the adopted checkout ships no {source.get('path') or 'content data'}: "
+                      f"counted on the shipped build at {commit[:12]} through the play probe")}
+    out.update({q: counted[q] for q in QUANTITIES if counted.get(q) is not None})
+    out["unit_ids"] = counted["unit_ids"]
+    out["measured_by"] = counted["measured_by"]
+    return out, (f"the shipped build at {commit[:12]} reached {counted['units']} unit(s) "
+                 "through the play probe: the floor")
+
+
+def effective(design, playability=None):
+    """The floor the run holds a build to, or None when the run adopted nothing: the design's
+    when it holds numbers; else the probe floor `playability` (a playability-report) carries;
+    else the design's unmeasured floor."""
+    floor = (design or {}).get("existing_content")
+    if not isinstance(floor, dict):
+        return None
+    if measured(floor):
+        return floor
+    carried = (playability or {}).get("existing_content")
+    if measured(carried) and _same_commit(
+            (carried.get("source") or {}).get("commit"),
+            (floor.get("source") or {}).get("commit")):
+        return carried
+    return floor
+
+
+def _words(path):
+    return [w for w in re.split(r"[-_./\\\s]+", str(path).lower()) if w]
+
+
+def content_modules(files, data=None):
+    """The files among `files` (repository paths) that are shipped source files of content
+    modules: under a root of brief-commitments.yaml `existing_content.unmeasured.roots`, with
+    a path word that is a unit, group or climax term, or one of its `terms`."""
+    data = data if data is not None else commitments.load()
+    rules = (data.get("existing_content") or {}).get("unmeasured") or {}
+    roots = [str(r).strip("/") for r in rules.get("roots") or []]
+    terms = {str(t).lower() for t in rules.get("terms") or []}
+    for quantity in (data.get("quantities") or {}).values():
+        if isinstance(quantity, dict):
+            for word in list(quantity.get("singular") or []) + list(quantity.get("plural") or []):
+                if " " not in str(word):
+                    terms.add(str(word).lower())
+    out = []
+    for path in files or []:
+        path = str(path)
+        if not any(path == r or path.startswith(r + "/") for r in roots):
+            continue
+        if terms & set(_words(path)):
+            out.append(path)
+    return out
+
+
+def run_probe_floor(run_dir, floor):
+    """The earliest probe floor a playability-report of the run at `run_dir` recorded for the
+    unmeasured `floor` (the same commit), or None: a floor once measured is the run's, so the
+    first measurement wins over any later one."""
+    if not run_dir or not isinstance(floor, dict) or measured(floor):
+        return None
+    at = (floor.get("source") or {}).get("commit")
+    found = []
+    for path in glob.glob(os.path.join(run_dir, "artifacts", "playability-report", "v*.json")):
+        stem = os.path.basename(path)[1:-5]
+        try:
+            with open(path, encoding="utf-8") as handle:
+                report = json.load(handle)
+        except (OSError, ValueError):
+            continue
+        carried = report.get("existing_content") if isinstance(report, dict) else None
+        if measured(carried) and _same_commit((carried.get("source") or {}).get("commit"), at):
+            found.append((int(stem) if stem.isdigit() else 10 ** 9, carried))
+    return min(found, key=lambda item: item[0])[1] if found else None

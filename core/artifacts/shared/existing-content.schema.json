@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/existing-content.schema.json",
+  "title": "Existing-content floor",
+  "description": "What a game repository the run adopts (factory.init.adopt_existing) already ships: the floor the design may not plan below and the build may not drop below (core/reference/brief-commitments.yaml `existing_content`).\n\nCounted one of two ways, named by `source.method`. `content-data` (the default when absent): the content data file at the adopted checkout's HEAD commit, by the design step. `probe`: the checkout's HEAD ships no content data file, so the shipped build itself is played - the first greybox-playability visit of the adopted run plays HEAD before any developer change - and the units, groups, climax units and element kinds its play probe reaches are counted. Until that measurement exists the floor is `status: unmeasured`: it holds no number, the shipped source files of content modules may not be deleted, and the quality gate holds the content dimension below its floor (an unmeasured blocker, never a pass). A null floor never means no floor.\n\nA floor, once counted, is the run's: a build that gains a content data file later is held to the earlier count, never reset to its own file. A quantity no method could count is absent and holds nothing.",
+  "$defs": {
+    "floor": {
+      "type": "object",
+      "required": ["source"],
+      "properties": {
+        "status": { "enum": ["measured", "unmeasured"], "description": "`unmeasured`: the adopted checkout ships no content data file and the shipped build has not been measured through the probe yet. Absent means measured (game-design 1.13.0 floors)." },
+        "source": {
+          "type": "object",
+          "required": ["commit"],
+          "properties": {
+            "method": { "enum": ["content-data", "probe"], "description": "How the floor was (or is to be) counted. Absent means `content-data`." },
+            "path": { "type": "string", "minLength": 1, "description": "The content data file, relative to the checkout (`content-data`); the file the checkout did not ship (`probe`)." },
+            "commit": { "type": "string", "pattern": "^[0-9a-f]{7,64}$", "description": "The commit the floor was counted at: for `probe`, the shipped build that was played." },
+            "checkout": { "type": "string", "description": "Where the adopted checkout was, when it was read." },
+            "located_by": { "type": "string", "description": "Which rule of the checkout precedence named it (docs/checkouts.md)." },
+            "report": { "type": "string", "description": "`probe`: the artifact id of the playability-report whose records the floor was counted on." },
+            "step": { "type": "string", "description": "`probe`: the workflow step that played the build." }
+          },
+          "additionalProperties": false
+        },
+        "ruleset": { "type": "string", "pattern": "^[a-z][a-z0-9-]*@[0-9]+[.][0-9]+[.][0-9]+$", "description": "The vocabulary the floor was counted with, as id@version." },
+        "reason": { "type": "string", "description": "Why the floor is unmeasured, or how a probe floor came to be measured." },
+        "units": { "type": "integer", "minimum": 0 },
+        "groups": { "type": "integer", "minimum": 0 },
+        "climax_units": { "type": "integer", "minimum": 0 },
+        "elements": { "type": "integer", "minimum": 0 },
+        "unit_ids": { "type": "array", "items": { "type": "string" }, "description": "The units shipped (`probe`: reached), so a regression names the ones a build dropped." },
+        "measured_by": { "type": "object", "additionalProperties": { "type": "string" }, "description": "How each quantity was counted (a field of the units, a unit id prefix, a climax term in their text, the probe's own unit count)." }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["status"], "properties": { "status": { "const": "unmeasured" } } },
+          "then": { "not": { "anyOf": [ { "required": ["units"] }, { "required": ["groups"] }, { "required": ["climax_units"] }, { "required": ["elements"] } ] } },
+          "else": { "required": ["units"] }
+        },
+        {
+          "if": { "properties": { "source": { "not": { "required": ["method"] } } } },
+          "then": { "properties": { "source": { "required": ["path"] } } }
+        },
+        {
+          "if": { "properties": { "source": { "required": ["method"], "properties": { "method": { "const": "content-data" } } } } },
+          "then": { "properties": { "source": { "required": ["path"] } } }
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

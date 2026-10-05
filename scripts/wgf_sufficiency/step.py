@@ -127,7 +127,7 @@ class ContentSufficiencyStep(WorkflowStep):
                 try:
                     result = auditing.audit(design, strategy, data, records,
                                             benchmark=run_benchmark(context),
-                                            data_problem=problem)
+                                            data_problem=problem, playability=play)
                 except pinned_references.PinError as exc:
                     blocked = (f"the quality benchmark this run started under cannot be read "
                                f"({exc}): nothing is held to bars edited after the start")

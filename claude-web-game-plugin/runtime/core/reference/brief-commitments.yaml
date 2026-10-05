@@ -39,7 +39,7 @@
 # Never a game, a theme or a genre word here: the terms are the ways a brief counts content.
 # Add a term when a brief counted content in a word this file does not know.
 
-version: 1.0.0
+version: 1.1.0  # 1.1.0: existing_content.probe and existing_content.unmeasured - the floor of an adopted checkout with no content data file
 
 numbers:
   one: 1
@@ -115,6 +115,16 @@ modes:
 # side; docs/content-sufficiency-module.md the build's). Counted on the content data file at
 # `path`, each quantity by the first method that applies; a quantity no method measures is
 # recorded as unmeasured and holds nothing.
+#
+# A checkout whose HEAD ships no content data file (it predates the content contract: its
+# units live in source code) still has a floor - a null floor never means no floor. The design
+# records it `status: unmeasured` at that commit; the first greybox-playability visit of the
+# run plays exactly that commit (the adopted greybox runs no developer first) and counts what
+# the play probe reaches (`probe`). Until then, and while no content data file can count the
+# build, a development commit may not delete a shipped source file of a content module
+# (`unmeasured`), and the quality gate holds the floor as an unmeasured blocker. A floor once
+# measured stays the run's: a build that gains a content data file is held to it, never
+# re-floored on its own file.
 existing_content:
   path: public/content/units.json
   group:
@@ -129,3 +139,24 @@ existing_content:
     text_fields: [objective, success, name, title]
   elements:
     field: elements
+  # Counting the shipped build through the play probe (shared/play-probe.schema.json), over
+  # the playability records of the visit that played the floor's commit:
+  #   units         the larger of the distinct `content.unit_id`s reached and the largest
+  #                 `content.unit_count` the build reported - the bot's traverse is bounded by
+  #                 time, and the build's own count is what it ships
+  #   groups        `group.id_pattern` over the unit ids reached
+  #   climax_units  units reached whose probe objective (`content.objective`) uses a climax term
+  #   elements      distinct entity `kind`s of a content role (content-sufficiency.yaml
+  #                 `probe.kind_roles`) drawn while a unit was in play
+  # The traverse of that visit plays up to `max_units` units instead of the bar's few.
+  probe:
+    max_units: 64
+  # While the floor is unmeasured - or measured by the probe and the build ships no content
+  # data file to count it - a commit may not delete a shipped file under `roots` whose path
+  # names content: a directory or file stem holding a unit, group or climax term
+  # (`quantities`, singular or plural) or one of `terms`, matched as whole `-` `_` `.` `/`
+  # separated words. src/game/courses.ts and src/levels/world-1.ts are content modules;
+  # src/render/camera.ts is not.
+  unmeasured:
+    roots: [src, public]
+    terms: [content, units, unit, campaign, catalog, catalogue]

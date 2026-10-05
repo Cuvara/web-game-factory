@@ -927,6 +927,8 @@ test("pause: the pause screen, if there is one", async ({ page }, info) => {
 interface UnitRecord {
   unit_id: string | null;
   index: number;
+  // The unit's objective as the probe states it (content.objective), apart from the page's.
+  objective: string | null;
   objective_texts: string[];
   kinds: string[];
   difficulty: Record<string, number>;
@@ -956,6 +958,9 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
                      kinds: string[] }[] = [];
   const transitions: { from: number; to: number; at_ms: number; how: string; since_end_ms: number | null }[] = [];
   const units: UnitRecord[] = [];
+  // The largest unit count the build itself reported (content.unit_count): what it ships,
+  // beyond the units this window reached (an adopted game's floor, wgf_design/existing.py).
+  let unitCountReported = 0;
   let stopped = "window";
   let losses = 0;
   if (started.playingMs !== null) {
@@ -968,6 +973,7 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
       if (!s) break;
       const ms = Date.now() - t0;
       const index = s.content?.unit_index ?? 0;
+      unitCountReported = Math.max(unitCountReported, s.content?.unit_count ?? 0);
       const difficulty = difficultyOf(s);
       const kinds = kindsOf(s);
       if (snapshots.length < 1500) {
@@ -984,7 +990,8 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
       }
       let unit = units.find((u) => u.index === index);
       if (index > 0 && !unit) {
-        unit = { unit_id: s.content?.unit_id ?? null, index, objective_texts: [], kinds: [],
+        unit = { unit_id: s.content?.unit_id ?? null, index, objective: s.content?.objective ?? null,
+                 objective_texts: [], kinds: [],
                  difficulty: {}, metrics: {}, won: false, lost: false, entered_ms: ms,
                  duration_ms: 0 };
         units.push(unit);
@@ -995,6 +1002,7 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
         for (const kind of kinds) if (!unit.kinds.includes(kind)) unit.kinds.push(kind);
         Object.assign(unit.difficulty, difficulty);
         // The objective, as the player is shown it: the unit's own text, and the page's.
+        if (!unit.objective && s.content?.objective) unit.objective = s.content.objective;
         if (unit.objective_texts.length < 4) {
           if (s.content?.objective) unit.objective_texts.push(s.content.objective);
           unit.objective_texts.push(await page.evaluate(() => document.body.innerText));
@@ -1040,7 +1048,8 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
     stopped = "play never began";
   }
   write(project, "traverse", { ...started, applies: true, snapshots, transitions,
-                               per_unit: units, losses, stopped, ...watch.record(), frames });
+                               per_unit: units, unit_count_reported: unitCountReported, losses,
+                               stopped, ...watch.record(), frames });
 });
 
 // What the game remembers. The oracle plays until something the design says persists has

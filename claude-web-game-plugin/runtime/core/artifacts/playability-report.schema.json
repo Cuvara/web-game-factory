@@ -8,7 +8,7 @@
     "id": "playability-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.2.1",
+    "version": "1.3.0",
     "producer": "title:prototype",
     "consumers": ["title:prototype", "title:prototype-review", "release:qa", "release:store-listing", "release:draft"],
     "repo_path": "<game-repo>/qa/playability/<commit>.json",
@@ -93,6 +93,10 @@
         },
         "additionalProperties": false
       }
+    },
+    "existing_content": {
+      "$ref": "./shared/existing-content.schema.json#/$defs/floor",
+      "description": "Since 1.3.0. The existing-content floor counted on the shipped build through the probe (`source.method: probe`): written by the first visit that plays the adopted checkout's HEAD while the design's floor is `unmeasured` (the adopted checkout ships no content data file), and carried unchanged by every later report of the run - a floor once measured is never measured again. Absent when the run adopted nothing or its floor is counted on a content data file."
     },
     "failed_checks": { "type": "array", "items": { "type": "string" } },
     "blocked_reason": { "type": ["string", "null"] },

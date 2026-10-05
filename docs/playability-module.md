@@ -113,7 +113,19 @@ probe. The developer brief embeds the schema, so a developer knows how the build
 - **Session** (only with a depth contract): one first session with instant retries, held open
   to the design's own first-session length. Records how long play lasted, each attempt's
   oracle input rate per third of it, when the designed closing beat first arrived, and the
-  difficulty in each `endless_window_s` window.
+  difficulty in each `endless_window_s` window. When the session is the run the time ramp is
+  read on (an endless play, below), the bot plays on past the window - for up to
+  `ramp.extend_s` - while the longest run's first third holds fewer than
+  `ramp.min_inputs_per_third` oracle inputs, and records `extended_ms`.
+- **Ramp** (only when the time ramp is promised by a mode the design includes - an endless
+  mode beside authored units, below): a fresh first session, then the bot enters that mode
+  through the probe's optional `play.mode.enter(mode)` (see
+  [template-contract.md](template-contract.md#the-play-probe-mode)) and plays it as the
+  session does - the oracle, instant retries - for `ramp.run_s`, played on as above while
+  too short to read. The record (`ramp.json`) says whether the mode was entered and why not
+  (`play.mode` absent, `modes()` not offering it, `enter` answering false), each run's
+  oracle inputs per third, and its frames `ramp-<mode>-start` and `-end`. Any other design
+  gets `{applies: false}`.
 - **Showcase** (only when the probe declares the optional `play.showcase`; see
   [template-contract.md](template-contract.md#the-play-probe-showcase)): last, after every
   fresh-save test, which all only meet the opening content. The bot reads
@@ -153,11 +165,12 @@ probe. The developer brief embeds the schema, so a developer knows how the build
 
 The time budget (`design-depth.yaml playability.time_budget.bot_total_s`) is a hard cap per
 viewport. What the first five tests cost is subtracted; the rest is shared between the
-traverse, persist and session windows in proportion to what they asked for, and every check
+traverse, persist, session and ramp windows in proportion to what they asked for, and every check
 judged from a window that was cut carries `measured.truncated: true` - and, where the
 shortfall is the budget's rather than the build's, drops to a warning. The bot's process
 timeout is `2 x (bot_total_s + SHOWCASE_S + 45) + 120` s, not a fixed number, plus the
-survey's window and a start per surveyed unit when it runs.
+survey's window and a start per surveyed unit when it runs, and `2 x ramp.extend_s` when a
+time ramp is read.
 
 ### What every record also carries
 
@@ -225,7 +238,8 @@ for a family:
   capped traversal is not held to the design's whole curve (`measured.partial`).
 - **A check is required only where the family's own vocabulary can carry it.** Variety is held
   to entity kinds only where the family asks for a new kind per unit; a time ramp inside one
-  run is judged only where the family has a window for one. Elsewhere the number is still
+  run is judged only where the family has a window for one, and only on a run of the play
+  that promises one - never on an authored unit. Elsewhere the number is still
   measured, and reported as a warning naming why it is not a bar. The one thing this costs:
   for a unit-authored family a bad run that ends far too late is a `depth.ramp` warning rather
   than a failure - a bad run that never ends at all is still a `lose.reachable` failure.
@@ -239,7 +253,7 @@ for a family:
 | `difficulty.axes_progress` | authored: every traversed unit reports the difficulty the **design** authored for it, within `genre-models.yaml implementation.difficulty_tolerance`, on every declared axis; and on every axis the family says escalates, ≥ `min_rise_share` of consecutive units hold or dip no deeper than `relief_dip_max`. The last above the first is asked only when every MVP unit was traversed (otherwise `measured.partial: true`), and judged at the design's own `quality_tier` the way `content.axes_monotone_with_relief` judges the design: at tier mvp on every escalating axis; above it (units past the prototype) only where the design's own values for the traversed units rise - an axis the release design's MVP holds flat is held to the design's values and never below its start (`measured.held_by_design`). Above tier mvp, when the survey entered every release unit, each visit is held to the design's value too and every reported escalating axis ends the release above where it started (`measured.release`); a survey short of the release reports `measured.release_partial` with its reason, never a pass of that curve. Generated or endless: the last `endless_window_s` window is above the first. An axis the family marks `probe: required` and the build does not report **fails**; an optional one it does not report is a warning |
 | `progression.persists` | after a reload, read before any input, every MVP `meta_loop.persists[]` metric the probe reports - and `content.unit_index` - is what it was. An entry's measure is the HUD metric its `delivered_by` names, else its kind's in `core/reference/design-depth.yaml` `playability.persists.probe_measures` (1.2.0): a best is `metrics.best`, stage progress the unit reached, `content.unit_index`, which the probe reports with every unit. Stage progress counts as shown only once the bot reached a unit past the first before the reload (a build that saves nothing starts at unit 1 too); a kind with no measure is SKIPPED, and the quality floor fails a release build on it. Required only for the generation modes in `persists.required_generations`; a warning otherwise. With `qa.checkpoint`, the unit's own progress must also survive an in-unit loss |
 | `depth.session_length` | one oracle session with instant retries reaches `min_share` x `depth.first_session.target_s`. The window is that bar plus a margin, never `max_multiplier` x the target: playing longer measures nothing more and slows every measurement after it on the same machine. Required for authored designs; a warning otherwise, and never a failure when the budget cut the window |
-| `depth.ramp` | bad play ends a run inside `bad_play_max_multiplier` x the run length, and the oracle's input rate in the last third of its longest run is at least the first third's. **Required only for a time-ramp family** - one whose `qa` states `endless_window_s`; a unit-authored family ramps between units (`difficulty.axes_progress`), has no ramp inside one run, and its rate is recorded with `measured.reason` "no time ramp for a unit-authored family" rather than judged |
+| `depth.ramp` | bad play ends a run inside `bad_play_max_multiplier` x the run length, and the oracle's input rate in the last third of its longest run is at least the first third's. **Required only where a time ramp is promised** (`analysis.time_ramp`): a family whose `qa` states `endless_window_s`, and then read on a run of the play that promises the ramp - the session when the play itself is endless (`genre.ending: endless`, or content that is not authored), else the run of a mode the design includes at a tier the build carries (a feature whose `catalogue` is in `design-depth.yaml playability.ramp.mode_features`, decided `include`; the greybox carries the MVP tier only), entered through `play.mode` (`measured.ramp_run`, `mode`, `mode_entered`). A unit-authored design with no such mode ramps between units (`difficulty.axes_progress`): its longest unit is not a time ramp, and its rate is recorded with `measured.reason` "no time ramp" rather than judged. The rate is compared only when the longest run's first third holds at least `ramp.min_inputs_per_third` (10) oracle inputs; fewer - after the bot played on for up to `ramp.extend_s` - or a mode the bot could not enter is `measured.unmeasured`: a warning, never a pass, and a FAIL at a tier whose skipped checks are not passed (`quality-policy.yaml skipped_checks`, the release tier as shipped) |
 
 **`SKIPPED` is never a pass.** A check is skipped only when the design does not claim what it
 measures - no `build_spec.content` at all, or generated content where a unit sequence would be

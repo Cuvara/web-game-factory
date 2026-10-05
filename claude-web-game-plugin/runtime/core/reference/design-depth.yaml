@@ -17,7 +17,9 @@
 
 # 1.1.0: playability bars for the content and depth checks
 # 1.2.0: playability.persists.probe_measures - what the probe reports of a persisted kind
-version: 1.2.0
+# 1.3.0: playability.ramp - the run the time ramp is read on (mode_features, mode, run_s) and
+#        the sample it needs (min_inputs_per_third, extend_s)
+version: 1.3.0
 
 meta_loop:
   # Persisting only these is a scoreboard, not a meta loop: at least one persisted entry
@@ -106,6 +108,29 @@ playability:
     # at least relief_dip_s is allowed.
     bad_play_max_multiplier: 3
     relief_dip_s: 2
+    # The input-rate ramp is a time ramp, and it is read only on a run of the play that
+    # promises one (a family whose `qa` states endless_window_s): the session itself when
+    # that play is endless (game-design genre.ending `endless`, or content that is not
+    # authored), else a run of a mode the design includes at a tier this build carries -
+    # a feature whose `catalogue` (or id) is one of mode_features. The bot enters that mode
+    # through the probe's optional `play.mode.enter(mode)` (docs/template-contract.md) and
+    # plays it for run_s with instant retries. An authored-unit design with no such mode
+    # ramps between its units, which difficulty.axes_progress judges; its longest unit is
+    # not a time ramp, and a brick level that needs fewer moves as it clears is not a
+    # game asking for less.
+    mode_features: [endless-mode]
+    mode: endless
+    run_s: 60
+    # The fewest oracle inputs the first third of the longest run must hold before its
+    # rate can be compared with the last third's. Counts are Poisson-like: at 10 the
+    # spread of one third's count is about +-3 (sqrt 10), so a fall to 3 or 4 is a fall,
+    # while the live 2026-10-05 counts (3 then 1, 8 then 4: a handful of deliberate moves
+    # in an authored level) are inside the noise of so few. Below it the bot plays the
+    # run on for up to extend_s more; still short, the ramp is unmeasured - never a pass,
+    # and at a tier whose skipped checks are not passed (quality-policy.yaml
+    # skipped_checks) a failure.
+    min_inputs_per_third: 10
+    extend_s: 60
   persists:
     # Generation modes for which progression.persists is required; others get WARNING.
     required_generations: [authored]

@@ -95,6 +95,31 @@ frame of each staged state (`docs/playability-module.md`); production-quality's
 (`docs/production-quality-module.md`). A game without a showcase is played and judged
 exactly as before; no Factory step requires one.
 
+## The play probe mode
+
+One more optional part of the probe, only with `wgf-probe=1`: a game whose design includes a
+mode beside its main play - an endless mode beside authored levels - may declare how to enter
+it:
+
+```ts
+window.__wgf__.play.mode = {
+  modes(): string[];                                // the modes it can be put in ("endless")
+  enter(mode: string): boolean | Promise<boolean>;  // start a run of it; false when it cannot
+};
+```
+
+- `enter(mode)` puts the running game into a fresh run of that mode through the game's own
+  menus' code path - as the player choosing it would - and resolves `true` once
+  `snapshot()` reports `state: "playing"` in it; `false` when it cannot. A retry after a loss
+  in that mode starts another run of the same mode.
+- The playability bot uses it for one thing: a design whose time ramp is promised by such a
+  mode (`core/reference/design-depth.yaml playability.ramp.mode_features`) has `depth.ramp`
+  read on a run of that mode, not on an authored level
+  ([playability-module.md](playability-module.md)). A build that cannot be put in the mode
+  leaves the ramp unmeasured: a warning, and a failure at a tier whose skipped checks are not
+  passed. A design with no such mode never calls it, and a game without it is otherwise
+  played and judged as before.
+
 ## The play probe unit link and entity kinds
 
 Two more parts of the probe serve the content-sufficiency step

@@ -102,7 +102,9 @@ class Judge(unittest.TestCase):
 
     def judge(self, design=DESIGN):
         checks = analysis.judge(self.records, self.frames, design, self.rules, experience_rules(),
-                                "desktop", kinds_required=getattr(self, "kinds_required", None))
+                                "desktop", kinds_required=getattr(self, "kinds_required", None),
+                                ramp_required=getattr(self, "ramp_required", None),
+                                ramp_tiers=getattr(self, "ramp_tiers", None))
         return {c["id"]: c for c in checks}
 
     def failed(self):
@@ -651,7 +653,8 @@ class Content(Judge):
         spent = base["idle_ms"] + base["win_ms"] + base["lose_ms"] + 2 * base["start_timeout_ms"]
         asked = cfg["traverse_ms"] + cfg["persist_ms"] + cfg["session_max_ms"]
         self.assertLessEqual(spent + asked, total_s * 1000)
-        self.assertEqual(truncated, {"traverse": True, "persist": True, "session": True})
+        self.assertEqual(truncated, {"traverse": True, "persist": True, "session": True,
+                                     "ramp": False})
         self.assertTrue(cfg["content_applies"] and cfg["depth_applies"])
         self.assertEqual(cfg["unit_count"], 3)
         self.assertEqual(cfg["axes"], ["enemy-count"])
@@ -686,7 +689,8 @@ class Content(Judge):
             {"idle_ms": 10000, "win_ms": 180000, "lose_ms": 90000, "start_timeout_ms": 30000})
         self.assertFalse(cfg["content_applies"] or cfg["depth_applies"])
         self.assertEqual((cfg["traverse_ms"], cfg["persist_ms"], cfg["session_max_ms"]), (0, 0, 0))
-        self.assertEqual(truncated, {"traverse": False, "persist": False, "session": False})
+        self.assertEqual(truncated, {"traverse": False, "persist": False, "session": False,
+                                     "ramp": False})
 
 
 # -- an authored puzzle, mirroring the first live greybox run ---------------------------------
@@ -921,14 +925,142 @@ class AuthoredPuzzle(Judge):
         self.assertEqual(check["measured"]["oracle_inputs_per_third"], [3, 2, 1])
         self.assertIn("no time ramp", check["measured"]["reason"])
 
-    def test_a_time_ramp_family_is_still_held_to_its_rate(self):
+    def test_a_time_ramp_family_is_still_held_to_its_rate_on_an_endless_session(self):
+        # A time-ramp family whose play itself is endless: its session is the run.
         design = copy.deepcopy(PUZZLE_DESIGN)
-        design["genre"]["family"] = "arcade"   # qa.endless_window_s: 30
+        design["genre"].update(family="arcade", ending="endless")   # qa.endless_window_s: 30
+        self.records["session"]["runs"] = [
+            {"duration_ms": 90000, "inputs": 40, "oracle_inputs_per_third": [16, 14, 10]}]
         check = self.judge(design)["depth.ramp"]
         self.assertEqual(check["status"], "FAIL")
         self.assertTrue(check["required"])
         self.assertIn("asks for less as it goes", check["summary"])
+        self.assertEqual(check["measured"]["ramp_run"], "session")
         self.assertNotIn("reason", check["measured"])
+
+    # 5b. The time ramp is read on the run of the mode that promises it (2026-10-05, a 2D
+    # brick game of 32 authored levels with an endless mode: greybox failed three times on
+    # "4 in the last third and 8 in the first", then "1 ... and 3", read on an authored level).
+    @staticmethod
+    def endless_design(tier="post-mvp", decision="include"):
+        design = copy.deepcopy(PUZZLE_DESIGN)
+        design["genre"]["family"] = "arcade"                 # qa.endless_window_s: 30
+        design.setdefault("features", []).append(
+            {"id": "endless-mode", "name": "Endless mode", "tier": tier,
+             "description": "Bricks keep coming until the ball is lost.",
+             "source": "catalogue", "catalogue": "endless-mode",
+             "evaluation": {"decision": decision, "reason": "the arcade family expects it"}})
+        return design
+
+    def ramp_run(self, thirds, entered=True, extended_ms=None, **extra):
+        record = {"applies": True, "mode": "endless", "entered": entered,
+                  "runs": [{"duration_ms": 60000, "inputs": sum(thirds),
+                            "oracle_inputs_per_third": list(thirds)}] if entered else []}
+        if extended_ms:
+            record["extended_ms"] = extended_ms
+        record.update(extra)
+        self.records["ramp"] = record
+
+    def test_an_authored_run_is_not_judged_as_a_time_ramp(self):
+        # The live counts, on an authored level of a time-ramp family with no endless mode.
+        design = copy.deepcopy(PUZZLE_DESIGN)
+        design["genre"]["family"] = "arcade"
+        for thirds in ([3, 2, 1], [8, 5, 4]):
+            self.records["session"]["runs"] = [
+                {"duration_ms": 40000, "inputs": sum(thirds), "oracle_inputs_per_third": thirds}]
+            check = self.judge(design)["depth.ramp"]
+            self.assertEqual(check["status"], "PASS", check["summary"])
+            self.assertFalse(check["required"])
+            self.assertIn("no time ramp", check["measured"]["reason"])
+            self.assertNotIn("asks for less", check["summary"])
+
+    def test_the_authored_session_is_never_the_endless_modes_run(self):
+        # The design includes an endless mode: the authored level the session played is not
+        # its run, whatever its counts. No ramp record: the mode was not played.
+        self.records["session"]["runs"] = [
+            {"duration_ms": 40000, "inputs": 4, "oracle_inputs_per_third": [3, 0, 1]}]
+        check = self.judge(self.endless_design())["depth.ramp"]
+        self.assertNotIn("asks for less", check["summary"])
+        self.assertEqual(check["status"], "WARNING", check["summary"])
+        self.assertFalse(check["required"])
+        self.assertEqual(check["measured"]["ramp_run"], "mode")
+        self.assertFalse(check["measured"]["mode_entered"])
+        self.assertIn("could not enter it", check["measured"]["unmeasured"])
+        self.assertNotIn("oracle_inputs_per_third", check["measured"])
+
+    def test_an_endless_mode_the_build_does_not_carry_is_not_owed(self):
+        # The greybox builds the MVP: a post-mvp endless mode is not in it, so the authored
+        # play has no time ramp to hold.
+        self.ramp_tiers = ["mvp"]
+        self.records["session"]["runs"] = [
+            {"duration_ms": 40000, "inputs": 4, "oracle_inputs_per_third": [3, 0, 1]}]
+        check = self.judge(self.endless_design())["depth.ramp"]
+        self.assertEqual(check["status"], "PASS", check["summary"])
+        self.assertFalse(check["required"])
+        for decision in ("later", "cut"):
+            self.ramp_tiers = None
+            check = self.judge(self.endless_design(decision=decision))["depth.ramp"]
+            self.assertIn("no time ramp", check["measured"]["reason"])
+
+    def test_an_endless_run_whose_input_rate_falls_fails(self):
+        self.ramp_run([18, 15, 11])
+        check = self.judge(self.endless_design())["depth.ramp"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertTrue(check["required"])
+        self.assertIn("acted 11 times in the last third of its longest endless-mode run and 18",
+                      check["summary"])
+        self.assertTrue(check["measured"]["mode_entered"])
+
+    def test_an_endless_run_whose_input_rate_rises_passes(self):
+        self.ramp_run([12, 14, 19])
+        check = self.judge(self.endless_design())["depth.ramp"]
+        self.assertEqual(check["status"], "PASS", check["summary"])
+        self.assertTrue(check["required"])
+        self.assertEqual(check["measured"]["oracle_inputs_per_third"], [12, 14, 19])
+        self.assertIn("held or rose", check["summary"])
+
+    def test_too_small_a_sample_is_unmeasured_not_passed(self):
+        from wgflib import genre_models
+
+        minimum = genre_models.qa_of(self.endless_design())["ramp"]["min_inputs_per_third"]
+        self.assertGreater(minimum, 3)
+        # Rising, and still too few to tell from noise: the bot played on and it stays short.
+        self.ramp_run([3, 4, 6], extended_ms=60000)
+        check = self.judge(self.endless_design())["depth.ramp"]
+        self.assertEqual(check["status"], "WARNING", check["summary"])
+        self.assertFalse(check["required"])
+        self.assertIn("not measured", check["summary"])
+        self.assertIn(f"fewer than the {minimum}", check["measured"]["unmeasured"])
+        self.assertEqual(check["measured"]["extended_ms"], 60000)
+        # Falling, as few: the live 3 then 1 is not a judged fall either.
+        self.ramp_run([3, 2, 1])
+        check = self.judge(self.endless_design())["depth.ramp"]
+        self.assertEqual(check["status"], "WARNING")
+        self.assertNotIn("asks for less", check["summary"])
+
+    def test_an_unmeasured_ramp_fails_where_skips_are_not_passed(self):
+        self.ramp_required = ("at quality tier release a check that measured nothing is not "
+                              "passed (core/reference/quality-policy.yaml skipped_checks)")
+        self.ramp_run([3, 4, 6], extended_ms=60000)
+        check = self.judge(self.endless_design())["depth.ramp"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertTrue(check["required"])
+        self.assertIn("quality-policy.yaml skipped_checks", check["summary"])
+        self.ramp_run([], entered=False, reason="the probe offers no play.mode")
+        check = self.judge(self.endless_design())["depth.ramp"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("the probe offers no play.mode", check["summary"])
+        # A measured ramp is judged as before, whatever the tier.
+        self.ramp_run([12, 14, 19])
+        self.assertEqual(self.judge(self.endless_design())["depth.ramp"]["status"], "PASS")
+
+    def test_an_endless_session_too_small_to_read_is_unmeasured(self):
+        design = copy.deepcopy(PUZZLE_DESIGN)
+        design["genre"].update(family="arcade", ending="endless")
+        check = self.judge(design)["depth.ramp"]                # the session's [3, 2, 1]
+        self.assertEqual(check["status"], "WARNING", check["summary"])
+        self.assertNotIn("asks for less", check["summary"])
+        self.assertEqual(check["measured"]["ramp_run"], "session")
 
     def test_bad_play_that_never_ends_is_still_measured(self):
         self.records["lose"]["endedAtMs"] = None
@@ -1144,6 +1276,48 @@ class TheStepsTier(unittest.TestCase):
         self.assertIsNotNone(self.kinds_required(None, design))
         design["build_spec"]["content"]["quality_tier"] = "mvp"
         self.assertIsNone(self.kinds_required(None, design))
+
+    def test_the_ramp_is_held_like_any_unmeasured_check(self):
+        context = types.SimpleNamespace(environment={"quality": {"tier": "release"}},
+                                        current_step="playability")
+        self.assertIn("quality tier release",
+                      PlayabilityStep._unmeasured_held(context, DESIGN, "depth.ramp"))
+        context.environment = {"quality": {"tier": "mvp"}}
+        self.assertIsNone(PlayabilityStep._unmeasured_held(context, DESIGN, "depth.ramp"))
+
+    def test_the_tiers_a_build_carries(self):
+        context = types.SimpleNamespace(environment={"quality": {"tier": "release"}},
+                                        current_step="playability")
+        self.assertEqual(PlayabilityStep._built_tiers(context, DESIGN, {}), ["mvp", "post-mvp"])
+        # The greybox builds the MVP, whatever the run's tier.
+        self.assertEqual(PlayabilityStep._built_tiers(context, DESIGN, {"phase": "greybox"}),
+                         ["mvp"])
+        context.environment = {"quality": {"tier": "mvp"}}
+        self.assertEqual(PlayabilityStep._built_tiers(context, DESIGN, None), ["mvp"])
+
+    def test_an_endless_mode_run_is_budgeted_and_handed_to_the_bot(self):
+        from wgflib import genre_models
+
+        design = AuthoredPuzzle.endless_design()
+        qa = genre_models.qa_of(design)
+        base = {"idle_ms": 0, "win_ms": 0, "lose_ms": 0, "start_timeout_ms": 0}
+        cfg, truncated, _ = PlayabilityStep._content_settings(design, qa, base,
+                                                              ["mvp", "post-mvp"])
+        self.assertEqual(cfg["ramp_run"], "mode")
+        self.assertEqual(cfg["ramp_mode"], qa["ramp"]["mode"])
+        self.assertEqual(cfg["ramp_ms"], qa["ramp"]["run_s"] * 1000)
+        self.assertEqual(cfg["ramp_min_inputs"], qa["ramp"]["min_inputs_per_third"])
+        self.assertEqual(cfg["ramp_extend_ms"], qa["ramp"]["extend_s"] * 1000)
+        self.assertFalse(truncated["ramp"])
+        # The greybox's MVP build carries no post-mvp endless mode: nothing to enter.
+        cfg, _t, _ = PlayabilityStep._content_settings(design, qa, base, ["mvp"])
+        self.assertIsNone(cfg["ramp_run"])
+        self.assertEqual((cfg["ramp_ms"], cfg["ramp_extend_ms"]), (0, 0))
+        # Authored, no endless mode: the session is not extended for a ramp it has not got.
+        cfg, _t, _ = PlayabilityStep._content_settings(PUZZLE_DESIGN, genre_models.qa_of(
+            PUZZLE_DESIGN), base)
+        self.assertIsNone(cfg["ramp_run"])
+        self.assertEqual(cfg["ramp_min_inputs"], 0)
 
     def test_no_tier_at_all_keeps_the_unmeasured_warning(self):
         design = copy.deepcopy(CONTENT_DESIGN)

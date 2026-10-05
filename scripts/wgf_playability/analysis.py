@@ -1,9 +1,9 @@
 """Judging what the playability bot recorded: the checks, against the design and the bars.
 
 `judge(records, frames_dir, design, rules, experience_rules, project, qa)` turns one viewport's
-bot records (bot.spec.ts: first-session, act, win, lose, pause, traverse, persist, session) and
-its frames into checks. Every check states what was measured and against which bar: the design's
-experience contract (`build_spec.experience`), core/reference/experience-rules.yaml,
+bot records (bot.spec.ts: first-session, act, win, lose, pause, traverse, persist, session,
+ramp) and its frames into checks. Every check states what was measured and against which bar:
+the design's experience contract (`build_spec.experience`), core/reference/experience-rules.yaml,
 core/reference/visual-quality.yaml, and - for the content, difficulty and depth checks -
 core/reference/design-depth.yaml's `playability` block merged with the genre family's `qa`
 block (core/reference/genre-models.yaml, through wgflib.genre_models). No bar is ever written
@@ -27,7 +27,8 @@ from wgflib import build_scope, genre_models, jsonschema_lite, paths
 from wgf_assets.raster import RasterError, decode_png
 
 __all__ = ["judge", "frame_stats", "changed_fraction", "objective_seen", "PROBE_SCHEMA",
-           "content_units", "persisted_metrics", "persisted_measures", "UNIT_REACHED"]
+           "content_units", "persisted_metrics", "persisted_measures", "UNIT_REACHED",
+           "time_ramp", "thirds_of"]
 
 PROBE_SCHEMA = os.path.join(paths.ARTIFACTS, "shared", "play-probe.schema.json")
 _WORD = re.compile(r"[a-z0-9]+")
@@ -133,6 +134,50 @@ def _kinds_reported(traverse):
 
 def _skips(project, ids, reason):
     return [_check(cid, project, False, reason, skipped=True) for cid in ids]
+
+
+# -- the time ramp: which run promises one ---------------------------------------------------
+
+def time_ramp(design, qa, tiers=None):
+    """Where the design promises a time ramp - the longer one run lasts, the more it asks -
+    and so the run the bot reads the oracle's input rate on; None when it promises none.
+
+    Only a family whose `qa` states `endless_window_s` promises a time ramp. The run is the
+    session itself when the play is endless (`genre.ending` `endless`, or content that is not
+    authored): `{"run": "session"}`. Otherwise it is a run of a mode the design includes - a
+    feature whose `catalogue` (or id) is one of design-depth.yaml
+    `playability.ramp.mode_features`, not deferred or cut, at a tier of `tiers` (the design
+    tiers this build carries; mvp and post-mvp when None): `{"run": "mode", "mode": ...,
+    "feature": ...}`, which the bot enters through the probe's `play.mode`. An authored-unit
+    design with no such mode ramps between its units, which difficulty.axes_progress judges:
+    None.
+    """
+    design = design or {}
+    if not isinstance(((qa or {}).get("genre") or {}).get("endless_window_s"), (int, float)):
+        return None
+    _content, mode, _units = content_units(design)
+    if (design.get("genre") or {}).get("ending") == "endless" or mode != "authored":
+        return {"run": "session"}
+    bars = (qa or {}).get("ramp") or {}
+    wanted = set(bars.get("mode_features") or [])
+    built = set(tiers) if tiers is not None else {"mvp", "post-mvp"}
+    if not isinstance(bars.get("mode"), str):
+        return None
+    for feature in design.get("features") or []:
+        if not isinstance(feature, dict):
+            continue
+        if not ({feature.get("catalogue"), feature.get("id")} & wanted):
+            continue
+        decision = (feature.get("evaluation") or {}).get("decision")
+        if (feature.get("tier") or "mvp") in built and decision in (None, "include"):
+            return {"run": "mode", "mode": bars["mode"], "feature": feature.get("id")}
+    return None
+
+
+def thirds_of(run):
+    """The oracle's inputs per third of one recorded run, or None when it has none."""
+    thirds = (run or {}).get("oracle_inputs_per_third") or []
+    return thirds if len(thirds) == 3 else None
 
 
 def _content_checks(ctx):
@@ -766,41 +811,89 @@ def _depth_checks(ctx):
     if ended is None or ended > cap:
         problems.append(f"bad play ended after {ended} ms, over {cap} ms "
                         f"({bars.get('bad_play_max_multiplier')} x a {run_s} s run)")
-    # The input rate across a run's thirds is a time-ramp family's promise: the longer one run
-    # lasts, the more it asks. A family whose difficulty is authored per unit (its `qa` states
-    # no `endless_window_s`) ramps between units - which difficulty.axes_progress judges - and
-    # a run of one unit has no time ramp to read, so the rate is recorded, not held.
-    timed = isinstance((qa.get("genre") or {}).get("endless_window_s"), (int, float))
-    if not timed:
-        measured["reason"] = ("no time ramp for a unit-authored family (the genre family's `qa` "
-                              "states no endless_window_s)")
-    runs = [r for r in (records.get("session") or {}).get("runs") or [] if isinstance(r, dict)]
+    # The input rate across a run's thirds is a time ramp: the longer one run lasts, the more
+    # it asks. It is read only on a run of the play that promises one (time_ramp): the session
+    # when the play is endless, else a run of the endless mode the bot entered through the
+    # probe. A unit-authored design without such a mode ramps between units - which
+    # difficulty.axes_progress judges - so its rate is recorded, not held: the longest unit
+    # it played is not a time ramp.
+    ramp = time_ramp(ctx["design"], qa, ctx.get("ramp_tiers"))
+    timed = ramp is not None
+    minimum = bars.get("min_inputs_per_third")
+    unmeasured = None
+    on_mode = bool(ramp and ramp["run"] == "mode")
+    record = (records.get("ramp") if on_mode else records.get("session")) or {}
+    runs = [r for r in record.get("runs") or [] if isinstance(r, dict)]
+    if ramp is None:
+        measured["reason"] = ("no time ramp: the genre family's `qa` states no endless_window_s, "
+                              "or the design is unit-authored and includes no endless mode "
+                              "(design-depth.yaml playability.ramp.mode_features)")
+        played_on = "longest run"
+    elif not on_mode:
+        measured["ramp_run"] = "session"
+        played_on = "longest session run"
+    else:
+        measured.update(ramp_run="mode", mode=ramp["mode"], feature=ramp["feature"],
+                        mode_entered=bool(record.get("entered")))
+        played_on = f"longest {ramp['mode']}-mode run"
+        if not record.get("entered"):
+            unmeasured = (f"the design includes the {ramp['mode']} mode ({ramp['feature']}), "
+                          "whose run the time ramp is read on, and the bot could not enter it: "
+                          + (record.get("reason") or "no ramp record")
+                          + " (the probe's optional play.mode.enter, docs/template-contract.md)")
+            runs = []
     longest = max(runs, key=lambda r: r.get("duration_ms") or 0) if runs else None
-    thirds = (longest or {}).get("oracle_inputs_per_third") or []
-    if len(thirds) == 3:
+    thirds = thirds_of(longest) or []
+    extended = record.get("extended_ms")
+    if thirds:
         measured["oracle_inputs_per_third"] = thirds
-        if thirds[2] < thirds[0] and timed:
+        measured["longest_run_ms"] = longest.get("duration_ms")
+    if extended:
+        measured["extended_ms"] = extended
+    if timed and unmeasured is None:
+        if not thirds:
+            unmeasured = "no run was played to read the input rate on"
+        elif not isinstance(minimum, (int, float)) or thirds[0] < minimum:
+            # Too few inputs to tell a ramp from noise: never a pass, whatever the last third.
+            unmeasured = (f"the first third of the {played_on} holds {thirds[0]} oracle "
+                          f"input(s), fewer than the {minimum} a rate is compared on"
+                          + (f", after the bot played on {extended} ms for more"
+                             if extended else ""))
+        elif thirds[2] < thirds[0]:
             problems.append(f"the oracle acted {thirds[2]} times in the last third of its "
-                            f"longest run and {thirds[0]} in the first: the game asks for less "
+                            f"{played_on} and {thirds[0]} in the first: the game asks for less "
                             "as it goes")
-    out.append(_check("depth.ramp", project, not problems,
-                      "; ".join(problems[:3]) or
-                      (f"bad play ended in {ended} ms"
-                       + (", and the oracle's input rate held or rose across its longest run"
-                          f"{f' {thirds}' if thirds else ''}" if timed else
-                          f"; the oracle's input rate per third of its longest run was {thirds}"
-                          if thirds else "")),
-                      required=timed, measured=measured,
-                      expected=f"a bad run inside {cap} ms"
-                               + (", and the last third's input rate at least the first "
-                                  f"third's (one relief dip of {bars.get('relief_dip_s')} s "
-                                  "allowed)" if timed else ""),
-                      truncated=ctx["truncated"].get("session")))
+    if unmeasured:
+        measured["unmeasured"] = unmeasured
+    expected = (f"a bad run inside {cap} ms"
+                + (f", and on the {played_on}, with at least {minimum} oracle inputs in its "
+                   "first third, the last third's input rate at least the first third's (one "
+                   f"relief dip of {bars.get('relief_dip_s')} s allowed)" if timed else ""))
+    if problems:
+        ok, required = False, timed
+        summary = "; ".join(problems[:3])
+    elif unmeasured:
+        # Not measured is not passed: a WARNING with its reason, a FAIL at a tier whose
+        # skipped checks are not passed (quality-policy.yaml skipped_checks, `ramp_required`).
+        ok, required = False, bool(ctx.get("ramp_required"))
+        summary = (f"bad play ended in {ended} ms, but the time ramp was not measured: "
+                   f"{unmeasured}"
+                   + (f"; {ctx['ramp_required']}" if ctx.get("ramp_required") else ""))
+    else:
+        ok, required = True, timed
+        summary = (f"bad play ended in {ended} ms"
+                   + (f", and the oracle's input rate held or rose across its {played_on} "
+                      f"{thirds}" if timed else
+                      f"; the oracle's input rate per third of its longest run was {thirds}"
+                      if thirds else ""))
+    out.append(_check("depth.ramp", project, ok, summary,
+                      required=required, measured=measured, expected=expected,
+                      truncated=ctx["truncated"].get("ramp" if on_mode else "session")))
     return out
 
 
 def judge(records, frames_dir, design, rules, experience_rules, project, qa=None,
-          kinds_required=None, scope_tiers=None):
+          kinds_required=None, scope_tiers=None, ramp_required=None, ramp_tiers=None):
     """Checks (dicts per playability-report.schema.json) for one viewport.
 
     `qa` is the merged bars (wgflib.genre_models.qa_of): core/reference/design-depth.yaml's
@@ -817,6 +910,9 @@ def judge(records, frames_dir, design, rules, experience_rules, project, qa=None
     them is a design unit wherever the build is held to one - the id the probe reports, the
     unit a traversed one is - while the traverse and its curve stay the MVP's. An id the
     design does not list, or lists outside the scope, is never one.
+    `ramp_required` is the same for a time ramp the bot could not measure (depth.ramp);
+    `ramp_tiers` are the design tiers this build carries, which decide whether an included
+    endless mode is owed by it (time_ramp).
     """
     spec = ((design or {}).get("build_spec") or {})
     ex = spec.get("experience") or {}
@@ -837,7 +933,8 @@ def judge(records, frames_dir, design, rules, experience_rules, project, qa=None
            "axes": genre_models.axes_of(design),
            "family": genre_models.for_design(design) or {},
            "truncated": rules.get("_truncated") or {},
-           "kinds_required": kinds_required}
+           "kinds_required": kinds_required, "ramp_required": ramp_required,
+           "ramp_tiers": ramp_tiers}
     checks = []
     add = checks.append
 

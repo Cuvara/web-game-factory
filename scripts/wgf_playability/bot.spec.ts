@@ -20,7 +20,9 @@
 // When the probe declares the optional showcase capability (play.showcase), a last test asks
 // it to stage, one by one, the real states where each asset it names is drawn - later levels a
 // fresh save never reaches - and keeps a frame of each, so the production gate can see those
-// assets drawn too. It is never used to play or to judge play.
+// assets drawn too. It is never used to play or to judge play. When the design's time ramp is
+// promised by a mode it includes (an endless mode beside authored units), one test enters that
+// mode through the probe's optional play.mode and plays it, so the ramp is read on its run.
 // Factory tooling: it contains no game, and is not part of one.
 
 import { test, type Page } from "@playwright/test";
@@ -76,6 +78,15 @@ const CFG = JSON.parse(fs.readFileSync(process.env.WGF_PLAY_CONFIG as string, "u
   session_target_ms: number;
   session_max_ms: number;
   window_ms: number;
+  // The time ramp (analysis.time_ramp): the run it is read on - `session`, or `mode`: a run
+  // of ramp_mode, entered through the probe's optional play.mode and played for ramp_ms -
+  // or null. While the longest run's first third holds fewer than ramp_min_inputs oracle
+  // inputs, that run is played on for up to ramp_extend_ms more.
+  ramp_run?: string | null;
+  ramp_mode?: string | null;
+  ramp_ms?: number;
+  ramp_min_inputs?: number;
+  ramp_extend_ms?: number;
   axes: string[];
   advance_actions: string[];
   // The family says a unit can be restarted from inside it (genre-models qa.reset_in_unit).
@@ -1126,11 +1137,111 @@ test("persist: what survives a reload", async ({ page }, info) => {
                               after_resumed: afterResumed, ...watch.record(), frames });
 });
 
+// The oracle's inputs per third of one run of `duration` ms, from the input times in it.
+function thirdsOf(inputs: number[], duration: number): number[] {
+  const third = Math.max(1, duration / 3);
+  const thirds = [0, 0, 0];
+  for (const at of inputs) {
+    const slot = Math.min(2, Math.floor(at / third));
+    thirds[slot] = (thirds[slot] ?? 0) + 1;
+  }
+  return thirds;
+}
+
+type Run = { duration_ms: number; inputs: number; oracle_inputs_per_third: number[] };
+
+// The oracle plays and retries at once for `windowMs`, run after run. Recorded: each run with
+// the oracle's input rate per third of it (does the game ask more of the player as it goes?),
+// when the designed closing beat first arrived, and the difficulty in force in each window.
+// With `minInputs`, play goes on past the window - for up to `extendMs` - while the longest
+// run's first third holds fewer oracle inputs than that: too few to tell a ramp from noise.
+async function playRuns(page: Page, watch: Watch, touch: boolean, windowMs: number,
+                        minInputs: number, extendMs: number) {
+  const runs: Run[] = [];
+  const windows: { at_ms: number; difficulty: Record<string, number> }[] = [];
+  let beatAtMs: number | null = null;
+  let endedOn = "window";
+  let extendedMs = 0;
+  const t0 = Date.now();
+  const opening = watch.saw(await snap(page));
+  let best = opening?.metrics?.best ?? null;
+  let index = opening?.content?.unit_index ?? null;
+  let runStart = Date.now();
+  let inputs: number[] = [];
+  let window = 0;
+  const close = (): void => {
+    const duration = Date.now() - runStart;
+    runs.push({ duration_ms: duration, inputs: inputs.length,
+                oracle_inputs_per_third: thirdsOf(inputs, duration) });
+    inputs = [];
+    runStart = Date.now();
+  };
+  // Whether the longest run so far - the one still in play included - is enough to read.
+  const sampled = (): boolean => {
+    const open = Date.now() - runStart;
+    let longest: number[] = thirdsOf(inputs, open);
+    let longestMs = open;
+    for (const run of runs) {
+      if (run.duration_ms > longestMs) {
+        longestMs = run.duration_ms;
+        longest = run.oracle_inputs_per_third;
+      }
+    }
+    return (longest[0] ?? 0) >= minInputs;
+  };
+  for (;;) {
+    const elapsed = Date.now() - t0;
+    if (elapsed >= windowMs) {
+      if (!minInputs || sampled() || elapsed >= windowMs + extendMs) break;
+      extendedMs = elapsed - windowMs;
+    }
+    const s = watch.saw(await snap(page));
+    if (!s) break;
+    const ms = Date.now() - t0;
+    if (CFG.window_ms > 0 && ms >= (window + 1) * CFG.window_ms) {
+      window = Math.floor(ms / CFG.window_ms);
+      windows.push({ at_ms: ms, difficulty: difficultyOf(s) });
+    }
+    const nowBest = s.metrics?.best ?? null;
+    const nowIndex = s.content?.unit_index ?? null;
+    if (beatAtMs === null && ((nowBest !== null && best !== null && nowBest > best)
+                             || (nowIndex !== null && index !== null && nowIndex > index))) {
+      beatAtMs = ms;
+    }
+    if (nowBest !== null) best = Math.max(best ?? nowBest, nowBest);
+    if (nowIndex !== null) index = Math.max(index ?? nowIndex, nowIndex);
+    if (s.state === "lost" || s.state === "won") {
+      close();
+      // Instant retry: a first session is only as long as the game lets the player stay in.
+      const clicked = await retry(page, s, touch);
+      if (!clicked) {
+        endedOn = "no retry was offered";
+        break;
+      }
+      await page.waitForTimeout(300);
+      const back = watch.saw(await snap(page));
+      const begin = back?.inputs?.find((m) => BEGIN.test(m.action));
+      if (begin) await act(page, begin, touch);
+      runStart = Date.now();
+      continue;
+    }
+    if (s.oracle) {
+      await act(page, s.oracle, touch);
+      inputs.push(Date.now() - runStart);
+      await page.waitForTimeout(120);
+    } else {
+      await page.waitForTimeout(40);
+    }
+  }
+  if (Date.now() - runStart > 500) close();
+  if (beatAtMs !== null && endedOn === "window") endedOn = "beat reached";
+  return { runs, windows, lengthMs: Date.now() - t0, beatAtMs, endedOn, extendedMs };
+}
+
 // One first session, as the design designed it: the oracle plays and retries at once, and the
-// session is held open to the design's own first-session length. Recorded: how long play
-// lasted, each attempt with the oracle's input rate per third of it (does the game ask more of
-// the player as it goes?), when the designed closing beat first arrived, and the difficulty in
-// force in each window.
+// session is held open to the design's own first-session length (playRuns). When the play is
+// endless the session is the run the time ramp is read on, and it is played on while too
+// short to read.
 test("session: a first session's length and ramp", async ({ page }, info) => {
   const project = info.project.name;
   const frames: string[] = [];
@@ -1141,81 +1252,87 @@ test("session: a first session's length and ramp", async ({ page }, info) => {
   }
   const touch = Boolean(info.project.use.hasTouch);
   const started = await start(page, touch, watch);
-  const runs: { duration_ms: number; inputs: number; oracle_inputs_per_third: number[] }[] = [];
-  const windows: { at_ms: number; difficulty: Record<string, number> }[] = [];
-  let lengthMs = 0;
-  let beatAtMs: number | null = null;
-  let endedOn = "window";
+  let played = { runs: [] as Run[], windows: [] as { at_ms: number; difficulty: Record<string, number> }[],
+                 lengthMs: 0, beatAtMs: null as number | null, endedOn: "play never began", extendedMs: 0 };
   if (started.playingMs !== null) {
-    const t0 = Date.now();
-    const opening = watch.saw(await snap(page));
-    let best = opening?.metrics?.best ?? null;
-    let index = opening?.content?.unit_index ?? null;
-    let runStart = Date.now();
-    let inputs: number[] = [];
-    let window = 0;
-    const close = (): void => {
-      const duration = Date.now() - runStart;
-      const third = Math.max(1, duration / 3);
-      const thirds = [0, 0, 0];
-      for (const at of inputs) {
-        const slot = Math.min(2, Math.floor(at / third));
-        thirds[slot] = (thirds[slot] ?? 0) + 1;
-      }
-      runs.push({ duration_ms: duration, inputs: inputs.length, oracle_inputs_per_third: thirds });
-      inputs = [];
-      runStart = Date.now();
-    };
-    while (Date.now() - t0 < CFG.session_max_ms) {
-      const s = watch.saw(await snap(page));
-      if (!s) break;
-      const ms = Date.now() - t0;
-      if (ms >= (window + 1) * CFG.window_ms) {
-        window = Math.floor(ms / CFG.window_ms);
-        windows.push({ at_ms: ms, difficulty: difficultyOf(s) });
-      }
-      const nowBest = s.metrics?.best ?? null;
-      const nowIndex = s.content?.unit_index ?? null;
-      if (beatAtMs === null && ((nowBest !== null && best !== null && nowBest > best)
-                               || (nowIndex !== null && index !== null && nowIndex > index))) {
-        beatAtMs = ms;
-      }
-      if (nowBest !== null) best = Math.max(best ?? nowBest, nowBest);
-      if (nowIndex !== null) index = Math.max(index ?? nowIndex, nowIndex);
-      if (s.state === "lost" || s.state === "won") {
-        close();
-        // Instant retry: a first session is only as long as the game lets the player stay in.
-        const clicked = await retry(page, s, touch);
-        if (!clicked) {
-          endedOn = "no retry was offered";
-          break;
-        }
-        await page.waitForTimeout(300);
-        const back = watch.saw(await snap(page));
-        const begin = back?.inputs?.find((m) => BEGIN.test(m.action));
-        if (begin) await act(page, begin, touch);
-        runStart = Date.now();
-        continue;
-      }
-      if (s.oracle) {
-        await act(page, s.oracle, touch);
-        inputs.push(Date.now() - runStart);
-        await page.waitForTimeout(120);
-      } else {
-        await page.waitForTimeout(40);
-      }
-    }
-    if (Date.now() - runStart > 500) close();
-    lengthMs = Date.now() - t0;
-    if (beatAtMs !== null && endedOn === "window") endedOn = "beat reached";
+    const ramp = CFG.ramp_run === "session";
+    played = await playRuns(page, watch, touch, CFG.session_max_ms,
+                            ramp ? CFG.ramp_min_inputs ?? 0 : 0, ramp ? CFG.ramp_extend_ms ?? 0 : 0);
     await frame(page, project, "session-end", frames);
-  } else {
-    endedOn = "play never began";
   }
-  write(project, "session", { ...started, applies: true, length_ms: lengthMs,
-                              beat_at_ms: beatAtMs, ended_on: endedOn, runs, windows,
+  write(project, "session", { ...started, applies: true, length_ms: played.lengthMs,
+                              beat_at_ms: played.beatAtMs, ended_on: played.endedOn,
+                              runs: played.runs, windows: played.windows,
+                              extended_ms: played.extendedMs,
                               target_ms: CFG.session_target_ms, window_ms: CFG.window_ms,
                               ...watch.record(), frames });
+});
+
+// Enters `mode` through the probe's optional play.mode (only with wgf-probe=1): `modes()`
+// lists the modes the build can be put in, `enter(mode)` puts the running game into a run
+// of that mode, resolving true, or false when it cannot.
+async function enterMode(page: Page, mode: string): Promise<{ offered: string[] | null; entered: boolean; reason: string | null }> {
+  return await page.evaluate(async (wanted) => {
+    const hook = (window as unknown as { __wgf__?: { play?: { mode?: { modes?(): unknown; enter?(m: string): unknown } } } })
+      .__wgf__?.play?.mode;
+    if (!hook || typeof hook.enter !== "function") {
+      return { offered: null, entered: false, reason: "the probe declares no play.mode" };
+    }
+    let offered: string[] | null = null;
+    try {
+      const listed = typeof hook.modes === "function" ? hook.modes() : null;
+      offered = Array.isArray(listed) ? listed.map(String) : null;
+    } catch (e) {
+      return { offered: null, entered: false, reason: `play.mode.modes() threw: ${String(e).slice(0, 200)}` };
+    }
+    if (offered && !offered.includes(wanted)) {
+      return { offered, entered: false, reason: `play.mode.modes() does not offer "${wanted}"` };
+    }
+    try {
+      const done = await hook.enter(wanted);
+      return { offered, entered: done === true,
+               reason: done === true ? null : `play.mode.enter("${wanted}") answered ${String(done)}` };
+    } catch (e) {
+      return { offered, entered: false, reason: `play.mode.enter threw: ${String(e).slice(0, 200)}` };
+    }
+  }, mode);
+}
+
+// The time ramp's own run, when the design's play is authored and its time ramp is promised
+// by a mode it includes (an endless mode): the bot enters that mode through the probe and
+// plays it as a player would - the oracle, instant retries - for ramp_ms, on while too short
+// to read. A design whose ramp is not read on a mode gets a record that says so.
+test("ramp: a run of the mode that promises the time ramp", async ({ page }, info) => {
+  const project = info.project.name;
+  const frames: string[] = [];
+  const watch = new Watch(page, project, frames);
+  const mode = CFG.ramp_run === "mode" ? CFG.ramp_mode ?? null : null;
+  if (!mode) {
+    write(project, "ramp", { applies: false, reason: "the time ramp is not read on a mode run" });
+    return;
+  }
+  const touch = Boolean(info.project.use.hasTouch);
+  const started = await start(page, touch, watch);
+  if (started.playingMs === null) {
+    write(project, "ramp", { ...started, applies: true, mode, entered: false,
+                             reason: "play never began", runs: [], ...watch.record(), frames });
+    return;
+  }
+  const entry = await enterMode(page, mode);
+  if (!entry.entered) {
+    write(project, "ramp", { ...started, applies: true, mode, ...entry, runs: [],
+                             ...watch.record(), frames });
+    return;
+  }
+  await page.waitForTimeout(300);
+  await frame(page, project, `ramp-${mode}-start`, frames);
+  const played = await playRuns(page, watch, touch, CFG.ramp_ms ?? 0,
+                                CFG.ramp_min_inputs ?? 0, CFG.ramp_extend_ms ?? 0);
+  await frame(page, project, `ramp-${mode}-end`, frames);
+  write(project, "ramp", { ...started, applies: true, mode, ...entry, runs: played.runs,
+                           windows: played.windows, length_ms: played.lengthMs,
+                           ended_on: played.endedOn, extended_ms: played.extendedMs,
+                           window_ms: CFG.ramp_ms, ...watch.record(), frames });
 });
 
 // -- the showcase ---------------------------------------------------------------------------

@@ -58,10 +58,12 @@ SESSION_MARGIN_S = 45
 PROJECTS = (("desktop", 1280, 720), ("mobile", 393, 851))
 # The bot's records per viewport (bot.spec.ts): <out>/<project>/<name>.json.
 RECORDS = ("first-session", "act", "win", "lose", "pause", "traverse", "persist", "session",
-           "showcase", "survey")
+           "ramp", "showcase", "survey")
 # How the survey is run (`survey`), and which entity roles carry a kind (`probe`): read by
 # the content-sufficiency step too, which counts what the survey recorded.
 SUFFICIENCY_PATH = os.path.join(paths.REFERENCE, "content-sufficiency.yaml")
+# The design tiers a run's quality tier builds (`tiers[].builds.design_tiers`).
+BENCHMARK_PATH = os.path.join(paths.REFERENCE, "quality-benchmark.yaml")
 # Where the content data file of the commit played is kept, under the records directory, for
 # the content-sufficiency step (scripts/wgf_sufficiency) to measure the build that was played.
 CONTENT_DATA = "public/content/units.json"
@@ -167,6 +169,8 @@ class PlayabilityStep(WorkflowStep):
             qa = genre_models.qa_of(design)
             kinds_required = self._kinds_required(context, design)
             scope_tiers = self._scope_tiers(context, design)
+            ramp_required = self._unmeasured_held(context, design, "depth.ramp")
+            ramp_tiers = self._built_tiers(context, design, self.params)
         except (OSError, YamlError, ValueError) as exc:
             return StepResult.blocked(
                 f"the genre model and depth bars could not be read ({exc}): nothing can be held "
@@ -198,7 +202,8 @@ class PlayabilityStep(WorkflowStep):
                 "has_win": "win" in ex,
                 "showcase_ms": SHOWCASE_S * 1000,
             }
-            content_settings, truncated, total_s = self._content_settings(design, qa, settings)
+            content_settings, truncated, total_s = self._content_settings(design, qa, settings,
+                                                                          ramp_tiers)
             settings.update(content_settings)
             # An adopted checkout with no content data file: its floor is counted on this
             # play when it is the shipped build (wgf_design/existing.py), and the traverse
@@ -209,7 +214,8 @@ class PlayabilityStep(WorkflowStep):
             settings.update(self._survey_settings(design, self.params))
             self._keep_content_data(repo, out)
             blocked = self._play(repo, out, logs, settings, context, total_s,
-                                 survey_s=settings["survey_ms"] / 1000.0)
+                                 survey_s=settings["survey_ms"] / 1000.0,
+                                 extend_s=settings["ramp_extend_ms"] / 1000.0)
             judged = copy.deepcopy(rules)
             judged["_idle_ms"] = settings["idle_ms"]
             judged["_truncated"] = truncated
@@ -225,7 +231,9 @@ class PlayabilityStep(WorkflowStep):
                     checks += analysis.judge(records, frames_dir, design, judged,
                                              experience_rules, project, qa=qa,
                                              kinds_required=kinds_required,
-                                             scope_tiers=scope_tiers)
+                                             scope_tiers=scope_tiers,
+                                             ramp_required=ramp_required,
+                                             ramp_tiers=ramp_tiers)
                 frames += self._frames(frames_dir, project, context.run_dir)
             if not blocked and not any(p["ran"] for p in projects):
                 blocked = "the bot produced no records on any viewport; see " + os.path.join(logs, "bot.log")
@@ -285,11 +293,35 @@ class PlayabilityStep(WorkflowStep):
         """Why content.variety fails on a probe that omits entity kinds while a content unit
         is in play, or None when it stays an unmeasured WARNING: the run's quality tier (else
         the design's) against core/reference/quality-policy.yaml rule 5."""
+        return PlayabilityStep._unmeasured_held(context, design, "content.variety")
+
+    @staticmethod
+    def _built_tiers(context, design, params):
+        """The design tiers the build played here carries: the MVP for the greybox
+        (`with: {phase: greybox}`), else those the run's quality tier builds
+        (core/reference/quality-benchmark.yaml `tiers[].builds.design_tiers`), the MVP when
+        the benchmark states none for it."""
+        if (params or {}).get("phase") == "greybox":
+            return ["mvp"]
+        tier = (run_tier(getattr(context, "environment", None))
+                or quality_tier(design, None)[0])
+        for entry in (load_file(BENCHMARK_PATH) or {}).get("tiers") or []:
+            if isinstance(entry, dict) and entry.get("id") == tier:
+                tiers = (entry.get("builds") or {}).get("design_tiers")
+                if tiers:
+                    return [str(t) for t in tiers]
+        return ["mvp"]
+
+    @staticmethod
+    def _unmeasured_held(context, design, check):
+        """Why `check` fails when it measured nothing, or None when it stays an unmeasured
+        WARNING: the run's quality tier (else the design's) against
+        core/reference/quality-policy.yaml rule 5."""
         tier = (run_tier(getattr(context, "environment", None))
                 or quality_tier(design, None)[0])
         strength = check_strength.for_tier(tier)
         steps = ("playability", getattr(context, "current_step", None))
-        if not strength.required("content.variety", steps):
+        if not strength.required(check, steps):
             return None
         return (f"at quality tier {tier} a check that measured nothing is not passed "
                 f"(core/reference/quality-policy.yaml skipped_checks)")
@@ -297,7 +329,7 @@ class PlayabilityStep(WorkflowStep):
     # -- what the bot is given ----------------------------------------------------------
 
     @staticmethod
-    def _content_settings(design, qa, settings):
+    def _content_settings(design, qa, settings, ramp_tiers=None):
         """(the CFG the content, persist and session tests read, which of them were cut, the
         viewport's whole time budget in seconds).
 
@@ -305,7 +337,10 @@ class PlayabilityStep(WorkflowStep):
         per viewport. What the first-session, act, win, lose and pause tests already cost is
         subtracted; whatever is left is shared out between the traverse, persist and session
         windows in proportion to what they asked for, and every check judged from a window that
-        was cut is marked `truncated`.
+        was cut is marked `truncated`. A design whose time ramp is read on a mode it includes
+        (analysis.time_ramp) asks for that run's window too (design-depth.yaml
+        `playability.ramp.run_s`); the run the ramp is read on may be played on for up to
+        `ramp.extend_s` more while its first third holds too few oracle inputs to compare.
         """
         spec = (design or {}).get("build_spec") or {}
         content, _mode, units = analysis.content_units(design)
@@ -313,10 +348,13 @@ class PlayabilityStep(WorkflowStep):
         budget = qa.get("time_budget") or {}
         bars = qa.get("content") or {}
         session_bars = qa.get("session_length") or {}
+        ramp_bars = qa.get("ramp") or {}
+        ramp = analysis.time_ramp(design, qa, ramp_tiers)
         genre = qa.get("genre") or {}
         target_s = ((depth.get("first_session") or {}).get("target_s") or 0)
         content_applies = content is not None
         depth_applies = bool(depth.get("meta_loop") or depth.get("first_session"))
+        on_mode = bool(depth_applies and ramp and ramp["run"] == "mode")
         asked = {
             "traverse": (budget.get("traverse_s") or 0) * 1000 if content_applies else 0,
             "persist": (budget.get("persist_s") or 0) * 1000 if depth_applies else 0,
@@ -327,6 +365,7 @@ class PlayabilityStep(WorkflowStep):
             "session": (min(target_s * (session_bars.get("max_multiplier") or 0),
                             target_s * (session_bars.get("min_share") or 0) + SESSION_MARGIN_S)
                         * 1000 if depth_applies else 0),
+            "ramp": (ramp_bars.get("run_s") or 0) * 1000 if on_mode else 0,
         }
         total_s = budget.get("bot_total_s") or 0
         spent = (settings["idle_ms"] + settings["win_ms"] + settings["lose_ms"]
@@ -353,6 +392,15 @@ class PlayabilityStep(WorkflowStep):
             "axes": [a["id"] for a in genre_models.axes_of(design)],
             "advance_actions": sorted(set(actions) | set(ADVANCE_ACTIONS)),
             "reset_in_unit": bool(genre.get("reset_in_unit")),
+            # The time ramp's run (analysis.time_ramp): `session` or `mode` (the bot enters
+            # `ramp_mode` through the probe's play.mode and plays it for ramp_ms), else none.
+            "ramp_run": (ramp or {}).get("run") if depth_applies else None,
+            "ramp_mode": ramp["mode"] if on_mode else None,
+            "ramp_ms": int(asked["ramp"] * scale),
+            "ramp_min_inputs": int(ramp_bars.get("min_inputs_per_third") or 0)
+                               if depth_applies and ramp else 0,
+            "ramp_extend_ms": int((ramp_bars.get("extend_s") or 0) * 1000)
+                              if depth_applies and ramp else 0,
         }, truncated, total_s
 
     @staticmethod
@@ -416,7 +464,8 @@ class PlayabilityStep(WorkflowStep):
                         f"the environment, not the game ({os.path.join(logs, name + '.log')})")
         return None
 
-    def _play(self, repo, out, logs, settings, context, bot_total_s=0, survey_s=0):
+    def _play(self, repo, out, logs, settings, context, bot_total_s=0, survey_s=0,
+              extend_s=0):
         """Run the bot. None when it ran (whatever it found); else why it could not."""
         port = _free_port()
         os.makedirs(os.path.join(repo, "tests", "wgf-play"), exist_ok=True)
@@ -434,12 +483,14 @@ class PlayabilityStep(WorkflowStep):
         # The bot's own budget decides the timeout, not a fixed number: two viewports of
         # bot_total_s and of the showcase (its window, the start before it and the last state
         # it stages), plus the install-free start-up and the report - and the survey's window
-        # with a start per unit, on the projects it runs on.
+        # with a start per unit, on the projects it runs on. The ramp's run may be played on
+        # past its window (`extend_s`) on each viewport.
         survey_units = len(settings.get("survey_units") or [])
         survey = (len(settings.get("survey_projects") or [])
                   * (survey_s + survey_units * (settings["start_timeout_ms"] / 1000.0 + 2) + 60)
                   if survey_units else 0)
-        timeout = int(2 * (bot_total_s or 0) + 2 * (SHOWCASE_S + 45) + 120 + survey)
+        timeout = int(2 * (bot_total_s or 0) + 2 * (SHOWCASE_S + 45) + 120 + survey
+                      + 2 * (extend_s or 0))
         try:
             run = self._run(["pnpm", "exec", "playwright", "test", "-c",
                              "playwright.wgf-play.config.ts"], repo, timeout,

@@ -194,6 +194,15 @@ class GitRepo:
     def has_commit(self, sha):
         return bool(sha) and self._git("cat-file", "-e", f"{sha}^{{commit}}", check=False).ok
 
+    def files_at(self, commit, *pathspec):
+        """The files commit `commit` tracks under `pathspec`, or [] when it is not here."""
+        if not self.has_commit(commit):
+            return []
+        result = self._git("ls-tree", "-r", "--name-only", commit, "--", *pathspec,
+                           check=False)
+        return [line for line in result.output.splitlines() if line.strip()] if result.ok \
+            else []
+
     def dirty_paths(self, *pathspec):
         args = ["status", "--porcelain", "--untracked-files=all"]
         if pathspec:

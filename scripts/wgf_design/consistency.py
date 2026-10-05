@@ -14,6 +14,12 @@ The rules are written against a projection, not the raw artifact:
                               brief and strategy imply against what the design builds - its
                               build_spec mechanics, the content units that use them and the
                               controls that drive them - and the pillars they realize
+    commitments.*             the counts, structure and modes the brief and the strategy state
+                              (core/reference/brief-commitments.yaml) and those the design
+                              does not plan (wgf_design/commitments.py)
+    adopted.*                 game-design.existing_content - what an adopted repository
+                              already ships - and what the design plans fewer of
+                              (wgf_design/existing.py)
 
 A rule that reads `platform.*` is evaluated once per required platform and is breached if it
 is breached on any of them. A platform whose profile holds no value for the rule (no ads,
@@ -25,11 +31,14 @@ checked" are opposite conclusions and only one is safe to act on (see wgflib/cri
 import os
 
 from wgflib import mechanics, paths
+
+from . import commitments as brief_commitments
+from . import existing
 from wgflib.criteria import MISSING, Unevaluable, evaluate_named, resolve
 from wgflib.yamllite import load_file
 
-__all__ = ["RULES_PATH", "load_rules", "load_lexicon", "projection", "concept_view",
-           "evaluate", "breach_problems"]
+__all__ = ["RULES_PATH", "load_rules", "load_lexicon", "load_commitments", "projection",
+           "concept_view", "evaluate", "breach_problems"]
 
 RULES_PATH = os.path.join(paths.REFERENCE, "design-consistency-rules.yaml")
 
@@ -51,6 +60,20 @@ def load_lexicon(ruleset=None):
         raise ValueError(f"design-consistency-rules pins {pin.get('id')} {pin.get('version')}, "
                          f"the file is {lexicon.get('version')}: bump the ruleset with it")
     return lexicon
+
+
+def load_commitments(ruleset=None):
+    """The brief-commitments vocabulary the ruleset pins (`commitments: {id, version}`),
+    refused at another version like the lexicon. {} when the ruleset pins none."""
+    ruleset = ruleset if ruleset is not None else load_rules()
+    pin = ruleset.get("commitments")
+    if not isinstance(pin, dict):
+        return {}
+    data = brief_commitments.load(os.path.join(paths.REFERENCE, f"{pin.get('id')}.yaml"))
+    if str(data.get("version")) != str(pin.get("version")):
+        raise ValueError(f"design-consistency-rules pins {pin.get('id')} {pin.get('version')}, "
+                         f"the file is {data.get('version')}: bump the ruleset with it")
+    return data
 
 
 def _paths(expression):
@@ -164,7 +187,7 @@ def concept_view(design, strategy, lexicon=None):
             "pillars_asked": asked, "pillars_unrealized": unrealized}
 
 
-def projection(design, strategy, platform=None, lexicon=None, concept=None):
+def projection(design, strategy, platform=None, lexicon=None, concept=None, stated=None):
     spec = design.get("build_spec") or {}
     cost = sum(item.get("est_cost", 0) for item in (spec.get("assets") or []) + (spec.get("audio") or []))
     return {
@@ -177,6 +200,8 @@ def projection(design, strategy, platform=None, lexicon=None, concept=None):
         "asset_manifest": {"total_est_cost": cost},
         "platform": _platform_view(platform),
         "concept": concept if concept is not None else concept_view(design, strategy, lexicon),
+        "commitments": stated if stated is not None else brief_commitments.view(design, strategy),
+        "adopted": existing.floor_view(design),
     }
 
 
@@ -209,6 +234,9 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None):
     """Return the `consistency` block for `design`."""
     ruleset = rules or load_rules()
     concept = concept_view(design, strategy, load_lexicon(ruleset))
+    vocabulary = load_commitments(ruleset)
+    stated = (brief_commitments.view(design, strategy, vocabulary) if vocabulary
+              else {"stated": [], "unmet": [], "deferred": []})
     required = [p for p in platforms if p.required]
     results = []
     blocking_breached = []
@@ -216,11 +244,13 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None):
     for rule in ruleset["rules"]:
         reads_platform = any(p.startswith("platform.") for p in _paths(rule["when"]))
         if not reads_platform:
-            result = _evaluate_once(rule, projection(design, strategy, concept=concept))
+            result = _evaluate_once(rule, projection(design, strategy, concept=concept,
+                                                     stated=stated))
         else:
             per_platform, notes, breached = [], [], False
             for platform in required:
-                context = projection(design, strategy, platform, concept=concept)
+                context = projection(design, strategy, platform, concept=concept,
+                                     stated=stated)
                 absent = [p for p in _paths(rule["when"])
                           if p.startswith("platform.") and resolve(p, context) in (MISSING, None)]
                 if absent:
@@ -241,6 +271,12 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None):
                       "breached": breached,
                       "note": "; ".join(notes)}
         result["measured"] = _measured(result.get("measured"))
+        if rule["id"] == "brief_commitments_met" and stated["stated"]                 and not result["breached"] and not result.get("note"):
+            # What was held, so a pass says what the brief committed to - and, at a tier the
+            # counts do not bind, what the release must still plan.
+            result["note"] = "stated: " + "; ".join(stated["stated"]) + (
+                f". Not binding at tier {stated.get('tier') or 'unstated'}, owed by the "
+                f"release: " + "; ".join(stated["deferred"]) if stated.get("deferred") else "")
         if result.get("note") is None:
             result.pop("note", None)
         results.append(result)

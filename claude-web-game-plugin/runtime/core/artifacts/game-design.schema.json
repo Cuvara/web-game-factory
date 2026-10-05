@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/game-design.schema.json",
   "title": "Game Design",
-  "description": "One artifact covering scope, session, retention, monetization, progression and economy.\n\nThese are NOT separate stages and not separate documents. Scope depends on monetization, which depends on session, which depends on scope — sequencing them invents an order that does not exist, and splitting them into four files guarantees they drift apart. One artifact with a recorded consistency result is atomic; four files cannot be.\n\nThe `consistency` block is what makes 'these were co-designed' checkable rather than asserted. It is produced by evaluating core/reference/design-consistency-rules.yaml and is the exit guard on title:design.\n\nThe human-readable GDD is a RENDERING of this artifact (see core/templates/gdd.md), not a separate source of truth.\n\nSchema 1.1.0 adds three optional blocks — `engine`, `features` and `build_spec` — which carry the design down to what an implementation agent needs to build the MVP without guessing. They are optional so 1.0.0 artifacts stay valid; the design module always emits them. Schema 1.7.0 adds `build_spec.depth`: the meta loop, goal ladder, content schedule, first-session length and return hooks, each tiered. Schema 1.9.0 adds the content contract: `genre` (the family of core/reference/genre-models.yaml the design is held to), `build_spec.content` (every unit of content the player meets - level, wave, track, encounter, scenario, round - with its objective, mechanics, difficulty, success, failure and acceptance), `build_spec.difficulty.axes` (the axes those difficulty values are on) and `build_spec.mastery` (what getting better means here, and the signals that show it). All optional, so 1.8.0 artifacts stay valid; a design that names a `finite` ending must state its win. Schema 1.10.0 adds feature evaluation: `features[].source`, `features[].catalogue` and `features[].evaluation` (core/reference/feature-catalogue.yaml) - every feature the brief or strategy names, and every catalogue feature the genre family expects, is included, deferred or cut with a reason - and the retention hook `daily_challenge`. All optional, so 1.9.0 artifacts stay valid. Schema 1.11.0 adds `build_spec.content.units[].art`: the drawings particular to a unit, so climax units can be held to distinct art. Optional, so 1.10.0 artifacts stay valid. Schema 1.12.0 adds the quality tier to the content contract, all optional: `build_spec.content.quality_tier` (the tier the design is built to, the strategy's by default), `build_spec.content.elements` (the declared elements a unit is made of beyond its mechanics), `build_spec.content.groups` and `build_spec.content.secondary_goals`, and on each unit `group`, `structure`, `elements` and `objective_kind`, so that what a release-tier design carries is counted, not interpreted (core/reference/quality-benchmark.yaml). Optional, so 1.11.0 artifacts stay valid.",
+  "description": "One artifact covering scope, session, retention, monetization, progression and economy.\n\nThese are NOT separate stages and not separate documents. Scope depends on monetization, which depends on session, which depends on scope — sequencing them invents an order that does not exist, and splitting them into four files guarantees they drift apart. One artifact with a recorded consistency result is atomic; four files cannot be.\n\nThe `consistency` block is what makes 'these were co-designed' checkable rather than asserted. It is produced by evaluating core/reference/design-consistency-rules.yaml and is the exit guard on title:design.\n\nThe human-readable GDD is a RENDERING of this artifact (see core/templates/gdd.md), not a separate source of truth.\n\nSchema 1.1.0 adds three optional blocks — `engine`, `features` and `build_spec` — which carry the design down to what an implementation agent needs to build the MVP without guessing. They are optional so 1.0.0 artifacts stay valid; the design module always emits them. Schema 1.7.0 adds `build_spec.depth`: the meta loop, goal ladder, content schedule, first-session length and return hooks, each tiered. Schema 1.9.0 adds the content contract: `genre` (the family of core/reference/genre-models.yaml the design is held to), `build_spec.content` (every unit of content the player meets - level, wave, track, encounter, scenario, round - with its objective, mechanics, difficulty, success, failure and acceptance), `build_spec.difficulty.axes` (the axes those difficulty values are on) and `build_spec.mastery` (what getting better means here, and the signals that show it). All optional, so 1.8.0 artifacts stay valid; a design that names a `finite` ending must state its win. Schema 1.10.0 adds feature evaluation: `features[].source`, `features[].catalogue` and `features[].evaluation` (core/reference/feature-catalogue.yaml) - every feature the brief or strategy names, and every catalogue feature the genre family expects, is included, deferred or cut with a reason - and the retention hook `daily_challenge`. All optional, so 1.9.0 artifacts stay valid. Schema 1.11.0 adds `build_spec.content.units[].art`: the drawings particular to a unit, so climax units can be held to distinct art. Optional, so 1.10.0 artifacts stay valid. Schema 1.12.0 adds the quality tier to the content contract, all optional: `build_spec.content.quality_tier` (the tier the design is built to, the strategy's by default), `build_spec.content.elements` (the declared elements a unit is made of beyond its mechanics), `build_spec.content.groups` and `build_spec.content.secondary_goals`, and on each unit `group`, `structure`, `elements` and `objective_kind`, so that what a release-tier design carries is counted, not interpreted (core/reference/quality-benchmark.yaml). Optional, so 1.11.0 artifacts stay valid. Schema 1.13.0 adds `existing_content`: the floor an adopted repository's shipped content sets for the design and the build. Optional, so 1.12.x artifacts stay valid.",
 
   "x-wgf": {
     "id": "game-design",
     "kind": "artifact",
     "format": "json",
-    "version": "1.12.1",
+    "version": "1.13.0",
     "template": "templates/gdd.md",
     "producer": "title:design",
     "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "release:qa", "title:scaffolding", "release:store-listing", "release:draft"],
@@ -28,6 +28,33 @@
     },
     "title_id": { "type": "string" },
     "brief": { "type": "string", "minLength": 1, "maxLength": 500, "description": "The game idea a person started the run with (`wgf new-game \"...\"`), verbatim in its canonical form: NFC, trimmed, whitespace runs as one space. Absent when the run was a blank market scan. Copied from the title-strategy. An agent author designs the game it describes; the built-in author fits the buildable concept research selected, and records in open_questions a dimension the brief names that the design does not use. Added in 1.4.0." },
+
+    "existing_content": {
+      "type": "object",
+      "description": "The existing-content floor: what the game repository the run adopts (factory.init.adopt_existing) already ships, counted on its content data file at its HEAD commit (core/reference/brief-commitments.yaml `existing_content`). Written by the design step, never by an author: the design may not plan fewer units, groups, climax units or elements (consistency rule existing_content_floor_kept), and the content-sufficiency step fails a build that ships fewer (`content.regression`). Absent when the run adopts nothing or the repository ships no content data. A quantity no method could count is absent and holds nothing. Added in 1.13.0.",
+      "required": ["source", "units"],
+      "properties": {
+        "source": {
+          "type": "object",
+          "required": ["path", "commit"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1, "description": "The content data file, relative to the checkout." },
+            "commit": { "type": "string", "pattern": "^[0-9a-f]{7,64}$", "description": "The commit the floor was counted at." },
+            "checkout": { "type": "string", "description": "Where the adopted checkout was, when it was read." },
+            "located_by": { "type": "string", "description": "Which rule of the checkout precedence named it (docs/checkouts.md)." }
+          },
+          "additionalProperties": false
+        },
+        "ruleset": { "type": "string", "pattern": "^[a-z][a-z0-9-]*@[0-9]+[.][0-9]+[.][0-9]+$", "description": "The vocabulary the floor was counted with, as id@version." },
+        "units": { "type": "integer", "minimum": 0 },
+        "groups": { "type": "integer", "minimum": 0 },
+        "climax_units": { "type": "integer", "minimum": 0 },
+        "elements": { "type": "integer", "minimum": 0 },
+        "unit_ids": { "type": "array", "items": { "type": "string" }, "description": "The units shipped, so a regression names the ones a build dropped." },
+        "measured_by": { "type": "object", "additionalProperties": { "type": "string" }, "description": "How each quantity was counted (a field of the units, a unit id prefix, a climax term in their text)." }
+      },
+      "additionalProperties": false
+    },
 
     "genre": {
       "type": "object",

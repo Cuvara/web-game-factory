@@ -36,6 +36,7 @@ import re
 from wgflib import genre_models, paths
 from wgflib.yamllite import load_file
 
+from wgf_design import existing
 from wgf_design.content import quality_tier
 
 __all__ = ["RULES_PATH", "BENCHMARK_PATH", "load_rules", "load_benchmark", "owed_units",
@@ -582,12 +583,59 @@ def _playtime_problems(view, bars):
 
 # -- the audit ------------------------------------------------------------------------------
 
+# Reported only when the design records an existing-content floor (game-design
+# existing_content): a run that adopts nothing has nothing to regress from, and a skip would
+# be a check that measured nothing.
+REGRESSION = "content.regression"
+
+
+def regression_check(design, data, data_problem=None):
+    """`content.regression`, or None when the design records no existing-content floor: the
+    build ships no fewer units, groups, climax units or elements than the adopted repository
+    shipped at the commit the floor was counted at (wgf_design/existing.py), each counted on
+    the build by the floor's own method."""
+    floor = (design or {}).get("existing_content")
+    if not isinstance(floor, dict):
+        return None
+    commit = str((floor.get("source") or {}).get("commit") or "")[:12]
+    expected = {q: floor[q] for q in existing.QUANTITIES if isinstance(floor.get(q), int)}
+    if data is None:
+        return _check(REGRESSION, "FAIL",
+                      f"QUALITY REGRESSION: the build ships no content data "
+                      f"({data_problem or 'absent'}); the adopted repository shipped "
+                      f"{floor.get('units')} unit(s) at {commit}",
+                      expected=expected, route="develop")
+    problems, measured = existing.regression(floor, data)
+    planned = existing.floor_view(design)["short"]
+    if not problems:
+        return _check(REGRESSION, "PASS",
+                      f"the build ships no less than the adopted repository did at {commit}: "
+                      + ", ".join(f"{q} {measured[q]} >= {n}" for q, n in expected.items()),
+                      measured=measured, expected=expected)
+    return _check(REGRESSION, "FAIL",
+                  "QUALITY REGRESSION: the build ships less content than the adopted "
+                  "repository already shipped - " + "; ".join(problems),
+                  measured=measured, expected=expected, evidence=planned or None,
+                  route="design-gap" if planned else "develop")
+
+
 def audit(design, strategy, data, records, rules=None, benchmark=None, models=None,
           data_problem=None):
     """{tier, mode, checks, findings, metrics} for one build.
 
     `data` is the build's content data file (or None, with `data_problem` saying why), and
     `records` the playability bot's records per viewport ({project: {test: record}})."""
+    rules = load_rules() if rules is None else rules
+    out = _audit(design, strategy, data, records, rules, benchmark, models, data_problem)
+    check = regression_check(design, data, data_problem)
+    if check is None:
+        return out
+    out["checks"].append(check)
+    return _finish(out, rules, order=True)
+
+
+def _audit(design, strategy, data, records, rules=None, benchmark=None, models=None,
+           data_problem=None):
     rules = load_rules() if rules is None else rules
     benchmark = load_benchmark() if benchmark is None else benchmark
     models = genre_models.load() if models is None else models

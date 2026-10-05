@@ -51,6 +51,7 @@ import os
 
 from wgflib import agentenv, genre_models, paths, permpath, procs, quality_bar
 
+from . import commitments as brief_commitments
 from . import content as content_rules
 from . import features as feature_check
 from . import identity
@@ -239,6 +240,17 @@ PROMPT_FEATURES = (
     " not; a feature only the family expects is included only where it earns its cost, and"
     " never one a required platform cannot run (platform_support none). The catalogue is the"
     " request's `feature_catalogue`."
+)
+# Appended always: the counts the brief and strategy state and, for an adopted repository,
+# what it already ships (consistency rules brief_commitments_met, existing_content_floor_kept).
+PROMPT_COMMITMENTS = (
+    " The request's `commitments.stated` are the counts, structure and modes the brief and the"
+    " strategy state (\"4 themed worlds\" is at least 4 groups, \"boss levels\" at least two"
+    " climax units, a named mode is a feature you include): the units not tiered optional"
+    " plan at least each one, or the design fails. `commitments.existing_content`, when"
+    " present, is what the repository this run adopts already ships, counted at its commit:"
+    " plan no fewer units, groups, climax units or elements than it - you improve that game,"
+    " never shrink it."
 )
 # Appended when the step asks again: the previous draft and exactly what made it invalid.
 PROMPT_REPAIR = (
@@ -495,7 +507,13 @@ class AgentAuthor(DesignAuthor):
                        "feature_catalogue": feature_check.CATALOGUE_PATH,
                        "feature_candidates": _feature_candidates(
                            brief.get("strategy") or {}, genre.get("family"),
-                           brief.get("platforms") or [])})
+                           brief.get("platforms") or []),
+                       # What the brief and strategy count, and what an adopted repository
+                       # already ships (commitments.py, existing.py).
+                       "commitments": {
+                           "stated": brief_commitments.view(
+                               {}, brief.get("strategy") or {})["stated"],
+                           "existing_content": brief.get("existing_content")}})
         if not gaps:
             # On a gap repair the starting draft is the draft file itself.
             request["starting_draft"] = starting
@@ -545,7 +563,8 @@ class AgentAuthor(DesignAuthor):
         values["prompt"] += PROMPT_CONCEPT + PROMPT_SCHEMA + PROMPT_ART
         if not revision and not gaps:
             values["prompt"] += PROMPT_ART_KIT
-        values["prompt"] += PROMPT_DEPTH + PROMPT_CONTENT + PROMPT_FEATURES
+        values["prompt"] += (PROMPT_DEPTH + PROMPT_CONTENT + PROMPT_FEATURES
+                             + PROMPT_COMMITMENTS)
         if repair:
             values["prompt"] += PROMPT_REPAIR
         try:

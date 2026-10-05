@@ -19,7 +19,7 @@
 #   scripts/wgf_sufficiency/audit.py     every block
 #   scripts/wgf_playability/step.py      `survey` (the bot's survey test, bot.spec.ts)
 
-version: 1.0.0
+version: 1.1.0  # 1.1.0: content.regression against an adopted repository's existing-content floor
 
 survey:
   # The playability step's `survey` test (step `with: {survey: true}`): every unit the design
@@ -103,3 +103,8 @@ checks:
   content.progression: {dimension: progression, owner: game-design, severity: major, route: by-design, design_field: "build_spec.progression.steps"}
   content.playtime: {dimension: content, owner: level-design, severity: major, route: by-design, design_field: "build_spec.content.units[].expected_duration_s"}
   content.drift: {dimension: content, owner: level-design, severity: blocker, route: develop}
+  # Only when the design records an existing-content floor (game-design existing_content,
+  # an adopted repository): the build ships no fewer units, groups, climax units or elements
+  # than that repository already shipped. `by-design` like the rest: a design that itself
+  # plans below the floor routes design-gap.
+  content.regression: {dimension: content, owner: level-design, severity: blocker, route: by-design, design_field: "build_spec.content.units"}

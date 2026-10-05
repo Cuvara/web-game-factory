@@ -98,7 +98,11 @@ each such decision, and each one that fell back to a default because research ha
    enough: session length, progression structure, mechanics, replayability and what the
    target platforms expect. At `mvp` the budget is the prototype's units, for a run that
    ends at G4. At `release`, `out_of_scope` no longer excludes "a second content set" - the
-   budget's groups are content sets - only a second mode.
+   budget's groups are content sets - only a second mode. The release budget never
+   commits less than the brief counts: "4 themed worlds" is at least 4 groups, "worlds of
+   8" at least 8 units in each, whatever the benchmark's bar
+   (`core/reference/brief-commitments.yaml`; `basis` records the brief's number beside the
+   other two).
 
 ## Optimize for rapid production
 

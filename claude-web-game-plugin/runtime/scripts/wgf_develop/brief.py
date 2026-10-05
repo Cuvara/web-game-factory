@@ -604,6 +604,24 @@ def select_dev_plan(tech_plan):
     }
 
 
+def existing_floor(design):
+    """The brief's `existing_content`: what the adopted repository already ships, counted at
+    its commit (game-design existing_content), or None when the run adopted nothing."""
+    floor = (design or {}).get("existing_content")
+    if not isinstance(floor, dict):
+        return None
+    return {"commit": (floor.get("source") or {}).get("commit"),
+            "path": (floor.get("source") or {}).get("path"),
+            "floor": {q: floor[q] for q in ("units", "groups", "climax_units", "elements")
+                      if isinstance(floor.get(q), int)},
+            "unit_ids": list(floor.get("unit_ids") or []),
+            "rule": ("This repository already ships a game. Improve it; never rebuild it: no "
+                     "commit may ship fewer units, groups, climax units or elements than the "
+                     "floor, and no shipped unit, asset file or feature is deleted or "
+                     "replaced by a primitive unless a finding in this brief asks for "
+                     "exactly that change.")}
+
+
 def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, scaffold,
                 strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
                 review=None, mobile_test=True, tech_plan=None, self_playtest=False,
@@ -795,6 +813,10 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "qa_defects": defects,
         # greybox | production | None (one develop phase, as before workflow 4).
         "phase": phase,
+        # The adopted repository's shipped content (game-design existing_content): the floor
+        # no commit may drop below, and the rule that the game is improved, never rebuilt.
+        # None when the run adopted nothing.
+        "existing_content": existing_floor(design),
         # What the design says the finished game looks like: each MVP asset requirement's
         # role and readability with the runtime asset id that draws it, the UI spec, and
         # whether the art direction is geometric on purpose. None for a design without it.
@@ -1475,7 +1497,7 @@ def _see_your_build(brief, look):
         for quality in qualities:
             add(f"- {quality}")
         add("")
-    if brief.get("phase") == "greybox":
+    if brief.get("phase") == "greybox" and not brief.get("existing_content"):
         add("In this greybox phase the bar applies to composition, framing, hierarchy and "
             "readability - primitives and flat palette colours are expected, an unframed or "
             "empty scene is not.\n")
@@ -1510,7 +1532,28 @@ def render_markdown(brief):
         "plays a full session, loses or finishes, and plays again. Build the MVP below and "
         "nothing past it.\n")
 
-    if brief.get("phase") == "greybox":
+    adopted = brief.get("existing_content")
+    if adopted:
+        floor = adopted.get("floor") or {}
+        add("## Adopted game: improve, never rebuild\n")
+        add(f"This repository already ships a game: `{adopted.get('path')}` at "
+            f"`{str(adopted.get('commit') or '')[:12]}` holds "
+            + ", ".join(f"{n} {q.replace('_', ' ')}" for q, n in floor.items())
+            + ". That is the floor. " + adopted["rule"] + " Units the design adds go beside "
+            "the shipped ones; a shipped unit the design renames keeps its content. The "
+            "commit is refused when the content data counts below the floor or a shipped "
+            "asset file is gone.\n")
+    if brief.get("phase") == "greybox" and adopted:
+        add("## Phase: greybox (adopted game)\n")
+        add("The greybox proves the loop plays and reads before assets are made. This game "
+            "already has its production art, sound and content, so the greybox is applied to "
+            "the build as it is - never by stripping it to primitives: keep every sprite, "
+            "model, sound and content unit it ships. Add only what the experience contract "
+            "asks and the build lacks (the play probe, the objective on screen, onboarding "
+            "and its grace, the HUD, every action's acknowledgement), and fix what the "
+            "playability failures below name. Report each probe entity with the `render` "
+            "and `asset` it really has.\n")
+    elif brief.get("phase") == "greybox":
         add("## Phase: greybox\n")
         add("This build proves the game before any asset exists. Build the whole MVP loop, "
             "playable end to end - start, the core loop, the objective, losing (and winning), "
@@ -1783,6 +1826,9 @@ def render_markdown(brief):
             add(f"- `{a['id']}` {a.get('label', '')} ({extra})")
             for path in a.get("files") or []:
                 add(f"  - `{path}`")
+    elif brief.get("phase") == "greybox" and brief.get("existing_content"):
+        add("- None made in this phase; keep every asset the adopted game already ships "
+            "(see *Adopted game*).")
     elif brief.get("phase") == "greybox":
         add("- None in this phase: draw everything with primitives (see *Phase: greybox*).")
     else:

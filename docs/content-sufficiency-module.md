@@ -134,6 +134,11 @@ lists every skip in `skipped_checks`, and the step names them in its summary.
 | `content.progression` | Gated unlocks on the built content: the data file's `unlocks` entries that open a unit the build ships, or a group one of them is in, behind a stated `after` or `condition`, and its units carrying `unlock`. An entry opening nothing shipped, or with no condition, is void and listed. A data file that states none is a flat list: 0, whatever the design's progression steps say (the design's count only decides the route) | `progression.min_gated_unlocks` |
 | `content.playtime` | Designed play of the shipped units. The oracle's measured durations are reported, not judged: a perfect player is a lower bound | `content.units.min_total_designed_s` |
 | `content.drift` | Every shipped unit carries the design's commitments: `index`, `objective`, every mechanic, and `group`, `structure`, `objective_kind`, `purpose`, `elements` and `art` wherever the data states them | No departure |
+| `content.regression` | Only when the design records an existing-content floor (`existing_content`: the run adopted a repository that already shipped a game). The build's units, groups, climax units and elements, each counted by the method the floor was counted with (`core/reference/brief-commitments.yaml` `existing_content`), and every shipped unit id | None below the floor, no shipped unit gone. A failure says `QUALITY REGRESSION`; it routes `design-gap` when the design itself plans below the floor, else `develop`. Absent - not skipped - when the run adopted nothing |
+
+A `content.regression` failure is a blocker, so the report's verdict is FAIL, and the
+quality gate's `floor.content_sufficient` holds the content dimension below its floor: the
+gate fails with `QUALITY REGRESSION` ([quality-gate-module.md](quality-gate-module.md)).
 
 **Near-identical units.** Two units are the same unit with other numbers when either is true:
 

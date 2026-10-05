@@ -495,7 +495,7 @@ class QualityTierBudget(unittest.TestCase):
         units = next(b for b in budget["basis"] if b["quantity"] == "units")
         self.assertEqual(units, {"quantity": "units", "genre_model": 6, "benchmark": 12,
                                  "value": 12})
-        self.assertEqual(budget["references"], ["genre-models@1.2.0",
+        self.assertEqual(budget["references"], ["genre-models@1.2.1",
                                                 "quality-benchmark@1.6.0"])
         self.assertTrue(any(d.startswith(f"Quality tier release: the content budget is 12 "
                                          f"{model['unit_kind']}s, 3 worlds, 8 distinct "
@@ -557,7 +557,7 @@ class QualityTierBudget(unittest.TestCase):
         self.assertEqual(budget["units"], model["min_units"])
         self.assertNotIn("groups", budget)
         self.assertNotIn("elements", budget)
-        self.assertEqual(budget["references"], ["genre-models@1.2.0"])
+        self.assertEqual(budget["references"], ["genre-models@1.2.1"])
         self.assertIn("not a release", budget["justification"]["platform_expectations"])
         kinds = model["unit_kind"] + "s"
         self.assertIn(f"3 specified {kinds} in the prototype, 3 in the release",

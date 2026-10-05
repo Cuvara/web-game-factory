@@ -8,7 +8,7 @@
     "id": "review-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "producer": "title:prototype",
     "consumers": ["title:prototype", "title:prototype-review", "release:draft"],
     "repo_path": "workspace/titles/<title-id>/review-report.json",
@@ -40,6 +40,19 @@
       "items": { "$ref": "#/$defs/blocker" }
     },
     "notes": { "type": "string" },
+    "gate_gaming": {
+      "type": "object",
+      "description": "The deterministic gate-gaming pre-check over the specialist commits of the change (1.2.0): the vocabulary it read, the commits it checked, and how many flags became blockers (`flagged`), were declared with evidence for the reviewer to judge (`declared`) or were shown to be false positives by evidence (`cleared`). Absent when the change held no specialist commit to read.",
+      "required": ["vocabulary", "specialist_commits", "flagged", "declared", "cleared"],
+      "properties": {
+        "vocabulary": { "type": "string", "minLength": 1 },
+        "specialist_commits": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{40}$" } },
+        "flagged": { "type": "integer", "minimum": 0 },
+        "declared": { "type": "integer", "minimum": 0 },
+        "cleared": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
     "failure": {
       "type": ["object", "null"],
       "required": ["code", "message"],
@@ -105,7 +118,8 @@
         "file": { "type": ["string", "null"], "description": "Repository-relative path, or null for a finding about the build as a whole." },
         "line": { "type": "integer", "minimum": 1 },
         "summary": { "type": "string", "minLength": 1 },
-        "severity": { "enum": ["blocker", "critical", "major", "minor"] }
+        "severity": { "enum": ["blocker", "critical", "major", "minor"] },
+        "dimension": { "type": "string", "minLength": 1, "description": "The routing dimension (core/reference/specialist-routing.yaml) the blocker belongs to, when the review knows it (1.2.0): a gate-gaming blocker carries the dimension of the specialist visit that gamed the gate, so triage routes it back to that owner. Absent: the producer's default." }
       },
       "additionalProperties": false
     }

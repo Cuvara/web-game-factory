@@ -309,6 +309,18 @@ specialist's label (`wgf_develop/specialist.py`):
   findings (not to be touched or made worse) and the regression constraints (the verified
   and closed findings that must stay fixed) - *What every specialist works within*, from
   the triage-report's `lifecycle`.
+- **The fix changes the game, not its measurement.** Each finding in *Your findings*
+  carries the `Not a fix:` rules of its kind (`core/reference/gate-gaming.yaml`
+  `categories`): for a reach or time finding, never shrink the play space or make the bot's
+  route easier; for a visibility or size finding, keep visual and physical size consistent
+  and never pose an entity only for the probe's frame; for a similarity finding, never change
+  only descriptive data. *Change the game, not its measurement* states the rules for every
+  visit (fix the player-facing cause; never hide or undraw a collider; never special-case
+  the bot or probe, or alter what a measurement reads without changing what the player
+  experiences), what the review flags deterministically, and the one way to declare a
+  change that only looks like gaming: the report's `measurement_changes`, with evidence
+  ([review-module.md](review-module.md#gate-gaming-pre-check)). A flagged commit comes back
+  to the same specialist as a review finding.
 - **The writable scope is the specialist's.** `factory.develop.writable_paths` is cut to the
   role's `writes` (`specialist.narrow`: never wider; a scope with nothing in common fails the
   visit), and the commit-scope check holds the visit to it like any other.

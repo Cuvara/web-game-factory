@@ -48,6 +48,7 @@ from wgflib import agentenv, isolation, procs
 from wgflib import checkout as checkout_lock
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
+from . import gaming
 from .report import PROMPT, PROMPT_STDOUT, build_report, render_brief, verify_failure
 from .settings import Settings, SettingsError
 from .verdict import from_output, parse
@@ -199,12 +200,34 @@ class ReviewStep(WorkflowStep):
             # loop plus what production put on it. Briefs before it carry only the baseline.
             baseline = ((develop_brief or {}).get("review_baseline")
                         or (develop_brief or {}).get("baseline_commit"))
+        # The gate-gaming pre-check (wgf_review.gaming, docs/review-module.md): every
+        # specialist commit of the change, read before the reviewer is. Development's change
+        # only - the sdk step's commit is no specialist's.
+        precheck = None
+        if subject_type == "prototype-report" and baseline and baseline != head:
+            try:
+                precheck = gaming.precheck_range(gaming.GitReader(git), baseline, head)
+            except gaming.VocabularyError as exc:
+                return StepResult.failed(f"gate-gaming vocabulary: {exc}", retryable=False)
+            except (isolation.GitError, OSError) as exc:
+                return StepResult.blocked(
+                    f"cannot read the change {baseline[:12]}..{head[:12]} for the gate-gaming "
+                    f"pre-check, so whether a specialist gamed a gate is unknown: {exc}")
+            with open(os.path.join(review_dir, f"{stem}.gaming.json"), "w",
+                      encoding="utf-8", newline="\n") as handle:
+                json.dump(precheck, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+            flagged = gaming.blockers(precheck)
+            if precheck["commits"]:
+                context.logger.info("review gate-gaming pre-check",
+                                    specialist_commits=len(precheck["commits"]),
+                                    flagged=len(flagged))
         with open(brief_path, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(render_brief(
                 title_id=title_id, commit=head, baseline=baseline, design=design,
                 prototype=prototype, develop_brief=develop_brief, verdict_path=verdict_path,
                 repo=checkout, to_stdout=settings.verdict_from == "stdout",
-                develop_report=develop_report,
+                develop_report=develop_report, gaming=precheck,
                 sdk=subject_artifact if subject_type == "sdk-report" else None,
                 verify_failure=verify_failure(qa, getattr(context, "run_id", None),
                                               develop_brief)))
@@ -304,8 +327,11 @@ class ReviewStep(WorkflowStep):
             return StepResult("FAILED", artifacts=[report], retryable=False,
                               error=f"malformed verdict: {problem}")
 
+        verdict, notes = self._with_precheck(verdict, precheck)
         report = self._report(verdict=verdict["verdict"], blockers=verdict["blockers"],
-                              notes=verdict.get("notes"), isolation=intact, **common)
+                              notes=notes, isolation=intact, gaming_summary=(
+                                  self._gaming_summary(precheck) if precheck else None),
+                              **common)
         if verdict["verdict"] == "approve":
             return StepResult.success([report], message=f"review approved {head[:12]}")
         summary = "; ".join(f"{b['id']}: {b['summary']}" for b in verdict["blockers"][:5])
@@ -314,6 +340,42 @@ class ReviewStep(WorkflowStep):
                                 f"{len(verdict['blockers'])} blocker(s): {summary}")
 
     # -- helpers -------------------------------------------------------------------------
+
+    @staticmethod
+    def _with_precheck(verdict, precheck):
+        """(verdict, notes) with the pre-check's flags made blockers: a flag is a request for
+        changes whatever the reviewer decided. A reviewer's own `gate-gaming-` blockers carry
+        the specialist visit's dimension too, so triage sends both back to its owner."""
+        notes = verdict.get("notes")
+        if not precheck:
+            return verdict, notes
+        flagged = gaming.blockers(precheck)
+        dimension = gaming.visit_dimension(precheck)
+        ids = {b["id"] for b in flagged}
+        theirs = []
+        for blocker in verdict["blockers"]:
+            blocker = dict(blocker)
+            if blocker["id"] in ids:
+                blocker["id"] += "-reviewer"
+            if dimension and blocker["id"].startswith(gaming.FLAG_PREFIX):
+                blocker["dimension"] = dimension
+            theirs.append(blocker)
+        if not flagged:
+            return dict(verdict, blockers=theirs), notes
+        if verdict["verdict"] == "approve":
+            notes = ((notes + "\n\n") if notes else "") + (
+                f"The reviewer approved; the gate-gaming pre-check flagged {len(flagged)} "
+                f"measurement-facing change(s), so the review requests changes.")
+        return dict(verdict, verdict="request-changes", blockers=flagged + theirs), notes
+
+    @staticmethod
+    def _gaming_summary(precheck):
+        flags = [f for v in precheck.get("commits") or [] for f in v.get("flags") or []]
+        return {"vocabulary": precheck.get("vocabulary"),
+                "specialist_commits": [v["commit"] for v in precheck.get("commits") or []],
+                "flagged": sum(1 for f in flags if f.get("status") == "flagged"),
+                "declared": sum(1 for f in flags if f.get("status") == "declared"),
+                "cleared": sum(1 for f in flags if f.get("status") == "cleared")}
 
     @staticmethod
     def _process_failure(result, settings):
@@ -337,7 +399,7 @@ class ReviewStep(WorkflowStep):
         return None
 
     def _report(self, *, commit, baseline, verdict, reviewer, isolation, duration_s=0.0,
-                timed_out=False, blockers=(), notes=None, failure=None):
+                timed_out=False, blockers=(), notes=None, failure=None, gaming_summary=None):
         ctx = self._ctx
         context = ctx["context"]
         content = build_report(
@@ -346,7 +408,7 @@ class ReviewStep(WorkflowStep):
             reviewer=reviewer, isolation=isolation, iteration=context.visit,
             attempt=context.attempt, duration_s=duration_s, timed_out=timed_out,
             pinned_inputs=ctx["pins"], artifact_seq=context.execution,
-            produced_at=self.clock())
+            produced_at=self.clock(), gate_gaming=gaming_summary)
         return ArtifactOutput("review-report", content, metadata={
             "commit": commit, "verdict": verdict, "blockers": len(blockers),
             "failure": (failure or {}).get("code")})

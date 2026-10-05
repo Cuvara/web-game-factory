@@ -1,0 +1,128 @@
+# Web Game Factory — Gate gaming: a specialist's change to what a gate MEASURES, not the game
+#
+# A specialist develop visit (docs/specialist-routing.md) is briefed with findings a gate
+# raised, each accepted when that gate measures the next build. The cheapest way to meet a
+# bar is often to change the gate's input instead of the game: a play area made smaller so
+# the bot reaches the next unit inside a time window; a sprite drawn larger while its
+# collider stays the size it was, so a minimum on-screen size is met by a picture the player
+# cannot hit; descriptive fields added to content data no code reads, so a similarity
+# signature changes while the levels play the same. Each is a pass the player never feels.
+#
+# This file is the vocabulary two consumers share, and nothing else:
+#
+#   scripts/wgf_develop/specialist.py   the brief's rules: what a fix for each routed
+#                                       finding may not be (`rules`, `categories`)
+#   scripts/wgf_review/gaming.py        the review's deterministic pre-check: every hunk of
+#                                       a specialist commit classified player-facing or
+#                                       measurement-facing, and four patterns flagged
+#                                       (`patterns`); a flag is a review blocker routed back
+#                                       to the visit's owner (docs/review-module.md)
+#
+# It holds no threshold and no bar: words and paths, matched as whole identifier words
+# (snake_case, camelCase, kebab-case and dotted names split into lower-cased words). Never a
+# game, a theme or a genre word here. Add a word when a commit gamed a gate in a word this
+# file does not know - and add the commit to the review module's tests as a case.
+#
+# Calibration (docs/review-module.md "Gate-gaming pre-check"): three specialist commits of
+# the 2026-10-05 validation runs, each a gate passed by changing its input - a reachability
+# finding met with a lowered ceiling (content data), a visibility finding
+# met with larger drawings and an unchanged collision size (render constants), and a
+# similarity finding met with four count fields the parser never reads - are flagged; the
+# legitimate changes in the module's tests are not.
+
+version: 1.0.0
+
+# What is game source and what is content data, as repository paths. `/`-ended entries are
+# directories; a test path is never game source (it is not what the player runs).
+paths:
+  source_roots: [src/]
+  source_extensions: [.ts, .tsx, .js, .jsx, .mjs, .cjs]
+  content_data: [public/content/]
+  # JSON a sprite's or a collider's size may live in (the runtime asset manifest among it).
+  size_data: [public/]
+  tests: [tests/, test/, __tests__/, e2e/]
+  test_markers: [.test., .spec.]
+  # The Factory's own bookkeeping in a game repository: written by the develop step, never
+  # what a gate measures.
+  bookkeeping: [docs/development/, docs/GDD.md]
+  # Directories (any path segment) whose code draws rather than simulates.
+  render_segments: [render, rendering, renderer, renderers, view, views, sprites, graphics, draw, drawing, visual, visuals, hud]
+
+# The words that name each thing. A word list is matched against identifier words.
+words:
+  # Code that exists for the play probe, its showcase, its oracle or a bot - not the player.
+  probe: [probe, probes, showcase, oracle, autopilot, bot, bots, wgf]
+  # The space play happens in and what bounds it.
+  play_area: [ceiling, floor, wall, walls, bound, bounds, boundary, boundaries, arena, playfield, playarea, border, borders, inset, insets, margin, margins, extent, extents, killzone, collider, colliders, hitbox, hitboxes]
+  # What the simulation collides with.
+  collider: [collider, colliders, collision, collisions, hitbox, hitboxes, hit, body, bodies, physics, catch, overlap, shape, shapes]
+  # A size.
+  size: [w, h, width, height, size, sizes, scale, radius, diameter, len, length, px]
+  # Drawing rather than simulating.
+  draw: [draw, drawn, drawing, sprite, sprites, display, visual, render, art, texture, icon]
+  # Words that say nothing about which entity a constant belongs to.
+  generic: [const, let, var, readonly, export, static, default, base, min, max, the, of, new, old, x, y, z]
+
+# Which routed findings each pattern watches. A finding matches a category when one of the
+# category's words is a word of its check id, its dimension or its summary.
+categories:
+  reach-time:
+    words: [reachable, reach, reached, reaches, time, times, duration, durations, pace, seconds, timeout]
+    rules:
+      - Never shrink the play space, raise a floor, lower a ceiling, move walls in or shorten
+        a path so the measured time or reach comes out right; change what the player does
+        in that space - the pacing, the obstacles, the rules - and let the time follow.
+      - Never make the bot's or the probe's route easier than the player's.
+  visibility-size:
+    words: [visible, visibility, readable, legible, size, area, onscreen, screen, rendered, contrast, small]
+    rules:
+      - When a bar is met by changing a size, keep visual and physical size consistent - a
+        sprite drawn larger collides larger, or its collider is changed with it and the
+        tuning that depends on it re-checked.
+      - Never stage, freeze or pose an entity only for the probe's frame; what the frame
+        shows must be what the player sees.
+  content-similarity:
+    words: [structure, variety, similar, similarity, identical, alike, distinct, repeat, repetition, sameness, unit, units]
+    rules:
+      - Never change only descriptive data - a name, a label, a count or a field the game
+        never reads - to change what a gate compares; change the layout and the play the
+        data drives, and the description with it.
+
+# Every specialist visit, whatever its findings.
+rules:
+  - Fix the player-facing cause the finding describes. A gate measures the game; what it
+    reads is not the thing to change.
+  - Never hide, undraw or remove a collider, a wall or an obstacle the player still meets,
+    and never draw one the simulation does not have.
+  - Never special-case the bot, the play probe or its showcase, and never alter what a
+    measurement reads (a probe field, a reported value, a staged scene) without changing
+    what the player experiences.
+
+# The four patterns the review flags. `watch` names the categories a visit's findings must
+# match for the pattern to apply; an empty list applies it to every specialist visit.
+# `except_checks` - words of a finding's check id that make the pattern not apply (a finding
+# about the probe itself is fixed in probe code).
+patterns:
+  unread-content-field:
+    summary: content data gained a field the game's source never reads
+    watch: []
+  play-area-change:
+    summary: the play area, its bounds or a collider changed in a visit routed for reach, time or visibility
+    watch: [reach-time, visibility-size]
+  probe-path-change:
+    summary: probe-, showcase- or bot-only code changed in a visit whose findings are about the game
+    watch: []
+    except_checks: [probe, showcase, oracle]
+  sprite-size-without-collider:
+    summary: a drawn size changed and no collider or physical size of the same entity changed with it
+    watch: []
+
+# The documented false-positive path: an entry in the visit's own
+# docs/development/report.json `measurement_changes`, naming the flag and the place, with
+# `evidence` - repository `file` + `line` references that must exist at the commit - and
+# `player_effect`, what the player experiences differently. An `unread-content-field` entry
+# whose evidence line is in game source and names the field clears the flag (it is read);
+# any other entry with valid evidence turns the flag into a declared change the reviewer
+# judges. A declaration without evidence changes nothing.
+declaration:
+  field: measurement_changes

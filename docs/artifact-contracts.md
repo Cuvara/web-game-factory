@@ -308,6 +308,13 @@ remain valid. `review-report` 1.1.0 is a version bump only: the reviewer's brief
 `## Design fidelity` section, and the schema it writes is unchanged
 ([review-module.md](review-module.md)).
 
+**`review-report` 1.2.0** adds an optional `dimension` to a blocker and an optional
+`gate_gaming` summary. The review's deterministic gate-gaming pre-check flags a specialist
+commit that met a gate by changing what the gate measures instead of the game; its blockers
+carry the specialist visit's dimension, so triage routes them back to the same owner
+(`core/reference/gate-gaming.yaml`, [review-module.md](review-module.md#gate-gaming-pre-check)).
+Additive; 1.1.0 artifacts remain valid.
+
 ---
 
 ## Shared primitives

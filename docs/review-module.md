@@ -75,6 +75,8 @@ design, it is the tree that ships, and the release rule is simplest when it is o
 |---|---|---|
 | `approve`, checkout untouched | `SUCCESS` | continues: `review` to `sdk`, `sdk-review` to `verify` |
 | `request-changes`, checkout untouched | `FAILED`, route `request-changes`, not retryable | routes to `develop` because the workflow says so |
+| anything, and the [gate-gaming pre-check](#gate-gaming-pre-check) flagged a specialist commit | `FAILED`, route `request-changes`, not retryable: the flags are blockers, an approval included | routed like any request for changes; triage sends the flags to the specialist that made them |
+| the pre-check could not read the change (git failed) | `BLOCKED` | a person looks: whether a gate was gamed is unknown, and unknown is never a pass |
 | changed anything it may only read | `FAILED` `reviewer-isolation-violation`, not retryable. The checkout is restored | run `FAILED` |
 | changed something that could not be put back | `BLOCKED` | a person looks |
 | wrote a malformed verdict, or none | `FAILED` `malformed-verdict`, not retryable | run `FAILED` |
@@ -375,6 +377,83 @@ The Claude Code reviewer argv that was checked against the CLI and run live (`--
 `--tools` without Edit/Write, `--permission-mode dontAsk`, a deny rule for
 `git … --output=`) is the commented `factory.review.reviewer` block in
 `workspace/config/factory.yaml`. The evidence is in `docs/claude-capabilities.md`.
+
+## Gate-gaming pre-check
+
+A specialist develop visit ([specialist-routing.md](specialist-routing.md)) is briefed with
+gate findings, each accepted when the gate measures the next build. The cheapest pass is
+often a change to what the gate *measures* instead of the game. The 2026-10-05 validation
+runs did exactly that three times, and no review caught it:
+
+| Commit | Routed for | What it changed | Flagged as |
+|---|---|---|---|
+| 2D `cbac64e` (level designer) | `content.units_reachable` (the bot reached 2 of 3 units in its window) | lowered `ceiling_y` on the opening units: a smaller play area, so a rebound comes back sooner | `play-area-change` |
+| 2D `68a12b7` (2D artist) | `assets.runtime` (ball and bolt not visible enough) | drew the ball 44 -> 60 and the bolt 12x54 -> 30x130, collision sizes unchanged; staged hovering capsules and bolts for the probe showcase | `sprite-size-without-collider`, `probe-path-change` |
+| 3D `1c6b099` (level designer) | `content.structure` (two units near-identical) | added `ramps`, `gaps`, `bumpers`, `lifts` to one unit's `parameters`; the parser reads none of them | `unread-content-field` |
+
+The replay ran `wgf_review.gaming.precheck_range` on each commit's parent..commit in clones
+of the two validation repositories; `scripts/tests/test_review_gaming.py` `RealCommits`
+repeats it when `WGF_GAMING_REPLAY_2D` and `WGF_GAMING_REPLAY_3D` name them (skipped
+otherwise, and reported as skipped).
+
+**What runs.** Before the reviewer starts, with `subject: prototype-report` and a baseline,
+the step reads every commit of `baseline..HEAD` that changes `docs/development/brief.json`
+and whose brief names a `specialist` - every link of a specialist chain - and checks each
+against its parent (`scripts/wgf_review/gaming.py`, vocabulary
+`core/reference/gate-gaming.yaml`). It is deterministic: git objects and words, no model.
+The result is kept beside the run as `review/<step>-<visit>-<attempt>.gaming.json`, and the
+review-report records a `gate_gaming` summary (review-report 1.2.0).
+
+Every hunk is classified `player-facing`, `measurement-facing`, `test` (never what the
+player runs) or `bookkeeping` (`docs/development/`, the Factory's own). Four patterns are
+flagged:
+
+| Pattern | Applies to | Flags |
+|---|---|---|
+| `unread-content-field` | every specialist visit | a key added to an object in `public/content/*.json` that game source (`src/`, tests excluded) never reads: not as a quoted string (`"ramps"`, a parser's `numberOf(p, "ramps")`), not as `<parent>.ramps` on the object it was added under (any `.ramps` when it sits in an array element), not destructured on one line. A `.ramps` on another object - a course's ramps - is not a read |
+| `play-area-change` | visits whose findings are about reach, time or visibility (`categories` in the vocabulary, matched on each finding's check, dimension and summary) | a changed value in `public/**/*.json`, or a changed source line, whose key or identifiers name the play area, its bounds or a collider (`ceiling`, `wall`, `bounds`, `arena`, `hitbox`, ...) |
+| `probe-path-change` | every specialist visit, unless a routed finding's check is about the probe itself (`probe`, `showcase`, `oracle`) | a changed source line that is probe-, showcase- or bot-only: the line, the declaration it sits in or that declaration's comment names the probe, or the file's path does |
+| `sprite-size-without-collider` | every specialist visit | a numeric drawn size changed - a size or draw constant in drawing code (a `render`/`view`/`sprites`... path segment), or a draw size in `public/**/*.json` - for an entity the simulation gives a physical size (a non-drawing source line names it beside a size or collider word), and no collider or physical size of that entity changed in the commit |
+
+**What a flag does.** Each flag (one blocker per visit, pattern and file) is a review
+blocker with id `gate-gaming-<pattern>-<n>`, severity `blocker`, the commit, the routed
+findings and what was seen. The review requests changes whatever the reviewer decided: an
+approval with a flag becomes `request-changes`, and the notes say so. Each blocker carries
+the visit's `dimension` (review-report 1.2.0), so triage routes it back to the **same
+owner** (`wgf_triage.findings`: a review blocker's dimension, else the generalist), who sees
+it in its next brief as a finding of its own.
+
+**What the reviewer is told.** The brief's `## Gate gaming` section lists each specialist
+commit, its routed findings, the hunk classification (bookkeeping omitted), the flags
+(already blockers; not to be repeated), the declared changes to judge, and the patterns that
+did not apply and why. The reviewer reads the player-facing hunks too - the pre-check knows
+words, not intent - and reports a measurement-facing change it finds as a blocker whose id
+starts `gate-gaming-`; the step stamps those with the visit's dimension as well.
+
+**The false-positive path.** The pre-check can be wrong: a field read through an alias, an
+arena the design asks to shrink. The developer declares such a change in the visit's own
+`docs/development/report.json`:
+
+```json
+"measurement_changes": [
+  {"flag": "unread-content-field", "where": "public/content/units.json#ramps",
+   "evidence": [{"file": "src/game/course.ts", "line": 212}],
+   "player_effect": "each ramp the unit lists is built into its course"}
+]
+```
+
+`where` is the flagged file, or `file#key`, or empty for every flag of that pattern. An
+entry counts only with `player_effect` and at least one `evidence` reference that exists at
+the commit (the file, and a line within it). For `unread-content-field`, an evidence line in
+game source that holds the key **clears** the flag - the field is read. For any other
+pattern a valid entry makes the flag **declared**: it is no longer a blocker by itself, and
+the reviewer judges it against the cited lines; unless they show the player experiences the
+change, the reviewer requests changes. A declaration without evidence changes nothing.
+
+Not covered: `sdk-review` (the sdk step's commit is no specialist's); a review with
+`reviewer.kind: none`, which is skipped before any checkout is read; renamed files are read
+as a deletion and an addition. The vocabulary is words, not a threshold: a commit that games
+a gate in a word it does not know is added as a word and as a test case.
 
 ## How develop consumes it
 

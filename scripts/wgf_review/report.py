@@ -268,6 +268,71 @@ def _verify_failure_lines(failure):
     return out
 
 
+def _gaming_lines(gaming):
+    """The brief's `## Gate gaming` section: every specialist commit of the change, its hunks
+    classified by the pre-check, the flags already raised, the declared changes the reviewer
+    judges, and how to report what the pre-check cannot see. [] when the change holds no
+    specialist commit."""
+    visits = (gaming or {}).get("commits") or []
+    if not visits:
+        return []
+    out = ["## Gate gaming\n",
+           "A specialist visit is routed gate findings, each accepted when the gate measures the "
+           "next build. Its cheapest pass is a change to what the gate MEASURES instead of the "
+           "game: the play area shrunk so the bot reaches a unit in time, colliders hidden or "
+           "undrawn, a sprite drawn larger than the collider it keeps, fields added to content "
+           "data that no code reads, a probe-, showcase- or bot-only path. The player feels "
+           "none of it. The Factory's deterministic pre-check (`"
+           + str(gaming.get("vocabulary")) + "`) read these commits first.\n"]
+    for visit in visits:
+        out.append(f"### {visit['commit'][:12]}: a `{visit.get('owner')}` visit\n")
+        out.append("Routed for: " + (", ".join(f"`{f}`" for f in visit.get("findings") or [])
+                                     or "(no findings recorded)") + ".\n")
+        shown = [h for h in visit.get("hunks") or [] if h["class"] != "bookkeeping"]
+        if shown:
+            out.append("| file | hunk at | class | why |")
+            out.append("|---|---|---|---|")
+            for hunk in shown[:60]:
+                out.append(f"| `{hunk['file']}` | {hunk['hunk']} | {hunk['class']} | "
+                           f"{', '.join(hunk['reasons']) or ''} |")
+            if len(shown) > 60:
+                out.append(f"| ... | | | {len(shown) - 60} more hunks |")
+            out.append("")
+        flagged = [f for f in visit.get("flags") or [] if f.get("status") == "flagged"]
+        if flagged:
+            out.append("Flagged - already blockers of this review, whatever you decide; you "
+                       "need not repeat them:\n")
+            for flag in flagged:
+                out.append(f"- `{flag['pattern']}` `{flag['file']}`: {flag['detail']}")
+            out.append("")
+        declared = [f for f in visit.get("flags") or [] if f.get("status") == "declared"]
+        if declared:
+            out.append("Declared by the developer in `docs/development/report.json` "
+                       "`measurement_changes`, with evidence the commit holds. Judge each: "
+                       "unless the evidence shows the player experiences the change, it is a "
+                       "blocker (id starting `gate-gaming-`):\n")
+            for flag in declared:
+                entry = flag.get("declaration") or {}
+                out.append(f"- `{flag['pattern']}` `{flag['file']}`: {flag['detail']}")
+                out.append(f"  - Player effect, as declared: {entry.get('player_effect')}")
+                for ref in entry.get("evidence") or []:
+                    out.append(f"  - Evidence `{ref['file']}:{ref['line']}`: `{ref['text']}`")
+            out.append("")
+        skipped = visit.get("skipped") or {}
+        if skipped:
+            out.append("Not checked here: " + "; ".join(
+                f"`{k}` ({v})" for k, v in sorted(skipped.items())) + ".\n")
+    out.append("Read every hunk marked player-facing as well: the pre-check knows words, not "
+               "intent. A change that alters what a gate reads without changing what the "
+               "player experiences - space, bounds or colliders moved to meet a time or reach "
+               "bar, a drawn size without the physical size, data the game never reads, a "
+               "branch only the probe or bot takes - is a blocker. Give it an id starting "
+               "`gate-gaming-`, so it goes back to the specialist that made it. A legitimate "
+               "change to the play area, a size or the probe - one the design asks for, with "
+               "the player-facing effect in the code - is not.\n")
+    return out
+
+
 PROMPT_STDOUT = (
     "You are the code reviewer for this game repository, not its developer. Read {brief} in "
     "full, then review commit {commit} in {repo}. You are READ-ONLY: do not edit, create, "
@@ -279,7 +344,7 @@ PROMPT_STDOUT = (
 
 def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief,
                  verdict_path, repo, to_stdout=False, sdk=None, develop_report=None,
-                 verify_failure=None):
+                 verify_failure=None, gaming=None):
     """`sdk` is the sdk-report when the commit under review is the sdk step's (subject
     sdk-report): the change is then the platform integration on top of `baseline`, the
     development commit an earlier review read. `develop_report` is the developer's own
@@ -287,7 +352,8 @@ def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief
     and where the design was silent; the prototype-report carries the same fields and stands in
     for it. `verify_failure` (from `verify_failure()`) is the open verify failure the run is
     looping on, when there is one: the reviewer is shown its failing checks and recorded cause
-    and told verify re-runs only after it approves."""
+    and told verify re-runs only after it approves. `gaming` is the gate-gaming pre-check
+    (wgf_review.gaming.precheck_range) over the change's specialist commits."""
     design = design or {}
     prototype = prototype or {}
     develop_brief = develop_brief or {}
@@ -355,6 +421,7 @@ def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief
                     + "; ".join(task.get("acceptance_criteria") or []))
             add("")
     out += _design_fidelity(develop_brief, prototype, develop_report)
+    out += _gaming_lines(gaming)
     add("## Look for\n")
     add("- Defects in the game logic: wrong rules, broken state transitions, crashes, "
         "unhandled input, restart that does not reset.")
@@ -388,7 +455,7 @@ def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief
 
 def build_report(*, title_id, commit, baseline, verdict, blockers, notes, failure,
                  reviewer, isolation, iteration, attempt, duration_s, timed_out,
-                 pinned_inputs, artifact_seq, produced_at):
+                 pinned_inputs, artifact_seq, produced_at, gate_gaming=None):
     artifact = {
         "provenance": provenance.build(
             "review-report",
@@ -416,4 +483,6 @@ def build_report(*, title_id, commit, baseline, verdict, blockers, notes, failur
     }
     if notes:
         artifact["notes"] = notes
+    if gate_gaming:
+        artifact["gate_gaming"] = gate_gaming
     return provenance.seal(artifact)

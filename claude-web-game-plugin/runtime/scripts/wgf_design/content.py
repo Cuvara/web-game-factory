@@ -60,12 +60,13 @@ fails a design that keeps them. Each one names the field to change and carries i
 core/craft/core-loop-and-difficulty.md is the prose behind the bars.
 """
 
-import json
 import os
 import re
 
 from wgflib import paths
 from wgflib.yamllite import load_file
+
+from . import layouts as geometry_of
 
 __all__ = ["MODELS_PATH", "VOCABULARY_PATH", "BENCHMARK_PATH", "RULES", "TIER_RULES",
            "MASTERY_MODELS", "load_models", "load_vocabulary", "load_benchmark",
@@ -1189,6 +1190,14 @@ def _tier_combinations(d):
     return problems, round(share, 3), f"{share:.0%} of units combine their own elements"
 
 
+def _near_identical():
+    """content-sufficiency.yaml `layout.near_identical_similarity`: how alike two units'
+    geometry must be to be one unit (the build is judged by the same number)."""
+    rules = load_file(os.path.join(paths.REFERENCE, "content-sufficiency.yaml"))
+    value = (rules.get("layout") or {}).get("near_identical_similarity")
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else 1.0
+
+
 def _tier_structure(d):
     kinds_bar = d.tbar("structure", "min_structure_kinds")
     repeat_bar = d.tbar("structure", "max_repeated_layout_ratio")
@@ -1211,17 +1220,24 @@ def _tier_structure(d):
                             f"{int(kinds_bar) - len(kinds)} short - a moving field, a path, an "
                             f"arena or a climax is a different unit to play, not a bigger one")
     if repeat_bar is not None and d.authored and units:
-        layouts = {}
-        for unit in units:
-            key = (str(unit.get("structure")), tuple(sorted(d.elements_of(unit))),
-                   json.dumps(unit.get("parameters") or {}, sort_keys=True))
-            layouts.setdefault(key, []).append(unit)
-        repeated = [u for group in layouts.values() if len(group) > 1 for u in group]
+        # One rule with the content-sufficiency step (wgf_design/layouts.py): units are
+        # compared on the geometry their `parameters` carry (the leaves inside a list), never
+        # on the names or values of tuning scalars - a unit of scalars alone is undetermined,
+        # so renaming or adding a parameter can neither open nor close this.
+        view = [{"id": unit.get("id"), "structure": unit.get("structure"),
+                 "combo": d.elements_of(unit), "objective_kind": d.objective_kind(unit),
+                 "geometry": geometry_of.geometry(
+                     {"parameters": unit.get("parameters")}
+                     if isinstance(unit.get("parameters"), dict) else {})}
+                for unit in units]
+        found = geometry_of.repetition(view, _near_identical())
+        repeated = [unit for unit in units if unit.get("id") in set(found["repeated"])]
         share = len(repeated) / float(len(units))
         if share > repeat_bar + 1e-9:
             problems.append(f"{len(repeated)} of the {len(units)} units ({share:.0%}) repeat "
-                            f"another unit's layout - the same structure, elements and "
-                            f"parameters ({_ids(repeated)}); a {d.tier}-tier release repeats at "
+                            f"another unit's layout - identical geometry, or the same "
+                            f"structure, elements and objective kind with geometry nearly "
+                            f"alike ({_ids(repeated)}); a {d.tier}-tier release repeats at "
                             f"most {repeat_bar:.0%} (quality-benchmark "
                             f"content.structure.max_repeated_layout_ratio)")
     return problems, len(kinds), f"{len(kinds)} structure kind(s): {', '.join(kinds)}"

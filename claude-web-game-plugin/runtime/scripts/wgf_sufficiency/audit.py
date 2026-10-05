@@ -25,23 +25,23 @@ bar (route `develop`).
 
 A check is SKIPPED only when nothing it measures is claimed: no content contract (except at
 the release tier, where that is itself a failure), generated content where a unit list would
-be counted, or a tier that states no bar for it. A skip is never a pass.
+be counted, or a tier that states no bar for it - or when what it measures could not be
+measured on the build (`content.structure` while units carry no layout geometry, only tuning
+scalars: wgf_design/layouts.py), which is UNMEASURED. A skip is never a pass.
 """
 
-import hashlib
-import json
 import os
 import re
 
 from wgflib import build_scope, genre_models, paths
 from wgflib.yamllite import load_file
 
-from wgf_design import existing
+from wgf_design import existing, layouts as geometry_of
 from wgf_design.content import quality_tier
 
 __all__ = ["RULES_PATH", "BENCHMARK_PATH", "load_rules", "load_benchmark", "owed_units",
            "built_unlocks",
-           "observations", "layout_of", "similarity", "audit", "CHECK_ORDER"]
+           "observations", "layout_of", "geometry", "similarity", "audit", "CHECK_ORDER"]
 
 RULES_PATH = os.path.join(paths.REFERENCE, "content-sufficiency.yaml")
 BENCHMARK_PATH = os.path.join(paths.REFERENCE, "quality-benchmark.yaml")
@@ -196,40 +196,22 @@ def layout_of(unit, rules):
     """The unit's layout: its content data beyond the descriptive keys, as {path: value} of
     its leaves (array positions kept: a grid's row 3 is not its row 4; a number outside any
     list counts only where it sits, so two units that differ only in a tuning number have
-    one layout)."""
-    skip = set((rules.get("layout") or {}).get("descriptive_keys") or [])
-    leaves = {}
-
-    def walk(path, value):
-        if isinstance(value, dict):
-            for key in sorted(value):
-                walk(f"{path}.{key}" if path else str(key), value[key])
-        elif isinstance(value, list):
-            for position, item in enumerate(value):
-                walk(f"{path}[{position}]", item)
-        elif _number(value) is not None and "[" not in path:
-            # A tuning number (a speed, a count) is the same layout at another difficulty:
-            # only where it sits counts. A number inside a list - a cell, a position - is the
-            # layout itself.
-            leaves[path] = "#number"
-        else:
-            leaves[path] = json.dumps(value, sort_keys=True)
-    for key in sorted(unit or {}):
-        if key not in skip:
-            walk(str(key), unit[key])
-    return leaves
+    one layout). Only its GEOMETRY - the leaves inside a list (`geometry`) - is compared:
+    a layout of tuning scalars alone says nothing about how alike two units are."""
+    return geometry_of.leaves(unit, _descriptive(rules))
 
 
-def similarity(first, second):
-    """Jaccard similarity of two layouts' (path, value) leaves; two empty layouts are 1.0."""
-    a, b = set(first.items()), set(second.items())
-    if not a and not b:
-        return 1.0
-    return len(a & b) / float(len(a | b))
+def geometry(unit, rules, source=None):
+    """The unit's geometry (wgf_design/layouts.py): the leaves of its data inside a list, and
+    of its entry in the layout source. Empty - undetermined - for a unit of tuning scalars."""
+    return geometry_of.geometry(unit, _descriptive(rules), source)
 
 
-def _signature(leaves):
-    return hashlib.sha256(json.dumps(sorted(leaves.items())).encode("utf-8")).hexdigest()[:16]
+def _descriptive(rules):
+    return (rules.get("layout") or {}).get("descriptive_keys") or []
+
+
+similarity = geometry_of.similarity
 
 
 # -- one view of the units: the build's, or the design's -------------------------------------
@@ -241,15 +223,16 @@ def _objective_kind(unit):
     return " ".join(words[:4]) or "-"
 
 
-def _view_unit(design_unit, built=None, seen=None, rules=None):
+def _view_unit(design_unit, built=None, seen=None, rules=None, source=None):
     """One unit as a view sees it. The design view has only the design unit; the build view
-    reads the data file's unit first and the probe's observation of it."""
+    reads the data file's unit first (and its entry in the layout source, `source`) and the
+    probe's observation of it."""
     if built is None:
         combo = set(map(str, design_unit.get("mechanics") or [])) | set(
             map(str, design_unit.get("elements") or []))
-        source = design_unit.get("parameters") if isinstance(design_unit.get("parameters"),
-                                                             dict) else {}
-        layout = layout_of({"parameters": source}, rules) if source else {}
+        parameters = design_unit.get("parameters") if isinstance(
+            design_unit.get("parameters"), dict) else {}
+        layout = geometry({"parameters": parameters}, rules) if parameters else {}
         difficulty = dict(design_unit.get("difficulty") or {})
         unit = design_unit
     else:
@@ -258,7 +241,7 @@ def _view_unit(design_unit, built=None, seen=None, rules=None):
             combo |= {f"kind:{k}" for k in seen["content_kinds"]}
         else:
             combo |= set(map(str, built.get("elements") or []))
-        layout = layout_of(built, rules)
+        layout = geometry(built, rules, source)
         difficulty = dict(design_unit.get("difficulty") or {})
         difficulty.update({k: v for k, v in (built.get("difficulty") or {}).items()
                            if _number(v) is not None})
@@ -270,7 +253,7 @@ def _view_unit(design_unit, built=None, seen=None, rules=None):
     return {"id": design_unit.get("id"), "group": unit.get("group"),
             "structure": unit.get("structure"), "objective_kind": _objective_kind(unit),
             "purpose": unit.get("purpose"), "art": [str(a) for a in unit.get("art") or []],
-            "combo": frozenset(combo), "layout": layout,
+            "combo": frozenset(combo), "geometry": layout,
             "difficulty": difficulty,
             "duration": _number(unit.get("expected_duration_s")) or 0,
             "assets": set(seen["assets"]) if seen else set(),
@@ -284,21 +267,6 @@ def _first_appearances(view):
         seen |= unit["combo"]
         out.append((unit, new))
     return out
-
-
-def _repeated(view, threshold):
-    """The units that repeat another: the same structure, combination and objective kind, and
-    a layout at least `threshold` alike (or identical)."""
-    out = set()
-    for i, a in enumerate(view):
-        for b in view[i + 1:]:
-            same_layout = _signature(a["layout"]) == _signature(b["layout"])
-            alike = (a["structure"] == b["structure"] and a["combo"] == b["combo"]
-                     and a["objective_kind"] == b["objective_kind"]
-                     and similarity(a["layout"], b["layout"]) >= threshold)
-            if (same_layout and a["layout"]) or alike:
-                out.update((a["id"], b["id"]))
-    return [u["id"] for u in view if u["id"] in out]
 
 
 # -- the bars -------------------------------------------------------------------------------
@@ -415,15 +383,32 @@ def _structure_problems(view, bars, threshold):
     if floor is not None and len(kinds) < floor:
         problems.append(f"{len(kinds)} structure kind(s) ({_ids(kinds) or 'none stated'}); the "
                         f"bar is {floor:g} (content.structure.min_structure_kinds)")
-    repeated = _repeated(view, threshold)
+    found = geometry_of.repetition(view, threshold)
+    repeated, undetermined = found["repeated"], found["undetermined"]
     share = round(len(repeated) / float(len(view)), 3) if view else 0.0
+    worst = round(found["worst"] / float(len(view)), 3) if view else 0.0
+    measured = {"structure_kinds": kinds, "repeated": repeated, "repeated_ratio": share}
+    if undetermined:
+        measured.update(undetermined=undetermined, repeated_ratio_at_most=worst)
     most = bars.get("structure", "max_repeated_layout_ratio")
     if most is not None and share > most + 1e-9:
         problems.append(f"{len(repeated)} of {len(view)} units ({share:.0%}) are near-identical "
-                        f"to another - the same structure, elements and objective kind, and a "
-                        f"layout at least {threshold:.0%} alike ({_ids(repeated)}); the bar is "
-                        f"at most {most:.0%} (content.structure.max_repeated_layout_ratio)")
-    return problems, {"structure_kinds": kinds, "repeated": repeated, "repeated_ratio": share}
+                        f"to another - identical geometry, or the same structure, elements and "
+                        f"objective kind and geometry at least {threshold:.0%} alike "
+                        f"({_ids(repeated)}); the bar is at most {most:.0%} "
+                        f"(content.structure.max_repeated_layout_ratio)")
+    elif most is not None and worst > most + 1e-9:
+        # Tuning scalars are no evidence of identity: a unit without geometry is undetermined,
+        # and while the undetermined could carry the share past the bar it is unmeasured.
+        measured["unmeasured"] = (
+            f"{len(undetermined)} of {len(view)} units carry no layout geometry - their data "
+            f"are tuning scalars only ({_ids(undetermined)}), which say nothing about whether "
+            f"two units are the same - so whether at most {most:.0%} of the units repeat "
+            f"another (content.structure.max_repeated_layout_ratio) cannot be established: "
+            f"up to {worst:.0%} could. Ship each unit's geometry as data - in its own entry "
+            f"(e.g. `layout`) or the layout source keyed by unit id "
+            f"(content-sufficiency.yaml layout.source)")
+    return problems, measured
 
 
 def _groups_problems(view, bars):
@@ -634,14 +619,16 @@ def regression_check(design, data, data_problem=None, records=None, playability=
 
 
 def audit(design, strategy, data, records, rules=None, benchmark=None, models=None,
-          data_problem=None, playability=None):
+          data_problem=None, playability=None, layouts=None):
     """{tier, mode, checks, findings, metrics} for one build.
 
     `data` is the build's content data file (or None, with `data_problem` saying why), and
     `records` the playability bot's records per viewport ({project: {test: record}}), and
-    `playability` the playability-report they belong to (the probe floor it carries)."""
+    `playability` the playability-report they belong to (the probe floor it carries), and
+    `layouts` the build's layout source ({unit id: layout}, wgf_design/layouts.py), if any."""
     rules = load_rules() if rules is None else rules
-    out = _audit(design, strategy, data, records, rules, benchmark, models, data_problem)
+    out = _audit(design, strategy, data, records, rules, benchmark, models, data_problem,
+                 layouts)
     check = regression_check(design, data, data_problem, records, playability)
     if check is None:
         return out
@@ -650,7 +637,7 @@ def audit(design, strategy, data, records, rules=None, benchmark=None, models=No
 
 
 def _audit(design, strategy, data, records, rules=None, benchmark=None, models=None,
-           data_problem=None):
+           data_problem=None, layouts=None):
     rules = load_rules() if rules is None else rules
     benchmark = load_benchmark() if benchmark is None else benchmark
     models = genre_models.load() if models is None else models
@@ -753,7 +740,9 @@ def _audit(design, strategy, data, records, rules=None, benchmark=None, models=N
                route="develop" if unreached else None))
 
     threshold = _number((rules.get("layout") or {}).get("near_identical_similarity")) or 1.0
-    build_view = [_view_unit(u, built_units[u.get("id")], seen["units"].get(u.get("id")), rules)
+    sources = layouts or {}
+    build_view = [_view_unit(u, built_units[u.get("id")], seen["units"].get(u.get("id")), rules,
+                             sources.get(str(u.get("id"))))
                   for u in shipped]
     design_view = [_view_unit(u, rules=rules) for u in owed]
     secondary = sorted({str(g.get("kind")) for g in (content.get("secondary_goals") or [])
@@ -789,6 +778,15 @@ def _audit(design, strategy, data, records, rules=None, benchmark=None, models=N
         out["metrics"][cid] = {"build": _plain(measured), "design": _plain(declared)}
         stated = {f"content.{s}.{k}": bars.get(s, k) for s, k in keys
                   if bars.get(s, k) is not None}
+        if not problems and measured.get("unmeasured"):
+            # Nothing failed, and part of what the bar asks could not be measured on the
+            # build: SKIPPED as unmeasured - never a pass (the quality gate holds a skipped
+            # check at the release tier, quality-floor floor.sufficiency_measured).
+            add(_check(cid, "SKIPPED", f"UNMEASURED: {measured['unmeasured']} - unmeasured, "
+                                       f"never a pass",
+                       measured={"build": _plain(measured), "design": _plain(declared)},
+                       expected=stated, route=None))
+            continue
         add(_judged(cid, problems, design_problems,
                     f"the build meets the tier's {cid.split('.', 1)[1]} bars",
                     measured={"build": _plain(measured), "design": _plain(declared)},

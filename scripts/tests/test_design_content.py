@@ -1177,6 +1177,26 @@ class TheQualityTier(ContentCase):
             unit["structure"] = STRUCTURES[unit["index"] % 2]
         self.breaches(design, "content.tier_structure", "built 2 way(s)")
 
+    # Repeated layouts are judged on geometry (wgf_design/layouts.py), one rule with the
+    # content-sufficiency step: never on the names or values of tuning scalars.
+
+    def test_units_of_tuning_scalars_alone_are_not_repeated(self):
+        design = release_design()
+        for unit in units(design):
+            unit["parameters"] = {"par_s": 30, "limit_s": 60, "gems": 3}
+        problems = [p for p in self.tier_problems(design, self.strategy())
+                    if "repeat another unit's layout" in p]
+        self.assertEqual(problems, [])
+
+    def test_units_sharing_one_geometry_repeat_and_a_new_parameter_name_does_not_hide_it(self):
+        design = release_design()
+        for unit in units(design)[:5]:
+            unit["parameters"] = {"grid": ["x..x", ".xx.", "x..x"], "speed": unit["index"]}
+        self.breaches(design, "content.tier_structure", "repeat another unit's layout")
+        # The fix a design step reached for: a parameter the game never reads.
+        units(design)[0]["parameters"].update(ramps=3, gaps=2, bumpers=1)
+        self.breaches(design, "content.tier_structure", "repeat another unit's layout")
+
     def test_a_unit_without_a_structure(self):
         design = release_design()
         del units(design)[5]["structure"]

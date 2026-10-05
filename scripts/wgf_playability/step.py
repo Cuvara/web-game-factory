@@ -38,7 +38,7 @@ from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.quality import run_tier
 from wgflib.yamllite import YamlError, load_file
 
-from wgf_design import commitments, existing
+from wgf_design import commitments, existing, layouts
 from wgf_design.content import quality_tier
 from wgf_design.experience import load_rules as load_experience_rules
 
@@ -427,13 +427,30 @@ class PlayabilityStep(WorkflowStep):
         }
 
     @staticmethod
-    def _keep_content_data(repo, out):
-        """Copy the commit's content data file beside the records, when it ships one."""
+    def _keep_content_data(repo, out, path=None):
+        """Copy the commit's content data file beside the records, when it ships one, and the
+        layout source it measures unit geometry on (content-sufficiency.yaml `layout.source`,
+        or the data file's `layout_source`; only a file under public/content)."""
         source = os.path.join(repo, *CONTENT_DATA.split("/"))
-        if os.path.isfile(source):
-            target = os.path.join(out, CONTENT_COPY)
-            os.makedirs(os.path.dirname(target), exist_ok=True)
-            shutil.copyfile(source, target)
+        if not os.path.isfile(source):
+            return
+        target = os.path.join(out, CONTENT_COPY)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copyfile(source, target)
+        try:
+            with open(source, encoding="utf-8") as handle:
+                data = json.load(handle)
+            found = layouts.source_of(data, load_file(path or SUFFICIENCY_PATH))
+        except (OSError, ValueError, YamlError):
+            return
+        if not found:
+            return
+        relative = found[0]
+        origin = os.path.join(repo, *layouts.CONTENT_DIR.split("/"), *relative.split("/"))
+        if os.path.isfile(origin):
+            kept = os.path.join(os.path.dirname(target), *relative.split("/"))
+            os.makedirs(os.path.dirname(kept), exist_ok=True)
+            shutil.copyfile(origin, kept)
 
     # -- running ------------------------------------------------------------------------
 

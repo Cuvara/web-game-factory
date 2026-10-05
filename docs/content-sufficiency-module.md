@@ -81,7 +81,12 @@ evidence (`measurement_class: automation-bot`).
   See [playability-module.md](playability-module.md). The probe contract is in the probe
   schema and in [template-contract.md](template-contract.md#the-play-probe-unit-link-and-entity-kinds).
 - **The content data file.** The played commit's `public/content/units.json` is kept at
-  `<records_dir>/content/units.json`.
+  `<records_dir>/content/units.json`, and with it the **layout source**, when the commit
+  ships one: the JSON file under `public/content/` that holds each unit's geometry keyed by
+  unit id. It is `public/content/layouts.json` (its `layouts` object, or its root) by default
+  (`core/reference/content-sufficiency.yaml` `layout.source`); a data file may name another
+  with `layout_source` (`{path, key}` or a path, only under `public/content/`). It is kept at
+  `<records_dir>/content/<the same relative path>`.
 - **Entity kinds.** While a content unit is in play, every entity of a content role must
   carry `entities[].kind`. This is required by `core/artifacts/shared/play-probe.schema.json`,
   and playability's `probe.valid` checks it.
@@ -93,7 +98,8 @@ The step measures every quantity twice, on two views of the same units:
 - **The build view:**
   - a unit's elements are its data mechanics plus the content kinds the probe showed in it.
     The kinds of the player and the interface are left out;
-  - its layout is its data beyond the descriptive keys;
+  - its layout is its data beyond the descriptive keys, plus its entry in the layout source;
+    only the layout's geometry is compared (see near-identical units);
   - its structure, group, objective kind and art are the data file's values where it
     carries them, else the design's;
   - its difficulty is what the probe reported, else the data's.
@@ -126,7 +132,7 @@ lists every skip in `skipped_checks`, and the step names them in its summary.
 | `content.entity_kinds` | Entities of a content role carry `kind` (first session, act and survey samples) | None without one. Required for authored content; a warning for generated content |
 | `content.elements` | Distinct elements; each used in >= N units (elements only climax units use are their set pieces); introduction points; how late the last one arrives | `content.elements.*` |
 | `content.combinations` | Share of units whose set of elements no other unit has | `content.combinations.min_distinct_ratio` |
-| `content.structure` | Distinct structure kinds; share of near-identical units | `content.structure.*` |
+| `content.structure` | Distinct structure kinds; share of near-identical units, on the units' geometry | `content.structure.*`. SKIPPED as `UNMEASURED` when units without geometry could carry the repeated share past `max_repeated_layout_ratio` |
 | `content.groups` | Groups, units per group, and every group after the first bringing an element the player has not met. The same elements with only cosmetic change fails | `content.units.min_groups`, `min_units_per_group`. Skipped where the family has no `budget.group_kind` |
 | `content.difficulty` | Axes that escalate first unit to last; runs of units that change only their numbers; relief | `content.difficulty.min_escalating_axes`, `relief_every_units`, genre-models `variety.max_consecutive_scaling_only_units` |
 | `content.objectives` | Objective kinds (`objective_kind`, else the normalized objective), plus the design's secondary goals; the share of the most common kind | `content.objectives.*` |
@@ -140,15 +146,33 @@ A `content.regression` failure is a blocker, so the report's verdict is FAIL, an
 quality gate's `floor.content_sufficient` holds the content dimension below its floor: the
 gate fails with `QUALITY REGRESSION` ([quality-gate-module.md](quality-gate-module.md)).
 
-**Near-identical units.** Two units are the same unit with other numbers when either is true:
+**Near-identical units.** Units are compared on their **geometry**
+(`scripts/wgf_design/layouts.py`): the leaves of their layout that sit inside a list - a
+grid's rows, a wave list, a track's segments, the cells of a board, a spawn table - compared
+by path and value. A scalar outside every list (a par time, a speed, a count, a width, a flag,
+a word) is tuning: the same layout at another difficulty, and a key the game may never read.
+Two units are the same unit with other numbers when either is true:
 
 - they share their structure kind, their element combination and their objective kind, and
-  their layouts are at least `layout.near_identical_similarity` (0.85) alike;
-- their non-empty layouts are identical.
+  their geometry is at least `layout.near_identical_similarity` (0.85) alike (Jaccard
+  similarity of the leaves);
+- their geometry is identical (and not empty).
 
-Similarity is the Jaccard similarity of the layouts' leaves, compared by path and value. A
-number outside any list (a speed, a count) counts only by where it sits, never by its value.
-A number inside a list (a cell, a position) is the layout itself.
+A unit whose data are only tuning scalars has **no geometry**: it is *undetermined*, never
+repeated. Its scalar names are no evidence of identity: under content-sufficiency 1.2.0 a
+unit's "layout" was the set of its parameter names, so two different courses that both carried
+`par_s`, `limit_s`, `gems` were flagged near-identical, and naming a parameter nothing reads
+"fixed" it (content-sufficiency 1.3.0 measures geometry). Adding,
+renaming or removing a scalar key now changes no verdict. The repeated share is held to
+`content.structure.max_repeated_layout_ratio` on the units with geometry; while the
+undetermined units could carry it past the bar (each repeating a unit not yet repeated - the
+report's `repeated_ratio_at_most`, with the units in `undetermined`), the check is SKIPPED as
+`UNMEASURED`, never a pass: the quality gate holds a skipped content-sufficiency check at the
+release tier (`floor.sufficiency_measured`). The developer's fix is to ship each unit's
+geometry as data - in its own entry (e.g. `layout`) or in the layout source. Measured
+repetition over the bar still fails, routed by the design view as every by-design check. The
+design step's `content.tier_structure` applies the same rule to the design's
+`units[].parameters`, so a design gap is not closed by renaming parameters.
 
 **Generated content** (`parametric`, `procedural`). The units listed are representative, so
 no unit list is counted, and every unit check is skipped with that reason. Entity kinds are

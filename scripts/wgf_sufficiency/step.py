@@ -3,7 +3,8 @@
     playability-report (records_dir, commit) + game-design + scaffold-record [+ title-strategy]
       -> the playability bot's records under the run (no replay): the traverse, the survey of
          every unit entered through the probe's unit link, the probe snapshots with their
-         entities; and the content data file of the commit it played (records_dir/content/)
+         entities; and the content data file of the commit it played, with its layout
+         source when it ships one (records_dir/content/, wgf_design/layouts.py)
       -> audit.audit, against core/reference/quality-benchmark.yaml at the design's tier - the
          copy the run pinned when it started (new-game `pinned_references`), so an edit made
          while it runs applies to the next run - the genre family's bars and
@@ -32,10 +33,13 @@ from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow import references as pinned_references
 from wgflib.yamllite import YamlError, load as load_yaml
 
+from wgf_design import layouts
+
 from . import audit as auditing
 
 __all__ = ["ContentSufficiencyStep", "REQUIRED_INPUTS", "RECORDS", "ROUTE_ORDER",
-           "CONTENT_COPY", "BENCHMARK", "load_records", "read_data", "run_benchmark"]
+           "CONTENT_COPY", "BENCHMARK", "load_records", "read_data", "read_layouts",
+           "run_benchmark"]
 
 REQUIRED_INPUTS = ("playability-report", "game-design", "scaffold-record")
 # The bot's records per viewport this step reads (scripts/wgf_playability/bot.spec.ts).
@@ -93,6 +97,18 @@ def read_data(directory):
     return data, None
 
 
+def read_layouts(directory, data, rules=None):
+    """({unit id: layout} or None, why it could not be read or None): the layout source the
+    played commit shipped beside its content data file (core/reference/content-sufficiency.yaml
+    `layout.source`, or the data file's `layout_source`), as playability kept it. A unit's
+    geometry is measured on it as well as on the unit's own entry."""
+    if data is None:
+        return None, None
+    rules = auditing.load_rules() if rules is None else rules
+    return layouts.read_source(os.path.join(directory, os.path.dirname(CONTENT_COPY)), data,
+                               rules)
+
+
 class ContentSufficiencyStep(WorkflowStep):
     type = "content-sufficiency"
     clock = staticmethod(_utc_now)
@@ -125,9 +141,14 @@ class ContentSufficiencyStep(WorkflowStep):
             else:
                 data, problem = read_data(directory)
                 try:
+                    found, unreadable = read_layouts(directory, data)
+                    if unreadable:
+                        context.logger.warning("the layout source cannot be read",
+                                               reason=unreadable)
                     result = auditing.audit(design, strategy, data, records,
                                             benchmark=run_benchmark(context),
-                                            data_problem=problem, playability=play)
+                                            data_problem=problem, playability=play,
+                                            layouts=found)
                 except pinned_references.PinError as exc:
                     blocked = (f"the quality benchmark this run started under cannot be read "
                                f"({exc}): nothing is held to bars edited after the start")

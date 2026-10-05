@@ -1040,6 +1040,89 @@ class TheShowcase(unittest.TestCase):
             judge.doCleanups()
 
 
+class ReleaseUnits(Content):
+    """At a release tier every release unit is a design unit (live 2026-10-05, 3D run
+    new-game-20261005-002923-597b5e: the tech plan built twelve units at tier release, and the
+    bot failed probe.valid with 'content.unit_id is not a design unit: meadow-circuit' the
+    moment play reached unit 4, the first post-mvp one)."""
+
+    def design(self, tier, extra=("w-04", "post-mvp")):
+        design = copy.deepcopy(CONTENT_DESIGN)
+        content = design["build_spec"]["content"]
+        if tier is None:
+            content.pop("quality_tier", None)
+        else:
+            content["quality_tier"] = tier
+        uid, unit_tier = extra
+        added = unit(4, uid, "Break the siege line before the second gate.",
+                     {"enemy-count": 0.7})
+        added["tier"] = unit_tier
+        content["units"].append(added)
+        return design
+
+    def reach(self, uid):
+        """The traverse played on into the unit after the MVP, as the bot does."""
+        self.records["traverse"]["snapshots"].append(
+            {"ms": 15000, "unit_id": uid, "unit_index": 4, "state": "playing",
+             "progress": {"metric": "cleared", "value": 0, "target": 5},
+             "difficulty": {"enemy-count": 0.7}, "kinds": ["elite"]})
+
+    def probe_valid(self, design, **kwargs):
+        checks = analysis.judge(self.records, self.frames, design, self.rules,
+                                experience_rules(), "desktop", **kwargs)
+        return next(c for c in checks if c["id"] == "probe.valid")
+
+    def test_a_post_mvp_unit_is_a_design_unit_at_release(self):
+        self.reach("w-04")
+        check = self.probe_valid(self.design("release"))
+        self.assertEqual(check["status"], "PASS", check["summary"])
+        self.assertEqual(check["measured"]["content_problems"], [])
+
+    def test_a_post_mvp_unit_is_not_one_at_mvp(self):
+        self.reach("w-04")
+        check = self.probe_valid(self.design("mvp"))
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("content.unit_id is not a design unit: w-04", check["summary"])
+
+    def test_an_id_outside_the_design_is_never_one(self):
+        self.reach("w-99")
+        check = self.probe_valid(self.design("release"))
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("content.unit_id is not a design unit: w-99", check["summary"])
+
+    def test_an_optional_unit_is_not_built_at_release(self):
+        self.reach("w-04")
+        check = self.probe_valid(self.design("release", extra=("w-04", "optional")))
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("w-04", check["summary"])
+
+    def test_the_scope_the_step_passes_decides(self):
+        # A design that states no tier, in a run at tier release: the step passes the run's
+        # build scope, and the post-mvp unit is one of it.
+        self.reach("w-04")
+        design = self.design(None)
+        self.assertEqual(self.probe_valid(design)["status"], "FAIL")
+        check = self.probe_valid(design, scope_tiers=("mvp", "post-mvp"))
+        self.assertEqual(check["status"], "PASS", check["summary"])
+
+    def test_the_step_reads_the_scope_from_the_tier(self):
+        def scope(environment, design):
+            context = types.SimpleNamespace(environment=environment)
+            return PlayabilityStep._scope_tiers(context, design)
+        self.assertEqual(scope(None, self.design("release")), ("mvp", "post-mvp"))
+        self.assertEqual(scope(None, self.design("mvp")), ("mvp",))
+        self.assertEqual(scope({"quality": {"tier": "release"}}, self.design(None)),
+                         ("mvp", "post-mvp"))
+        self.assertEqual(scope(None, self.design(None)), ("mvp",))
+        # The design's own tier is what the tech plan built; the run's only fills a silence.
+        self.assertEqual(scope({"quality": {"tier": "release"}}, self.design("mvp")), ("mvp",))
+
+
+# Content's records and helpers, not its tests a second time.
+for _name in [n for n in dir(Content) if n.startswith("test_") and n not in vars(ReleaseUnits)]:
+    setattr(ReleaseUnits, _name, None)
+
+
 class TheStepsTier(unittest.TestCase):
     """Which tier holds content.variety to the probe's kinds: the run's, else the design's."""
 

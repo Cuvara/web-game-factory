@@ -31,7 +31,8 @@ import os
 import shutil
 import socket
 
-from wgflib import agentenv, check_strength, checkout, genre_models, paths, procs, provenance
+from wgflib import (agentenv, build_scope, check_strength, checkout, genre_models, paths, procs,
+                    provenance)
 from wgflib.netguard import BROWSER_BYPASS, BROWSER_PROXY_VAR, RefusingProxy, sandbox_env
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.quality import run_tier
@@ -165,6 +166,7 @@ class PlayabilityStep(WorkflowStep):
             # `playability` block with the genre family's `qa` overrides.
             qa = genre_models.qa_of(design)
             kinds_required = self._kinds_required(context, design)
+            scope_tiers = self._scope_tiers(context, design)
         except (OSError, YamlError, ValueError) as exc:
             return StepResult.blocked(
                 f"the genre model and depth bars could not be read ({exc}): nothing can be held "
@@ -222,7 +224,8 @@ class PlayabilityStep(WorkflowStep):
                 if records:
                     checks += analysis.judge(records, frames_dir, design, judged,
                                              experience_rules, project, qa=qa,
-                                             kinds_required=kinds_required)
+                                             kinds_required=kinds_required,
+                                             scope_tiers=scope_tiers)
                 frames += self._frames(frames_dir, project, context.run_dir)
             if not blocked and not any(p["ran"] for p in projects):
                 blocked = "the bot produced no records on any viewport; see " + os.path.join(logs, "bot.log")
@@ -267,6 +270,15 @@ class PlayabilityStep(WorkflowStep):
     def _probe_max_units():
         rules = (commitments.load().get("existing_content") or {}).get("probe") or {}
         return int(rules.get("max_units") or 0)
+
+    @staticmethod
+    def _scope_tiers(context, design):
+        """The design tiers the run builds (wgflib.build_scope): its quality tier's
+        quality-benchmark `tiers[].builds.design_tiers` - the tier the design states, else the
+        run's. Every unit of them is a design unit the probe may report; at a release tier
+        that is the post-mvp units too, which the tech plan planned and the developer built."""
+        return build_scope.design_tiers(
+            design, run=run_tier(getattr(context, "environment", None)))
 
     @staticmethod
     def _kinds_required(context, design):

@@ -20,20 +20,17 @@ session - never a mid-run surprise.
 """
 
 import math
-import os
 
 from wgflib import budget as run_budget
-from wgflib import paths
-from wgflib.yamllite import load_file
+from wgflib import build_scope
 
 __all__ = ["BENCHMARK_PATH", "DEFAULT_TIER", "load_benchmark", "quality_tier", "builds",
            "derive_budget", "BudgetBasisError"]
 
-BENCHMARK_PATH = os.path.join(paths.REFERENCE, "quality-benchmark.yaml")
-# A run whose strategy and design state no tier (title-strategy before 1.5.0) is planned as
-# it always was: the MVP, and the plan's later milestones after G4.
-DEFAULT_TIER = "mvp"
-_MVP_BUILDS = {"design_tiers": ["mvp"], "plan_phases": ["prototype"]}
+# The tier and what it builds are read through wgflib.build_scope, the one reading every
+# judging step uses too, so what the plan builds and what a build is held to cannot drift.
+BENCHMARK_PATH = build_scope.BENCHMARK_PATH
+DEFAULT_TIER = build_scope.DEFAULT_TIER
 
 
 class BudgetBasisError(ValueError):
@@ -41,34 +38,21 @@ class BudgetBasisError(ValueError):
 
 
 def load_benchmark(path=None):
-    return load_file(path or BENCHMARK_PATH) or {}
+    return build_scope.load_benchmark(path)
 
 
 def quality_tier(design, strategy):
     """(tier, where it was stated): the design's `build_spec.content.quality_tier`, else the
     strategy's `concept.content_model.quality_tier`, else DEFAULT_TIER."""
-    content = ((design or {}).get("build_spec") or {}).get("content")
-    stated = content.get("quality_tier") if isinstance(content, dict) else None
-    if isinstance(stated, str) and stated:
-        return stated, "game-design build_spec.content.quality_tier"
-    committed = (((strategy or {}).get("concept") or {}).get("content_model") or {})
-    if isinstance(committed.get("quality_tier"), str) and committed["quality_tier"]:
-        return committed["quality_tier"], "title-strategy concept.content_model.quality_tier"
-    return DEFAULT_TIER, "no tier stated by the design or the strategy: mvp"
+    return build_scope.quality_tier(design, strategy)
 
 
 def builds(tier, benchmark):
     """{"design_tiers", "plan_phases"} a run at `tier` builds before G4, from the benchmark."""
-    for entry in (benchmark or {}).get("tiers") or []:
-        if isinstance(entry, dict) and entry.get("id") == tier:
-            spec = entry.get("builds")
-            if isinstance(spec, dict) and spec.get("design_tiers") and spec.get("plan_phases"):
-                return {"design_tiers": [str(t) for t in spec["design_tiers"]],
-                        "plan_phases": [str(p) for p in spec["plan_phases"]]}
-    if tier == DEFAULT_TIER:
-        return dict(_MVP_BUILDS)
-    raise BudgetBasisError(f"core/reference/quality-benchmark.yaml states no tiers[].builds "
-                           f"for quality tier {tier!r}")
+    try:
+        return build_scope.builds(tier, benchmark or {})
+    except build_scope.BuildScopeError as exc:
+        raise BudgetBasisError(str(exc)) from None
 
 
 def _value(block, key):

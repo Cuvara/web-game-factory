@@ -121,7 +121,7 @@ lists every skip in `skipped_checks`, and the step names them in its summary.
 |---|---|---|
 | `content.contract` | The design states `build_spec.content` | At the release tier, a design without content fails (`design-gap`). Below it, every check is skipped |
 | `content.data_present` | The played commit ships `public/content/units.json` (authored content) | Present and readable |
-| `content.units_shipped` | Every unit the design owes at the tier is in the data file, and the count | The release tier owes every unit that is not `optional`; `mvp` or no tier owes the MVP units. Count >= max(`content.units.min_total`, family `units.min_total`) at release, family `units.min_mvp` below it |
+| `content.units_shipped` | Every unit the design owes at the tier is in the data file, and the count | The tier owes the units of the design tiers it builds (`scripts/wgflib/build_scope.py`, quality-benchmark `tiers[].builds`, the rule the tech plan plans by): `release` the MVP and post-mvp units, `mvp` or no tier the MVP units. Count >= max(`content.units.min_total`, family `units.min_total`) at release, family `units.min_mvp` below it |
 | `content.units_reachable` | Every shipped unit was entered, by the traverse in play order or by the survey | All of them. Without a survey, or with a build that ignores the unit link, the units past the traverse are unreached, and the summary says why |
 | `content.entity_kinds` | Entities of a content role carry `kind` (first session, act and survey samples) | None without one. Required for authored content; a warning for generated content |
 | `content.elements` | Distinct elements; each used in >= N units (elements only climax units use are their set pieces); introduction points; how late the last one arrives | `content.elements.*` |
@@ -209,9 +209,10 @@ WS-8 finding contract (specialist routing, WS-7 scorecard) reads the same fields
 - G4 is not decided on this report: `gates.yaml` G4 `required_artifacts` does not list it,
   and the release step does not refuse a build without a passing report. The quality
   scorecard (WS-7) is the planned consumer.
-- Until WS-3 plans the post-MVP units, a release-tier build ships only the MVP units, so
-  `content.units_shipped` fails it and routes `develop`. That is a true finding: the build
-  is short of the design.
+- A release-tier run plans and builds the post-mvp units before G4 (WS-3, the tech plan's
+  `dev_plan.build_scope`); a build that still ships only the MVP units fails
+  `content.units_shipped` and routes `develop`. That is a true finding: the build is short of
+  the design.
 
 ## Running it outside a run
 

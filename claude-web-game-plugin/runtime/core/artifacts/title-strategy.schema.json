@@ -8,7 +8,7 @@
     "id": "title-strategy",
     "kind": "artifact",
     "format": "json",
-    "version": "1.5.0",
+    "version": "1.6.0",
     "producer": "title:strategy",
     "consumers": ["title:strategy", "title:design", "title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "title:live", "release:store-listing"],
     "repo_path": "workspace/titles/<title-id>/title-strategy.json",
@@ -196,7 +196,7 @@
             "budget": {
               "type": "object",
               "required": ["units"],
-              "description": "The content the title commits to at its quality tier, counted in the family's own unit, group and element kinds (core/reference/genre-models.yaml `units` and `budget`). At `release` every quantity is the larger of the genre model's bar and the quality benchmark's; at `mvp` it is the MVP's units. Added in 1.5.0.",
+              "description": "The content the title commits to at its quality tier, counted in the family's own unit, group and element kinds (core/reference/genre-models.yaml `units` and `budget`). At `release` every quantity is the larger of the genre model's bar and the quality benchmark's, and never less than the count the brief states (1.6.0); at `mvp` it is the MVP's units. Added in 1.5.0.",
               "properties": {
                 "units": { "type": "integer", "minimum": 1, "description": "Content units (of `unit_kind`) the release carries." },
                 "groups": {
@@ -229,7 +229,7 @@
                 },
                 "basis": {
                   "type": "array",
-                  "description": "Each quantity with the bars behind it: the genre model's and the benchmark's, and the value committed (the larger).",
+                  "description": "Each quantity with the bars behind it: the genre model's, the benchmark's and the count the brief states (core/reference/brief-commitments.yaml; `brief` added in 1.6.0), and the value committed (the largest).",
                   "items": {
                     "type": "object",
                     "required": ["quantity", "value"],
@@ -237,6 +237,7 @@
                       "quantity": { "type": "string" },
                       "genre_model": { "type": "number" },
                       "benchmark": { "type": "number" },
+                      "brief": { "type": "number", "description": "The count the brief states for this quantity (\"4 themed worlds\"). Added in 1.6.0." },
                       "value": { "type": "number" }
                     },
                     "additionalProperties": false

@@ -127,6 +127,21 @@ consistency result is atomic.
     implied. A pillar the brief or design names (risk/reward) is held by a mechanic the units
     use, never by its words.
 
+    The counts are held too (`brief_commitments_met`): what the brief and the strategy's own
+    statements count - groups ("4 themed worlds"), units ("32 levels", "worlds of 8"),
+    climax units ("boss levels", "a boss per world") - read through
+    `core/reference/brief-commitments.yaml`, and every mode of the feature catalogue the brief
+    names. At the release tier the units not tiered optional plan at least each count, and
+    each mode is an included feature; below it the counts are reported as what the release
+    still owes. Cutting what the brief asked for is a brief change, for a person.
+
+    When the run adopts a repository that already ships a game (`factory.init.adopt_existing`),
+    the design step counts the content it ships at its HEAD commit - units, groups, climax
+    units, elements, the unit ids - into `game_design.existing_content`, with that commit.
+    That is a floor (`existing_content_floor_kept`): the design keeps every shipped unit under
+    its own id and plans no fewer of any of them. A run improves the game it adopts; it
+    never plans a smaller one.
+
 ## Returning here from the build
 
 A developer that finds this design silent on something it must decide reports a **design gap**

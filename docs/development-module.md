@@ -80,6 +80,33 @@ did not fail the build on its own; `visual_qa_failures`), with the judged commit
 No `phase` (a workflow before 4) is the single develop phase it always was. An unknown phase
 fails the step.
 
+### An adopted game
+
+When the run adopted a repository that already ships a game, the design records what it
+ships (`game-design.existing_content`: units, groups, climax units, elements and unit ids,
+counted at the commit init adopted - [init-module.md](init-module.md)). Observed on both
+validation games (2026-10-04): the greybox developer, told to build with primitives, rewrote
+the shipped checkouts to the new design - 12,168 deletions in the 2D game, its content cut
+from 32 units to 12. An adopted game is improved, never rebuilt:
+
+- **The first greybox visit runs no developer.** The greybox exists to prove the loop plays
+  and reads before assets are made; an adopted game is past that point, and stripping its
+  production art to primitives destroys shipped work. So the visit runs the toolchain checks
+  on HEAD (not `conformance`, which judges a developer's report), writes nothing into the
+  checkout, and reports HEAD as its build for `greybox-playability` to play as it is. The
+  gate is not lowered: the same playability checks judge it. Only when they fail (or the
+  toolchain checks fail on HEAD) is a developer briefed, with what they found.
+- **Every brief on an adopted game states the floor** (`brief.json` `existing_content`, the
+  section *Adopted game: improve, never rebuild*): no commit ships fewer units, groups,
+  climax units or elements, and no shipped unit, asset file or feature is deleted or
+  replaced by a primitive unless a finding in the brief asks for exactly that. The greybox
+  section says to keep the production art and add only what the gates need.
+- **The commit is refused below the floor** (`existing-content` in `checks.json`, FAILED,
+  retryable, `QUALITY REGRESSION`): the checkout's content data counted below the floor, a
+  shipped unit id gone, or a file the floor's commit shipped under `public/` gone. A
+  specialist visit, whose findings ask for the change, may remove a shipped file; nothing
+  may take the content below the floor.
+
 ## The brief
 
 `docs/development/brief.md` is the whole interface between the Factory and whoever writes

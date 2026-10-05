@@ -47,6 +47,7 @@ The developer's boundary is enforced here, not requested in the brief:
     env        the developer command gets an allowlisted environment (wgflib/agentenv.py)
 """
 
+import copy
 import datetime
 import json
 import os
@@ -58,6 +59,7 @@ from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.quality import run_tier
 
 from . import brief as briefs
+from . import floor as content_floor
 from . import safewrite, scope
 from . import specialist as specialists
 from .budget import Budget
@@ -424,6 +426,39 @@ class DevelopStep(WorkflowStep):
                           run_dir, "develop-quarantine",
                           f"{getattr(context, 'visit', 1)}-{getattr(context, 'attempt', 1)}")
                           if run_dir else None))
+        def make_brief(baseline, review_baseline, previous_checks):
+            return briefs.build_brief(
+                title_id=title_id, engine=engine, iteration=context.visit, key=key,
+                baseline=baseline, design=design, assets=assets, scaffold=scaffold,
+                strategy=strategy, qa=qa, previous_checks=previous_checks,
+                refs=inputs.refs, skills=settings.skills, review=review,
+                playability=playability, frames_root=getattr(context, "run_dir", None),
+                production=production, visual_qa=visual_qa, sufficiency=sufficiency,
+                phase=phase, greybox_commit=greybox_commit, review_baseline=review_baseline,
+                tech_plan=tech_plan, self_playtest=settings.self_playtest,
+                mobile_test=bool((game_config.get("verification") or {}).get("mobile_test",
+                                                                            True)),
+                writable_paths=settings.writable_paths,
+                package_changes=settings.package_changes,
+                loop=_loop(context, spec, via=(
+                    (inputs.load("triage-report") or {}).get("source")
+                    if "triage-report" in inputs else None)),
+                sessions=_sessions(context, tech_plan),
+                developer=settings.developer,
+                specialist=spec,
+            )
+
+        if (phase == "greybox" and content_floor.adopted(design) and spec is None
+                and not committed and playability is None):
+            # An adopted game that already ships production content is improved, never
+            # rebuilt: its first greybox visit runs no developer and plays the build as it
+            # is (docs/development-module.md, "An adopted game").
+            done = self._conformance_visit(
+                context, inputs, settings, runner, git, guard, record, make_brief, design,
+                strategy, title_id, engine, game_config, repository, checkout)
+            if done is not None:
+                return done
+
         if committed:
             # This visit already committed. Do not develop again: re-check what is there
             # and report it, so a crash after the commit costs a check run, not a rebuild.
@@ -446,26 +481,7 @@ class DevelopStep(WorkflowStep):
             previous_checks = _read_json(checks_json)
             if (previous_checks or {}).get("idempotency_key") != key:
                 previous_checks = None  # another visit's failures are not this one's
-            brief = briefs.build_brief(
-                title_id=title_id, engine=engine, iteration=context.visit, key=key,
-                baseline=baseline, design=design, assets=assets, scaffold=scaffold,
-                strategy=strategy, qa=qa, previous_checks=previous_checks,
-                refs=inputs.refs, skills=settings.skills, review=review,
-                playability=playability, frames_root=getattr(context, "run_dir", None),
-                production=production, visual_qa=visual_qa, sufficiency=sufficiency,
-                phase=phase, greybox_commit=greybox_commit, review_baseline=review_baseline,
-                tech_plan=tech_plan, self_playtest=settings.self_playtest,
-                mobile_test=bool((game_config.get("verification") or {}).get("mobile_test",
-                                                                            True)),
-                writable_paths=settings.writable_paths,
-                package_changes=settings.package_changes,
-                loop=_loop(context, spec, via=(
-                    (inputs.load("triage-report") or {}).get("source")
-                    if "triage-report" in inputs else None)),
-                sessions=_sessions(context, tech_plan),
-                developer=settings.developer,
-                specialist=spec,
-            )
+            brief = make_brief(baseline, review_baseline, previous_checks)
             _write(checkout, brief_json, json.dumps(brief, indent=2, ensure_ascii=False) + "\n")
             _write(checkout, brief_md, briefs.render_markdown(brief))
             # The design, readable in the repository (game-design's rendered_to). Written
@@ -539,6 +555,9 @@ class DevelopStep(WorkflowStep):
             refused = self._scope(git, settings, **record)
             if refused is not None:
                 return refused
+            refused = self._floor(git, design, spec, **record)
+            if refused is not None:
+                return refused
 
         refused = guard.take()  # a re-executed, committed visit: around its checks alone
         if refused is not None:
@@ -569,6 +588,9 @@ class DevelopStep(WorkflowStep):
             # Again after the checks: one that writes outside the ignored paths has put a
             # file in the tree that nobody decided to commit.
             refused = self._scope(git, settings, checks=checks, **record)
+            if refused is not None:
+                return refused
+            refused = self._floor(git, design, spec, checks=checks, **record)
             if refused is not None:
                 return refused
         if green and not committed and settings.commit:
@@ -731,6 +753,95 @@ class DevelopStep(WorkflowStep):
                 "id": "commit-scope", "status": "failed", "summary": message,
                 "findings": [f"{path}: {why}" for path, why in refused]}], False, checkout)
         return StepResult.failed(message, retryable=False)
+
+    def _floor(self, git, design, spec, *, checkout, key, engine, checks_json, logger, write,
+               checks=(), quarantine=None):
+        """FAILED, retryable, when the tree ships less than the adopted repository did: its
+        content data counts below game-design.existing_content, or a file the repository
+        shipped under public/ is gone (allowed only to a specialist visit, whose findings ask
+        for the change). None otherwise, and for a run that adopted nothing. Recorded as the
+        `existing-content` check, so the next attempt's brief carries what to put back."""
+        problems, allowed = content_floor.problems(checkout, design, git,
+                                                   findings_visit=spec is not None)
+        if allowed:
+            logger.warning("develop removed files the adopted repository shipped, as the "
+                           "specialist's findings ask", paths=allowed[:20])
+        if not problems:
+            return None
+        message = ("QUALITY REGRESSION: the checkout ships less than the adopted repository "
+                   "already shipped - " + "; ".join(problems[:6])
+                   + (f" and {len(problems) - 6} more" if len(problems) > 6 else "")
+                   + ". Nothing was committed. Put the shipped content back and build on it: "
+                   "an adopted game is improved, never rebuilt.")
+        logger.error("develop would drop below the existing-content floor",
+                     problems=problems[:20])
+        if write:
+            self._record(checks_json, key, engine, [c.to_dict() for c in checks] + [{
+                "id": "existing-content", "status": "failed", "summary": message,
+                "findings": problems[:40]}], False, checkout)
+        return StepResult.failed(message, retryable=True)
+
+    def _conformance_visit(self, context, inputs, settings, runner, git, guard, record,
+                           make_brief, design, strategy, title_id, engine, game_config,
+                           repository, checkout):
+        """The first greybox visit on an adopted game: no developer, nothing written into
+        the checkout. The toolchain checks run on HEAD - `conformance` judges a developer's
+        report, and none ran - and a green HEAD is the visit's build, reported for
+        greybox-playability to play as it is. None when the checks do not pass: the visit
+        goes on as a developer visit, held to the floor."""
+        head = git.head()
+        brief = make_brief(head, head, None)
+        quiet = dict(record, write=False)
+        refused = guard.take()
+        if refused is not None:
+            return refused
+        toolchain = copy.copy(settings)
+        toolchain.checks = [c for c in settings.checks if c != "conformance"]
+        try:
+            strength = skip_policy(context, brief)
+        except ValueError as exc:
+            return StepResult.blocked(f"what a skipped check counts as cannot be read ({exc}); "
+                                      "no build is called green on a defaulted rule")
+        platforms = [p.get("id") for p in game_config.get("platforms") or []
+                     if isinstance(p, dict) and p.get("id")]
+        checks = run_checks(checkout, brief, toolchain, runner, git, logger=context.logger,
+                            strength=strength,
+                            steps=("develop", getattr(context, "current_step", None)),
+                            platforms=platforms)
+        refused = guard.check(checks=checks, **quiet)
+        if refused is not None:
+            return refused
+        if any(c.blocking for c in checks):
+            context.logger.warning(
+                "the adopted build does not pass its checks as it is; a developer improves "
+                "it, held to the existing-content floor",
+                checks={c.id: c.status for c in checks})
+            return None
+        shipped = content_floor.shipped_units(checkout, design)
+        dev_report = {
+            "content_units": [{"id": uid, "status": "built",
+                               "notes": "shipped by the adopted repository"}
+                              for uid in shipped],
+            "known_issues": ["Conformance visit: no developer ran. The adopted repository's "
+                             "build at HEAD is played as it is; a developer is briefed only "
+                             "for what the greybox gate finds."]}
+        produced_at = self.clock()
+        report = build_report(
+            title_id=title_id, brief=brief, checks=checks, dev_report=dev_report,
+            commit_sha=head, built_at=produced_at,
+            build_url=self._build_url(settings, repository, checkout, head, git),
+            iteration=context.visit, strategy=strategy,
+            pinned_inputs=self._pins(inputs), artifact_seq=context.execution,
+            produced_at=produced_at)
+        context.logger.info("greybox conformance visit: the adopted build is played as it is",
+                            commit=head)
+        return StepResult.success(
+            [ArtifactOutput("prototype-report", report, metadata={
+                "commit": head, "engine": engine, "green": True, "conformance": True,
+                "checks": {c.id: c.status for c in checks}})],
+            message=(f"{title_id} is an adopted game: its build at {head[:12]} ({engine}) is "
+                     "played as it is, no developer ran; "
+                     + ", ".join(f"{c.id} {c.status}" for c in checks)))
 
     @staticmethod
     def _quarantine(checkout, target, refused, logger):

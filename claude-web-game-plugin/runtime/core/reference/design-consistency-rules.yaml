@@ -12,7 +12,7 @@
 # artifact plus the resolved platform profiles. Keep them few and obvious — a rule nobody
 # understands gets waived, and a waived rule is worse than no rule.
 
-version: 2.0.0  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms; 2.0.0: mechanics, not words (below)
+version: 2.1.0  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms; 2.0.0: mechanics, not words (below); 2.1.0: brief commitments and the existing-content floor (below)
 
 # 2.0.0. The concept rules compared words: "tap hops" in a design read as a foreign `jump`
 # for a brief that asked for hops, a goal gate read as a checkpoint `gate`, and an author
@@ -26,6 +26,17 @@ version: 2.0.0  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_co
 # pillar_realized_by_mechanic is new. Changing the lexicon's words changes what these rules
 # decide, so the ruleset pins its version and refuses another.
 lexicon: { id: mechanic-lexicon, version: 1.0.0 }
+
+# 2.1.0. The lexicon carries mechanics and pillars, not counts: a brief that asked for "4 themed
+# worlds of hand-designed levels ... boss levels, and an endless mode" was designed as 3 groups
+# of 12 units with the endless mode cut, and passed every rule; the repository it adopted
+# already shipped 32 units in 4 worlds with 4 bosses. `commitments.*` is the brief's and the
+# strategy's stated counts, structure and modes against what the design plans
+# (core/reference/brief-commitments.yaml, wgf_design/commitments.py); `adopted.*` is what
+# the adopted repository ships against the same counts of the design (wgf_design/existing.py,
+# recorded in game-design.existing_content with the commit it was counted at). The ruleset
+# pins the vocabulary like the lexicon: its words decide what a brief committed to.
+commitments: { id: brief-commitments, version: 1.0.0 }
 
 rules:
   - id: rewarded_ads_need_reward_moments
@@ -135,6 +146,33 @@ rules:
       "Risk/reward decisions" is a promise about play. The words appearing in the design
       keep none of it; a mechanic the units use - an optional pickup off the safe line, a
       multiplier, a shortcut - does.
+
+  - id: brief_commitments_met
+    label: The design plans at least the counts, structure and modes the brief states
+    severity: blocking
+    # `commitments.unmet`: every count the brief or the strategy's own statements state -
+    # groups ("4 themed worlds"), units ("32 levels", "worlds of 8"), climax units ("boss
+    # levels", "a boss per world") - that the design's units not tiered optional fall short
+    # of, and every mode of the feature catalogue the brief names that the design does not
+    # include. Each names the brief's words and what the design plans.
+    when: { left: commitments.unmet, op: neq, right: [] }
+    rationale: >
+      "Four worlds" is a promise the person who wrote the brief can count. A design with three
+      passes every quality bar and still delivers less than was asked; the shortfall is found
+      by a player, not a gate. Plan at least what the brief states, or change the brief - a
+      person's decision, never the design's.
+
+  - id: existing_content_floor_kept
+    label: The design plans no less than the adopted repository already ships
+    severity: blocking
+    # `adopted.short`: every quantity of game-design.existing_content (units, groups, climax
+    # units, elements, counted on the adopted checkout's content data at its HEAD commit)
+    # that the design plans fewer of. Absent when the run adopts nothing.
+    when: { left: adopted.short, op: neq, right: [] }
+    rationale: >
+      A run that adopts a game is improving it. A design below what the repository already
+      ships plans a regression, and every later gate would measure the build against the
+      smaller design and pass it.
 
   - id: first_reward_within_first_session
     label: First reward must land inside the first session

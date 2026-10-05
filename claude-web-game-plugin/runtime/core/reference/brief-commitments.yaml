@@ -1,0 +1,131 @@
+# Web Game Factory — Brief commitments and the existing-content floor
+#
+# What a brief, or the strategy built from it, commits the content to in numbers and
+# structure, and how the content an adopted game repository already ships is counted.
+#
+# The mechanic lexicon (core/reference/mechanic-lexicon.yaml) carries mechanics and pillars.
+# It carries no count: a brief that asked for "4 themed worlds of hand-designed levels ...
+# boss levels, and an endless mode" was designed as 3 groups of 12 units with the endless
+# mode cut, and passed every design rule (docs/quality-gap-audit-2026-10.md). This file is the
+# counts' vocabulary. Read by:
+#
+#   scripts/wgf_design/commitments.py   the commitments a brief and a strategy state, and the
+#                                       design's counts against them (consistency rule
+#                                       brief_commitments_met)
+#   scripts/wgf_design/existing.py      the content an adopted checkout ships, counted as the
+#                                       design's floor (rule existing_content_floor_kept) and
+#                                       the build's (content-sufficiency `content.regression`)
+#   scripts/wgf_strategy/planner.py     the strategy's content budget at the release tier
+#                                       never commits less than the brief states
+#
+# Matching. Text is read like the lexicon reads it: lower-cased, `-` `_` `/` as spaces, whole
+# words. A count is a number (digits, or one of `numbers`) followed - within `max_gap_words`
+# words that are neither a number nor one of `gap_breakers` - by one of a quantity's terms
+# (`singular` or `plural`):
+# "4 themed worlds" is groups >= 4, "32 hand-built levels" units >= 32. A number after
+# `not_minimum_before` ("at most 3 worlds", "up to 5 levels") states a ceiling and commits
+# nothing. Per group:
+#
+#   "<N> <unit term> <per_words> <group term>"     units per group >= N
+#   "<group term> of <N>"  ("4 worlds of 8")       units per group >= N
+#   "<N> <climax term> <per_words> <group term>"   climax units per group >= N
+#   an unnumbered climax term in a clause that says "<per_group_markers> <group term>"
+#                                                               climax units per group >= 1
+#
+# An unnumbered term commits only where its quantity has `unnumbered` ("boss levels" is at
+# least two climax units; "a boss level" one). A clause is text between `,` `;` `.` `:` with
+# parentheses removed.
+#
+# Never a game, a theme or a genre word here: the terms are the ways a brief counts content.
+# Add a term when a brief counted content in a word this file does not know.
+
+version: 1.0.0
+
+numbers:
+  one: 1
+  two: 2
+  three: 3
+  four: 4
+  five: 5
+  six: 6
+  seven: 7
+  eight: 8
+  nine: 9
+  ten: 10
+  eleven: 11
+  twelve: 12
+  fifteen: 15
+  sixteen: 16
+  twenty: 20
+  thirty: 30
+  forty: 40
+  fifty: 50
+  a dozen: 12
+  dozen: 12
+max_gap_words: 3
+gap_breakers: [per, each, every, of, in, on, at, for, with, from, to, by, and, or, than, a, an, the, plus, then, after, before]
+not_minimum_before: [at most, up to, no more than, fewer than, less than, under, maximum, max]
+per_words: [per, in each, for each, each, every, in every, a]
+# An unnumbered climax term counts per group when its clause has one of these before a group
+# term ("each world ... ending in a boss level").
+per_group_markers: [each, every, per]
+
+quantities:
+  # The sets of units the game presents together (build_spec.content.units[].group).
+  groups:
+    label: groups
+    singular: [world, chapter, zone, region, biome, episode, island, realm, planet, cup, act, area, district]
+    plural: [worlds, chapters, zones, regions, biomes, episodes, islands, realms, planets, cups, acts, areas, districts]
+  # Content units (build_spec.content.units, every one not tiered optional).
+  units:
+    label: units
+    singular: [level, stage, course, track, puzzle, map, mission, round, wave, board, arena]
+    plural: [levels, stages, courses, tracks, puzzles, maps, missions, rounds, waves, boards, arenas]
+  # Climax units (units[].purpose: climax): the unit that closes a group and tests it.
+  climax:
+    label: climax units
+    singular: [boss, boss level, boss stage, boss fight, boss battle, boss wave, boss round, finale]
+    plural: [bosses, boss levels, boss stages, boss fights, boss battles, boss waves, boss rounds, finales]
+    # What the term commits with no number before it.
+    unnumbered: {singular: 1, plural: 2}
+
+# Where the counted statements are read. The brief always; the strategy's own statements
+# (what G2 approved) too - never its out_of_scope list, which names what is NOT built.
+sources:
+  strategy: [one_liner, concept.core_mechanic, concept.core_loop, concept.gameplay_direction, mvp]
+
+# The tiers at which a stated count binds the design (build_spec.content.quality_tier, else
+# the strategy's). A tier-mvp run designs the prototype the brief's release is judged on, like
+# the content.tier_* bars; its unmet counts are reported in the rule's note, not breached.
+counts_hold_at_tiers: [release]
+
+# Modes. A feature of core/reference/feature-catalogue.yaml whose `kind` is listed here and
+# whose terms the BRIEF uses is a commitment: the design includes it (a features[] entry with
+# that catalogue id, evaluation.decision `include`, tier mvp or post-mvp). At a tier listed in
+# `include_at_tiers` nothing else keeps it; at any other tier a `later` does (the prototype
+# tests the core, the release builds the mode). `cut` never keeps what the brief asked for -
+# that is a brief change, for a person.
+modes:
+  feature_kinds: [mode]
+  include_at_tiers: [release]
+
+# The existing-content floor. When the run adopts a game repository that already exists
+# (factory.init.adopt_existing), the content it ships at its HEAD commit is a floor the design
+# may not plan below and the build may not drop below (docs/factory-lifecycle.md is the design's
+# side; docs/content-sufficiency-module.md the build's). Counted on the content data file at
+# `path`, each quantity by the first method that applies; a quantity no method measures is
+# recorded as unmeasured and holds nothing.
+existing_content:
+  path: public/content/units.json
+  group:
+    field: group
+    # A unit id's leading group token: w1-l3, world2_l5, ch3-7. Applied only when every unit
+    # id carries one and there are at least two.
+    id_pattern: "^([a-z]+[0-9]+)[-_ ]"
+  climax:
+    field: purpose
+    value: climax
+    # A unit whose objective, success or name text uses a climax term (quantities.climax).
+    text_fields: [objective, success, name, title]
+  elements:
+    field: elements

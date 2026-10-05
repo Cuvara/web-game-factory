@@ -31,6 +31,8 @@ Outcomes, per docs/workflow-module-contract.md §7:
     the content is not stated (no units, a     FAILED, not retryable, nothing persisted
     unit kind, curve or ending the genre       (content.py, core/reference/genre-models.yaml;
     family refuses, mastery unstated)          checked only when no blocking rule breached)
+    the adopted repository's content data      FAILED, not retryable (existing.py: shipped at
+    cannot be counted                          its HEAD commit but not a JSON object)
     a blocking consistency rule breached       FAILED, route `descope`, not retryable, with the
                                                game-design persisted as evidence - cut scope;
                                                never relax the rule. An author that repairs its
@@ -57,7 +59,7 @@ from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.contracts import ArtifactContracts
 
-from . import consistency, content, depth, experience, presentation
+from . import consistency, content, depth, existing, experience, presentation
 from . import features as feature_check
 from .authors import AUTHORS, AuthorError, resolve_author
 from .compose import buildability, finalize
@@ -142,6 +144,9 @@ class DesignStep(WorkflowStep):
     depth_rules = None
     content_models = None
     feature_catalogue = None
+    # Builds the git reader of the adopted checkout (existing.read_floor); None: the hardened
+    # git of the develop module.
+    floor_git = None
 
     def execute(self, inputs, context):
         if "title-strategy" in inputs.missing:
@@ -164,6 +169,15 @@ class DesignStep(WorkflowStep):
         except PlatformError as exc:
             return StepResult.blocked(str(exc))
 
+        # The existing-content floor: what an adopted repository already ships. Counted once
+        # per run - a re-entered design keeps the floor its first visit recorded, never the
+        # run's own build in progress.
+        try:
+            self._floor = self._existing_floor(context, title_id)
+        except ValueError as exc:
+            return StepResult.failed(f"the adopted repository's content cannot be counted: "
+                                     f"{exc}", retryable=False)
+
         author_name = (self.params.get("author")
                        or ((context.config or {}).get("design") or {}).get("author")
                        or DEFAULT_AUTHOR)
@@ -175,6 +189,8 @@ class DesignStep(WorkflowStep):
                  "run_dir": getattr(context, "run_dir", None),
                  "visit": getattr(context, "visit", 1),
                  "attempt": getattr(context, "attempt", 1)}
+        if self._floor:
+            brief["existing_content"] = self._floor
         # Re-entered through `design-gap`: the prototype-report names what the design did not
         # decide, and the draft starts from the design those gaps were found in (this step's
         # own previous output), so the design is repaired, never replaced.
@@ -364,6 +380,10 @@ class DesignStep(WorkflowStep):
                     f"The brief names {named}; this design is {built}, the dimension of the "
                     f"buildable concept research selected. Realising the brief in {named} is "
                     f"a design change: an agent author, or a new concept, not this draft.")
+        # Written by the step, never by an author: what the adopted repository ships.
+        design.pop("existing_content", None)
+        if getattr(self, "_floor", None):
+            design["existing_content"] = copy.deepcopy(self._floor)
         outcome = {"draft": copy.deepcopy(draft), "design": design, "artifact": None,
                    "block": None, "blocking": None,
                    "warnings": None, "problems": [], "unbuildable": False,
@@ -423,6 +443,16 @@ class DesignStep(WorkflowStep):
                         for pid in concept.get("pillars_unrealized") or [])
                     + " are asked for and no MVP mechanic a content unit uses realizes them. "
                     "Build the mechanic into the units; restating the pillar realizes nothing.",
+                "brief_commitments_met":
+                    "The brief (or the strategy G2 approved) states these counts, structure "
+                    "and modes; plan at least each one in build_spec.content (units not tiered "
+                    "optional, their `group` and `purpose: climax`) and include each mode in "
+                    "features[]. Cutting what the brief asked for is a brief change, for a "
+                    "person.",
+                "existing_content_floor_kept":
+                    "The repository this run adopts already ships this content "
+                    "(game-design.existing_content). Plan at least as much: keep its units, "
+                    "groups, climax units and elements, and add to them.",
             }
             for rule_id in blocking:
                 stated = consistency.breach_problems(block, [rule_id], ruleset) or [
@@ -462,6 +492,17 @@ class DesignStep(WorkflowStep):
         outcome.update(artifact=artifact, block=block, blocking=blocking, warnings=warnings,
                        problems=list(contracts("game-design", artifact)))
         return outcome
+
+    def _existing_floor(self, context, title_id):
+        """game-design.existing_content for this run, or None. ValueError: the adopted
+        repository ships content data that cannot be counted."""
+        previous = self._previous_design(context) or {}
+        if isinstance(previous.get("existing_content"), dict):
+            return previous["existing_content"]
+        floor, note = existing.read_floor(context.config, title_id, git=self.floor_git)
+        if floor is not None or "adopt" not in note:
+            context.logger.info("existing-content floor", floor=note)
+        return floor
 
     @staticmethod
     def _last_draft_path(context):

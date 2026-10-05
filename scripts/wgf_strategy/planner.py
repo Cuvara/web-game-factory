@@ -55,6 +55,8 @@ import re
 
 from wgflib import genre_models, mechanics
 
+from wgf_design import commitments
+
 __all__ = ["Policy", "StrategyRefused", "plan_strategy", "contradictions", "brief_intents",
            "PLANNABLE_STATES", "QUALITY_TIERS", "DEFAULT_QUALITY_TIER",
            "resolve_quality_tier"]
@@ -353,6 +355,10 @@ class _Plan:
         self.lexicon = mechanics.load()
         self.intent_entries = self.lexicon.get("brief_intents") or {}
         self.intents = brief_intents(opportunity.get("brief"), self.lexicon)
+        # The counts the brief states (core/reference/brief-commitments.yaml): the release
+        # budget never commits less ("4 themed worlds" is 4 groups, whatever the benchmark).
+        self.brief_counts = {(c["quantity"], c["per_group"]): c for c in
+                             commitments.of_strategy({"brief": opportunity.get("brief")})}
         self.risks = []
         self.assumptions = []
         self.decisions = []
@@ -685,6 +691,21 @@ class _Plan:
             basis.append({"quantity": "groups", "benchmark": groups, "value": groups})
             basis.append({"quantity": "min_units_per_group", "benchmark": per_group,
                           "value": per_group})
+            for quantity, key, field in (("groups", ("groups", False), "count"),
+                                         ("min_units_per_group", ("units", True),
+                                          "min_units_per_group")):
+                stated = self.brief_counts.get(key)
+                if stated:
+                    entry = next(b for b in basis if b["quantity"] == quantity)
+                    entry["brief"] = stated["minimum"]
+                    entry["value"] = budget["groups"][field] = max(
+                        budget["groups"][field], stated["minimum"])
+            total = max(total, budget["groups"]["count"]
+                        * budget["groups"]["min_units_per_group"])
+        stated = self.brief_counts.get(("units", False))
+        if stated:
+            basis[0]["brief"] = stated["minimum"]
+            total = max(total, stated["minimum"])
         budget["units"] = basis[0]["value"] = total
 
         elements = content.get("elements")

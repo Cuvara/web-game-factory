@@ -23,7 +23,7 @@ import json
 import os
 import re
 
-from wgflib import genre_models, paths
+from wgflib import build_scope, genre_models, paths
 from wgflib import template_contract as contract
 from wgflib.jsonschema_lite import Registry, Validator, json_problems
 
@@ -373,9 +373,12 @@ def content_conformance(session):
     None when the design authors none, so there is nothing to conform to. Otherwise, in order:
     what the develop step recorded (`docs/development/checks.json`, which carries its content
     check), else the data file the build reads its units out of (`public/content/units.json`)
-    holding every MVP unit id. A build that does neither has not shown its content exists.
+    holding the id of every unit the run builds (wgflib.build_scope: the MVP at tier mvp, the
+    MVP and post-mvp units at release). A build that does neither has not shown its content
+    exists.
     """
-    content, mode, units = genre_models.units_of(session.inputs.get("game-design"))
+    design = session.inputs.get("game-design")
+    content, mode, units = genre_models.units_of(design, build_scope.design_tiers(design))
     if content is None:
         return None, Evidence("observation", "the design authors no content units "
                                              "(build_spec.content), so none can be conformed to")
@@ -396,7 +399,7 @@ def content_conformance(session):
     absent = sorted(u.get("id") for u in units
                     if u.get("id") and f'"{u["id"]}"' not in text)
     return not absent, Evidence(
-        "file", (f"{CONTENT_DATA} carries every mvp unit of the design ({len(units)}, "
+        "file", (f"{CONTENT_DATA} carries every unit the design's tier builds ({len(units)}, "
                  f"generation {mode})" if not absent else
                  f"{CONTENT_DATA} does not carry: {', '.join(absent)}"),
         path=CONTENT_DATA, content_hash=session.file_hash(CONTENT_DATA),

@@ -193,7 +193,7 @@ reads these from `records_dir`:
 | Check | Passes when |
 |---|---|
 | `probe.present` | `snapshot()` answers. Without it nothing else is judged |
-| `probe.valid` | snapshots match the schema and carry the contract's goal, win and lose metrics; with authored content, every playing snapshot reports `content` and its `unit_id` is one of the design's |
+| `probe.valid` | snapshots match the schema and carry the contract's goal, win and lose metrics; with authored content, every playing snapshot reports `content` and its `unit_id` is one of the design's units the run builds (`scripts/wgflib/build_scope.py`: quality-benchmark `tiers[].builds.design_tiers` at the design's tier, else the run's - the MVP at `mvp`, the MVP and post-mvp units at `release`); an `optional` unit or an id the design does not list never is |
 | `start.playable` | play begins within `first_30s.playable_s` of navigation, less the time the bot itself spent measuring the title screen (settling, styles, a frame; recorded as `observerMs` beside the wall-clock `playingMs`) |
 | `start.objective` | ≥ 60 % of the objective statement's content words are on screen in the first 3 s of play |
 | `idle.grace` | no loss during the idle window |

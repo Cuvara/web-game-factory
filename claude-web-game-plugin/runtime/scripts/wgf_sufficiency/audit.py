@@ -33,7 +33,7 @@ import json
 import os
 import re
 
-from wgflib import genre_models, paths
+from wgflib import build_scope, genre_models, paths
 from wgflib.yamllite import load_file
 
 from wgf_design import existing
@@ -80,23 +80,16 @@ def _ids(items, most=6):
 # -- what the design commits to -------------------------------------------------------------
 
 def owed_units(design, tier):
-    """The design's content units the build owes at `tier`, in play order: at `release` every
-    unit that is not `optional`; otherwise the MVP units (all listed units when none is
-    tiered). The order is `build_spec.progression.unit_sequence`, then `index`."""
-    spec = (design or {}).get("build_spec") or {}
-    content = spec.get("content") if isinstance(spec.get("content"), dict) else {}
-    listed = [u for u in content.get("units") or [] if isinstance(u, dict)]
-    if tier == "release":
-        units = [u for u in listed if u.get("tier") != "optional"]
-    else:
-        units = [u for u in listed if u.get("tier") == "mvp"] or listed
-    sequence = list(((spec.get("progression") or {}).get("unit_sequence")) or [])
+    """The design's content units the build owes at `tier`, in play order: the units of the
+    design tiers the tier builds (wgflib.build_scope, quality-benchmark `tiers[].builds`) -
+    at `release` the MVP and post-mvp units, otherwise the MVP units (all listed units when
+    none is in scope). The order is `build_spec.progression.unit_sequence`, then `index`."""
+    return build_scope.units(design, owed_tiers(tier))
 
-    def place(unit):
-        uid = unit.get("id")
-        index = unit.get("index") if isinstance(unit.get("index"), int) else 10 ** 6
-        return (sequence.index(uid) if uid in sequence else len(sequence), index, str(uid))
-    return sorted(units, key=place)
+
+def owed_tiers(tier):
+    """The design tiers a build at `tier` owes (no tier stated: the MVP's)."""
+    return tuple(build_scope.builds(tier or build_scope.DEFAULT_TIER)["design_tiers"])
 
 
 # -- what the probe showed ------------------------------------------------------------------
@@ -808,9 +801,9 @@ def _audit(design, strategy, data, records, rules=None, benchmark=None, models=N
         add(_skip("content.progression", f"tier {tier or 'none'} states no "
                                          f"progression.min_gated_unlocks bar"))
     else:
-        owed_tiers = ("mvp", "post-mvp") if tier == "release" else ("mvp",)
+        step_tiers = owed_tiers(tier)
         declared = [s for s in (spec.get("progression") or {}).get("steps") or []
-                    if isinstance(s, dict) and s.get("tier") in owed_tiers]
+                    if isinstance(s, dict) and s.get("tier") in step_tiers]
         gates, void = built_unlocks(data, shipped, built_units)
         problems = []
         if len(gates) < want:

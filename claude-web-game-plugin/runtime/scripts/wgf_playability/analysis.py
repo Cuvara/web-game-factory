@@ -22,7 +22,7 @@ import os
 import re
 import statistics
 
-from wgflib import genre_models, jsonschema_lite, paths
+from wgflib import build_scope, genre_models, jsonschema_lite, paths
 
 from wgf_assets.raster import RasterError, decode_png
 
@@ -138,6 +138,7 @@ def _skips(project, ids, reason):
 def _content_checks(ctx):
     """content.units_reachable, content.objective_shown, content.win_lose_per_unit."""
     project, units, mode = ctx["project"], ctx["units"], ctx["mode"]
+    built = ctx["built_units"]
     bars = ctx["qa"].get("content") or {}
     ids = ("content.units_reachable", "content.objective_shown", "content.win_lose_per_unit")
     if ctx["content"] is None:
@@ -177,7 +178,7 @@ def _content_checks(ctx):
     bar = bars.get("objective_min_share")
     shares = {}
     for unit in played:
-        designed = _designed(units, unit)
+        designed = _designed(built, unit)
         if designed:
             shares[designed.get("id")] = objective_seen(designed.get("objective"),
                                                         unit.get("objective_texts"))
@@ -200,7 +201,7 @@ def _content_checks(ctx):
     cut = traverse.get("stopped") in _CUT_SHORT or bool(ctx["truncated"].get("traverse"))
     unwon, in_progress = [], []
     for unit in played:
-        designed = _designed(units, unit)
+        designed = _designed(built, unit)
         if not designed or not designed.get("success"):
             continue
         advanced = any(t.get("from") == unit.get("index") for t in transitions)
@@ -215,7 +216,7 @@ def _content_checks(ctx):
             took = (unit.get("metrics") or {}).get("time")
             if not isinstance(took, (int, float)) or took > target:
                 unwon.append(f"{designed.get('id')} (time {took}, target {target})")
-    failing = {u.get("id") for u in units if u.get("failure")}
+    failing = {u.get("id") for u in built if u.get("failure")}
     lost_in = ((lose.get("contentAtEnd") or lose.get("initialContent") or {}) or {}).get("unit_id")
     lost_ok = lose.get("reached") == "lost" and (lost_in in failing if failing else True)
     still = (f"; still in play when the traverse stopped ({traverse.get('stopped')}), so its "
@@ -348,6 +349,7 @@ def _difficulty_checks(ctx):
     reported escalating axis must end the release above where it started it.
     """
     project, axes, units = ctx["project"], ctx["axes"], ctx["units"]
+    built = ctx["built_units"]
     bars = ctx["qa"].get("difficulty") or {}
     if not axes:
         return _skips(project, ("difficulty.axes_progress",),
@@ -402,10 +404,10 @@ def _difficulty_checks(ctx):
             measured["quality_tier"] = release["tier"]
         off = []
         if matched:
-            off = _off_design(ctx["design"], units, ordered, axes, tolerance)
+            off = _off_design(ctx["design"], built, ordered, axes, tolerance)
             if release:
                 off += _off_design(ctx["design"], release["units"], release["visits"], axes,
-                                   tolerance, seen={_designed_id(units, u) for u in ordered})
+                                   tolerance, seen={_designed_id(built, u) for u in ordered})
         if off:
             measured["off_design"] = off
             problems += off[:6]
@@ -425,7 +427,7 @@ def _difficulty_checks(ctx):
             # escalating axis flat. The build is held to the rise wherever the design's own
             # values for the units traversed rise - or state none - and, where they hold, to
             # those values (off_design above), never below its start.
-            designed = _designed_series(units, ordered, axis["id"])
+            designed = _designed_series(built, ordered, axis["id"])
             holds = (release is not None and matched and designed is not None
                      and designed[-1] <= designed[0])
             if holds:
@@ -493,6 +495,7 @@ def _variety_check(ctx):
     reason, never as a failure read from a vocabulary that cannot express it.
     """
     project, units, mode = ctx["project"], ctx["units"], ctx["mode"]
+    built = ctx["built_units"]
     bars = ctx["qa"].get("variety") or {}
     genre = ctx["qa"].get("genre") or {}
     traverse = ctx["records"].get("traverse") or {}
@@ -522,7 +525,7 @@ def _variety_check(ctx):
         changed, pairs = 0, 0
         for first, second in zip(played, played[1:]):
             pairs += 1
-            a, b = _designed(units, first) or {}, _designed(units, second) or {}
+            a, b = _designed(built, first) or {}, _designed(built, second) or {}
             if (set(first.get("kinds") or []) != set(second.get("kinds") or [])
                     or set(a.get("mechanics") or []) != set(b.get("mechanics") or [])):
                 changed += 1
@@ -797,7 +800,7 @@ def _depth_checks(ctx):
 
 
 def judge(records, frames_dir, design, rules, experience_rules, project, qa=None,
-          kinds_required=None):
+          kinds_required=None, scope_tiers=None):
     """Checks (dicts per playability-report.schema.json) for one viewport.
 
     `qa` is the merged bars (wgflib.genre_models.qa_of): core/reference/design-depth.yaml's
@@ -808,6 +811,12 @@ def judge(records, frames_dir, design, rules, experience_rules, project, qa=None
     play fail content.variety instead of leaving it unmeasured (the run's tier holds an
     unmeasured check not passed: core/reference/quality-policy.yaml rule 5). None keeps the
     unmeasured check a WARNING with its reason.
+
+    `scope_tiers` are the design tiers the run builds (wgflib.build_scope.design_tiers: the
+    MVP at tier mvp, the MVP and post-mvp at release); else the design's own tier's. A unit of
+    them is a design unit wherever the build is held to one - the id the probe reports, the
+    unit a traversed one is - while the traverse and its curve stay the MVP's. An id the
+    design does not list, or lists outside the scope, is never one.
     """
     spec = ((design or {}).get("build_spec") or {})
     ex = spec.get("experience") or {}
@@ -816,8 +825,14 @@ def judge(records, frames_dir, design, rules, experience_rules, project, qa=None
     win = records.get("win") or {}
     lose = records.get("lose") or {}
     content, mode, units = content_units(design)
+    if scope_tiers is None:
+        try:
+            scope_tiers = build_scope.design_tiers(design)
+        except build_scope.BuildScopeError:
+            scope_tiers = None
+    built = content_units(design, tuple(scope_tiers))[2] if scope_tiers else units
     ctx = {"project": project, "records": records, "design": design or {}, "content": content,
-           "mode": mode, "units": units, "depth": spec.get("depth") or {},
+           "mode": mode, "units": units, "built_units": built, "depth": spec.get("depth") or {},
            "qa": qa if qa is not None else genre_models.qa_of(design),
            "axes": genre_models.axes_of(design),
            "family": genre_models.for_design(design) or {},
@@ -860,7 +875,7 @@ def judge(records, frames_dir, design, rules, experience_rules, project, qa=None
                     if isinstance(s.get("content"), dict)}
         reported |= {r.get("unit_id") for r in
                      (records.get("traverse") or {}).get("snapshots") or []}
-        unknown = sorted(uid for uid in reported if uid and uid not in {u.get("id") for u in units})
+        unknown = sorted(uid for uid in reported if uid and uid not in {u.get("id") for u in ctx["built_units"]})
         if unknown:
             content_gaps.append("content.unit_id is not a design unit: " + ", ".join(unknown[:3]))
     add(_check("probe.valid", project, not problems and not missing and not content_gaps,

@@ -22,7 +22,7 @@ a key leaves the depth bar standing.
 
 import os
 
-from wgflib import paths
+from wgflib import build_scope, paths
 from wgflib.yamllite import load_file
 
 __all__ = ["PATH", "DEPTH_PATH", "load", "load_depth", "for_design", "family_of", "axes_of",
@@ -109,17 +109,22 @@ def axes_of(design, models=None):
     return [a for a in axes if a["id"] in declared] if declared else axes
 
 
-def units_of(design):
-    """(the design's `build_spec.content` or None, its generation mode, the MVP units in order).
+def units_of(design, tiers=None):
+    """(the design's `build_spec.content` or None, its generation mode, its units in order).
 
+    Without `tiers`, the MVP units: what the prototype traverse plays. With `tiers` - the
+    design tiers the run builds (wgflib.build_scope.design_tiers) - every unit of them: the
+    units a build at the run's quality tier carries, so a release unit is a design unit.
     The order is `build_spec.progression.unit_sequence` when the design states one, else the
-    units' own `index`. Only the MVP units: the prototype is what gets built and played.
+    units' own `index`.
     """
     spec = (design or {}).get("build_spec") or {}
     content = spec.get("content")
     if not isinstance(content, dict):
         return None, None, []
     mode = str(((content.get("generation") or {}).get("mode") or "")).strip() or None
+    if tiers is not None:
+        return content, mode, build_scope.units(design, tiers)
     listed = [u for u in content.get("units") or [] if isinstance(u, dict)]
     units = [u for u in listed if u.get("tier") == "mvp"] or listed
     sequence = ((spec.get("progression") or {}).get("unit_sequence")) or []

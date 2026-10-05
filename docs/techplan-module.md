@@ -131,7 +131,11 @@ then release - nothing is built after G4 - so at `release` every feature the des
 and every unit the release ships is planned **and built** before G4: the developer's brief
 carries M1 and M2 (`docs/development-module.md`). Before WS-3 the plan kept only `tier: mvp`
 units, and `M2` was planned but never built in `new-game`, so a release was the MVP by
-construction (`docs/quality-gap-audit-2026-10.md`, finding 1).
+construction (`docs/quality-gap-audit-2026-10.md`, finding 1). The tier and what it builds are read
+through `scripts/wgflib/build_scope.py`, the same reading the judging steps use without a
+tech plan among their inputs (playability's design units, content-sufficiency's owed units,
+verification's content conformance), so a unit the plan built is never an unknown unit to
+the bot that plays it.
 
 **Content tasks.** The design's content units of the tiers the run builds
 (`build_spec.content.units`, game-design 1.9.0) are planned as work, not left implicit in the

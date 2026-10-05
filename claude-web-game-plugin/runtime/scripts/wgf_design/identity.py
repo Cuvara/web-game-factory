@@ -23,7 +23,7 @@ import copy
 import hashlib
 
 __all__ = ["KITS", "ALTERNATES", "TRAITS", "choose", "cover", "families", "font_source",
-           "look", "pick"]
+           "look", "pick", "style_family"]
 
 UNIVERSAL_AVOID = [
     "System or default UI fonts (Arial, Roboto, Inter, the browser default)",
@@ -241,10 +241,21 @@ def choose(title_id, affinity, pinned=None, art=None):
     return kit_id, look(kit_id)
 
 
+def style_family(kit_id):
+    """The art style family a kit belongs to (core/reference/art-style-families.yaml `kits`),
+    or None: what the model author and the craft read the look's material language from."""
+    from wgf_assets.style_families import kit_family
+    return kit_family(kit_id)
+
+
 def look(kit_id):
-    """The kit as a design carries it, with the universal avoid list applied."""
+    """The kit as a design carries it, with the universal avoid list applied and its style
+    family named."""
     identity = copy.deepcopy(KITS[kit_id])
     identity["avoid"] += UNIVERSAL_AVOID
+    family = style_family(kit_id)
+    if family:
+        identity["style_family"] = family
     return identity
 
 

@@ -56,7 +56,9 @@ and blocker rules the judge must raise as `severity: blocker` whatever its score
 `primitive-entity` (a readable entity drawn as a plain cube, sphere, capsule or rectangle
 without `primitive_style`; assets), `missing-asset` (assets), `browser-default-ui`
 (develop), `debug-output` (develop), `unreadable-frame` (develop, or assets when the art
-itself is unreadable), `cropped-play` (develop).
+itself is unreadable), `cropped-play` (develop), and (rubric 1.3.0) `celebration-hidden` (a
+win frame whose result card covers the goal and its celebration while it plays; develop, ui)
+and `effect-floods-screen` (an interaction effect covering the play; develop, composition).
 
 Per state - `initial`, `gameplay`, `interaction`, `win`, `loss`, `retry`, on each viewport
 that has frames of it - the judge answers the rubric's `state_questions` true, false or
@@ -65,7 +67,12 @@ null (nothing on screen the question is about): `entities_recognisable` (assets)
 `lighting_materials_coherent` (develop; null in 2D), `typography_readable` - and not a
 fallback font (develop), `buttons_polished` - not browser defaults (develop),
 `objective_obvious` (initial, gameplay, interaction; develop), `outcome_understandable`
-(win, loss, retry; develop). And once, the `look`: `finished-game`, `unremarkable` (competent
+(win, loss, retry; develop), and (1.3.0) the feedback visuals: `feedback_visible`
+(interaction; develop) - the frame after the action shows a designed effect acknowledging it,
+more than a few flat specks, leaving the play readable - and `celebration_visible` (win;
+develop) - the win is celebrated on screen and the celebration is not hidden behind the
+result card. The brief lists the design's `build_spec.vfx` effects for these two. And once,
+the `look`: `finished-game`, `unremarkable` (competent
 but plain) or `developer-prototype`. The brief shows the judge the installation's quality
 bar (`workspace/quality-bar/`, `wgflib.quality_bar`) as what a 4 and `finished-game` look
 like.

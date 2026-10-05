@@ -18,7 +18,8 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.11.0  # 1.11.0: the two 1.10.0 lines below, merged
+version: 1.12.0  # 1.12.0: style families and the visual effect contract in the art and juice skills
+# 1.11.0: the two 1.10.0 lines below, merged
 # 1.10.0 (publishing): the publish surfaces and the release agent follow the as-built portal publisher
 # 1.10.0 (quality): specialist routing (specialists charter, routing data, quality finding) in the gameplay agent
 # 1.9.0: feature evaluation (playbook and catalogue) in the game-designer surfaces
@@ -664,6 +665,7 @@ skills:
       through the assets step or a library.
     reads:
       - core/craft/production-art-2d.md
+      - core/reference/art-style-families.yaml
       - core/craft/production-art-and-ui.md
       - core/craft/2d-assets.md
       - core/reference/asset-policy.yaml
@@ -671,10 +673,12 @@ skills:
     supports: [asset, gameplay, game-designer]
     covers: >
       3D production art from model specs: part decomposition of recognisable low-poly
-      objects, bevel, taper and mirror, materials and emissive, the lighting rig, fog and
-      sky, chase camera and portrait framing, and building and inspecting models.
+      objects, bevel, taper and mirror, attachment, intersections, camera clearance and
+      scale against the player, materials, emissive and the lighting rig per style family,
+      fog and sky, chase camera and portrait framing, and building and inspecting models.
     reads:
       - core/craft/production-art-3d.md
+      - core/reference/art-style-families.yaml
       - core/craft/production-art-and-ui.md
       - core/craft/3d-assets-and-animation.md
       - core/craft/3d-scene-and-physics.md
@@ -694,9 +698,11 @@ skills:
     supports: [gameplay, ui]
     covers: >
       Game feel with numbers: drop bounce, merge pop and burst, combo text, shake,
-      near-miss and crash feedback, opening grace, and acknowledgement within 100 ms.
+      near-miss and crash feedback, opening grace, acknowledgement within 100 ms, and the
+      interaction effects the design declares (build_spec.vfx) and the gates measure.
     reads:
       - core/craft/juice.md
+      - core/reference/vfx.yaml
       - core/craft/game-feel.md
   - id: production-wiring
     supports: [gameplay, ui, asset]

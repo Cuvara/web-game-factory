@@ -386,6 +386,20 @@ No agent, command, workflow, role, machine or gate was added or removed; the man
 1.11.0 for the new reads and the publish command's `must_read` (written as 1.10.0 beside
 specialist routing's 1.10.0, and numbered after it when the two merged).
 
+## Style families and interaction effects (binding manifest 1.12.0)
+
+- **`production-art-3d`** reads `core/reference/art-style-families.yaml` beside its playbook,
+  and covers attachment, intersections, camera clearance, scale against the player, and the
+  material language, emissive and lighting per style family (neon / emissive, lit stylized,
+  toon). The playbook (`core/craft/production-art-3d.md`) is no longer one neon game's look
+  for every game.
+- **`production-art-2d`** reads the same families file: the 2D kit follows the look's family.
+- **`juice`** reads `core/reference/vfx.yaml`, and covers the interaction effects the design
+  declares in `build_spec.vfx` and the production gate and visual QA measure.
+
+No agent, command, workflow, role, machine or gate was added or removed; the manifest goes to
+1.12.0 for the new reads.
+
 ## Not covered, deliberately
 
 - **`workflows/` tree** — removed. A per-provider copy of a workflow duplicates

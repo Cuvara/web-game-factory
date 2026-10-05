@@ -13,6 +13,9 @@ placeholder, failing its own quality checks), `develop` when the game's use of a
 UI must change. Bars: core/reference/production-quality.yaml. Sound is judged the same way:
 `audio.plays` hears the game through the probe's measured output level while the bot plays,
 checks the music's file was fetched, and that the level falls away when the page loses focus.
+Visual effects are seen the same way: `vfx.fires` and `vfx.screen_share` hold each effect the
+design declares (build_spec.vfx) to the probe's events and `vfx` entities and the frames the bot
+took of them, and `vfx.celebration` to the screen at the moment play is won.
 """
 
 import os
@@ -21,7 +24,7 @@ import statistics
 from wgf_assets.raster import RasterError, decode_png
 
 __all__ = ["judge", "contrast_ratio", "required_assets", "served_paths", "scene_contrast",
-           "audio_plays"]
+           "audio_plays", "vfx_fires", "vfx_celebration"]
 
 ASSETS, DEVELOP = "assets", "develop"
 
@@ -132,6 +135,29 @@ class _Frames:
                 i = (y * image.width + x) * 4
                 total += 1
                 if max(abs(px[i + k] - background[k]) for k in range(3)) >= min_delta:
+                    changed += 1
+        return round(changed / total, 4) if total else None
+
+    def changed(self, frame_a, frame_b, box, viewport, min_delta):
+        """Share of the pixels inside `box` that differ between two frames of one viewport by
+        at least `min_delta` in some channel; None when either cannot be read."""
+        a, b = self.image(frame_a), self.image(frame_b)
+        if a is None or b is None or (a.width, a.height) != (b.width, b.height) \
+                or not box or not viewport or not viewport[0]:
+            return None
+        scale = a.width / float(viewport[0])
+        x0, y0 = max(0, int(box[0] * scale)), max(0, int(box[1] * scale))
+        x1 = min(a.width, int((box[0] + box[2]) * scale))
+        y1 = min(a.height, int((box[1] + box[3]) * scale))
+        if x1 <= x0 or y1 <= y0:
+            return None
+        step = max(1, min(x1 - x0, y1 - y0) // 32)
+        total = changed = 0
+        for y in range(y0, y1, step):
+            for x in range(x0, x1, step):
+                i = (y * a.width + x) * 4
+                total += 1
+                if max(abs(a.pixels[i + k] - b.pixels[i + k]) for k in range(3)) >= min_delta:
                     changed += 1
         return round(changed / total, 4) if total else None
 
@@ -737,6 +763,242 @@ def ui_states(project, tests, design, rules):
                   frames=[seen[s] for s in wanted if seen.get(s)])
 
 
+# -- visual effects ------------------------------------------------------------------------------
+
+def _declared_effects(design, rules):
+    """{effect id: effect} of build_spec.vfx the gate judges: every effect of a judged tier."""
+    tiers = set((rules.get("vfx") or {}).get("judged_tiers") or ["mvp", "post-mvp"])
+    effects = (((design or {}).get("build_spec") or {}).get("vfx") or {}).get("effects") or []
+    return {e["id"]: e for e in effects
+            if isinstance(e, dict) and e.get("id") and e.get("tier", "mvp") in tiers}
+
+
+def _vfx_seen(tests):
+    """(events, effects, probed): every probe event and every effect the tests of one viewport
+    recorded, keyed per test so their clocks are not mixed, and whether any test recorded the
+    fields at all (an older bot or probe records none)."""
+    events, effects, probed = [], [], False
+    for name, record in sorted(tests.items()):
+        record = record or {}
+        if "events" in record or "effects" in record:
+            probed = True
+        for e in record.get("events") or []:
+            if isinstance(e, dict):
+                events.append(dict(e, test=name))
+        for effect_id, fx in (record.get("effects") or {}).items():
+            if isinstance(fx, dict):
+                effects.append((name, effect_id, fx))
+        # The screen the moment play was won is a sighting too: the goal's celebration is
+        # drawn there, in a frame of its own.
+        moment = record.get("celebration")
+        if isinstance(moment, dict):
+            viewport = moment.get("viewport") or [0, 0]
+            area = float(viewport[0] * viewport[1]) if len(viewport) == 2 else 0.0
+            for e in moment.get("entities") or []:
+                if not (isinstance(e, dict) and e.get("role") == "vfx" and e.get("visible")):
+                    continue
+                box = [e.get("x"), e.get("y"), e.get("w"), e.get("h")]
+                share = (box[2] * box[3] / area) if area and all(
+                    isinstance(v, (int, float)) for v in box) else 0.0
+                effects.append((name, e.get("vfx") or e.get("kind") or e.get("id"), {
+                    "seen_ms": [moment.get("ms") or 0], "samples": 1,
+                    "max_share": round(share, 4), "box": box,
+                    "frame": str(moment.get("frame") or "").replace("state-", "", 1) or None}))
+    return events, effects, probed
+
+
+def vfx_fires(project, tests, design, rules, frames):
+    """Each declared effect fires in play and stays inside its share of the screen: after an
+    interaction of its kind (a probe event) the probe draws the effect (an entity of role
+    `vfx` naming it) within its duration plus `window_ms`, its frame shows it - the pixels in
+    its box differ from the frame after it ended, or from the frame's background when no
+    after-frame was caught - and its bounds never cover more of the viewport than its
+    `max_screen_share` (with `share_tolerance`). A trail has no event: it fires when it is
+    drawn while the player plays. [] when the design declares no effect."""
+    declared = _declared_effects(design, rules)
+    if not declared:
+        return []
+    bars = rules.get("vfx") or {}
+    window = float(bars.get("window_ms", 1000))
+    min_share = float(bars.get("min_changed_share", 0.1))
+    min_delta = int(bars.get("min_pixel_delta", 24))
+    tolerance = float(bars.get("share_tolerance", 0.1))
+    events, seen, probed = _vfx_seen(tests)
+    if not probed or (not events and not seen):
+        why = ("the play probe reports no `events` and no entity of role `vfx`: the design's "
+               "effects (" + ", ".join(sorted(declared)) + ") cannot be seen from outside "
+               "(core/artifacts/shared/play-probe.schema.json)")
+        return [_check("vfx.fires", False, why, DEVELOP, project=project,
+                       measured={"declared": sorted(declared)}),
+                _check("vfx.screen_share", False, why, DEVELOP, project=project,
+                       measured={"declared": sorted(declared)})]
+    viewport = None
+    for _state, ui in _ui_states(tests):
+        viewport = viewport or ui.get("viewport")
+    per, problems, unexercised, over, frames_used = {}, [], [], [], []
+    for effect_id, effect in sorted(declared.items()):
+        kind = effect.get("kind")
+        mine = [(test, fx) for test, fid, fx in seen if fid == effect_id]
+        drawn = sum(int(fx.get("samples") or 0) for _t, fx in mine)
+        triggers = [e for e in events
+                    if (e.get("vfx") == effect_id) or (not e.get("vfx") and e.get("kind") == kind)]
+        entry = {"kind": kind, "events": len(triggers), "drawn_samples": drawn}
+        if kind != "trail" and not triggers and not drawn:
+            unexercised.append(effect_id)
+            entry["status"] = "not exercised"
+            per[effect_id] = entry
+            continue
+        limit = float(effect.get("duration_ms") or 0) + window
+        followed = 0
+        for e in triggers:
+            times = [ms for test, fx in mine if test == e["test"] for ms in fx.get("seen_ms") or []]
+            if any(e.get("ms", 0) <= ms <= e.get("ms", 0) + limit for ms in times):
+                followed += 1
+        entry["fired_after"] = followed
+        if not drawn:
+            problems.append(f"{effect_id} ({kind}): never drawn"
+                            + (f" after {len(triggers)} {kind} event(s)" if triggers else ""))
+        elif triggers and not followed:
+            problems.append(f"{effect_id} ({kind}): drawn, but never within {limit:g} ms of "
+                            f"one of its {len(triggers)} event(s)")
+        shown = None
+        for _test, fx in mine:
+            if not fx.get("frame") or not fx.get("box"):
+                continue
+            frame_id = f"state-{fx['frame']}"
+            box = fx["box"]
+            if fx.get("after"):
+                shown = frames.changed(frame_id, f"state-{fx['after']}", box, viewport, min_delta)
+                basis = "vs after"
+            else:
+                shown = frames.differs(frame_id, box, viewport, min_delta)
+                basis = "vs background"
+            if shown is not None:
+                entry.update(frame=frame_id, changed_share=shown, basis=basis)
+                frames_used.append(frame_id)
+                break
+        if drawn and shown is None:
+            entry["frame"] = None
+        elif shown is not None and shown < min_share:
+            problems.append(f"{effect_id} ({kind}): its frame shows next to nothing in its box "
+                            f"({shown:.0%} of the pixels changed, the bar is {min_share:.0%})")
+        share = max((float(fx.get("max_share") or 0) for _t, fx in mine), default=0.0)
+        cap = effect.get("max_screen_share")
+        entry.update(max_share=round(share, 4), cap=cap)
+        if isinstance(cap, (int, float)) and share > cap * (1 + tolerance):
+            over.append(f"{effect_id} ({kind}) covered {share:.0%} of the screen, its cap is "
+                        f"{cap:.0%}")
+        per[effect_id] = entry
+    summary = ("; ".join(problems) if problems else
+               f"{len(declared) - len(unexercised)} effect(s) fired after their interaction")
+    if unexercised:
+        summary += f"; not exercised in play: {', '.join(unexercised)}"
+    expected = {"window_ms": window, "min_changed_share": min_share}
+    # An effect play never exercised is unmeasured, never a pass: WARNING when nothing failed.
+    fires = _check("vfx.fires", not problems, summary, DEVELOP, project=project,
+                   measured=per, expected=expected, frames=sorted(set(frames_used)),
+                   status="WARNING" if unexercised and not problems else None)
+    measured_shares = {k: {"max_share": v.get("max_share"), "cap": v.get("cap")}
+                       for k, v in per.items() if v.get("drawn_samples")}
+    unmeasured = sorted(set(declared) - set(measured_shares))
+    share_check = _check("vfx.screen_share", not over,
+                         "; ".join(over) if over else
+                         "every effect drawn stayed within its share of the screen"
+                         + (f"; never drawn, not measured: {', '.join(unmeasured)}"
+                            if unmeasured else ""),
+                         DEVELOP, project=project, measured=measured_shares,
+                         expected=f"<= each effect's max_screen_share (+{tolerance:.0%})",
+                         status="WARNING" if unmeasured and not over else None)
+    return [fires, share_check]
+
+
+def _region(boxes):
+    boxes = [b for b in boxes if b and len(b) == 4 and b[2] > 0 and b[3] > 0]
+    if not boxes:
+        return None
+    x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+    return [x0, y0, max(b[0] + b[2] for b in boxes) - x0, max(b[1] + b[3] for b in boxes) - y0]
+
+
+def _covered_share(region, cover, ui_boxes, viewport):
+    """Share of `region` (CSS px) the page paints over the game: the cover grid's cells whose
+    centre is inside it, and canvas-drawn UI (probe `ui` entities) over them."""
+    cols, rows = int(cover.get("cols") or 0), int(cover.get("rows") or 0)
+    cells = str(cover.get("cells") or "")
+    vw, vh = (cover.get("viewport") or viewport or [0, 0])[:2]
+    if not cols or not rows or len(cells) != cols * rows or not vw or not vh:
+        return None
+    inside = covered = 0
+    for r in range(rows):
+        for c in range(cols):
+            x, y = (c + 0.5) * vw / cols, (r + 0.5) * vh / rows
+            if not (region[0] <= x <= region[0] + region[2] and region[1] <= y <= region[1] + region[3]):
+                continue
+            inside += 1
+            if cells[r * cols + c] == "1" or any(
+                    b[0] <= x <= b[0] + b[2] and b[1] <= y <= b[1] + b[3] for b in ui_boxes):
+                covered += 1
+    return round(covered / inside, 4) if inside else None
+
+
+def vfx_celebration(project, tests, design, rules):
+    """At the moment play is won, the result screen leaves the goal and its celebration in
+    view: of the region the probe draws them in (goal entities and the goal effect's `vfx`
+    entities, in the bot's `state-won-enter` frame), at most `max_covered_share` is painted
+    over by the page or by canvas-drawn UI while the celebration's duration lasts. None when
+    the design has no goal effect."""
+    goals = {i: e for i, e in _declared_effects(design, rules).items() if e.get("kind") == "goal"}
+    if not goals:
+        return None
+    bars = (rules.get("vfx") or {}).get("celebration") or {}
+    ceiling = float(bars.get("max_covered_share", 0.25))
+    duration = max(float(e.get("duration_ms") or bars.get("default_duration_ms", 1200))
+                   for e in goals.values())
+    moment = next(((name, (record or {}).get("celebration")) for name, record in sorted(tests.items())
+                   if isinstance((record or {}).get("celebration"), dict)), (None, None))[1]
+    expected = {"max_covered_share": ceiling, "within_ms": duration}
+    if not moment:
+        return _check("vfx.celebration", True, "play was never won with the probe watching: the "
+                      "celebration could not be measured", DEVELOP, project=project,
+                      required=False, status="WARNING", expected=expected)
+    entities = [e for e in moment.get("entities") or [] if isinstance(e, dict) and e.get("visible")]
+    celebration = [e for e in entities if e.get("role") == "vfx"
+                   and (e.get("vfx") or e.get("kind") or e.get("id")) in goals]
+    goal = [e for e in entities if e.get("role") == "goal"]
+    region = _region([[e.get("x"), e.get("y"), e.get("w"), e.get("h")]
+                      for e in celebration + goal])
+    measured = {"frame": moment.get("frame"), "ms_after_goal": moment.get("ms_after_goal"),
+                "region": region, "celebration_entities": len(celebration),
+                "goal_entities": len(goal)}
+    if region is None:
+        return _check("vfx.celebration", False, "at the win the probe draws neither the goal nor "
+                      "its celebration (no visible `goal` entity and no `vfx` entity of a goal "
+                      "effect): the celebration is not on screen", DEVELOP, project=project,
+                      measured=measured, expected=expected,
+                      frames=[moment["frame"]] if moment.get("frame") else None)
+    late = moment.get("ms_after_goal")
+    if isinstance(late, (int, float)) and late > duration:
+        return _check("vfx.celebration", True, f"measured {late:g} ms after the goal, past the "
+                      f"celebration's {duration:g} ms: not judged", DEVELOP, project=project,
+                      required=False, status="WARNING", measured=measured, expected=expected)
+    ui_boxes = [[e.get("x"), e.get("y"), e.get("w"), e.get("h")] for e in entities
+                if e.get("role") == "ui"]
+    share = _covered_share(region, moment.get("cover") or {}, ui_boxes, moment.get("viewport"))
+    measured["covered_share"] = share
+    if share is None:
+        return _check("vfx.celebration", True, "the page's cover over the celebration could "
+                      "not be measured", DEVELOP, project=project, required=False,
+                      status="WARNING", measured=measured, expected=expected)
+    return _check("vfx.celebration", share <= ceiling,
+                  f"the result screen covers {share:.0%} of the goal and its celebration the "
+                  f"moment play is won (at most {ceiling:.0%} while it plays): let the "
+                  f"celebration play, then show the result, or place the result clear of it"
+                  if share > ceiling else
+                  f"the goal and its celebration stay in view at the win ({share:.0%} covered)",
+                  DEVELOP, project=project, measured=measured, expected=expected,
+                  frames=[moment["frame"]] if moment.get("frame") else None)
+
+
 # -- audio --------------------------------------------------------------------------------------
 
 def _music_items(manifest, design, rules):
@@ -840,4 +1102,8 @@ def judge(records, manifest, design, rules, frames_dirs):
         checks.append(ui_text(project, tests, rules, frames))
         checks.append(ui_styled(project, tests))
         checks.append(ui_states(project, tests, design, rules))
+        checks += vfx_fires(project, tests, design, rules, frames)
+        celebration = vfx_celebration(project, tests, design, rules)
+        if celebration is not None:
+            checks.append(celebration)
     return checks

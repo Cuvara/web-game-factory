@@ -200,6 +200,19 @@ reads these from `records_dir`:
   outside a control, measured the same way; the overlaps between controls and between a
   control and text; the probe's `ui`-role entities; and every entity the probe reported at
   that moment (with `asset` and `render`), so a state frame can be read at an entity's box.
+- `events`, `effects`, `celebration` (win and lose tests): every interaction the probe
+  reported in its optional `events` (each once, by `seq`, with the time and state it was
+  seen); per visual effect the probe drew (an entity of role `vfx`, by the
+  `build_spec.vfx` id it names) the times it was drawn, the largest share of the viewport
+  its bounds covered, a frame while it was drawn (`state-vfx-<id>`, its box swept across the
+  shot as for a glimpse; tried again at its next appearance when it ends mid-shot, up to 4
+  times, at most 8 effects per test) and a frame of the same place once it ended
+  (`state-vfx-<id>-after`); and the screen the moment the probe first reports `won`, before
+  anything settles: its frame `state-won-enter`, the entities in it, the time since the
+  last `goal` event, and a 32x32 grid of which cells the page paints over the game's canvas
+  (an element above the canvas with a background at least half opaque, a background image,
+  an image, svg, video or another canvas). The production checks `vfx.*` read them
+  ([production-quality-module.md](production-quality-module.md#the-visual-effect-checks)).
 
 ## The checks
 

@@ -60,8 +60,49 @@ Bars: [`core/reference/production-quality.yaml`](../core/reference/production-qu
 | `ui.states` | develop | the `lost` and `retry` screens were seen on the viewport, and `won` when the experience contract has a win |
 | `audio.plays` | develop; assets when the music was never delivered | only when the design has music (`build_spec.audio` type `music` of a required tier): during play at least one probe sample has `audio.playing` with the measured `audio.level` at or above `audio.min_level` (0.005 RMS, about -46 dBFS), the probe names the track, the music's file was fetched (its runtime-manifest url), and with the page unfocused (a window blur - the platform mute) the level is at most `audio.max_muted_level` (0.001). A probe with no `audio` field fails it |
 
+| `vfx.fires` | develop | only when the design declares effects (`build_spec.vfx`, effects of a `vfx.judged_tiers` tier): after each probe `event` of an effect's kind (or naming it), the probe draws the effect - an entity of role `vfx` naming its id - within its `duration_ms` plus `vfx.window_ms` (1000), and the frame the bot took while it was drawn (`state-vfx-<id>`; for the goal effect, `state-won-enter`) shows it: at least `vfx.min_changed_share` (0.1) of the pixels in its box differ by `min_pixel_delta` (24) from the frame of the same place after it ended (`state-vfx-<id>-after`), or from the frame's dominant colour when no after-frame was caught. A trail has no event and fires when drawn. An effect whose interaction never happened in play is listed `not exercised` and makes the check a `WARNING`, never a pass. A probe with neither `events` nor `vfx` entities fails it |
+| `vfx.screen_share` | develop | every effect drawn kept its bounds within its `max_screen_share` of the viewport (with `vfx.share_tolerance`, 10 %); an effect never drawn is unmeasured, a `WARNING` |
+| `vfx.celebration` | develop (dimension ui) | only when the design declares a `goal` effect: in the bot's `state-won-enter` - the screen the moment the probe first reports `won`, before anything settles - the region the probe draws the goal and the goal effect in is painted over by the page (a DOM element above the game's canvas with an opaque-enough background, an image or an svg, on the bot's 32x32 cover grid) or by canvas-drawn `ui` entities for at most `vfx.celebration.max_covered_share` (25 %) of it. A win measured after the celebration's `duration_ms` is a `WARNING`; a win where the probe draws neither the goal nor its celebration fails |
+
 A check with nothing to measure (no DOM control, no DOM text) is a `WARNING`, not required:
 a canvas-drawn UI is visual QA's to judge.
+
+### The visual effect checks
+
+The design states each effect in `build_spec.vfx` (`core/reference/vfx.yaml`; the design
+consistency rule `vfx_covers_interactions` requires one per interaction kind the design has
+at a release tier), and the game reports it through the play probe
+([`play-probe.schema.json`](../core/artifacts/shared/play-probe.schema.json)): every
+interaction as an `event` (`{seq, kind, vfx?}`, kinds pickup, impact, checkpoint, goal,
+fail) and every effect while it draws as an entity of role `vfx` naming its effect, its
+bounds covering all of it. The bot ([playability-module.md](playability-module.md)) records
+`events`, `effects` (per effect: when it was drawn, its largest share of the viewport, its
+frame and box, its after-frame) and `celebration` in the win and lose records. The checks
+trust the probe for *when* and *where*, and the frame for *whether anything was drawn*; how
+good the effect looks is visual QA's (`feedback_visible`, `celebration_visible`).
+
+### VFX calibration
+
+The bars were set on the frames of the two 2026-10 validation games (read-only evidence
+under the run stores of `val-2d` and `val-3d`, and the 3D art critique's captures):
+
+- **Result card over the celebration.** The 3D game's course-clear card covered 24 % of the
+  1280x720 desktop frame (x 456-820, y 56-664) and 65 % of the 390x844 mobile frame (x 28-357,
+  y 97-747 in CSS px), centred on the goal the chase camera looks at, from the first frame
+  of the win (`won0`, captured as `won` was first reported) - the goal and its confetti were
+  hidden. The 2D game's level-clear card took the lower half of its play field (13 % of the
+  desktop frame) and left the upper half in view. `max_covered_share: 0.25` fails the first
+  and passes the second.
+- **A pickup that reads as nothing.** The 3D gem pickup's flat flecks spanned 0.044 of the
+  desktop frame 120 ms after the pickup: inside every plausible cap, and still the defect
+  the critique named. Screen share is therefore only a ceiling (`vfx.yaml` per kind); that an
+  effect *reads* is visual QA's question, and `vfx.fires` holds only that something was drawn.
+- The pixel bars (`min_changed_share`, `min_pixel_delta`) are `visible`'s, calibrated for
+  any drawn entity.
+
+No build yet reports `events` or `vfx` entities: the checks were exercised on synthesised
+records and frames (`scripts/tests/test_vfx.py`), and the first build that implements the
+probe fields is the first real measurement.
 
 `scene.contrast` was proven on real frames (2026-10-01): the 3D reference Neon Drift Arena's
 gate records (`/tmp/wgf-g3d-ndrift/int/gate2/playability/1-1/out`) pass - player 11.13:1 and
@@ -108,5 +149,6 @@ players understand it is measured from people.
 ## Running it outside a run
 
 `checks.judge(records, manifest, design, rules, frames_dirs)` is pure; its tests synthesise
-records the way the bot writes them (`scripts/tests/test_production_quality.py`). The mock
+records the way the bot writes them (`scripts/tests/test_production_quality.py`, and
+`scripts/tests/test_vfx.py` for the visual effect checks). The mock
 step (`--mock`) answers `fail` with route `develop` and `fail-assets` with route `assets`.

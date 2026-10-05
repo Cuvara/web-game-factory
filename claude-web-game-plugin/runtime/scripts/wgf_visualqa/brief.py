@@ -185,6 +185,16 @@ def render_brief(*, title_id, commit, frames, rubric, design=None, manifest=None
     add("## The game's visual identity\n")
     identity = ((design or {}).get("build_spec") or {}).get("visual_identity")
     add("\n".join(_identity_lines(identity)) + "\n")
+    effects = [e for e in ((((design or {}).get("build_spec") or {}).get("vfx") or {})
+                           .get("effects") or []) if isinstance(e, dict)]
+    if effects:
+        add("## The effects each interaction fires\n")
+        add("The design's build_spec.vfx: what the game draws when each interaction happens. "
+            "Hold the interaction and win frames to it (`feedback_visible`, "
+            "`celebration_visible`).\n")
+        add("\n".join(f"- `{e.get('id')}` ({e.get('kind')}): {e.get('effect')} - "
+                      f"{e.get('duration_ms')} ms, at most {e.get('max_screen_share')} of the "
+                      f"screen" for e in effects) + "\n")
     assets = _asset_lines(design, manifest)
     if assets:
         add("## The assets and what they are to the player\n")

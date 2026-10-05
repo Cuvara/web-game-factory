@@ -367,9 +367,11 @@ prints the pieces by primitive, `primitive_only`, the colours and every check; w
 model spec for one requirement, and everything after it is the Factory's own.
 
 ```
-request (role, description, readability, palette, the schema, rules, a worked example)
+request (role, description, readability, palette, the schema, rules, the look's style
+         family and its worked examples)
   -> the author command writes a model spec          {request} {spec} {prompt} in argv
   -> schema + modelspec.validate + buildable         refused: shown back
+  -> the style family's emissive limits              refused: shown back
   -> blender.build_model (pinned, headless)          failed: shown back
   -> gltf.inspect + check_expectations + model_quality.assess   failed: shown back
   -> up to 2 repair rounds with exactly those problems, then ModelAuthorError
@@ -436,9 +438,22 @@ notes name the sheet.
 requirement of the design in one session: one palette, one material language (the same
 material ids and values in every spec), one level of detail, real sizes. The request carries
 every asset, the full `visual_identity`, `art_direction`, the game's `camera`, `set_rules`,
-the schema, the rules, the example and the craft guides by absolute path
-(`production-art-3d.md` — which holds the reference game's own spec, material table and rig —
-`3d-assets-and-animation.md`, `art-direction.md`). Each round also renders the set:
+the schema, the rules, the style family and its examples, and the craft guides by absolute
+path (`production-art-3d.md` — parts, assembly and scale for every look, and the material
+language and rig per style family — `3d-assets-and-animation.md`, `art-direction.md`).
+
+**Style family.** The request's `style_family` is the look's family in
+`core/reference/art-style-families.yaml` (`neon-emissive`, `lit-stylized`, `toon`): the
+design's `visual_identity.style_family`, else the family whose words its concept, shape
+language and texture use most, else the file's default (`basis`: `stated`, `words`,
+`default`). It carries the family's material ranges, emissive limits and lighting. `example`
+is the family's example spec whose `fits` words a requirement names (a ball, an arch, a
+character, a pickup, a craft, a barrier), else the family's first; `examples` holds all of the
+family's; an asset whose words match one names it (`asset.example`). A spec with a material
+brighter than the family's `max_emissive_strength`, or with more than
+`max_emissive_part_share` of its parts glowing, is refused and shown back like any spec
+problem (`style: ...`) - a lit look never ships a glowing goal drum. Before 2026-10-05 every
+request carried one car as its example, whatever the look. Each round also renders the set:
 `set.png`, every model side by side at its real size from the three-quarter view and the
 game's camera, through a long lens so relative size reads. Repair rounds name the refused
 specs; the author may also change one the set render shows does not belong. The `assets`

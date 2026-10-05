@@ -12,6 +12,7 @@ Supports: **asset, gameplay, game-designer**
 ## Authoritative sources
 
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-art-2d.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/art-style-families.yaml`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-art-and-ui.md`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/2d-assets.md`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/asset-policy.yaml`

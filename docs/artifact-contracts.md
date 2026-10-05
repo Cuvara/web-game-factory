@@ -213,6 +213,20 @@ five `features.*` rules). `compose.finalize` lists each cut feature in
 `scope.tiers.out_of_scope` with its reason, and `wgflib.gate_evidence` shows G3 and G4 the cut
 and deferred features. Craft: `core/craft/feature-evaluation.md`.
 
+**`game-design` 1.15.0** adds the visual effect contract and the art style family, both
+optional, so 1.14.0 artifacts remain valid. `build_spec.vfx.effects[]` states, per
+interaction kind (`pickup`, `impact`, `checkpoint`, `goal`, `fail`, `trail`), the effect the
+game draws (`id`, `kind`, `trigger`, `effect`, `duration_ms`, `max_screen_share`, optional
+`asset` and `audio`, `tier`). The design step holds it to `core/reference/vfx.yaml`
+(`scripts/wgf_design/vfx.py`, consistency rule `vfx_covers_interactions`, ruleset 2.2.0): at
+a release tier every kind the design implies has an effect, within its kind's screen-share
+ceiling. The play probe reports effects (entities of role `vfx`) and interactions
+(`events`), and the production gate checks them in play (`vfx.fires`, `vfx.screen_share`,
+`vfx.celebration`). `build_spec.visual_identity.style_family` (`neon-emissive`,
+`lit-stylized`, `toon`) names the look's family in `core/reference/art-style-families.yaml`:
+the material language, glow limits and worked examples the model author is held to. Craft:
+`core/craft/juice.md` section 9, `core/craft/production-art-3d.md` sections 2 and 2a.
+
 **`game-design` 1.12.0** states the quality tier in the content contract, all optional:
 `build_spec.content.quality_tier` (`mvp` or `release`; the strategy's
 `concept.content_model.quality_tier` when absent, and never lower than it),

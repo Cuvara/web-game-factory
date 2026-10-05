@@ -44,6 +44,19 @@ Rules behind it:
   2-3 px dark outline, chunky pixel art, paper cut-out, neon line art - each needs the same
   table filled in before the first file is drawn.
 
+**The kit follows the style family** (`visual_identity.style_family`,
+`core/reference/art-style-families.yaml`; the 3D side is `production-art-3d.md` section 2a).
+The reference above is one toon/print kit; the family decides what carries a shape:
+
+| Family | Ground | What a shape reads by | Glow | Shadow |
+|---|---|---|---|---|
+| Neon / emissive | near-black | a bright stroke with an outer glow on a dark fill | the point of the look - but only the player, pickups and threats, at most one glowing element per screen outside play | none; light comes from the strokes |
+| Lit stylized (paper, diorama, clay) | a lit backdrop, light to mid value | coloured fills shaded by one light direction, a short hard shadow down-right | none, except a real light (a lamp, a window) | one direction for every drawing |
+| Toon / flat / print | a quiet flat colour | a thick ink outline and flat colour blocks, two or three value bands | none | a hard offset or halftone, never soft blur |
+
+Mixing them is the failure the consistency score catches: a glowing sprite in a paper world,
+a soft-shadowed cut-out next to flat toon pieces.
+
 ## 2. Silhouette first, one silhouette per variant
 
 The single biggest defect in the reference's first pass: "level 2 and level 3 look alike".

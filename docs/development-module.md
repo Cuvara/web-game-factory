@@ -106,6 +106,19 @@ from 32 units to 12. An adopted game is improved, never rebuilt:
   shipped unit id gone, or a file the floor's commit shipped under `public/` gone. A
   specialist visit, whose findings ask for the change, may remove a shipped file; nothing
   may take the content below the floor.
+- **No content data file is no floor.** Observed (2026-10-05, the 3D run): the adopted
+  checkout predated the content contract - 12 courses in `src/game/courses.ts`, no
+  `public/content/units.json` - and the floor counted nothing. The design now records such a
+  floor `status: unmeasured` at the adopted commit; the first greybox visit (no developer)
+  reports that commit, `greybox-playability` plays it and counts what the play probe reaches -
+  distinct units and the build's own `content.unit_count`, groups by unit id, climax units by
+  the probe's objective, element kinds - into its report's `existing_content`
+  (`source.method: probe`). Develop reads that probe floor from the run. Until a floor is
+  measured - and afterwards while the tree ships no content data file to count it - no
+  visit, specialist or not, may delete a shipped source file of a content module (a path
+  word naming levels, worlds, courses, content: `core/reference/brief-commitments.yaml`
+  `existing_content.unmeasured`). Once measured the floor stays: a build that gains a
+  content data file is held to the earlier count, never re-floored on its own file.
 
 ## The brief
 

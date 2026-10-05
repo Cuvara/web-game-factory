@@ -32,6 +32,10 @@ SEVERITIES = ("blocker", "warning")
 # A check status the producer itself counts as measured: SKIPPED measured nothing.
 MEASURED = ("PASS", "FAIL", "WARNING", "BLOCKED")
 LISTING_PHASE = "listing"
+# `evaluate.applies: reported` - a checks criterion that applies only to a build whose report
+# lists one of its checks, in any status (a SKIPPED one too, which measured nothing and is
+# therefore UNMEASURED): the producer decides whether the check concerns this game at all.
+APPLIES_REPORTED = "reported"
 
 
 class ContractError(ValueError):
@@ -85,6 +89,10 @@ def _criteria_problems(where, criteria, dimensions):
         if not isinstance(evaluate, dict) or evaluate.get("kind") not in KINDS \
                 or not evaluate.get("report"):
             problems.append(f"{at}: evaluate needs a kind of {', '.join(KINDS)} and a report")
+        elif evaluate.get("applies") not in (None, APPLIES_REPORTED) or (
+                evaluate.get("applies") and evaluate.get("kind") != "checks"):
+            problems.append(f"{at}: evaluate.applies may only be {APPLIES_REPORTED!r}, on a "
+                            "checks evaluator")
         severity = criterion.get("severity")
         if not isinstance(severity, dict) or not severity or any(
                 v not in SEVERITIES for v in severity.values()):
@@ -349,6 +357,10 @@ def _evaluate(layer, criterion, loaded, evidence_by_type, tier, references, defe
         return dict(base, status="UNMEASURED", score=None, observed=None, expected=expected,
                     summary=f"no {report_type} in this run: {criterion.get('metric')} was not "
                             "measured, which is never a pass")
+    if evaluate.get("applies") == APPLIES_REPORTED and not any(
+            isinstance(c, dict) and _matches(c.get("id"), evaluate.get("checks"))
+            for c in report.get("checks") or []):
+        return None
     observed, share, measured = _measure(evaluate, report)
     if not measured:
         expected = {k: _bar(criterion.get(k), tier, references)

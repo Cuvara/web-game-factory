@@ -37,6 +37,7 @@ from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.quality import run_tier
 from wgflib.yamllite import YamlError, load_file
 
+from wgf_design import commitments, existing
 from wgf_design.content import quality_tier
 from wgf_design.experience import load_rules as load_experience_rules
 
@@ -197,6 +198,12 @@ class PlayabilityStep(WorkflowStep):
             }
             content_settings, truncated, total_s = self._content_settings(design, qa, settings)
             settings.update(content_settings)
+            # An adopted checkout with no content data file: its floor is counted on this
+            # play when it is the shipped build (wgf_design/existing.py), and the traverse
+            # plays on past the bar's few units to reach what it ships.
+            floor, measuring = self._floor_state(design, commit, context)
+            if measuring:
+                settings["max_units"] = max(settings["max_units"], self._probe_max_units())
             settings.update(self._survey_settings(design, self.params))
             self._keep_content_data(repo, out)
             blocked = self._play(repo, out, logs, settings, context, total_s,
@@ -204,9 +211,10 @@ class PlayabilityStep(WorkflowStep):
             judged = copy.deepcopy(rules)
             judged["_idle_ms"] = settings["idle_ms"]
             judged["_truncated"] = truncated
-            checks, frames, projects = [], [], []
+            checks, frames, projects, played = [], [], [], {}
             for project, width, height in PROJECTS:
                 records = self._records(os.path.join(out, project))
+                played[project] = records
                 frames_dir = os.path.join(out, project, "frames")
                 errors = sorted({e for r in records.values() for e in r.get("errors") or []})
                 projects.append({"id": project, "viewport": {"width": width, "height": height},
@@ -220,10 +228,45 @@ class PlayabilityStep(WorkflowStep):
                 blocked = "the bot produced no records on any viewport; see " + os.path.join(logs, "bot.log")
             records_dir = (os.path.relpath(out, context.run_dir).replace(os.sep, "/")
                            if os.path.isdir(out) else None)
+            if measuring and not blocked:
+                floor, note = existing.probe_floor(
+                    floor, played, commit, step=getattr(context, "current_step", None))
+                context.logger.info("existing-content floor", floor=note)
             return self._finish(context, inputs, title_id, commit, checks, frames, rules, blocked,
-                                projects, records_dir)
+                                projects, records_dir,
+                                floor=floor if existing.measured(floor) else None)
         finally:
             shutil.rmtree(repo, ignore_errors=True)
+
+    @staticmethod
+    def _floor_state(design, commit, context):
+        """(floor, measuring). The probe floor the run already measured, carried unchanged
+        (a floor once measured is never measured again); else the design's unmeasured floor,
+        with `measuring` true when this visit plays its commit - the shipped build, before any
+        developer change; else (None, False): the run adopted nothing, or its floor is counted
+        on a content data file."""
+        floor = (design or {}).get("existing_content")
+        if not isinstance(floor, dict):
+            return None, False
+        if existing.measured(floor):
+            # Counted on the content data file, or on the probe by an earlier visit that a
+            # re-entered design recorded: nothing to measure, nothing to carry.
+            return (floor if existing.method(floor) == existing.PROBE else None), False
+        carried = existing.run_probe_floor(getattr(context, "run_dir", None), floor)
+        if carried is not None:
+            return carried, False
+        at = str((floor.get("source") or {}).get("commit") or "")
+        if at and (commit.startswith(at) or at.startswith(commit)):
+            return floor, True
+        context.logger.warning(
+            "the existing-content floor stays unmeasured: this visit does not play the shipped "
+            "build", played=commit, shipped=at)
+        return floor, False
+
+    @staticmethod
+    def _probe_max_units():
+        rules = (commitments.load().get("existing_content") or {}).get("probe") or {}
+        return int(rules.get("max_units") or 0)
 
     @staticmethod
     def _kinds_required(context, design):
@@ -429,7 +472,7 @@ class PlayabilityStep(WorkflowStep):
     # -- the report ---------------------------------------------------------------------
 
     def _finish(self, context, inputs, title_id, commit, checks, frames, rules, blocked,
-                projects=None, records_dir=None):
+                projects=None, records_dir=None, floor=None):
         failed = sorted({f"{c['project']}:{c['id']}" for c in checks
                          if c["required"] and c["status"] == "FAIL"})
         # A skipped check measured nothing, because the design claims nothing it could measure.
@@ -440,11 +483,12 @@ class PlayabilityStep(WorkflowStep):
                 skipped.append({"id": check["id"], "reason": check["summary"]})
         verdict = "BLOCKED" if blocked else ("FAIL" if failed else "PASS")
         now = self.clock()
+        artifact_id = provenance.artifact_id("playability-report", title_id, now,
+                                             getattr(context, "execution", 1))
         report = {
             "provenance": provenance.build(
                 "playability-report",
-                artifact_id=provenance.artifact_id("playability-report", title_id, now,
-                                                   getattr(context, "execution", 1)),
+                artifact_id=artifact_id,
                 produced_by=provenance.producer("qa"), produced_at=now,
                 inputs=provenance.pin_inputs(inputs, REQUIRED_INPUTS), title_id=title_id),
             "title_id": title_id,
@@ -460,6 +504,12 @@ class PlayabilityStep(WorkflowStep):
             "blocked_reason": blocked,
             "verdict": verdict,
         }
+        if existing.measured(floor):
+            # The adopted build's floor, counted on this play or carried from the visit that
+            # counted it; the source names the report it was counted on.
+            floor = copy.deepcopy(floor)
+            floor["source"].setdefault("report", artifact_id)
+            report["existing_content"] = floor
         output = ArtifactOutput("playability-report", provenance.seal(report),
                                 metadata={"verdict": verdict, "failed": len(failed),
                                           "skipped": len(skipped), "commit": commit})

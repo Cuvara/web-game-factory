@@ -143,6 +143,13 @@ probe. The developer brief embeds the schema, so a developer knows how the build
   The step also keeps the played commit's `public/content/units.json` beside the records
   (`<records_dir>/content/units.json`), so that step measures exactly the build that was
   played.
+- **The adopted floor** - when the design records the existing-content floor `unmeasured`
+  (the adopted checkout ships no content data file) and this visit plays exactly its commit,
+  the traverse plays up to `brief-commitments.yaml existing_content.probe.max_units` units
+  and the report's `existing_content` records what the probe reached (`source.method:
+  probe`, `wgf_design/existing.py probe_floor`). The bot records the build's own
+  `content.unit_count` (`traverse.unit_count_reported`) and each unit's probe objective. A
+  floor once measured is carried unchanged by every later report of the run.
 
 The time budget (`design-depth.yaml playability.time_budget.bot_total_s`) is a hard cap per
 viewport. What the first five tests cost is subtracted; the rest is shared between the

@@ -606,20 +606,31 @@ def select_dev_plan(tech_plan):
 
 def existing_floor(design):
     """The brief's `existing_content`: what the adopted repository already ships, counted at
-    its commit (game-design existing_content), or None when the run adopted nothing."""
+    its commit (game-design existing_content - or the probe floor develop resolved into it),
+    or None when the run adopted nothing."""
     floor = (design or {}).get("existing_content")
     if not isinstance(floor, dict):
         return None
-    return {"commit": (floor.get("source") or {}).get("commit"),
-            "path": (floor.get("source") or {}).get("path"),
+    source = floor.get("source") or {}
+    unmeasured = floor.get("status") == "unmeasured"
+    rule = ("This repository already ships a game. Improve it; never rebuild it: no "
+            "commit may ship fewer units, groups, climax units or elements than the "
+            "floor, and no shipped unit, asset file or feature is deleted or "
+            "replaced by a primitive unless a finding in this brief asks for "
+            "exactly that change.")
+    if unmeasured or source.get("method") == "probe":
+        rule += (" Its content lives in source code, not in a content data file: until a "
+                 "content data file counts it, no commit may delete a shipped source file "
+                 "of a content module (the files whose path names its levels, worlds, "
+                 "courses, stages or content).")
+    return {"commit": source.get("commit"),
+            "path": source.get("path"),
+            "method": source.get("method") or "content-data",
+            "status": "unmeasured" if unmeasured else "measured",
             "floor": {q: floor[q] for q in ("units", "groups", "climax_units", "elements")
                       if isinstance(floor.get(q), int)},
             "unit_ids": list(floor.get("unit_ids") or []),
-            "rule": ("This repository already ships a game. Improve it; never rebuild it: no "
-                     "commit may ship fewer units, groups, climax units or elements than the "
-                     "floor, and no shipped unit, asset file or feature is deleted or "
-                     "replaced by a primitive unless a finding in this brief asks for "
-                     "exactly that change.")}
+            "rule": rule}
 
 
 def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, scaffold,
@@ -1536,10 +1547,20 @@ def render_markdown(brief):
     if adopted:
         floor = adopted.get("floor") or {}
         add("## Adopted game: improve, never rebuild\n")
-        add(f"This repository already ships a game: `{adopted.get('path')}` at "
-            f"`{str(adopted.get('commit') or '')[:12]}` holds "
-            + ", ".join(f"{n} {q.replace('_', ' ')}" for q, n in floor.items())
-            + ". That is the floor. " + adopted["rule"] + " Units the design adds go beside "
+        at = str(adopted.get("commit") or "")[:12]
+        counts = ", ".join(f"{n} {q.replace('_', ' ')}" for q, n in floor.items())
+        if adopted.get("status") == "unmeasured":
+            shipped = (f"This repository already ships a game at `{at}`, with no "
+                       f"`{adopted.get('path')}`: its content lives in source code and has "
+                       "not been counted yet (the shipped build is counted through the play "
+                       "probe). Whatever it ships is the floor. ")
+        elif adopted.get("method") == "probe":
+            shipped = (f"This repository already ships a game: its build at `{at}`, played "
+                       f"through the play probe, reached {counts}. That is the floor. ")
+        else:
+            shipped = (f"This repository already ships a game: `{adopted.get('path')}` at "
+                       f"`{at}` holds {counts}. That is the floor. ")
+        add(shipped + adopted["rule"] + " Units the design adds go beside "
             "the shipped ones; a shipped unit the design renames keeps its content. The "
             "commit is refused when the content data counts below the floor or a shipped "
             "asset file is gone.\n")

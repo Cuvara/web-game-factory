@@ -142,6 +142,11 @@ consistency result is atomic.
     its own id and plans no fewer of any of them. A run improves the game it adopts; it
     never plans a smaller one.
 
+    A checkout whose HEAD ships no content data file still has a floor: it is recorded
+    `status: unmeasured` at that commit and counted on the shipped build through the play
+    probe by the first greybox-playability visit; a design re-entered after that records the
+    probe floor and is held to it. Read the checkout's source for the content it ships.
+
 ## Returning here from the build
 
 A developer that finds this design silent on something it must decide reports a **design gap**

@@ -250,7 +250,10 @@ PROMPT_COMMITMENTS = (
     " plan at least each one, or the design fails. `commitments.existing_content`, when"
     " present, is what the repository this run adopts already ships, counted at its commit:"
     " plan no fewer units, groups, climax units or elements than it - you improve that game,"
-    " never shrink it."
+    " never shrink it. When its `status` is `unmeasured`, the repository ships no content"
+    " data file and its content lives in source code: read that code in the checkout, keep"
+    " every unit it ships under its own id, and plan at least as much; the shipped build is"
+    " counted through the play probe before any developer change and held to."
 )
 # Appended when the step asks again: the previous draft and exactly what made it invalid.
 PROMPT_REPAIR = (

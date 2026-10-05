@@ -310,6 +310,12 @@ class DevelopStep(WorkflowStep):
         review = inputs.load("review-report") if "review-report" in inputs else None
         playability = (inputs.load("playability-report") if "playability-report" in inputs
                        else None)
+        # The floor an adopted run holds this visit to: the design's, or - recorded unmeasured
+        # because the checkout ships no content data file - the probe floor the run measured
+        # on the shipped build since. The brief and every floor check read it from here.
+        floor = content_floor.effective(design, playability, getattr(context, "run_dir", None))
+        if floor is not None and floor is not design.get("existing_content"):
+            design = dict(design, existing_content=floor)
         production = (inputs.load("production-quality-report")
                       if "production-quality-report" in inputs else None)
         visual_qa = inputs.load("visual-qa-report") if "visual-qa-report" in inputs else None

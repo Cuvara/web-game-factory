@@ -497,6 +497,143 @@ class Judge(unittest.TestCase):
         self.assertIn("retry", states["summary"])
 
 
+PANEL, INK = (239, 227, 207), (42, 30, 23)
+TEXT_BOX = [20, 20, 120, 30]
+
+
+def text_frame(directory, name, clutter=False, line=False, fringe=False, behind=None):
+    """A 200x100 state frame (viewport 200x100, 1x): a plain sand panel with a 24 px dark
+    'text' drawn in TEXT_BOX - eight glyphs of a 3 px stem and a 9 px bar, antialiased - and,
+    on request, what a card's stray UI-kit art puts behind it: tiles of three other colours
+    (`clutter`), an ink-coloured tile edge through it (`line`), a dark tile under all of it
+    (`behind`); or subpixel colour fringes on every stem (`fringe`)."""
+    w, h = 200, 100
+    image = Image(w, h, bytes(list(PANEL) + [255]) * (w * h))
+
+    def put(x, y, rgb):
+        i = (y * w + x) * 4
+        image.pixels[i:i + 3] = bytes(int(v) for v in rgb)
+
+    def blend(a, b, t):
+        return [a[k] + (b[k] - a[k]) * t for k in range(3)]
+
+    if behind:
+        for y in range(20, 50):
+            for x in range(20, 140):
+                put(x, y, behind)
+    if clutter:
+        colours = [(58, 123, 213), (242, 169, 0), (0, 160, 160)]
+        for row, y0 in enumerate(range(20, 50, 10)):
+            for col, x0 in enumerate(range(20, 140, 16)):
+                for y in range(y0, y0 + 7):
+                    for x in range(x0, x0 + 11):
+                        put(x, y, colours[(row + col) % 3])
+    for i in range(8):
+        x0 = 26 + i * 14
+        for y in range(24, 46):
+            put(x0 - 1, y, blend(PANEL, INK, 0.5) if not fringe else (INK[0], 128, PANEL[2]))
+            for x in range(x0, x0 + 3):
+                put(x, y, INK)
+            put(x0 + 3, y, blend(PANEL, INK, 0.5) if not fringe else (PANEL[0], 128, INK[2]))
+        for x in range(x0, x0 + 9):
+            put(x, 34, INK)
+    if line:
+        for y in (22, 23):
+            for x in range(20, 140):
+                put(x, y, INK)
+    with open(os.path.join(directory, f"{name}.png"), "wb") as handle:
+        handle.write(encode_png(image))
+
+
+class ABusyBackdrop(unittest.TestCase):
+    """ui.text reads the frame behind every text, whatever the DOM says its background is
+    (sky-marble a61a9d7: a card's border-image was the whole UI-kit sheet; its text was
+    overprinted by other screens' art while the DOM measured ink on sand)."""
+
+    def setUp(self):
+        self.rules = load_rules()
+        self.dir = tempfile.mkdtemp(prefix="wgf-pq-text-")
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+
+    def text(self, frame_kwargs=None, **extra):
+        text_frame(self.dir, "state-won", **(frame_kwargs or {}))
+        item = {"text": "Course clear", "box": list(TEXT_BOX), "glyph_box": list(TEXT_BOX),
+                "font_px": 24, "font_weight": 700, "color": list(INK) + [1],
+                "background": list(PANEL)}
+        item.update(extra)
+        ui = {"won": {"probe_state": "won", "frame": "state-won", "viewport": [200, 100],
+                      "elements": [item] if item.get("tag") else [],
+                      "texts": [] if item.get("tag") else [item], "overlaps": []}}
+        return judging.ui_text("desktop", {"t": {"ui": ui}}, self.rules, judging._Frames(self.dir))
+
+    def test_text_on_a_plain_panel_passes(self):
+        check = self.text()
+        self.assertEqual(check["status"], "PASS", check)
+        self.assertEqual(check["measured"]["backdrop"], {"measured": 1, "unread": 0})
+        self.assertEqual(check["route"], "develop")
+
+    def test_subpixel_fringes_are_not_art(self):
+        self.assertEqual(self.text({"fringe": True})["status"], "PASS")
+
+    def test_the_same_text_over_multi_coloured_art_fails(self):
+        check = self.text({"clutter": True})
+        self.assertEqual((check["status"], check["route"]), ("FAIL", "develop"), check)
+        self.assertIn("other art", " ".join(check["measured"]["busy_backdrop"]))
+        self.assertEqual(check["measured"]["low_contrast"], [])  # the DOM said ink on sand
+
+    def test_a_line_of_its_own_colour_through_it_fails(self):
+        check = self.text({"line": True})
+        self.assertEqual(check["status"], "FAIL", check)
+        self.assertIn("em line of its colour", " ".join(check["measured"]["busy_backdrop"]))
+        # An underlined text draws that line itself.
+        self.assertEqual(self.text({"line": True}, decoration="underline")["status"], "PASS")
+
+    def test_an_undetermined_dom_background_is_read_from_the_frame(self):
+        good = self.text(background=None)
+        self.assertEqual(good["status"], "PASS", good)
+        self.assertEqual(good["measured"]["undetermined"], 0)
+        cluttered = self.text({"clutter": True}, background=None)
+        self.assertEqual(cluttered["status"], "FAIL", cluttered)
+        # Ink-coloured art under the whole box: the text cannot be told from it.
+        hidden = self.text({"behind": INK}, background=None)
+        self.assertEqual(hidden["status"], "FAIL", hidden)
+        self.assertTrue(hidden["measured"]["low_contrast"], hidden)
+
+    def test_no_frame_is_counted_never_passed_on_the_backdrop(self):
+        item = {"text": "Saves", "box": [5, 5, 40, 12], "font_px": 14, "font_weight": 400,
+                "color": [255, 255, 255, 1], "background": None}
+        ui = {"won": {"frame": "state-won", "viewport": [100, 50], "elements": [], "texts": [item]}}
+        check = judging.ui_text("desktop", {"t": {"ui": ui}}, self.rules, judging._Frames(None))
+        self.assertEqual(check["status"], "WARNING", check)
+        self.assertEqual(check["measured"]["undetermined"], 1)
+
+    def test_a_control_is_read_on_its_glyph_box_only(self):
+        # Its border box holds its border and face; only its own text's rectangle is read.
+        control = {"tag": "button", "role": None, "ua_default": False, "ua_differs": ["color"],
+                   "text_drawn": True}
+        check = self.text({"clutter": True}, **control)
+        self.assertEqual(check["status"], "FAIL", check)
+        older = self.text({"clutter": True}, glyph_box=None, **control)  # a bot before glyph_box
+        self.assertEqual(older["measured"]["backdrop"], {"measured": 0, "unread": 1})
+
+    def test_a_texts_own_shadow_colour_is_not_art(self):
+        glow = (255, 46, 136)
+        text_frame(self.dir, "state-won")
+        frames = judging._Frames(self.dir)
+        image = frames.image("state-won")
+        for y in range(20, 50):
+            for x in (x for x0 in range(20, 140, 6) for x in (x0, x0 + 1)):
+                i = (y * 200 + x) * 4
+                if bytes(image.pixels[i:i + 3]) == bytes(PANEL):
+                    image.pixels[i:i + 3] = bytes(glow)
+        box = list(TEXT_BOX)
+        bare = frames.text_backdrop("state-won", box, [200, 100], list(INK) + [1], [], 40)
+        shadowed = frames.text_backdrop("state-won", box, [200, 100], list(INK) + [1],
+                                        [list(glow) + [1]], 40)
+        self.assertGreater(bare["clutter"], shadowed["clutter"])
+        self.assertEqual(shadowed["clutter"], 0.0)
+
+
 class TheStep(unittest.TestCase):
     def setUp(self):
         self.base = tempfile.mkdtemp(prefix="wgf-pq-step-")

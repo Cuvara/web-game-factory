@@ -124,7 +124,7 @@ Per check `{id, status, required, summary, measured, expected, route}`; `route` 
 - `scene.no_primitives` - no readable-role entity `render: primitive` (unless primitive_style)
 - `ui.targets` - interactive elements >= min target px on mobile
 - `ui.overlap` - no interactive element overlaps another or the HUD
-- `ui.text` - text contrast >= 4.5:1, font >= min px
+- `ui.text` - text contrast >= 4.5:1, font >= min px, and no busy backdrop behind it in the frame
 - `ui.styled` - buttons are not browser-default (computed style differs from UA default)
 - `ui.states` - win/lose/retry screens exist and were seen
 

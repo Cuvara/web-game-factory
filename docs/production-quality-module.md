@@ -55,7 +55,7 @@ Bars: [`core/reference/production-quality.yaml`](../core/reference/production-qu
 | `scene.no_primitives` | develop | no readable entity is `render: primitive`, and every one reports `render` (one that does not cannot be shown not to be a primitive) |
 | `ui.targets` | develop | mobile only: every interactive DOM element and every probe `ui` entity is at least `min_target_px` (44, raised by the design's `visual_identity.ui.min_target_px` or `responsive.min_touch_target_px`) on both sides |
 | `ui.overlap` | develop | no two controls, and no control and text, share `min_overlap_px` or more |
-| `ui.text` | develop | every DOM text (controls' and others') is at least `min_font_px`, with WCAG contrast ≥ 4.5:1, or ≥ 3:1 for large text (≥ 24 px, or ≥ 18.66 px bold). The background is the DOM's when an opaque one is behind the text; otherwise the dominant colour of the state's frame inside the text's box (text over the canvas). A control named only by its `aria-label` (an icon button) draws no text and is not measured (`text_drawn: false` in the bot's record) |
+| `ui.text` | develop | every DOM text (controls' and others') is at least `min_font_px`, with WCAG contrast ≥ 4.5:1, or ≥ 3:1 for large text (≥ 24 px, or ≥ 18.66 px bold). The background is the DOM's when an opaque one is behind the text and nothing else paints there; otherwise (undetermined) the dominant colour of the state's frame inside the text's box. The DOM background is undetermined when the text's element or an ancestor up to that opaque background paints a background image, a border-image (a nine-slice panel), a mask or a ::before/::after with an image or a fill, or when, at the text's centre, another element that paints (a canvas, an image, a sibling tile) lies between the text and it. A control's colour, font and background are those of the element that draws its text (a face `<span>` inside a transparent `<button>`). Every text is also read on the frame, whatever the DOM says (**busy backdrop**): inside its glyph box (`glyph_box`, the rectangle of its own text; a control is read only there, never on its border box), more than `ui.max_backdrop_clutter` (0.3) of the pixels explained by neither the background, the text's colour, its own text-shadow or stroke colours (`paint`), nor a blend of two of them within `ui.backdrop_delta` (40 per channel; each pixel judged with its two horizontal neighbours, so subpixel-antialiasing fringes are not art) fails, and so does a horizontal line of the text's own colour longer than `ui.max_ink_run_em` (2.0 em) through it - a tile's or panel's edge, never a glyph stroke (an underlined text is exempt). A text whose frame cannot be read is counted in `measured.backdrop.unread`, never passed on it. A control named only by its `aria-label` (an icon button) draws no text and is not measured (`text_drawn: false` in the bot's record) |
 | `ui.styled` | develop | no control's computed style equals the user-agent default for its tag |
 | `ui.states` | develop | the `lost` and `retry` screens were seen on the viewport, and `won` when the experience contract has a win |
 | `audio.plays` | develop; assets when the music was never delivered | only when the design has music (`build_spec.audio` type `music` of a required tier): during play at least one probe sample has `audio.playing` with the measured `audio.level` at or above `audio.min_level` (0.005 RMS, about -46 dBFS), the probe names the track, the music's file was fetched (its runtime-manifest url), and with the page unfocused (a window blur - the platform mute) the level is at most `audio.max_muted_level` (0.001). A probe with no `audio` field fails it |
@@ -70,6 +70,20 @@ build (`/tmp/mk/evidence/{desktop,mobile}-play-1.png`, no probe records, so the 
 craft boxes were located on the frames by hand) fails on the barriers - 2.58:1 desktop,
 2.53:1 mobile - while its craft passes (6.6:1, 6.9:1); the 2D golden build passes (target
 14.5:1).
+
+The busy backdrop was calibrated on real frames (2026-10-05, production-quality.yaml 1.3.0).
+At sky-marble `a61a9d7` the card was a nine-slice `border-image` of the whole UI-kit sheet
+over a sand `background-color`: production-quality passed `ui.text` (the DOM measured ink on
+sand), and visual QA then found the pause, win and loss cards overprinted by other screens'
+PLAY/GO, NEXT and chip art. Read on the playability frames of that commit
+(`val-3d/.../playability/5-1/out`), every card fails, on both viewports: clutter 0.48
+('Par 24.0 s · Gold 19.2 s', won) and 0.60-0.64 ('60.0 s / 60.0 s', lost), and ink lines of
+4.3-4.9 em ('Course clear'), 2.3-2.5 em ('5.3 s'), 3.6-3.7 em ('Time is up') and 2.8-2.9 em
+('Paused'). At the fixed commit `3f394e2` (`6-1`, `7-1`) every text measures clutter 0.00
+and at most 1.1 em ('Time is up': the T's bar); the 2D brick-breaker-worlds run's texts
+(`val-2d/.../playability/{1..10}-1/out`) at most 0.04 and 0.5 em. Records from a bot before
+`glyph_box` have no glyph box for controls; their controls are not read for the backdrop
+(`unread`).
 
 ### `primitive_style`
 

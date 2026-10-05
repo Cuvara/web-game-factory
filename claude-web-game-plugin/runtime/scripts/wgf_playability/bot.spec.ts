@@ -967,7 +967,22 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
   const snapshots: { ms: number; unit_id: string | null; unit_index: number; state: string;
                      progress: Progress | null; difficulty: Record<string, number>;
                      kinds: string[] }[] = [];
-  const transitions: { from: number; to: number; at_ms: number; how: string; since_end_ms: number | null }[] = [];
+  // Each transition carries the times that separate the game's latency from the bot's
+  // (content.units_reachable judges the game's only): every time is the bot's clock from the
+  // traverse start; a read's `_ms` is when that snapshot call began or returned, as noted.
+  //   since_end_ms   at_ms minus the LAST read that showed the unit ended (raw, bot included)
+  //   ended_ms       return of the FIRST read showing the unit ended: `won`, else its
+  //                  progress target (a target met before `won` is timed from `won`)
+  //   unoffered_ms   start of the last ended read on which no advance was offered yet
+  //   offered_ms     return of the first ended read on which an advance was offered
+  //   act_started_ms / acted_ms  the bot's first input after the end: began, was delivered
+  //   inputs         the inputs the bot sent between the end and the next unit
+  //   last_old_ms    start of the last read that still showed the finished unit
+  //   at_ms          return of the read that first showed the next unit
+  const transitions: { from: number; to: number; at_ms: number; how: string; since_end_ms: number | null;
+                       ended_ms: number | null; unoffered_ms: number | null; offered_ms: number | null;
+                       act_started_ms: number | null; acted_ms: number | null; inputs: number;
+                       last_old_ms: number | null }[] = [];
   const units: UnitRecord[] = [];
   // The largest unit count the build itself reported (content.unit_count): what it ships,
   // beyond the units this window reached (an adopted game's floor, wgf_design/existing.py).
@@ -978,8 +993,25 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
     const t0 = Date.now();
     let current: number | null = null;
     let ended: { ms: number; how: string } | null = null;
+    // The game-side timeline of the unit that ended (see `transitions`).
+    let end: { how: string; first: number; unoffered: number | null; offered: number | null; actStarted: number | null;
+               acted: number | null; inputs: number } | null = null;
+    let lastOld: number | null = null;
+    // An input sent from the ended unit; `retry` returns null when it found nothing to press.
+    const input = async (send: () => Promise<unknown>): Promise<void> => {
+      const began = Date.now() - t0;
+      const sent = await send();
+      if (end && sent !== null) {
+        end.inputs += 1;
+        if (end.acted === null) {
+          end.actStarted = began;
+          end.acted = Date.now() - t0;
+        }
+      }
+    };
     const shot = new Set<number>();
     while (Date.now() - t0 < CFG.traverse_ms) {
+      const readMs = Date.now() - t0;
       const s = watch.saw(await snap(page));
       if (!s) break;
       const ms = Date.now() - t0;
@@ -994,11 +1026,17 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
       if (index !== current) {
         if (current !== null && index > 0) {
           transitions.push({ from: current, to: index, at_ms: ms, how: ended?.how ?? "unknown",
-                             since_end_ms: ended ? ms - ended.ms : null });
+                             since_end_ms: ended ? ms - ended.ms : null,
+                             ended_ms: end?.first ?? null, unoffered_ms: end?.unoffered ?? null,
+                             offered_ms: end?.offered ?? null, act_started_ms: end?.actStarted ?? null,
+                             acted_ms: end?.acted ?? null, inputs: end?.inputs ?? 0,
+                             last_old_ms: lastOld });
         }
         current = index;
         ended = null;
+        end = null;
       }
+      lastOld = readMs;
       let unit = units.find((u) => u.index === index);
       if (index > 0 && !unit) {
         unit = { unit_id: s.content?.unit_id ?? null, index, objective: s.content?.objective ?? null,
@@ -1027,8 +1065,16 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
         if (unit) unit.won = true;
         ended = { ms, how: s.state === "won" ? "won" : "progress" };
         const advance = advanceOf(s);
-        if (advance) await act(page, advance, touch);
-        else if (s.state === "won") await retry(page, s, touch);
+        // The end is timed from the first `won` read, else the first at its progress target: a
+        // unit whose progress met its target before the game declared it won ended at `won`.
+        if (!end || (end.how === "progress" && s.state === "won")) {
+          end = { how: ended.how, first: ms, unoffered: null, offered: null, actStarted: null,
+                  acted: null, inputs: 0 };
+        }
+        if (advance && end.offered === null) end.offered = ms;
+        else if (end.offered === null) end.unoffered = readMs;
+        if (advance) await input(() => act(page, advance, touch));
+        else if (s.state === "won") await input(() => retry(page, s, touch));
         await page.waitForTimeout(250);
         continue;
       }
@@ -1036,6 +1082,7 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
         if (unit) unit.lost = true;
         losses += 1;
         ended = { ms, how: "lost" };
+        end = null;
         if (losses >= 2) {
           stopped = "lost twice";
           break;

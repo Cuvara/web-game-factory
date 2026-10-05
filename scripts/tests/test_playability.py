@@ -14,6 +14,7 @@ outside this suite; here, its refusals and the report it writes.
 """
 
 import copy
+import json
 import os
 import shutil
 import subprocess
@@ -383,6 +384,81 @@ class Content(Judge):
         check = self.judge()["content.units_reachable"]
         self.assertEqual(check["status"], "FAIL")
         self.assertIn("[1, 2, 3]", check["summary"])
+
+    def timed_transitions(self, **fields):
+        """The traverse's transitions as the current bot records them, with `fields` set."""
+        for t in self.records["traverse"]["transitions"]:
+            at = t["at_ms"]
+            t.update({"ended_ms": at - 300, "unoffered_ms": None, "offered_ms": at - 300,
+                      "act_started_ms": at - 290, "acted_ms": at - 250, "inputs": 1,
+                      "last_old_ms": at - 400, "since_end_ms": 300})
+            t.update({k: (v(at) if callable(v) else v) for k, v in fields.items()})
+
+    def test_a_transition_late_only_by_the_bot_passes(self):
+        # Won at at-3000 and the next offered at once; the bot took 2.6 s to react and click (a
+        # loaded machine), and its first read after the click already showed the next unit.
+        self.timed_transitions(ended_ms=lambda at: at - 3000, offered_ms=lambda at: at - 3000,
+                               act_started_ms=lambda at: at - 2900, acted_ms=lambda at: at - 400,
+                               last_old_ms=lambda at: at - 3100, since_end_ms=3000)
+        check = self.judge()["content.units_reachable"]
+        self.assertEqual(check["status"], "PASS", check["summary"])
+        first = check["measured"]["transitions"][0]
+        self.assertEqual((first["game_ms"], first["since_end_ms"], first["basis"]),
+                         (0, 3000, "recorder"))
+        self.assertEqual(first["game_max_ms"], 3000 - 2600)
+
+    def test_a_unit_entered_without_the_previous_won_fails(self):
+        self.timed_transitions()
+        self.records["traverse"]["transitions"][0]["how"] = "lost"
+        check = self.judge()["content.units_reachable"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("1->2 (the unit left was lost", check["summary"])
+        self.timed_transitions(ended_ms=None, offered_ms=None, acted_ms=None, since_end_ms=None)
+        self.records["traverse"]["transitions"][1]["how"] = "unknown"
+        check = self.judge()["content.units_reachable"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("2->3 (the unit left was unknown", check["summary"])
+
+    def test_a_game_slow_to_move_on_fails(self):
+        # The input was delivered at at-3000 and the game was still read in the finished unit
+        # 2.4 s later: the game's latency, not the bot's.
+        self.timed_transitions(ended_ms=lambda at: at - 3100, offered_ms=lambda at: at - 3100,
+                               act_started_ms=lambda at: at - 3050, acted_ms=lambda at: at - 3000,
+                               last_old_ms=lambda at: at - 600, inputs=6)
+        check = self.judge()["content.units_reachable"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("the game moved on 2400 ms after it ended", check["summary"])
+        # A game that sits won 2 s before it offers any way on.
+        self.timed_transitions(ended_ms=lambda at: at - 2500, unoffered_ms=lambda at: at - 500,
+                               offered_ms=lambda at: at - 300)
+        check = self.judge()["content.units_reachable"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("the game moved on 2000 ms", check["summary"])
+        # A game that advances by itself, with no input, 1.8 s after `won`.
+        self.timed_transitions(ended_ms=lambda at: at - 2000, offered_ms=None,
+                               act_started_ms=None, acted_ms=None, inputs=0,
+                               last_old_ms=lambda at: at - 200)
+        self.assertEqual(self.judge()["content.units_reachable"]["status"], "FAIL")
+
+    def test_the_val_3d_transitions_replay_to_one_verdict(self):
+        # The live 3D run: game 1c6b099 (v13) changed only unparsed data over 3f394e2 (v12);
+        # v13's desktop was 1.7x slower and its raw since_end_ms 1687 failed the 1500 bar. Those
+        # records predate the recorder fields, so they are timed from their snapshots.
+        path = os.path.join(HERE, "fixtures", "playability", "val-3d-transitions.json")
+        with open(path, encoding="utf-8") as handle:
+            visits = json.load(handle)["visits"]
+        verdicts = {}
+        for name, visit in visits.items():
+            self.records["traverse"]["transitions"] = [
+                t for t in visit["transitions"] if t["to"] <= 3]
+            self.records["traverse"]["snapshots"] = visit["snapshots"]
+            check = self.judge()["content.units_reachable"]
+            verdicts[name] = check["status"]
+            for t in check["measured"]["transitions"]:
+                self.assertEqual((t["basis"], t["game_ms"]), ("snapshots", 0), (name, t))
+                self.assertEqual(t["game_max_ms"], t["since_end_ms"], (name, t))
+        self.assertEqual(verdicts, dict.fromkeys(visits, "PASS"))
+        self.assertIn(1687, [t["since_end_ms"] for t in visits["v13-desktop"]["transitions"]])
 
     def test_objective_shown_per_unit(self):
         checks = self.judge()

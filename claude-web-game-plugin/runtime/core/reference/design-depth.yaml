@@ -19,7 +19,12 @@
 # 1.2.0: playability.persists.probe_measures - what the probe reports of a persisted kind
 # 1.3.0: playability.ramp - the run the time ramp is read on (mode_features, mode, run_s) and
 #        the sample it needs (min_inputs_per_third, extend_s)
-version: 1.3.0
+# 1.4.0: playability.content.transition_grace_ms judges the GAME's latency, not the bot's: the
+#        time the game sat in a finished unit before offering a way on, plus the time it stayed
+#        there after the bot's input was delivered. The bot's reaction, click and polling are
+#        excluded - the raw interval failed an unchanged build on a loaded machine (1687 ms vs
+#        586 ms for the same gameplay). The value is unchanged.
+version: 1.4.0
 
 meta_loop:
   # Persisting only these is a scoreboard, not a meta loop: at least one persisted entry
@@ -76,8 +81,10 @@ playability:
     # Units the oracle traverses in design order, or every MVP unit when there are fewer;
     # the genre model's `qa.min_units_traversed` overrides it.
     min_units_traversed: 3
-    # A unit transition is observed when content.unit_index increments within this many ms
-    # of the previous unit ending in `won` or its progress reaching its target.
+    # A unit transition is earned when content.unit_index increments after the previous unit
+    # ended in `won` or its progress reaching its target, the game moving on within this many
+    # ms of that end: its own wait before offering an advance plus its wait after the bot's
+    # input was delivered (the bot's reaction and click are not the game's).
     transition_grace_ms: 1500
     # Share of a unit's objective words shown on screen while it is played (the same bar as
     # start.objective).

@@ -503,5 +503,124 @@ class LegacyRuns(_Case):
         self.assertIn("content-sufficiency", held["required_steps"])
 
 
+class _ScriptedSubmit(mock.MockPublishStep):
+    """The placeholder submit, scripted without making the run a mock (a mock run is not held
+    to the floor): `platform-ids` on the visits listed in SCRIPT, the route a create-before-build
+    portal's IDS_ISSUED takes; `human` waits for a person, as UPLOAD_COMPLETE does before a
+    person's `submit`."""
+
+    SCRIPT = {}
+
+    def _scripted(self, context):
+        return self.SCRIPT.get(context.execution, "success")
+
+
+class _SubmitAPI(_PlaceholderAPI):
+    def registry(self, use_mock, load_modules=True):
+        registry = super().registry(use_mock, load_modules)
+        registry.register(_ScriptedSubmit.type, _ScriptedSubmit)
+        return registry
+
+
+class SubmitReentry(_Case):
+    """The quality floor composes with the submit step's own re-entries (the portal
+    publisher, docs/publish-module.md): a later submit visit - a person's `submit` after
+    UPLOAD_COMPLETE, the next platform, `--track` - is not refused while nothing it depends
+    on changed, and is refused when something did. A create-before-build portal's
+    `platform-ids` route back to sdk makes the build again; the floor holds submit until every
+    check after sdk has passed the new build."""
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(setattr, _ScriptedSubmit, "SCRIPT", {})
+
+    def api(self, extra=None, workflow=None):
+        data = {"storage": {"fsync": False}, "checkpoints": dict(GATES), "design": dict(AUTHOR),
+                "publish": {"mode": "live"}}
+        data.update(extra or {})
+        return _SubmitAPI(config=FactoryConfig(data), store_dir=self.store_dir,
+                          workflow=workflow)
+
+    def publish(self, api, run_id):
+        state = api.run(RunRequest(run_id=run_id, scope="publish"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "publish-review"),
+                         state.message)
+        return api.run(RunRequest(resume=run_id, decision="publish", decided_by="human"))
+
+    def _submitted(self):
+        api, state = self.to_g4()
+        state = self.decide(api, state.run_id)
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        return api, self.publish(api, state.run_id)
+
+    def floor_at_submit(self, api, state):
+        definition = api.definition_for(state)
+        held = quality.effective(state.params, quality.load_policy())
+        return quality.floor_problems(state, definition, definition.step("submit"), held)
+
+    def test_a_person_s_submit_after_an_upload_is_not_refused(self):
+        _ScriptedSubmit.SCRIPT = {1: "human"}
+        api, state = self._submitted()
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "submit"),
+                         state.message)
+        self.assertEqual(self.floor_at_submit(api, state), [])
+        state = api.run(RunRequest(resume=state.run_id, decision="done", decided_by="human"))
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        self.assertEqual(state.steps["submit"].executions, 2)
+
+    def test_a_later_submit_visit_with_nothing_changed_runs(self):
+        api, state = self._submitted()
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        self.assertEqual(self.floor_at_submit(api, state), [])
+        # The publish step alone again, as `wgf publish --run X --track` runs it.
+        before = state.steps["submit"].executions
+        state = api.run(RunRequest(run_id=state.run_id, scope="submit", force=True))
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        self.assertEqual(state.steps["submit"].executions, before + 1)
+
+    def test_a_submit_visit_after_the_build_was_verified_again_is_refused(self):
+        api, state = self._submitted()
+        state = api.run(RunRequest(run_id=state.run_id, scope="verify", force=True))
+        problems = " ".join(self.floor_at_submit(api, state))
+        for step_id in ("quality-gate", "listing-validation"):
+            self.assertIn(step_id, problems)
+        before = state.steps["submit"].executions
+        # The gates that approved the old build refuse it first; the floor would, too.
+        with self.assertRaises(EngineError):
+            api.run(RunRequest(run_id=state.run_id, scope="submit", force=True))
+        self.assertEqual(api.store.load(state.run_id).steps["submit"].executions, before)
+
+    def test_platform_ids_rebuild_holds_submit_until_the_new_build_passed_every_check(self):
+        """IDS_ISSUED routes `platform-ids` to sdk, outside the publish slice: the run ends
+        naming sdk next. `wgf sdk --run X --force` writes the ids; until the checks after sdk
+        have passed the new build, submit is refused. `wgf new-game --run X` runs exactly
+        those (not develop) and asks G4 again; `wgf publish --run X` then asks G5 and G6 on
+        the new release and submits."""
+        _ScriptedSubmit.SCRIPT = {1: "platform-ids"}
+        api, state = self._submitted()
+        self.assertEqual((state.status, state.exit["route"], state.exit["next"]),
+                         (RunStatus.COMPLETED, "platform-ids", "sdk"), state.message)
+        state = api.run(RunRequest(run_id=state.run_id, scope="sdk", force=True))
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        problems = " ".join(self.floor_at_submit(api, state))
+        for step_id in ("sdk-review", "verify", "quality-gate", "listing-validation"):
+            self.assertIn(step_id, problems)
+        with self.assertRaises(EngineError):
+            api.run(RunRequest(run_id=state.run_id, scope="submit", force=True))
+        mark = len(state.trail)
+        state = api.run(RunRequest(run_id=state.run_id, scope="new-game"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"),
+                         state.message)
+        self.assertEqual(self.executed(state, mark),
+                         ["sdk-review", "verify", "quality-gate", "prototype-review"])
+        state = self.decide(api, state.run_id)
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        self.assertIn("listing-validation", self.executed(state, mark))
+        self.assertEqual(self.floor_at_submit(api, state), [])
+        before = state.steps["submit"].executions
+        state = self.publish(api, state.run_id)
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        self.assertEqual(state.steps["submit"].executions, before + 1)
+
 if __name__ == "__main__":
     unittest.main()

@@ -22,7 +22,7 @@ Readiness is derived, not asserted:
     UNKNOWN         a guard UNKNOWN (not RED): the data was not there to decide
     HUMAN_REQUIRED  every guard GREEN, but publishing here is a person's act: no automated
                     submission method, automated console use not permitted or not verified,
-                    the credential nobody captured
+                    a tool token the installation has not set
     READY           every guard GREEN and an adapter may act
 """
 
@@ -38,8 +38,10 @@ __all__ = ["PUBLICATION_DIR", "GUARDS", "RELEASE_GUARDS", "PLATFORM_GUARDS", "QU
            "load_publication_profile", "publication_profiles", "candidate_frozen",
            "store_metadata_complete", "metadata_and_locales_present",
            "package_shaped_to_profile", "assertions_pass", "all_targeted_validated",
-           "required_all_live", "none_permanently_rejected", "human_reason", "readiness",
-           "idempotency_key", "GuardResult"]
+           "required_all_live", "none_permanently_rejected", "human_reason",
+           "unmet_prerequisites", "readiness",
+           "idempotency_key", "GuardResult", "DENY_VOCABULARY", "FORBIDDEN_INTENT_WORDS",
+           "INTENT_CLASSES", "deny_vocabulary", "flow_problems"]
 
 PUBLICATION_DIR = os.path.join(paths.REFERENCE, "publication")
 
@@ -118,6 +120,155 @@ def load_publication_profile(platform_id, extra_dirs=()):
         raise ValueError(f"{path}: id {profile.get('id') if isinstance(profile, dict) else None!r}"
                          f" is not the filename stem {platform_id!r}")
     return profile
+
+
+# -- publication profile flow rules (2.0.0) --------------------------------------------------
+#
+# What core/artifacts/shared/publication-profile.schema.json cannot say about a console flow,
+# checked by scripts/check-integrity.py over core's profiles and available to any reader of a
+# profile (profiles_extra included). Kept here, beside the profile loader, because the
+# executor that runs profile intents and resolves drift (docs/portal-publishing-architecture.md
+# Part 2.6) refuses on the same vocabulary: one list, never two that drift apart.
+
+# Names no adaptive resolution may ever match, in every profile (Part 2.6, check 4). A
+# profile's `deny` adds the console's own words for them (translations). Matched case-folded
+# at the start of a word: "publish" refuses "Publishing", "pay" refuses "Payout".
+DENY_VOCABULARY = ("submit", "publish", "release", "review", "send", "delete", "remove",
+                   "cancel", "withdraw", "archive", "accept", "agree", "confirm", "sign", "pay",
+                   "price", "tax", "rating", "i own", "licence", "license")
+
+# Intents that may not appear in a flow at all, adaptive or not (Part 2.5): nothing the
+# Factory runs cancels a pending review, withdraws or deletes a game, or replaces the build
+# under review.
+FORBIDDEN_INTENT_WORDS = ("cancel", "withdraw", "delet", "remov", "unpublish", "retract")
+
+INTENT_CLASSES = ("reversible", "irreversible", "human")
+_STATE_LISTS = ("submitted_states", "approved_states", "live_states", "rejected_states",
+                "pending_states")
+_LOCATOR_TEXT = ("name", "label", "placeholder", "text", "testid", "css", "xpath")
+
+
+def _vocabulary_hit(text, vocabulary):
+    """The first word of `vocabulary` that starts a word of `text`, case-folded; or None."""
+    folded = str(text).casefold()
+    for word in vocabulary:
+        if re.search(r"(?<!\w)" + re.escape(str(word).casefold()), folded):
+            return word
+    return None
+
+
+def deny_vocabulary(profile):
+    """The base deny vocabulary plus the profile's own `deny` words."""
+    extra = ((profile or {}).get("submission") or {}).get("deny") or []
+    return tuple(DENY_VOCABULARY) + tuple(str(w) for w in extra)
+
+
+def flow_problems(profile):
+    """The flow rules a schema cannot state, as a list of messages (empty: none broken).
+
+      * every intent has a class (reversible | irreversible | human), and its id is unique;
+      * no intent cancels, withdraws, deletes, removes or unpublishes anything - by its id,
+        its accepted names or any locator text;
+      * every irreversible intent carries a profile locator ladder and no adaptive `names`,
+        and every request_review intent is irreversible;
+      * an intent's adaptive `names`, and the `dismissable` overlay names, match nothing in
+        the deny vocabulary - such a resolution would be refused, so the profile may not
+        offer it;
+      * every *_states word is one of `status.states`; a flow with an irreversible intent
+        names its `pending_states`, so status_gate can stop before an upload over a pending
+        review; an `expect.status_in` names a list the profile fills;
+      * 2.1.0: a console is reached through a person's live login (credential human-login,
+        never a captured storage-state); `session.authenticated_url` compiles; each
+        `identity.issued_on_create` key appears once; `multiple` only on an upload.
+    """
+    submission = (profile or {}).get("submission") or {}
+    flow = submission.get("flow") or []
+    deny = deny_vocabulary(profile)
+    problems = []
+    seen = set()
+    irreversible = False
+    status = submission.get("status") or {}
+    for index, intent in enumerate(flow):
+        if not isinstance(intent, dict):
+            problems.append(f"flow[{index}]: not an intent")
+            continue
+        iid = intent.get("id") or f"flow[{index}]"
+        if iid in seen:
+            problems.append(f"intent {iid}: id appears twice in the flow")
+        seen.add(iid)
+        kind = intent.get("class")
+        if kind not in INTENT_CLASSES:
+            problems.append(f"intent {iid}: no class (one of {', '.join(INTENT_CLASSES)})")
+        texts = [iid.replace(".", " ").replace("_", " ")] + list(intent.get("names") or [])
+        for locator in intent.get("target") or []:
+            if isinstance(locator, dict):
+                texts += [str(locator[k]) for k in _LOCATOR_TEXT if locator.get(k)]
+        for text in texts:
+            hit = _vocabulary_hit(text, FORBIDDEN_INTENT_WORDS)
+            if hit:
+                problems.append(f"intent {iid}: {text!r} is a {hit}* action - a flow never "
+                                f"cancels, withdraws or deletes (no such intent may exist)")
+                break
+        if kind == "irreversible":
+            irreversible = True
+            if not intent.get("action") or not [
+                    loc for loc in intent.get("target") or [] if isinstance(loc, dict) and loc]:
+                problems.append(f"intent {iid}: irreversible without a profile locator ladder "
+                                f"(`action` and `target`): it is never resolved adaptively")
+            if intent.get("names"):
+                problems.append(f"intent {iid}: irreversible intents carry no adaptive `names`")
+        if intent.get("phase") == "request_review" and kind != "irreversible":
+            problems.append(f"intent {iid}: a request_review intent is irreversible, not {kind}")
+        for name in intent.get("names") or []:
+            hit = _vocabulary_hit(name, deny)
+            if hit:
+                problems.append(f"intent {iid}: accepted name {name!r} matches the deny "
+                                f"vocabulary ({hit!r}); an adaptive resolution to it would be "
+                                f"refused - drop it from `names`")
+        listed = (intent.get("expect") or {}).get("status_in")
+        if listed and not status.get(listed):
+            problems.append(f"intent {iid}: expect.status_in {listed} is empty or missing")
+        if intent.get("multiple") and intent.get("action") != "upload":
+            problems.append(f"intent {iid}: `multiple` is for an upload intent only")
+    problems.extend(_login_problems(submission))
+    for name in submission.get("dismissable") or []:
+        hit = _vocabulary_hit(name, deny)
+        if hit:
+            problems.append(f"dismissable {name!r} matches the deny vocabulary ({hit!r})")
+    states = list(status.get("states") or [])
+    for key in _STATE_LISTS:
+        for word in status.get(key) or []:
+            if word not in states:
+                problems.append(f"status.{key}: {word!r} is not one of status.states")
+    if irreversible and not status.get("pending_states"):
+        problems.append("the flow requests review but status.pending_states is empty: "
+                        "status_gate could not stop before an upload over a pending review")
+    return problems
+
+
+def _login_problems(submission):
+    """2.1.0: a console is reached through a person's live login, never a captured session;
+    the session markers and the ids issued on create are usable as written."""
+    problems = []
+    credential = submission.get("credential") or {}
+    kind = credential.get("kind")
+    if kind == "storage-state":
+        problems.append("credential.kind storage-state is deprecated (2.1.0): a captured session "
+                        "is never loaded; a person logs in live (kind: human-login)")
+    elif submission.get("method") == "console" and kind not in (None, "human-login"):
+        problems.append(f"credential.kind {kind} on a console: a console is reached through a "
+                        f"person's live login (kind: human-login)")
+    pattern = (submission.get("session") or {}).get("authenticated_url")
+    if pattern is not None:
+        try:
+            re.compile(str(pattern))
+        except re.error as exc:
+            problems.append(f"session.authenticated_url is not a regular expression: {exc}")
+    keys = [entry.get("key") for entry in ((submission.get("identity") or {}).get(
+        "issued_on_create") or []) if isinstance(entry, dict)]
+    for key in sorted({k for k in keys if keys.count(k) > 1}):
+        problems.append(f"identity.issued_on_create names {key} twice")
+    return problems
 
 
 # -- release guards --------------------------------------------------------------------------
@@ -215,9 +366,10 @@ def package_shaped_to_profile(platform_id, profile, package, on_disk):
     `package` is the manifest's entry for this platform; `on_disk` says whether the file was
     found and its sha256 equals the checksum (True/False), or None when nobody looked."""
     if package is None:
-        return red(f"the release-manifest has no package for {platform_id}: the one build "
-                   f"targets another platform (template contract build_target); {platform_id} "
-                   f"needs a build of its own")
+        return red(f"the release-manifest has no package for {platform_id}: the release's "
+                   f"one bundle boots another platform (template contract build_target); "
+                   f"{platform_id} ships only from a build of its own (verify and release, "
+                   f"one bundle per platform)")
     if on_disk is False:
         return red(f"{package.get('filename')} is not in the checkout, or its bytes do not "
                    f"match the manifest's checksum")
@@ -305,10 +457,31 @@ def none_permanently_rejected(manifest, publications):
 
 # -- readiness -------------------------------------------------------------------------------
 
-def human_reason(profile, settings=None, credential_present=None):
+def unmet_prerequisites(profile, settings=None, entry=None):
+    """The profile's `prerequisites` that apply and that no person has recorded in
+    factory.publish.platforms.<id>.prerequisites_confirmed. `entry` is the release's
+    game.config.yaml platform entry, or None when unknown: then every prerequisite applies,
+    so an unknown is never read as satisfied."""
+    confirmed = set((settings or {}).get("prerequisites_confirmed") or ())
+    unmet = []
+    for item in (profile or {}).get("prerequisites") or ():
+        if not isinstance(item, dict) or item.get("id") in confirmed:
+            continue
+        when = item.get("when") or {}
+        # An entry without a key is at the profile's default, which the tech plan never
+        # writes (hosting): a `when` naming a value matches only an entry that states it.
+        if entry is not None and any(entry.get(key) != value for key, value in when.items()):
+            continue
+        unmet.append(item)
+    return unmet
+
+
+def human_reason(profile, settings=None, credential_present=None, entry=None):
     """Why publishing on this platform is a person's act, or None when an adapter may act.
-    `settings` is factory.publish.platforms.<id> (terms_confirmed); `credential_present`
-    whether the named credential variable is set (None: not checked)."""
+    `settings` is factory.publish.platforms.<id> (terms_confirmed, prerequisites_confirmed);
+    `credential_present` whether the named credential variable is set (None: not checked);
+    `entry` the release's game.config.yaml platform entry, for prerequisites limited by
+    `when` (None: unknown, so every prerequisite applies)."""
     submission = (profile or {}).get("submission") or {}
     method = submission.get("method")
     if profile is None:
@@ -329,15 +502,28 @@ def human_reason(profile, settings=None, credential_present=None):
                                          "its console is not established; a person records the "
                                          "finding in factory.publish.platforms.<id>."
                                          "terms_confirmed, or submits by hand")
+    unmet = unmet_prerequisites(profile, settings, entry)
+    if unmet:
+        first = unmet[0]
+        what = "; ".join(f"prerequisite {item.get('id')}: {str(item.get('note') or '').strip()}"
+                         for item in unmet)
+        return (first.get("reason") or "legal",
+                f"{what} - a person does it and records it in factory.publish.platforms.<id>."
+                f"prerequisites_confirmed")
     if method in ("api", "cli") and not (settings or {}).get("adapter"):
         # The portal's own tool exists; no adapter drives it in this Factory yet.
         return ("no-automated-method", f"the portal's {method} ({(submission.get('api') or {}).get('tool') or 'tool'}) "
                                        f"is the supported way in; no adapter drives it here, "
                                        f"so a person runs it with the packaged release")
     credential = submission.get("credential") or {}
-    if credential.get("kind", "none") != "none" and credential_present is False:
-        return ("credential-missing", f"{credential.get('env')} is not set: capture the "
-                                      f"session first ({credential.get('capture') or 'see the publication profile'})")
+    if credential.get("kind") == "storage-state":
+        return ("credential-missing", "the publication profile names a captured session "
+                                      "(storage-state), which is never loaded: a person logs in "
+                                      "live (credential.kind human-login)")
+    # human-login needs nothing in advance: a person logs in, live, in the window the step opens.
+    if credential.get("kind") == "token" and credential_present is False:
+        return ("credential-missing", f"{credential.get('env')} is not set "
+                                      f"({credential.get('capture') or 'see the publication profile'})")
     return None
 
 

@@ -18,6 +18,7 @@ from .evidence import Evidence, file_sha256
 
 __all__ = ["ARTIFACT", "ROLE", "MODES", "Settings", "utc_now", "profile_for",
            "publication_profile_for", "release_dir", "package_on_disk", "store_metadata",
+           "listing_text", "pinned_hash",
            "assertion_results", "record", "output_name", "read_json", "same_commit",
            "locate_checkout", "evidence_dicts"]
 
@@ -25,6 +26,9 @@ ARTIFACT = "platform-publication"
 ROLE = "release"
 MODES = ("dry-run", "live")
 STORE_METADATA = "store-metadata.json"
+# The store listing the release step ships beside its packages (wgf_release LISTING_DIR), and
+# each platform's rendition inside it (wgf_listing: platforms/<id>/listing.json).
+LISTING_DIR = "listing"
 
 
 def utc_now():
@@ -53,6 +57,7 @@ class Settings:
         profiles_extra    directories with more publication profiles (tests: the fixture)
         platforms         {platform id: {terms_confirmed, adapter, console_url}}
         timeouts          {action, navigation, upload} ms for the console executor
+        login_timeout_s   how long a person has to log in on a portal's page (Job)
     """
 
     def __init__(self, config, params, environ=None):
@@ -144,6 +149,19 @@ def store_metadata(checkout, release_id, manifest):
     return found
 
 
+def listing_text(checkout, release_id, platform_id):
+    """{locale: copy}: the texts of the platform's rendition in the store listing the release
+    shipped (release/<id>/listing/platforms/<pid>/listing.json, store-listing's `localeCopy`:
+    title, short and long description, controls, tags, categories), or {} when the release
+    shipped none."""
+    if not checkout:
+        return {}
+    data = read_json(os.path.join(release_dir(checkout, release_id), LISTING_DIR, "platforms",
+                                  str(platform_id), "listing.json"))
+    text = data.get("text") if isinstance(data, dict) else None
+    return {str(k): v for k, v in text.items() if isinstance(v, dict)} if isinstance(text, dict) else {}
+
+
 def assertion_results(verification, manifest, platform_id):
     """The pinned profile's assertion results verify recorded for this platform and this
     commit (policy.assertions:<pid> evidence data), else None."""
@@ -167,6 +185,14 @@ def assertion_results(verification, manifest, platform_id):
 
 def output_name(platform_id):
     return f"{ARTIFACT}-{platform_id}"
+
+
+def pinned_hash(artifact, artifact_type):
+    """The content hash `artifact` pins for its input of `artifact_type`, or None."""
+    for entry in ((artifact or {}).get("provenance") or {}).get("inputs") or []:
+        if entry.get("artifact_type") == artifact_type:
+            return entry.get("content_hash")
+    return None
 
 
 def record(body, *, inputs, context, title_id, sequence):

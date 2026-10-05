@@ -64,7 +64,7 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
 1. **Facts** (`facts.py`). From `game-design` (`build_spec`: mechanics, controls, the
    experience contract's objective, win and lose conditions, visual identity, features,
    engine, orientation, locales; `research.gameplay.genre`), `sdk-report` (capabilities
-   observed `working`), `scaffold-record` (the targeted platforms), the checkout's
+   observed `working`), the targeted platforms (below), the checkout's
    `game.config.yaml` (the game's name), the bundle's own `locales/<locale>.json` strings and
    its runtime asset manifest (`assets/assets.json`: the asset that draws the player, the
    fonts), and the `prototype-report`'s `scope_deltas` when that report is of the listed
@@ -149,7 +149,10 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
    check that fails on it is `fix: configure`: the person fixes their file; another pass
    would not.
 7. **Platform renditions** (`platforms.py`, `package.render_platform`). For each targeted
-   platform (the scaffold-record's `game_config.platforms`, or `listing.platforms`), the
+   platform (`listing.platforms` when set, else the verified build's - the
+   verification-report's `platform_readiness`, which is what the release packages - else
+   the scaffold-record's `game_config.platforms`: a title retargeted after init has a
+   scaffold-record naming its first targets), the
    profile's `store_listing` block becomes an explicit requirement list - texts and their
    limits, tags and categories, icon and covers with sizes, aspects and formats, screenshots,
    video, locales, age rating, file naming. Images are cover-cropped and downscaled from the
@@ -265,6 +268,29 @@ Otherwise it copies the package to `release/<release-id>/listing/`, fills
 `locales_included`, with paths relative to the release directory) and records
 `evidence.store_listing` (release-manifest 1.3.0). G6 is decided on `release-manifest`,
 `store-listing` and `listing-validation-report` (`core/lifecycle/gates.yaml`).
+
+Every rendition carries the copy of every locale the canonical package has: the platform's
+required locales first, then the others, each cut to the platform's limits. A required
+locale's checks are judged on that locale alone - another locale never stands in for it -
+but the others reach the portal: the release fills `store_metadata.<pid>.descriptions` per
+locale from them, and the submit step's console fills a per-locale description field in
+each (`wgf_publish.campaign`, docs/publish-module.md "The campaign").
+
+## The campaign the portals are filled from
+
+The shipped listing is the campaign package every portal field and medium comes from
+(`scripts/wgf_publish/campaign.py`); a portal adapter never invents campaign content.
+`listing-validation` runs its media check against each platform's publication profile too
+(`platforms.<pid>.media.<code>.<n>` checks): every screenshot and the trailer must trace to
+the capture record of the verified build (the screenshot's `source`, the recorded trailer,
+their sha256; the listing's commit, `measurement_class: automation-bot`, `capture.kind:
+browser`) - else `no-provenance`, fix `recapture`; an asset-pipeline placeholder is
+`placeholder`; the publication profile's required media, `formats`, `max_count`, intent
+`accept` and `multiple`, and per-locale media are judged, and what it leaves unstated is
+UNKNOWN. Store-listing 1.2.0 adds an optional `locale` to a file record, for a file that is
+one locale's own; without it a file serves every locale. The platform profile's `video`
+block takes an `orientation` list. The submit step runs the full check again before any
+upload, with the shipped build's commit.
 
 ## Platform requirements are data, and unknown is unknown
 

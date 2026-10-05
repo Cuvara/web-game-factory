@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/platform-publication.schema.json",
   "title": "Platform Publication",
-  "description": "The status of one release on one platform. Publication is not atomic — Yandex can reject what CrazyGames approved — so each (release × platform) pair carries its own state, and the release computes its quorum from these.\n\nThe rejection path is the important one. A rejection MUST emit a compliance finding that versions the platform profile, either as a new assertion or an entry in review.common_rejections. A rejection that only sets a status field teaches the factory nothing, and the next title hits the same wall. This is the highest-return feedback loop in the system.\n\nSince 1.1.0 the record also carries what the Factory's own publication steps established: a `readiness` (READY, BLOCKED, HUMAN_REQUIRED, UNKNOWN) computed at release:validating from the publication guards, an `outcome` of the last publication attempt at release:submitting, the `submission` method and its idempotency key and portal draft id, every piece of evidence (hashed, redacted), and a `measurement_class` saying who observed the portal state. `state` is set only from an observed portal state, never from the success of a click; a state the step could not observe stays where it was and the outcome says `UNKNOWN`. Every 1.1.0 field is optional, so a 1.0.0 record written by hand still validates.",
+  "description": "The status of one release on one platform. Publication is not atomic — Yandex can reject what CrazyGames approved — so each (release × platform) pair carries its own state, and the release computes its quorum from these.\n\nThe rejection path is the important one. A rejection MUST emit a compliance finding that versions the platform profile, either as a new assertion or an entry in review.common_rejections. A rejection that only sets a status field teaches the factory nothing, and the next title hits the same wall. This is the highest-return feedback loop in the system.\n\nSince 1.1.0 the record also carries what the Factory's own publication steps established: a `readiness` (READY, BLOCKED, HUMAN_REQUIRED, UNKNOWN) computed at release:validating from the publication guards, an `outcome` of the last publication attempt at release:submitting, the `submission` method and its idempotency key and portal draft id, every piece of evidence (hashed, redacted), and a `measurement_class` saying who observed the portal state. `state` is set only from an observed portal state, never from the success of a click; a state the step could not observe stays where it was and the outcome says `UNKNOWN`. Every 1.1.0 field is optional, so a 1.0.0 record written by hand still validates.\n\n1.2.0 (additive, docs/portal-publishing-architecture.md): the portal's own game id (`submission.portal_game_id`), the stop reasons of the profile-driven publisher (`legal`, `declaration`, `ai-text-policy`, `duplicate-candidate`, `review-pending`, `drift-irreversible`, `anti-bot`), and `automation-console-adaptive` for a record any bounded adaptive action contributed to.\n\n1.3.0 (additive): `submission.campaign_hash`, the hash of the campaign (store-listing rendition texts and files) the platform was filled from.",
 
   "x-wgf": {
     "id": "platform-publication",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.3.0",
     "producer": "release:validating",
     "updated_by": ["release:submitting"],
     "consumers": ["release:approved", "release:submitting", "release:partially-live", "title:live"],
@@ -86,6 +86,7 @@
           "description": "Since 1.1.0. Deterministic for (run, release manifest hash, platform). Written into the portal draft's name or note, and looked up before any upload, so a crash or retry finds the draft it already made."
         },
         "portal_draft_id": { "type": ["string", "null"], "description": "Since 1.1.0. The draft, build or game id the portal assigned, read from the console or API after the upload; recorded before any submit." },
+        "portal_game_id": { "type": ["string", "null"], "description": "Since 1.2.0. The portal's id for the game itself (not this draft or build), read back after find_game resolved it or create_game made it. Later releases are new versions of this game, never new games; until the lifecycle bridge carries it to workspace/titles/<title>/portals.json, this record holds it." },
         "dry_run": { "type": "boolean", "description": "Since 1.1.0. True when the publish step stopped before the irreversible submit by policy (factory.publish.mode)." },
         "attempts": { "type": "integer", "minimum": 0, "description": "Since 1.1.0. Publication attempts made in this run for this platform." },
         "authorized_by": {
@@ -101,6 +102,7 @@
         "submitted_at": { "type": "string", "format": "date-time" },
         "submitted_by": { "type": "string" },
         "package_filename": { "type": "string" },
+        "campaign_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash", "description": "Since 1.3.0. The content hash of the campaign this platform was filled from (wgf_publish.campaign: the platform's rendition texts and the bytes of every listing file, with the store-listing G6 pinned) - the same value the portal registry records as campaign_hash." },
         "checklist": {
           "type": "array",
           "items": {
@@ -120,8 +122,8 @@
     },
 
     "outcome": {
-      "enum": ["UNKNOWN", "READY", "BLOCKED", "HUMAN_REQUIRED", "SUBMITTING", "SUBMITTED", "VERIFIED", "RETRYABLE_FAILURE", "PLATFORM_ERROR", "AUTH_REQUIRED", "CAPTCHA_REQUIRED", "INVALID_BUILD", "INVALID_METADATA", "REJECTED", "DRY_RUN"],
-      "description": "Since 1.1.0. The last publication attempt's result in the one vocabulary every adapter maps its platform's failures into. SUBMITTED means the portal was observed holding the submission; VERIFIED that its state was read back after; UNKNOWN that the portal state could not be observed - never a success."
+      "enum": ["UNKNOWN", "READY", "BLOCKED", "HUMAN_REQUIRED", "SUBMITTING", "SUBMITTED", "VERIFIED", "RETRYABLE_FAILURE", "PLATFORM_ERROR", "AUTH_REQUIRED", "CAPTCHA_REQUIRED", "INVALID_BUILD", "INVALID_METADATA", "REJECTED", "DRY_RUN", "UPLOAD_COMPLETE", "IDS_ISSUED"],
+      "description": "Since 1.1.0. Since 1.2.0 also UPLOAD_COMPLETE (the build is on the portal's draft and saved; a person decides whether to request review) and IDS_ISSUED (a create-before-build portal issued the ids the build must carry). The last publication attempt's result in the one vocabulary every adapter maps its platform's failures into. SUBMITTED means the portal was observed holding the submission; VERIFIED that its state was read back after; UNKNOWN that the portal state could not be observed - never a success."
     },
 
     "human_required": {
@@ -129,9 +131,26 @@
       "description": "Since 1.1.0. Present when a person must act before publication continues, and why. The step stopped here; it never worked around it.",
       "required": ["reason", "detail"],
       "properties": {
-        "reason": { "enum": ["login", "captcha", "two-factor", "security-challenge", "terms-unconfirmed", "no-automated-method", "credential-missing", "ambiguous-portal-state", "platform-rejection", "manual-submission"] },
+        "reason": { "enum": ["login", "captcha", "two-factor", "security-challenge", "terms-unconfirmed", "no-automated-method", "credential-missing", "ambiguous-portal-state", "platform-rejection", "manual-submission", "legal", "declaration", "ai-text-policy", "duplicate-candidate", "review-pending", "drift-irreversible", "anti-bot", "submit-confirmation"], "description": "Since 1.2.0 also: submit-confirmation (the upload is complete; a person decides submit, hold or abandon), legal (terms, tax, payment, identity, commercial terms), declaration (ownership, licensing, AI use, age rating - a person makes it), ai-text-policy (the portal forbids generated copy, or its policy is unknown and the copy is generated), duplicate-candidate (find_game matched a game this title never recorded), review-pending (the game is under review: nothing uploads over it, nothing cancels it), drift-irreversible (an irreversible intent's profile locator did not match: never resolved adaptively), anti-bot (an anti-bot interstitial)." },
         "detail": { "type": "string" },
         "resume_with": { "type": "string", "description": "What a person does next, e.g. `wgf decide <run> done` after submitting by hand." }
+      },
+      "additionalProperties": false
+    },
+
+    "waiting": {
+      "type": "object",
+      "description": "Since 1.2.0. The waiting state the last visit ended in, when a person must act. Never a failure.",
+      "required": ["state", "portal", "step", "reason", "action", "resume"],
+      "properties": {
+        "state": { "enum": ["WAITING_FOR_HUMAN_LOGIN", "WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION", "WAITING_FOR_HUMAN"] },
+        "portal": { "type": "string" },
+        "step": { "type": "string", "description": "The publish phase the visit was in." },
+        "url": { "type": "string", "description": "Origin and path only, when safe to record (never a login page's query)." },
+        "reason": { "type": "string" },
+        "action": { "type": "string", "description": "What the person does." },
+        "resume": { "type": "string", "description": "The condition or command that continues." },
+        "at": { "type": "string", "format": "date-time" }
       },
       "additionalProperties": false
     },
@@ -171,8 +190,8 @@
     },
 
     "measurement_class": {
-      "enum": ["automation-check", "automation-console", "automation-api", "human"],
-      "description": "Since 1.1.0. Who observed what this record says: the validating step's deterministic checks, a browser run of the console, an API, or a person. A portal's moderation verdict is never an automation observation."
+      "enum": ["automation-check", "automation-console", "automation-console-adaptive", "automation-api", "human"],
+      "description": "Since 1.1.0. Who observed what this record says: the validating step's deterministic checks, a browser run of the console, an API, or a person. A portal's moderation verdict is never an automation observation. Since 1.2.0, automation-console-adaptive: a browser run of the console in which at least one action used a locator the bounded adaptive mode resolved (the actions file says which)."
     },
 
     "workflow": { "$ref": "./shared/evidence.schema.json#/$defs/workflowRef" },

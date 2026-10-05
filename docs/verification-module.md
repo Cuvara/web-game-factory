@@ -88,19 +88,75 @@ are the only recorded "not the game" causes.
 | Category | Checks | Evidence from |
 |---|---|---|
 | source | `checkout`, `commit`, `clean-tree`, `upstream-commits` | git; prototype-report / sdk-report `build_ref` — `upstream-commits` applies the commit lineage rule (docs/core-contracts.md §5): the sdk-report's commit is HEAD, the prototype-report's is the one sdk built on (`base_commit_sha`), and `git log base..HEAD` holds only this run's `Wgf-Sdk-Key` commits. Anything else **blocks** with `commit-lineage-mismatch` (required whenever there is a report to compare); without an sdk-report the prototype-report's commit must be HEAD |
-| build | `install`, `build`, `bundle`, `asset-resolution` | lockfile install; `build.command` from game.config.yaml; the output directory, digested; every local URL the built HTML/CSS/JS names, percent-decoded; a `url()` inside a `data:` URL is the inline content's, not a reference |
+| build | `install`, `build`, `bundle`, `asset-resolution`, `platform:<p>` | lockfile install; `build.command` from game.config.yaml (with several targets: once per platform, below); the output directory, digested; every local URL the built HTML/CSS/JS names, percent-decoded; a `url()` inside a `data:` URL is the inline content's, not a reference; each platform's own bundle (below) |
 | code | `typecheck`, `lint`, `unit`, `integration` | the repository's scripts — the names the template's CI gives qa-report suites |
 | gameplay | `boot`, `loading`, `start`, `input`, `core-loop`, `progression`, `game-over`, `restart`, `pause-resume`, `responsive` | a browser against the built bundle — see below |
 | gameplay | `quality.report-commit`, `quality.<group>:<check>` | the playability-report: what the bot measured about the design's content, difficulty, progression and depth, carried not re-measured — see below |
-| policy | `runtime-facts`, `assertions:<platform>`, `asset-licenses` | `test:verify`; the template's `collect-facts.mjs` / `evaluate-assertions.mjs` against the **pinned** profile; the asset manifest |
+| policy | `runtime-facts`, `assertions:<platform>`, `assertion-warnings:<platform>`, `asset-licenses` | `test:verify`; the template's `collect-facts.mjs` / `evaluate-assertions.mjs` against the **pinned** profile (a breached `blocking` assertion FAILs `assertions:<platform>`; breached `warning`-severity ones go on the optional `assertion-warnings:<platform>`, so they never weaken the release's evidence); the asset manifest |
 | platform | `profile:<p>`, `sdk-init:<p>`, `hooks:<p>`, `requirements:<p>`, `fallback` | vendored `config/platforms/`; sdk-report per platform and feature (`BLOCKED` when it names another commit; `PASS_MOCK` unless observed live); declared ad kinds; shipped locales; a boot with no portal SDK present |
 | assets | `manifest`, `missing`, `formats`, `paths`, `runtime-manifest`, `loading` | asset-manifest vs files named after each item id under `public/`, `src/assets/`, `assets/` (source code under `src/assets/` is the bundler's input, not an asset); extensions per asset type; asset paths in `src/`; `public/assets/assets.json` against the repository with the assets module's validator (broken references FAIL; a stale hash, unlisted/unused file or large texture is a WARNING; absent is a WARNING) ([assets-module.md](assets-module.md#validation)); failed requests while playing |
 
 A check that depends on another (nothing is played until it builds) is `BLOCKED` with a
 `check_ref` to the one it waited for, rather than a second report of the same failure.
 
-Checks about an `optional` platform are not required: they decide that platform's readiness
-without blocking the release.
+With one target platform, checks about it follow its role (`required`, the norm). With more
+than one, **every** platform's checks are required, whatever its role: each gets a package of
+its own, so each is shippable or the verdict fails - an `optional` platform that is not ready
+fails verification like a `required` one (until 2.8.0 it was reported `not-ready` without
+failing the verdict, because one bundle could serve only one platform anyway).
+
+### One bundle per platform
+
+On the pinned template contract (1) `pnpm build` makes one bundle booting one adapter
+(`template_contract.build_target`). With more than one target, `build.build` is one build
+per platform (`wgf_verification/platform_builds.py`):
+
+    build/platforms/<id>/game.config.json   game.config.yaml with platforms: [<that entry>,
+                                            role: required], build.output: the dist below -
+                                            canonical JSON, which the template's YAML parser reads
+    build/platforms/<id>/dist/              the build's output, copied out of build.output
+    build/platforms/<id>/build.json         platform, profile, commit, dist_digest
+    build/platforms/index.json              every platform built, in platforms[] order
+
+Each build runs the repository's build command with `WGF_GAME_CONFIG` naming that config -
+the pinned template's own override: `vite.config.ts` builds against it, so the bundle boots
+that platform's adapter and carries only its head script (CrazyGames, Y8) and IDs (Y8), and
+`scripts/_shared.mjs` `readGameConfig` makes `collect-facts`, `release:package` and
+`release:manifest` read the same config. The build target is built last, so `dist/` ends
+holding its bundle - the one the browser checks play. Everything is under the template's
+git-ignored `/build/`: nothing is committed, the tree stays clean. N targets cost N builds,
+not N+1.
+
+Per platform, then:
+
+- `build.platform:<id>` - its bundle exists, has `index.html`, fits its profile's
+  `max_bundle_mb`, and is not byte-identical to another platform's (that would mean the
+  build ignored `WGF_GAME_CONFIG` and boots one adapter everywhere);
+- `platform.build-target:<id>` - PASS when its own bundle was built for it alone;
+- `platform.requirements:<id>` - locales read from its own bundle;
+- `policy.assertions:<id>` - `collect-facts` and `evaluate-assertions` run with its
+  `WGF_GAME_CONFIG`, so `package.size_mb`, `package.locales` and the screenshots count are
+  measured on its bundle. A breached warning-severity assertion is reported on the optional
+  `policy.assertion-warnings:<id>`, not here: with every target required, a WARNING here
+  would be UNVERIFIED evidence and refuse the release, though the profile says the breach
+  does not stop one (`yandex_screenshots` counts store screenshots, which do not exist until
+  `store-listing`; `listing-validation` judges them). The **runtime** facts (`test:verify`: https, loading, fps) are
+  measured once, in a local browser against the build target's bundle - the same game code
+  with another adapter, and no portal SDK loads there in any case.
+
+The verification-report pins each bundle in `build_artifact.platforms[]` (schema 1.2.0:
+path, digest, file count, bytes, `built_by`, the config and its sha256); the release packages
+exactly those bytes ([release-module.md](release-module.md#one-package-per-target-platform)).
+A template on contract 2 (`package.json` `wgf.template.contract: 2` and a `build:platforms`
+script) builds its platforms itself into the same layout: verify runs the ordinary build
+(for the browser checks), then `build:platforms` once, and pins what `index.json` lists,
+refusing a bundle whose digest is not the one recorded. A single-platform title on contract
+1 is built once, exactly as before: no `build/platforms/`, no `build.platform:` check.
+
+What the profiles cannot tell verify: which SDK script a portal requires in `index.html`.
+Their `<id>_sdk_present` assertions read `package.platform_sdk`, which the template's
+`collect-facts` echoes from `--platform`; the adapter a bundle boots is established by how it
+was built (`platform.build-target`), not by those assertions.
 
 The game's `test:e2e` runs at `e2e_workers` Playwright workers (the step's `with:`), else at the
 machine's `factory.develop.smoke_workers`, the same suite develop's smoke check runs; unset
@@ -215,13 +271,12 @@ no package.json there is a single `BLOCKED` `source.checkout` check — reported
 While verify runs it holds the checkout's lock: another run in the same checkout is
 `BLOCKED`, naming it.
 
-`platform.build-target:<id>` says whether the bundle is that platform's build. On the pinned
-template contract one bundle boots one adapter - the first `required` platform, else the
-first (`template_contract.build_target`) - so it is PASS for that platform and FAIL for every
-other: a package of the same bytes would load the target's SDK on the other portal, and the
-profile assertions cannot see it (the template's `platform_sdk` fact echoes the platform it
-is asked about). A failing optional platform is `not-ready` without failing the verdict; a
-second `required` platform fails it.
+`platform.build-target:<id>` says whether the bundle a platform would ship is that
+platform's build. With one target it is (one bundle boots the first `required` platform,
+else the first: `template_contract.build_target`). With several, each platform's own bundle
+is (above); a platform whose own build failed is BLOCKED by `build.platform:<id>`. The
+profile assertions cannot say it: the template's `platform_sdk` fact echoes the platform it
+is asked about.
 
 `policy.device-performance` carries the runtime facts' fps and time to interactive with
 `evidence_status: PASS_MOCK`: they are measured in CPU-throttled desktop Chromium, a proxy for
@@ -272,6 +327,13 @@ artifacts. A scripted runner plays every command, so the suite is offline and ne
 package manager or browser. It covers each outcome, each check category, both gameplay
 drivers, the verify → develop → verify → release loop through the real engine, and — with
 `WGF_AJV=1` — validates the emitted reports with ajv.
+
+`PlatformAndPolicy` holds the per-platform builds: two targets built against their own
+configs (the build target last, `dist/` its bundle), the facts collected through each
+`WGF_GAME_CONFIG`, distinct pinned digests and an idempotent second run; a build that ignores
+the config (byte-identical bundles) and one platform's failed build fail the verdict; every
+targeted platform is required; a single platform is built once with nothing under
+`build/platforms/`; a contract-2 repository's `build:platforms`.
 
 `scripts/tests/test_core_verify.py` is the VERIFY category of the Core v1 freeze: valid game
 evidence passes; missing evidence, a failed browser test, invalid SDK evidence and evidence

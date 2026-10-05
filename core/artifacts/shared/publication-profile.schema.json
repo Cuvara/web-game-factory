@@ -2,12 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/shared/publication-profile.schema.json",
   "title": "Publication Profile",
-  "description": "Validates files in core/reference/publication/. How a release reaches one portal: the submission method the portal supports, the console a deterministic browser run drives when it supports no API, what only a person can do there, and whether automated use of the console is permitted by the portal's terms.\n\nDATA, not integration code: the publish step's adapters read it, and the pipeline never names a portal. Kept apart from core/reference/platforms/<id>.yaml on purpose - a platform profile is pinned by content hash by every game built against it and changes only with the portal's compliance rules; this changes with the portal's console and is pinned by a publication record, never by a game.\n\nNothing here is a credential. Credentials are named (an environment variable the installation sets) and never written.",
+  "description": "Validates files in core/reference/publication/. How a release reaches one portal: the submission method the portal supports, the console a deterministic browser run drives when it supports no API, what only a person can do there, and whether automated use of the console is permitted by the portal's terms.\n\nDATA, not integration code: the publish step's adapters read it, and the pipeline never names a portal. Kept apart from core/reference/platforms/<id>.yaml on purpose - a platform profile is pinned by content hash by every game built against it and changes only with the portal's compliance rules; this changes with the portal's console and is pinned by a publication record, never by a game.\n\n2.0.0 (docs/portal-publishing-architecture.md, Part 2.4) makes the console flow data: an ordered `flow` of named intents, each with a phase and a class (reversible | irreversible | human), the `session` and `identity` locators the executor reads before acting, the `status` words including the `pending_states` it never uploads over, the `fields` the console asks for, the portal's `content_policy` on generated text and assets, and the bounds of the agent's drift resolution (`adaptive`, `adaptive_bounds`, `dismissable`, `deny`). Breaking against 1.x: `verification` is now `status`, and `console.upload_max_mb` is now `constraints.upload_max_mb`. scripts/check-integrity.py adds what a schema cannot say: no cancel, withdraw or delete intent in a flow; every irreversible intent carries a profile ladder; every intent has a class.\n\n2.1.0 (additive): a person logs in, live, in the browser window the executor opens (`credential.kind: human-login`); no session is captured, loaded or saved, so `storage-state` is deprecated and check-integrity.py refuses it. Added: `session.authenticated_url`, `identity.page_id`, `identity.issued_on_create` (the ids a create-before-build portal issues) and `identity.build_config` (where the build carries them), `status.error`, and the `multiple` flag of an upload intent.\n\nNothing here is a credential. A token is named (an environment variable the installation sets) and never written; a console login is a person's, in the open window.",
 
   "x-wgf": {
     "id": "publication-profile",
     "kind": "reference",
     "format": "yaml",
+    "version": "2.1.0",
     "instance_path": "core/reference/publication/*.yaml",
     "consumers": ["release:validating", "release:submitting"]
   },
@@ -23,17 +24,57 @@
     "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
     "status": {
       "enum": ["verified", "unverified", "deprecated"],
-      "description": "unverified: the console flow below has not been exercised against the live portal by a person; the publish step then stops HUMAN_REQUIRED before contacting it."
+      "description": "unverified: the console flow below has not been exercised against the live portal by a person; the publish step then stops HUMAN_REQUIRED before contacting it. A console profile goes verified only after a dry run reached save_draft and a person checked the draft."
     },
     "docs": { "type": ["string", "null"] },
+    "sources": {
+      "type": "array",
+      "description": "Since 2.0.0. The public pages the facts in this file were read from, and when.",
+      "items": {
+        "type": "object",
+        "required": ["url", "read"],
+        "properties": {
+          "url": { "type": "string" },
+          "read": { "type": "string", "format": "date" },
+          "note": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "prerequisites": {
+      "type": "array",
+      "description": "What a person must have done or obtained before the portal will take this release, beyond the account and session `submission` describes: a written consent, a host or domain of their own, a declaration. Each is a person's act, never performed or assumed by the Factory. Readiness reads them (wgflib.publication.human_reason): an applicable prerequisite a person has not recorded in factory.publish.platforms.<id>.prerequisites_confirmed makes the platform HUMAN_REQUIRED with the prerequisite's reason. `when` limits one to a release whose game.config.yaml platform entry states those values (an omitted key is the profile default, which never matches); when readiness is not given the entry, every prerequisite applies.",
+      "items": {
+        "type": "object",
+        "required": ["id", "reason", "note", "source"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "reason": { "enum": ["legal", "declaration"], "description": "The human_required reason it stops with: legal (a contract, consent, account or commercial term), declaration (a statement a person makes)." },
+          "when": {
+            "type": "object",
+            "description": "Applies only when the platform entry has these values (game.config.yaml platforms[]).",
+            "properties": { "hosting": { "type": "string" } },
+            "additionalProperties": false
+          },
+          "note": { "type": "string", "minLength": 1, "description": "What the person does or obtains." },
+          "source": { "type": "string", "description": "The public page that states it." }
+        },
+        "additionalProperties": false
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "description": "Since 2.0.0. What a person must log in to learn before this profile can go verified: every console fact the file does not state, named. A fact absent from the file and absent from this list is a defect of the profile.",
+      "items": { "type": "string", "minLength": 1 }
+    },
 
     "submission": {
       "type": "object",
-      "required": ["method", "automation_terms"],
+      "required": ["method", "automation_terms", "content_policy"],
       "properties": {
         "method": {
           "enum": ["api", "cli", "console", "email", "manual"],
-          "description": "The portal's supported way in, preferred in this order: an official API or CLI when the portal publishes one; the developer console by a deterministic browser run when it does not; email or manual when neither exists. Never an undocumented API."
+          "description": "The portal's supported way in, preferred in this order: an official API or CLI when the portal publishes one; the developer console by a browser run of this profile's flow when it does not; email or manual when neither exists. Never an undocumented API."
         },
         "api": {
           "type": "object",
@@ -46,12 +87,11 @@
         },
         "console": {
           "type": "object",
-          "description": "method console only: the console a browser run drives. Origins are the only ones the browser may reach; everything else is refused at the browser.",
+          "description": "method console only: the console a browser run drives. Origins are the only ones the browser may reach; everything else is refused at the browser. (1.x carried upload_max_mb here; since 2.0.0 it is constraints.upload_max_mb.)",
           "required": ["url", "allowed_origins"],
           "properties": {
             "url": { "type": "string" },
             "allowed_origins": { "type": "array", "minItems": 1, "items": { "type": "string" } },
-            "upload_max_mb": { "type": ["number", "null"] },
             "upload_timeout_s": { "type": "integer", "minimum": 30 }
           },
           "additionalProperties": false
@@ -73,46 +113,344 @@
         },
         "credential": {
           "type": "object",
-          "description": "The credential the adapter needs and where the installation keeps it - by variable NAME only. A storage state is a Playwright storageState JSON a person captured by logging in once; the step never types a password.",
-          "required": ["kind", "env"],
+          "description": "How the adapter is authenticated. human-login (since 2.1.0; every console): a person logs in, live, in the headed browser window the executor opens, and handles any CAPTCHA or second factor there; the Factory never asks for, types or stores a password or one-time code, and never saves the session - it ends with the window. token: a tool's credential, by variable NAME only. storage-state: deprecated in 2.1.0 - a captured session is never loaded, and check-integrity.py refuses it in a profile.",
+          "required": ["kind"],
           "properties": {
-            "kind": { "enum": ["storage-state", "token", "none"] },
+            "kind": { "enum": ["human-login", "token", "none", "storage-state"] },
             "env": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
-            "capture": { "type": "string", "description": "How a person captures or rotates it." }
+            "capture": { "type": "string", "description": "How a person captures or rotates a token." }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": { "properties": { "kind": { "enum": ["token", "storage-state"] } }, "required": ["kind"] },
+              "then": { "required": ["env"] }
+            },
+            {
+              "if": { "properties": { "kind": { "const": "human-login" } }, "required": ["kind"] },
+              "then": { "not": { "anyOf": [{ "required": ["env"] }, { "required": ["capture"] }] } }
+            }
+          ]
         },
         "human_required": {
           "type": "array",
-          "description": "What this portal makes a person do, whatever the method: login and its challenges, accepting terms, payout setup, a console switch the automation does not touch.",
-          "items": { "enum": ["login", "captcha", "two-factor", "terms", "payout-setup", "review", "console-switch", "email"] }
+          "description": "What this portal makes a person do, whatever the method: login and its challenges, accepting terms, payout setup, a console switch the automation does not touch, the declarations (ownership, licensing, AI use, data collection) and the age rating.",
+          "items": { "enum": ["login", "captcha", "two-factor", "anti-bot", "terms", "payout-setup", "review", "console-switch", "email", "declaration", "age-rating", "identity", "contract"] }
         },
+
+        "content_policy": {
+          "type": "object",
+          "description": "Since 2.0.0. What the portal says about generated content in the listing and the game, as a person established it. `unknown` is the honest default: a release whose listing copy is generated then stops for a person (human_required reason ai-text-policy) until the policy is recorded. `disclose` fills the portal's disclosure field only from a person's recorded statement.",
+          "required": ["ai_generated_text", "ai_generated_assets"],
+          "properties": {
+            "ai_generated_text": { "$ref": "#/$defs/aiPolicy" },
+            "ai_generated_assets": { "$ref": "#/$defs/aiPolicy" },
+            "source": { "type": "string", "description": "The document the policy was read from." },
+            "note": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+
+        "adaptive": {
+          "enum": ["allowed", "forbidden"],
+          "description": "Since 2.0.0. Whether the agent may resolve drift on this portal's reversible intents (the bounded adaptive mode, docs/portal-publishing-architecture.md Part 2.6). It runs only when this says allowed AND the installation sets factory.publish.adaptive. Irreversible and human intents never adapt, whatever this says."
+        },
+        "adaptive_bounds": {
+          "type": "object",
+          "description": "Since 2.0.0. The drift-resolution budget. Configurable down from the design's ceiling, never up: at most 3 resolutions per intent and 10 per visit.",
+          "properties": {
+            "max_per_intent": { "type": "integer", "minimum": 0, "maximum": 3 },
+            "max_per_visit": { "type": "integer", "minimum": 0, "maximum": 10 }
+          },
+          "additionalProperties": false
+        },
+        "dismissable": {
+          "type": "array",
+          "description": "Since 2.0.0. Accessible names of non-destructive overlays (cookie banner, tour popover) the agent may propose to dismiss when one blocks a reversible intent: \"Close\", \"Got it\", \"Skip\", \"Not now\", and their translations in the console's languages. A name here may not match the deny vocabulary (check-integrity.py).",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "deny": {
+          "type": "array",
+          "description": "Since 2.0.0. Words the console uses, in its own languages, for actions no adaptive proposal may ever resolve to. Added to the base vocabulary every profile shares (scripts/wgflib/publication.py DENY_VOCABULARY: submit, publish, release, review, send, delete, remove, cancel, withdraw, archive, accept, agree, confirm, sign, pay, price, tax, rating, I own, licence, license) - typically their translations.",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+
+        "session": {
+          "type": "object",
+          "description": "Since 2.0.0. How the executor tells, on the console url, whether the person is logged in and what asks them to act. Not logged in, or a challenge before or during the flow, puts the visit in WAITING_FOR_HUMAN_LOGIN: the person acts in the open window and the executor continues when the authenticated console is detected. Whatever the markers say, a page off the allowed origins or showing a password, CAPTCHA or one-time-code field is not logged in. No screenshot or snapshot is ever taken on a login, CAPTCHA, second-factor or anti-bot page.",
+          "properties": {
+            "authenticated_url": { "type": "string", "minLength": 1, "description": "Since 2.1.0. A regular expression the console's url (origin + path) matches once the person is logged in." },
+            "logged_in": { "$ref": "#/$defs/ladder" },
+            "login": { "$ref": "#/$defs/ladder" },
+            "captcha": { "$ref": "#/$defs/ladder" },
+            "two_factor": { "$ref": "#/$defs/ladder" },
+            "anti_bot": { "$ref": "#/$defs/ladder" }
+          },
+          "additionalProperties": false
+        },
+
+        "identity": {
+          "type": "object",
+          "description": "Since 2.0.0. How find_game looks for the game before anything is created, in the order of `portal_id_from`. A recorded id that resolves is used; any unrecorded match - a title match included - stops the step (duplicate-candidate). Creation happens only when every lookup ran and found nothing.",
+          "properties": {
+            "portal_id_from": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "enum": ["registry", "config:game_id", "config:app_id", "idempotency-key", "title"] }
+            },
+            "list_url": { "type": "string", "description": "The console page that lists the account's games." },
+            "game_url": { "type": "string", "description": "A game's page, with {id} for the portal game id." },
+            "row": { "$ref": "#/$defs/ladder" },
+            "row_title": { "$ref": "#/$defs/ladder" },
+            "row_id": {
+              "type": "object",
+              "description": "Where a row carries the portal game id: an attribute of the row, or the text of a locator inside it.",
+              "properties": {
+                "attr": { "type": "string" },
+                "within": { "$ref": "#/$defs/ladder" }
+              },
+              "additionalProperties": false
+            },
+            "page_id": { "$ref": "#/$defs/ladder", "description": "Since 2.1.0. On a game's own page, the element whose text is the portal's game id: read after create_game or upload_build made a new game." },
+            "issued_on_create": {
+              "type": "array",
+              "description": "Since 2.1.0. Ids the portal issues only when a game is created and the BUILD must carry (a create-before-build portal: Y8's Game ID and App ID). After create_game the executor reads each; one the build does not carry yet stops the visit IDS_ISSUED before any upload: rebuild with them, validate, decide G6 again.",
+              "items": {
+                "type": "object",
+                "required": ["key", "read"],
+                "properties": {
+                  "key": { "enum": ["external_game_id", "app_id"], "description": "external_game_id is game.config.yaml's game_id; app_id its app_id." },
+                  "read": { "$ref": "#/$defs/ladder" },
+                  "attr": { "type": "string", "description": "Read this attribute of the element instead of its text." },
+                  "note": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "build_config": {
+              "type": "object",
+              "description": "Since 2.1.0. Where each id in `issued_on_create` reaches the build, keyed by the same `key`: `platforms[].<field>` is that field of this platform's entry in the game's game.config.yaml (Y8: external_game_id -> platforms[].game_id, app_id -> platforms[].app_id). The sdk step writes the registry's ids there (a keyed sdk commit), and platform-validate's platform_ids_present refuses a build that lacks them once they are issued.",
+              "propertyNames": { "enum": ["external_game_id", "app_id"] },
+              "additionalProperties": { "type": "string", "pattern": "^platforms\\[\\]\\.[a-z][a-z0-9_]*$" }
+            },
+            "title_match": { "enum": ["exact-casefold"], "description": "Title comparison is exact after case folding; never fuzzy." },
+            "basis": { "$ref": "#/$defs/basis" }
+          },
+          "additionalProperties": false
+        },
+
+        "flow": {
+          "type": "array",
+          "description": "Since 2.0.0. The console flow, ordered: named intents the executor runs deterministically, phase by phase. A phase with no intent here is a person's (HUMAN_REQUIRED with its list). A flow never holds a cancel, withdraw or delete intent (check-integrity.py): nothing the Factory runs may cancel a pending review or replace a build under review.",
+          "items": { "$ref": "#/$defs/intent" }
+        },
+
+        "status": {
+          "type": "object",
+          "description": "Since 2.0.0 (1.x: `verification`). How the portal's own state is read back: the words its console shows, and which of them mean what. Every word in a *_states list is one of `states`.",
+          "properties": {
+            "read": { "$ref": "#/$defs/ladder" },
+            "error": { "$ref": "#/$defs/ladder", "description": "Since 2.1.0. Where the console shows an error after an action (an upload refused): visible after an action, the visit stops PLATFORM_ERROR with its text - never a drift." },
+            "states": { "type": "array", "items": { "type": "string" } },
+            "submitted_states": { "type": "array", "items": { "type": "string" }, "description": "The portal holds the submission: under review or moderation." },
+            "approved_states": { "type": "array", "items": { "type": "string" }, "description": "Moderation passed but the game is not live (Yandex's Verified with Postpone publication): neither submitted nor live." },
+            "live_states": { "type": "array", "items": { "type": "string" } },
+            "rejected_states": { "type": "array", "items": { "type": "string" } },
+            "pending_states": { "type": "array", "items": { "type": "string" }, "description": "status_gate stops on these before any upload (review-pending): never upload over, replace or cancel a pending review." }
+          },
+          "additionalProperties": false
+        },
+
         "constraints": {
           "type": "object",
-          "description": "Portal rules an adapter checks before acting.",
+          "description": "Portal rules an adapter checks before acting. null: not documented (name it in `unknowns`).",
           "properties": {
             "one_moderation_at_a_time": { "type": "boolean" },
             "postpone_publication": { "type": "boolean", "description": "The portal can hold a verified draft unpublished; the adapter sets it so publication timing stays a person's." },
             "replaces_index_html": { "type": "boolean" },
-            "archive_root_index": { "type": "boolean" }
+            "archive_root_index": { "type": "boolean" },
+            "upload_max_mb": { "type": ["number", "null"], "description": "Since 2.0.0 here (1.x: console.upload_max_mb)." },
+            "max_new_game_requests": { "type": ["integer", "null"], "minimum": 1, "description": "New-game moderation requests one account may have open." },
+            "resubmission_cooldown": { "type": ["string", "null"], "description": "The portal's documented wait after a rejection, as it states it." }
           },
           "additionalProperties": false
         },
-        "verification": {
+
+        "fields": {
           "type": "object",
-          "description": "How the portal's own state is read back after acting: the states its console shows, and which of them mean what.",
+          "description": "Since 2.0.0. What the console asks for, by listing field, with the limits listing-validation checks before G6. null: the console was not seen (name it in `unknowns`).",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+          "additionalProperties": { "$ref": "#/$defs/field" }
+        },
+
+        "restrictions": {
+          "type": "array",
+          "description": "Since 2.0.0. Known portal rules that bear on publication, each cited.",
+          "items": {
+            "type": "object",
+            "required": ["rule", "source"],
+            "properties": {
+              "rule": { "type": "string", "minLength": 1 },
+              "source": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "method": { "const": "console" } }, "required": ["method"] },
+          "then": { "required": ["console", "credential", "adaptive", "status"] }
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+    "aiPolicy": { "enum": ["allowed", "disclose", "forbidden", "unknown"] },
+
+    "basis": {
+      "enum": ["observed", "documented", "hypothesis"],
+      "description": "Where a locator or fact comes from: observed on the live console by a person, documented on a public page, or a hypothesis nobody has checked."
+    },
+
+    "locator": {
+      "type": "object",
+      "description": "One rung of a locator ladder (docs/portal-publishing-architecture.md Part 2.7), in order of preference: role (with its accessible name), label, placeholder, text (exact), a stable attribute (testid), css, xpath (only with a recorded reason). Exactly one kind per rung. Never coordinates, never image matching; `index` only inside a container the ladder already pinned.",
+      "properties": {
+        "role": { "type": "string", "pattern": "^[a-z]+$" },
+        "name": { "type": "string" },
+        "exact": { "type": "boolean" },
+        "label": { "type": "string" },
+        "placeholder": { "type": "string" },
+        "text": { "type": "string" },
+        "testid": { "type": "string" },
+        "css": { "type": "string" },
+        "xpath": { "type": "string" },
+        "index": { "type": "integer", "minimum": 0 },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "dependentRequired": { "xpath": ["reason"], "name": ["role"], "exact": ["role"] },
+      "oneOf": [
+        { "required": ["role"] },
+        { "required": ["label"] },
+        { "required": ["placeholder"] },
+        { "required": ["text"] },
+        { "required": ["testid"] },
+        { "required": ["css"] },
+        { "required": ["xpath"] }
+      ],
+      "additionalProperties": false
+    },
+
+    "ladder": {
+      "type": "array",
+      "description": "Locators for one element, tried in order; the executor uses the first that resolves to exactly one element and records which.",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/locator" }
+    },
+
+    "intent": {
+      "type": "object",
+      "description": "One named step of the console flow: what the executor does, on which phase, and how much may adapt. reversible: may be resolved by the bounded adaptive mode on drift. irreversible: a profile locator only, live mode only, once, never adaptive; drift stops for a person (drift-irreversible). human: never automated - the step stops with the intent's note and url for a person to act in their own browser.",
+      "required": ["id", "phase", "class"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z0-9][a-z0-9_-]*)*$" },
+        "phase": {
+          "enum": ["check_session", "find_game", "read_status", "create_game", "upload_build", "fill_metadata", "upload_media", "human_fields", "save_draft", "request_review", "verify"]
+        },
+        "class": { "enum": ["reversible", "irreversible", "human"] },
+        "action": { "enum": ["click", "fill", "select", "upload", "navigate", "read"], "description": "No check or tick action exists: a declaration checkbox is never ticked by the executor." },
+        "target": { "$ref": "#/$defs/ladder" },
+        "url": { "type": "string", "description": "navigate: the url path (within allowed origins). human: where a person does it." },
+        "names": {
+          "type": "array",
+          "description": "The accessible names, labels or placeholders an adaptive resolution of this intent may match, case-folded, in every language the console uses. An element named outside this list is refused, whatever the agent's argument.",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^(listing|manifest|package|identity)(\\.[A-Za-z0-9_<>-]+)*$",
+          "description": "fill, select, upload: a path into the shipped store listing, the release manifest, the package or the game identity - never free text. <locale> stands for each locale of a per_locale intent."
+        },
+        "page": { "type": "string", "minLength": 1, "description": "Since 2.1.0 (additive, the bounded adaptive mode): a regular expression the console page's url path matches while this intent runs. An adaptive proposal for the intent is refused on any other page, and an adaptive navigate must land on one. Without it, a game's own phases expect that game's page (identity.game_url) and other phases only an allowed origin." },
+        "per_locale": { "type": "boolean", "description": "Run once per locale the listing carries and the console asks for." },
+        "multiple": { "type": "boolean", "description": "Since 2.1.0. upload: every file the value names goes into the one input (screenshots); the input must accept several." },
+        "accept": { "type": ["array", "null"], "items": { "type": "string" }, "description": "Additive in 2.1.0. upload: the file types the input accepts (png, jpg, webp, mp4, webm, ...), as the console states them; checked against the campaign's files before any upload (wgf_publish.campaign.check_media). Absent or null: not stated (UNKNOWN)." },
+        "optional": { "type": "boolean", "description": "The element may be absent (a field the console shows only sometimes); absence is recorded, not a drift." },
+        "expect": {
+          "type": "object",
+          "description": "The post-condition checked after acting. A reversible intent whose post-condition fails may adapt once; an irreversible one stops.",
           "properties": {
-            "states": { "type": "array", "items": { "type": "string" } },
-            "submitted_states": { "type": "array", "items": { "type": "string" } },
-            "live_states": { "type": "array", "items": { "type": "string" } },
-            "rejected_states": { "type": "array", "items": { "type": "string" } }
+            "url_matches": { "type": "string" },
+            "value_equals": { "type": "string" },
+            "visible": { "$ref": "#/$defs/ladder" },
+            "text_contains": { "type": "string" },
+            "status_in": { "enum": ["states", "submitted_states", "approved_states", "live_states", "rejected_states", "pending_states"] }
           },
           "additionalProperties": false
         },
-        "notes": { "type": "string" }
+        "note": { "type": "string" },
+        "basis": { "$ref": "#/$defs/basis" },
+        "source": { "type": "string" }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "class": { "enum": ["reversible", "irreversible"] } }, "required": ["class"] },
+          "then": { "required": ["action"] }
+        },
+        {
+          "if": { "properties": { "class": { "const": "irreversible" } }, "required": ["class"] },
+          "then": { "required": ["target"], "not": { "required": ["names"] } }
+        },
+        {
+          "if": { "properties": { "class": { "const": "human" } }, "required": ["class"] },
+          "then": { "not": { "anyOf": [{ "required": ["action"] }, { "required": ["value"] }, { "required": ["names"] }] }, "required": ["note"] }
+        },
+        {
+          "if": { "properties": { "action": { "enum": ["click", "fill", "select", "upload"] } }, "required": ["action"] },
+          "then": { "required": ["target"] }
+        },
+        {
+          "if": { "properties": { "action": { "enum": ["fill", "select", "upload"] } }, "required": ["action"] },
+          "then": { "required": ["value"] }
+        },
+        {
+          "if": { "properties": { "action": { "enum": ["click", "navigate", "read"] } }, "required": ["action"] },
+          "then": { "not": { "required": ["value"] } }
+        },
+        {
+          "if": { "properties": { "action": { "const": "navigate" } }, "required": ["action"] },
+          "then": { "required": ["url"] }
+        }
+      ]
+    },
+
+    "field": {
+      "type": "object",
+      "properties": {
+        "required": { "type": ["boolean", "null"] },
+        "min": { "type": ["integer", "null"], "minimum": 0 },
+        "max": { "type": ["integer", "null"], "minimum": 0 },
+        "max_count": { "type": ["integer", "null"], "minimum": 0, "description": "Lists (tags, categories, screenshots): at most this many." },
+        "locales": { "enum": ["shared", "per-locale", null] },
+        "formats": { "type": ["array", "null"], "items": { "type": "string" } },
+        "size": { "type": ["string", "null"], "description": "Images and video: the stated dimensions, duration or byte limit, as the portal states them." },
+        "listing": { "type": "string", "pattern": "^(listing|manifest)(\\.[A-Za-z0-9_<>-]+)*$", "description": "Where the value comes from in the shipped listing." },
+        "human": { "type": "boolean", "description": "A person fills it (free text to moderators, a commercial choice)." },
+        "basis": { "$ref": "#/$defs/basis" },
+        "note": { "type": "string" }
       },
       "additionalProperties": false
     }
-  },
-  "additionalProperties": false
+  }
 }

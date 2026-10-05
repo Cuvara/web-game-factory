@@ -329,6 +329,16 @@ class RunState:
         ]
         return max(found, key=ArtifactRef.order) if found else None
 
+    def latest_by_id(self, artifact_type):
+        """The newest ArtifactRef of each artifact id of that type, oldest first: one per
+        artifact id (a step's per-platform outputs, say), where latest_of_type is one."""
+        found = [
+            versions[-1]
+            for versions in self.artifacts.values()
+            if versions and versions[-1].type == artifact_type
+        ]
+        return sorted(found, key=ArtifactRef.order)
+
     def next_artifact_seq(self):
         return 1 + max((ref.seq or 0 for versions in self.artifacts.values()
                         for ref in versions), default=0)

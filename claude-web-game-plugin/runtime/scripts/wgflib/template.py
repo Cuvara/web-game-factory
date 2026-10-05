@@ -14,6 +14,12 @@ working copy happens to be at".
                    3. otherwise one is cloned: from the sibling ../web-game-template when it
                       holds the commit (offline), else from the lock's URL.
     drift()      where the sibling working copy stands relative to the pin (informational).
+    platform_adapters()
+                 the platform ids whose SDK adapter the pinned commit carries, as the lock
+                 records them (`platform_adapters`). A platform without one cannot be built:
+                 the template's createPlatform() throws at boot. Planning reads this list,
+                 never a checkout; registry_adapter_ids() reads the same list from a checkout
+                 so check-integrity.py and the tests hold the lock against the pin.
     golden_ports_checkout()
                  a checkout of the lock's `golden_ports` commit: the golden runs' replay
                  fixtures, which the pinned release does not ship. Never a game's template.
@@ -32,7 +38,8 @@ from . import paths, procs
 
 __all__ = ["LOCK", "TemplateError", "TemplateDrift", "load_lock", "expected_commit",
            "checkout", "ensure_dependencies", "drift", "head_of", "golden_ports_commit",
-           "golden_ports_checkout"]
+           "golden_ports_checkout", "platform_adapters", "registry_adapter_ids",
+           "adapter_missing"]
 
 LOCK = os.path.join(paths.ROOT, "workspace", "config", "template.lock.json")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -71,6 +78,43 @@ def expected_commit(lock=None):
                                 f"not {override!r}")
         return override
     return (lock or load_lock())["commit"]
+
+
+def platform_adapters(lock=None):
+    """The platform ids the pinned template has an SDK adapter for (lock["platform_adapters"],
+    the KNOWN_PLATFORM_IDS of its adapter registry at that commit). Moving the pin moves this
+    list in the same commit. Raises TemplateError when the lock does not record it: which
+    platforms can be built is then unknown, and nothing is planned on a guess."""
+    adapters = (lock or load_lock()).get("platform_adapters")
+    if not isinstance(adapters, list) or not adapters or             not all(isinstance(a, str) and a for a in adapters):
+        raise TemplateError(f"{paths.display(LOCK)}: platform_adapters must list the platform "
+                            f"ids the pinned commit has an SDK adapter for")
+    return tuple(adapters)
+
+
+_REGISTRY_IDS = re.compile(r"KNOWN_PLATFORM_IDS\s*=\s*\[(.*?)\]", re.S)
+
+
+def registry_adapter_ids(directory):
+    """The KNOWN_PLATFORM_IDS of the adapter registry in a template checkout, in order, or
+    None when the registry or the list is absent."""
+    from .template_contract import PLATFORM_REGISTRY
+
+    path = os.path.join(directory, *PLATFORM_REGISTRY.split("/"))
+    try:
+        with open(path, encoding="utf-8") as handle:
+            found = _REGISTRY_IDS.search(handle.read())
+    except OSError:
+        return None
+    if not found:
+        return None
+    return tuple(re.findall(r"[\"']([a-z][a-z0-9-]*)[\"']", found.group(1)))
+
+
+def adapter_missing(name):
+    """Why a platform without an adapter at the pin cannot be targeted, and what a person does."""
+    return (f"{name} needs a template release carrying its SDK adapter "
+            f"(HUMAN_ACTION_REQUIRED: release and pin)")
 
 
 def golden_ports_commit(lock=None):

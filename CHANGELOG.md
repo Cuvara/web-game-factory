@@ -9,9 +9,153 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Publishing merged with the quality work.** Workflow `new-game` 13 carries both: the quality
+gate (11), store copy and listing triage (12), and the publication per platform (the submit
+step's per-platform visits, the `platform-ids` route back to `sdk` and its visit limit).
+Adapter binding 1.11.0 holds the triage surfaces (1.10.0 on main) and the publisher surfaces
+(1.10.0 on the publishing branch). release-manifest 1.6.0 adds `packages[].bundle_hash` on
+top of 1.5.0; verification-report 1.2.0 adds `build_artifact.platforms` on top of 1.1.1. The
+quality floor composes with submit's re-entries: a person's `submit` after an upload, the
+next platform or `--track` runs while nothing it rests on changed, and after a
+create-before-build portal's `platform-ids` (the run ends naming `sdk`: `wgf sdk --run <id>
+--force`, `wgf new-game --run <id>`, `wgf publish --run <id>`) submit is refused until every
+check after sdk has passed the new build (`SubmitReentry` in
+scripts/tests/test_quality_inheritance.py). A development-class run never reaches a live
+submit visit, whichever visit it is.
+
+**The submit step acts per platform, behind G6's integrity, with a person's submit**
+([docs/publish-module.md](docs/publish-module.md)). Every packaged platform is handled on
+its own (`StepInputs.every`, `RunState.latest_by_id`): one `platform-publication-<platform>`
+each, and a wait, a failure or a pending review on one never writes another's record. Before
+any upload, G6 must pin by content hash the release-manifest, the store listing and the
+listing-validation-report the step holds (else BLOCKED `g6-stale`), the package must be the
+bundle verify built for that platform (`build-mismatch`, `wrong-platform`), and the record
+must be for this manifest (`stale-validation`). The portal registry is read before the
+adapter (`job.known_ids`, `registry_status`, `identity`, `allow_create`) and written after
+it, a status only from the portal's own text. `UPLOAD_COMPLETE` waits for a person:
+`submit` (review requested once, in a later visit), `hold`, `abandon`, or `done` (the person
+requested review by hand). **Create-before-build portals**: a profile's
+`identity.issued_on_create` ids are read after create; the visit stops `IDS_ISSUED`
+(registry `DRAFT_CREATED`), routes `platform-ids` to `sdk`, which writes them into
+game.config.yaml through `identity.build_config`; the build is made, verified, released and
+authorized (G5, G6) again; platform-validate's new guard `platform_ids_present` refuses a
+build that lacks them. `wgf publish --platform <id>` acts on those platforms only and
+`--track` reads every known game's status without changing anything
+(`WGF_PUBLISH_PLATFORMS`, `WGF_PUBLISH_TRACK`). The login wait becomes the record's
+`waiting` block from the executor's last login handoff. **Publication profile 2.1.0**
+(additive) gains `identity.build_config`, keyed by the same `key` as
+`issued_on_create` (Y8: `{external_game_id: "platforms[].game_id", app_id:
+"platforms[].app_id"}`). To bring a create-before-build profile forward: write each issued
+id as `{key, read}` and add `build_config`; a bare string (`game_id`) is still read as the
+same key. Nothing else needs to change: a run without issued ids, or on one platform, behaves
+as before.
+
+**The console executor runs the profile's flow, and a person logs in live** (portal
+publishing workstream 3, [docs/publish-module.md](docs/publish-module.md)). The executor is
+a generic intent runner over the publication profile's `submission.flow`: session,
+find_game, status_gate, create_game, upload_build, fill_metadata, upload_media,
+human_fields, save_draft, request_review, verify. It uses profile locator ladders only,
+checks a post-condition after every action, and stops with a `drift` result when a ladder
+or a post-condition fails. A person logs in, live, in a headed, ephemeral browser window;
+the visit waits `WAITING_FOR_HUMAN_LOGIN`, reports it as step progress and continues in
+the same window. A login timeout or a closed window is `AUTH_REQUIRED`, never a failure. A
+live visit ends `UPLOAD_COMPLETE`. The review request runs only in a later visit whose job
+carries `submit_confirmed`. Every action and waiting period is a line of `actions.jsonl`.
+The captured session is gone: `wgf-publish.py capture`, the storage-state copy and
+`WGF_PUBLISH_<PLATFORM>_STORAGE_STATE`. The adapter selector maps and
+`ConsoleAdapter.listing_fields` of the entry below are replaced by the profile's flow.
+
+**Publication profile 2.1.0** (additive): credential kind `human-login` (`storage-state` is
+deprecated and refused by `check-integrity.py`), `session.authenticated_url`,
+`identity.page_id` and `identity.issued_on_create`, `status.error`, and an upload intent's
+`multiple`. To bring a profile forward: set `credential: {kind: human-login}`, drop `env`
+and `capture`, and bump its version. Delete any `WGF_PUBLISH_*_STORAGE_STATE` variables and
+the session files they named.
+
+**GameDistribution and GamePix as modeled targets** (facts read 2026-10-04 from public pages
+only; [docs/platform-targets-2026-10.md](docs/platform-targets-2026-10.md)).
+GameDistribution's publication profile 2.1.0 records the documented flow (account, Game ID
+from the panel before the build, upload, pre-roll viewed from the upload view, a publication
+request button, review), the listing fields of guidelines section 5, the developer terms'
+restrictions and its review timelines, which disagree across four pages. A domain is not
+required for a developer account; self-hosting needs written consent (real multiplayer only)
+and one's own HTTPS host, modelled as the profile's first `prerequisites` entry. Publication
+profiles gain an optional top-level `prerequisites` (no schema version bump: additive):
+readiness reports an applicable one HUMAN_REQUIRED (`legal` | `declaration`) until a person
+records it in `factory.publish.platforms.<id>.prerequisites_confirmed`. GamePix gains
+`core/reference/platforms/gamepix.yaml` 1.0.0 and `core/reference/publication/gamepix.yaml`
+2.0.0 (content policy `disclose` from its developer agreement 4.10). The template lock records
+`platform_adapters`, the pinned registry's adapter ids, held equal to the pin by
+`check-integrity.py`; strategy and tech-plan refuse a platform outside it ("GamePix needs a
+template release carrying its SDK adapter (HUMAN_ACTION_REQUIRED: release and pin)").
+Existing artifacts are unaffected; a lock without `platform_adapters` stops strategy and
+tech-plan.
+
+**The console fills every listing field, per locale** (portal publishing workstream 1,
+[docs/portal-publishing-architecture.md](docs/portal-publishing-architecture.md) Part 4).
+The console adapter never filled a description: it asked the store metadata for a
+`description` key, but the store metadata stores `descriptions` keyed by locale.
+`ConsoleAdapter.listing_fields` now fills title, short and long description, controls, tags
+and categories from the shipped store listing's rendition
+(`release/<id>/listing/platforms/<pid>/listing.json`), falling back to the store metadata.
+A `{locale}` in a field's selector makes the field per locale. Required fields and locales
+come from the platform profile's `store_listing` block and `metadata_requirements`. A
+required field with no value, or with no console field, is reported (BLOCKED) before
+anything is contacted. In the browser, the executor reads every value back before and after
+saving. A required field missing from the page ends `configure` as an error. Optional fields
+the step did not fill are named in the record. The fixture portal has per-locale
+short/long description fields (`PORTAL_LOCALES`) and a `missing-field` mode. No schema or
+artifact changes; the Yandex and CrazyGames selector maps, still hypotheses, report the
+required fields they do not name.
+
+**Publication profile 2.0.0** (workstream 2 of
+[docs/portal-publishing-architecture.md](docs/portal-publishing-architecture.md)). The
+console flow becomes data: `submission.flow` holds ordered intents, each with a phase and a
+class (`reversible` | `irreversible` | `human`), a locator ladder, a value that is a path into
+the shipped listing (never free text) and a post-condition; `session` and `identity` name how
+the session and an existing game are recognised; `status` (was `verification`) gains
+`pending_states` and `approved_states`; `constraints.upload_max_mb` (was
+`console.upload_max_mb`); `fields` with the console's limits; `content_policy` for generated
+text and assets (required; every shipped console says `unknown`); `adaptive`,
+`adaptive_bounds` (at most 3 per intent, 10 per visit), `dismissable` and `deny`; top-level
+`sources` and `unknowns`. **Breaking** for a 1.x profile: rename `verification` to `status`,
+move `console.upload_max_mb` to `constraints`, add `content_policy`, and for a console add
+`adaptive`. Every shipped profile is migrated to 2.0.0; the console profiles (CrazyGames, Y8,
+Yandex, GameDistribution, GameMonetize) were written from public pages only, name what a
+person must log in to learn under `unknowns`, and stay `status: unverified`.
+`check-integrity.py` checks every profile's flow (`wgflib.publication.flow_problems`): no
+cancel, withdraw or delete intent; every irreversible intent has a profile ladder; every
+intent has a class; adaptive names outside the deny vocabulary; status words consistent.
+`platform-publication` 1.2.0 (additive): `submission.portal_game_id`, the `human_required`
+reasons `legal`, `declaration`, `ai-text-policy`, `duplicate-candidate`, `review-pending`,
+`drift-irreversible`, `anti-bot`, and `measurement_class: automation-console-adaptive`. The
+console adapter reads `status` and `constraints.upload_max_mb`; nothing else changes
+behaviour yet - the executor runs profile intents from workstream 3.
+
+**One build, one package and one publication per target platform** on the pinned template
+(contract 1, v1.2.0), with no template release and no game migration. For a title with more
+than one target, `verify` builds each platform against `build/platforms/<id>/game.config.json`
+(that platform alone) through the template's own `WGF_GAME_CONFIG` override, judges each
+bundle (`build.platform:<id>`, `platform.build-target:<id>`, requirements and profile
+assertions on its own bundle) and requires every target - an `optional` platform that is not
+ready now fails the verdict. `release` packages each with `release:package --platform <id>`
+from its own verified bundle (`packages[].bundle_hash`) and refuses a target without one
+(`platform-not-verified`); `store-listing` renders for the verified build's platforms;
+`platform-validate` writes one publication per package. A repository on template contract 2
+(`build:platforms`) is recognized and builds its platforms itself. A single-platform title is
+built and released exactly as before. **Retargeting a finished title** no longer re-runs
+develop: the `sdk` step (new input: `tech-plan`) writes the G3-approved platforms and their
+profiles into its keyed commit when they differ from the checkout. Schemas:
+verification-report 1.2.0 (`build_artifact.platforms`), release-manifest 1.6.0
+(`packages[].bundle_hash`), both additive; template contract 2.0.0 (entries recorded, version
+unchanged). Docs: [platform-targets-2026-10.md](docs/platform-targets-2026-10.md) Part 2,
+[verification-module.md](docs/verification-module.md#one-bundle-per-platform),
+[release-module.md](docs/release-module.md#one-package-per-target-platform).
+
 **The Factory quality gate** (WS-7 of [docs/quality-gap-audit-2026-10.md](docs/quality-gap-audit-2026-10.md); workflow `new-game` 11, `quality-report` 1.0.0, specialist-routing 1.2.0, `core/reference/quality-floor.yaml` 1.0.0, quality-benchmark 1.6.0, gates 1.6.0, release-manifest 1.5.0, verification-report 1.1.1, playability-report 1.2.1, content-sufficiency-report 1.0.1). Every producer judged one side of a build on its own bar, and a build whose UI broke on one viewport while every other side scored high still reached G4 looking finished. The new `quality-gate` step (`scripts/wgf_quality`, after `verify`, before G4) scores ONE build on twelve dimensions - gameplay, content, variety, progression, visual, UI, audio, consistency, polish, technical, platform, store - from the reports the producers wrote about that same build, against a versioned two-layer contract: the universal floor every game carries (layer A) and its genre family's contract plus the 3D contract (layer B; an unknown family takes its nearest ancestor's, and always the universal floor). Each dimension has a hard floor: no averaging passes a dimension below a failed blocker, and a dimension below its floor is a QUALITY REGRESSION, routed through triage like every gate's failure (the `quality-report` producer of scripts/wgf_triage): `design` for a design gap, `assets` for an asset, else the specialist that owns the dimension. Evidence about another commit BLOCKS the gate. A finding closes only when a newer build is measured at the minimum. The release tier's presentation bars (visual-qa mean 4.0, no major and at most four minor findings, every production check, audio counts, no skipped content check) are now enforced on the build. A run at tier mvp is `development`, never release. G4 is decided on the quality-report and shows its scorecard; release refuses (`quality-*` refusals) unless the newest quality-report passed exactly the build it ships and pins the run's newest reports of it; a `development` decision is drafted and recorded as such in the manifest's `evidence.quality_report`, beside WS-12's run class (`evidence.quality`). The quality policy (WS-12) now enforces `quality-gate` as a required step: it is no longer `pending` (quality-policy 1.2.0). Anti-gaming: a workflow's `pinned_references` (new engine feature, `scripts/wgflib/workflow/references.py`) are copied into the run at its start and pinned by digest in its params, so a mid-run edit of the floor, the benchmark or the rubric applies to the next run only. Bringing an artifact forward: a run resumed under workflow 11 runs the quality gate before G4 (its pins are absent, so it reads the live contract and records `benchmark.pinned: false`); a release drafted by a workflow without the gate says `required_quality: false`. Docs: [docs/quality-gate-module.md](docs/quality-gate-module.md), [docs/factory-quality-benchmark.md](docs/factory-quality-benchmark.md).
 
 **Every `new-game` inherits the quality policy** (WS-12, [docs/new-game-quality-inheritance.md](docs/new-game-quality-inheritance.md); release-manifest 1.4.0). `core/reference/quality-policy.yaml` (1.0.0) states, as data, what every run is held to, and the engine applies it without naming a step (`scripts/wgflib/workflow/quality.py`). A run snapshots its quality tier, its class (`release` or `development`) and the policy and benchmark versions in `params.quality`, corroborated like every param; strategy and assets read the tier from the run. Before G4, release, platform validation and submission, every required check before them - research, design, both playability passes, production-quality, visual-qa, review, sdk-review, verify, listing-validation, and `content-sufficiency` and `quality-gate` once a workflow has them - must be current, or the run stops BLOCKED (`quality-floor`). `wgf <slice> --run` no longer skips a completed step whose upstream was redone: after a re-plan it ran no init..verify and asked G4 again on the old build. Tier `mvp`, a weakening configuration (`release.allow_unreviewed`, a `baseline` or custom-rubric visual QA, fewer develop checks, SDK tests off, an SDK report from a file, a custom listing reference) at the start or any later resume (`QUALITY_DOWNGRADED`), and a workflow the Factory does not ship make a run `development`: every artifact ref, the release-manifest (`evidence.quality`) and `wgf status` say so, and it is never submitted live. `--mock` and golden runs stay allowed and are reported development. A new run whose configured design author is a built-in one (the shipped `archetype`) at the release tier is refused before it starts, with the fix (an `agent` author, or tier `mvp`), and `wgf where --json` reports it (`quality.refused`), which the plugin's `/new-game` checks first. A G3 whose tech plan records a planned shortfall (WS-3) waits for a person - no auto, timeout or automation approval (gates.yaml 1.5.0 `hold_for_person_when`). Bringing an artifact forward: a 1.3.0 release-manifest stays valid; a run started before this has no snapshot and is development.
+
 **Content sufficiency on the built game** (WS-4 of [docs/quality-gap-audit-2026-10.md](docs/quality-gap-audit-2026-10.md); workflow `new-game` 9, `content-sufficiency-report` 1.0.0, `core/reference/content-sufficiency.yaml` 1.0.0, quality-benchmark 1.4.0, play-probe schema). Every gate passed a 12-level build with one brick kind; nothing counted the build's content. The new `content-sufficiency` step (`scripts/wgf_sufficiency`, after `visual-qa`) counts every `content` and `progression` bar of the quality benchmark at the design's tier on the BUILD: the played commit's `public/content/units.json` and what the probe showed in each unit. The playability bot's new survey test (the `playability` step's `with: survey: true`) enters every unit through the probe's unit link (`?wgf-probe=1&wgf-unit=<id>`), so units past the first three are measured. Checks: units shipped and reachable, entity kinds, elements, combinations, structure kinds and near-identical units, groups that bring something new (not cosmetic), difficulty that asks for new skills, objective kinds, climax units with their own art, gated unlocks, designed play, and design-vs-build drift. Each failure is a typed finding (dimension, severity, observed vs bar, owner, route): `develop` when the build is short of a design that meets the bar, `design-gap` when the design itself is short (its design gap is repaired by the design step). While a content unit is in play, the play-probe schema now requires `entities[].kind` on every entity of a content role. The develop brief lists the `develop` findings. Bringing an artifact forward: a probe that reports content units without kinds now fails `probe.valid`; a run resumed under workflow 9 runs the new step after visual-qa.
 
 **Feature evaluation in design** (WS-5 of [docs/quality-gap-audit-2026-10.md](docs/quality-gap-audit-2026-10.md); game-design 1.10.0, adapter binding 1.9.0). A brief feature no longer drops silently: the 2D validation brief's endless mode and the 3D marble brief's time trial were lost without a word. `core/reference/feature-catalogue.yaml` (1.0.0) lists 23 candidate features - progression, unlocks, themed worlds, star rating, rewards, daily rewards, daily challenge, streaks, leaderboard, achievements, missions, shop, skins, upgrades, difficulty modes, time trial, endless mode, statistics, profile, local and cloud save, settings, tutorial - with the phrases that name them, their relevance per genre family (expected, fits, poor), the platform capability they rest on and its fallback, and estimates of player value, build hours, monetization impact and QA cost. `features[]` gain `source`, `catalogue` and `evaluation` (decision `include`, `later` or `cut`, with a reason). The design step's new `features.*` checks (`scripts/wgf_design/features.py`) require every catalogue feature the brief or the strategy names, and every one the genre family expects, to be evaluated - not added blindly; an `include` to be built (mvp or post-mvp) and a `later` or `cut` to be optional; an included feature to run on every required platform. The built-in author evaluates them (included where its archetype builds the feature, cut where the strategy or the platforms rule it out, deferred otherwise); the agent author is handed them as `feature_candidates`. A cut feature is listed in `scope.tiers.out_of_scope` with its reason, and G3 and G4 are shown the cut and deferred features, with a warning for any the brief asked for (`wgflib.gate_evidence`). `retention.hooks` gains `daily_challenge` (F13). New playbook `core/craft/feature-evaluation.md`. Bringing an artifact forward: a 1.9.0 game-design stays valid; re-running design adds the evaluations.
@@ -162,6 +306,7 @@ strategy from research or the family's default. **`opportunity` 1.3.0** carries
 `capability.genre_model` and `research.design_constraints` (the content shape research coded
 for the cell, with the genre conventions it counted). **`prototype-report` 1.1.0** adds
 `content_coverage` (designed units against built ones) and `design_gaps`.
+
 **`playability-report` 1.2.0** adds the status `SKIPPED` and `skipped_checks`. **`qa-report`
 1.2.0** adds the suite `gameplay-quality`. **`review-report` 1.1.0** is a version bump for the
 reviewer's new `## Design fidelity` brief section. `play-probe` gains `content`,
@@ -232,6 +377,7 @@ greybox return BLOCKED, no agent spawned, for a command developer in a run with 
 naming `factory.develop.budget`; and the first `wgf resume` by a person that finds one
 configured records it for the run as a `BUDGET_ADOPTED` operator event (corroborated like
 `BUDGET_RAISED`, counted once; params are not edited). Handoff developers are unaffected.
+
 **Upgrading:** an installation that runs a command developer without `factory.develop.budget`
 must set one; a run already in progress adopts it at its next resume.
 

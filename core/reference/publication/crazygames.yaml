@@ -4,42 +4,235 @@
 # and by release:validating when it computes readiness. Data, never code: the pipeline names
 # no portal, and nothing here is a credential.
 #
-# Checked 2026-10-02 against https://docs.crazygames.com/ and https://developer.crazygames.com/:
-# the portal documents no upload or submission API; builds are uploaded (zip, or a folder) and
-# submitted for QA in the developer portal's web UI. Whether its terms permit automated use of
-# that UI was not established from a public document: `automation_terms: unverified`, so the
-# publish step stops HUMAN_REQUIRED before contacting the console until a person records the
-# finding (factory.publish.platforms.crazygames.terms_confirmed) and bumps this file.
+# 2.0.0 (core/artifacts/shared/publication-profile.schema.json): the console flow as intents.
+# Written from public pages only (docs/portal-publishing-architecture.md, Part 3, read
+# 2026-10-04): nobody has logged into the Developer Portal for this file. Every locator below
+# is `basis: documented` (the label a public page quotes) or a hypothesis; every console fact
+# no public page states is named under `unknowns`. The portal documents no upload or
+# submission API. Whether its terms permit automated use of the console was not established
+# from a public document: `automation_terms: unverified`, so the publish step stops
+# HUMAN_REQUIRED before contacting the console until a person records the finding
+# (factory.publish.platforms.crazygames.terms_confirmed) and bumps this file.
 
 id: crazygames
-version: 1.0.0
+version: 2.3.0  # 2.3.0: the three documented covers as three upload intents. 2.2.0: the CrazyGames adapter's flow - the submission form, both upload
+                #        shapes, Basic/Full Launch words, all as hypotheses
 status: unverified
 docs: https://docs.crazygames.com/
+
+sources:
+  - {url: "https://developer.crazygames.com/", read: "2026-10-04"}
+  - {url: "https://docs.crazygames.com/faq/", read: "2026-10-04"}
+  - {url: "https://docs.crazygames.com/requirements/intro/", read: "2026-10-04"}
+  - {url: "https://docs.crazygames.com/resources/unity-custom-build/", read: "2026-10-04"}
+  - {url: "https://files.crazygames.com/documents/developer_terms_20250818.pdf", read: "2026-10-04"}
+
+unknowns:
+  - The submission form's exact fields, labels and limits (title, description, controls, instructions).
+  - Whether categories and tags are chosen by the developer or assigned by CrazyGames.
+  - "The cover, trailer video and build upload widgets, and whether the build is a zip or a folder (both are modeled: upload.zip and upload.files, each optional; the adapter takes whichever the console shows)."
+  - The upload size limit (250 MB is carried over from profile 1.0.0 and is not sourced).
+  - The orientation, mobile and Progress Save toggles.
+  - The status labels the console shows, and which of them mean under review.
+  - The QA tool's checklist.
+  - The terms checkbox, and the payout and tax forms.
+  - Whether a CAPTCHA, a second factor or an anti-bot check protects the console.
+  - The session markers (logged in, login form, challenges) on the console page.
+  - Where the console shows a game's id, and how the game list is laid out.
+  - The button that requests review, and its exact label (review.request "Submit for QA" is a hypothesis).
+  - The submission form's name field and its confirm button (create.name, create.confirm are hypotheses).
+  - Whether the status words include Basic Launch and Full Launch as the console shows them (the launch stages are documented; their labels on the console are not).
+  - The markers by which a person's terms, exclusivity, warranties, payout and launch options show as done.
 
 submission:
   method: console
   automation_terms: unverified
+  content_policy:
+    ai_generated_text: unknown
+    ai_generated_assets: unknown
+    source: https://docs.crazygames.com/requirements/quality/
+    note: >
+      No AI policy is published; originality is required ("not easily confused with
+      another"). Unknown until a person records the policy.
   console:
     url: https://developer.crazygames.com/
     allowed_origins: [https://developer.crazygames.com, https://api.crazygames.com]
-    upload_max_mb: 250
     upload_timeout_s: 900
   credential:
-    kind: storage-state
-    env: WGF_PUBLISH_CRAZYGAMES_STORAGE_STATE
-    capture: >
-      A person logs into the developer portal once in a headed browser (`wgf-publish.py
-      capture crazygames`) and the Playwright storage state is saved where the installation
-      keeps secrets; the variable names the file. The step never types a password.
-  human_required: [login, two-factor, terms, payout-setup, review, console-switch]
+    # A person logs in, live, in the browser window the publish step opens, and
+    # handles any CAPTCHA or second factor there. Nothing of the session is kept.
+    kind: human-login
+  human_required: [login, two-factor, terms, payout-setup, review, console-switch, declaration]
+
+  adaptive: allowed
+  adaptive_bounds: {max_per_intent: 3, max_per_visit: 10}
+  dismissable: [Close, Got it, Skip, Not now]
+
+  identity:
+    portal_id_from: [registry, config:game_id, idempotency-key, title]
+    title_match: exact-casefold
+    basis: hypothesis
+
+  flow:
+    - id: create.open
+      phase: create_game
+      class: reversible
+      action: click
+      target: [{role: link, name: "Submit a game"}, {text: "Submit a game"}]
+      basis: documented
+      source: https://developer.crazygames.com/
+      note: >
+        The entry point a public page names. It opens the submission form; it is not the
+        review request. No `names`: "submit" is deny vocabulary, so an adaptive resolution of
+        this intent would be refused anyway - drift here stops for a person.
+    - id: create.name
+      phase: create_game
+      class: reversible
+      action: fill
+      value: identity.title
+      target: [{label: "Game name"}]
+      names: [Game name, Title, Name]
+      expect: {value_equals: identity.title}
+      basis: hypothesis
+    - id: create.confirm
+      phase: create_game
+      class: reversible
+      action: click
+      target: [{role: button, name: "Create"}]
+      names: [Create, Continue]
+      basis: hypothesis
+    - id: upload.zip
+      phase: upload_build
+      class: reversible
+      action: upload
+      value: package.file
+      optional: true
+      target: [{label: "Game zip"}]
+      basis: hypothesis
+      note: The build as one zip - one of the two upload shapes (unknowns).
+    - id: upload.files
+      phase: upload_build
+      class: reversible
+      action: upload
+      value: package.file
+      optional: true
+      multiple: true
+      target: [{label: "Game files"}]
+      basis: hypothesis
+      note: >
+        The build as its files - the other upload shape. The adapter hands this intent the
+        package's files, unpacked; a visit that finds neither widget is UNKNOWN.
+    - id: field.description
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.en.description
+      target: [{label: "Description"}]
+      names: [Description]
+      expect: {value_equals: listing.text.en.description}
+      basis: hypothesis
+    - id: field.controls
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.en.how_to_play
+      target: [{label: "Controls"}]
+      names: [Controls, Instructions]
+      expect: {value_equals: listing.text.en.how_to_play}
+      basis: hypothesis
+    # Three covers are required (landscape 16:9, portrait 2:3, square 1:1:
+    # https://docs.crazygames.com/requirements/game-covers/); each is its own rendition
+    # (platform store_listing image ids). How the console takes them - three inputs, one
+    # multi-file input - is unknown until a person observes it: these labels are hypotheses.
+    - id: media.cover_landscape
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.cover-16x9
+      target: [{label: "Landscape cover"}, {label: "Cover"}]
+      names: [Landscape cover, Cover]
+      basis: hypothesis
+    - id: media.cover_portrait
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.cover-2x3
+      target: [{label: "Portrait cover"}]
+      names: [Portrait cover]
+      basis: hypothesis
+    - id: media.cover_square
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.cover-1x1
+      target: [{label: "Square cover"}]
+      names: [Square cover]
+      basis: hypothesis
+    - id: draft.save
+      phase: save_draft
+      class: reversible
+      action: click
+      target: [{role: button, name: "Save draft"}]
+      names: [Save draft, Save]
+      basis: hypothesis
+    - id: declare.terms
+      phase: human_fields
+      class: human
+      note: Developer Portal Terms acceptance (18.08.2025) - a person reads and accepts them.
+      source: https://files.crazygames.com/documents/developer_terms_20250818.pdf
+    - id: declare.exclusivity
+      phase: human_fields
+      class: human
+      note: The exclusivity option (Terms 3.1, 5.5) - a commercial choice.
+    - id: declare.warranties
+      phase: human_fields
+      class: human
+      note: The accuracy and IP ownership warranties (Terms 7.1).
+    - id: declare.payout
+      phase: human_fields
+      class: human
+      note: Payout and tax details.
+    - id: declare.launch_options
+      phase: human_fields
+      class: human
+      note: >
+        Basic Launch vs Full Launch, the Progress Save toggle and orientation - console
+        switches a person sets. Full Launch is CrazyGames' decision, never a click.
+    - id: review.request
+      phase: request_review
+      class: irreversible
+      action: click
+      target: [{role: button, name: "Submit for QA"}]
+      expect: {status_in: submitted_states}
+      basis: hypothesis
+      note: >
+        The request for the initial QA, once, on a person's confirmed submit. The label is a
+        hypothesis (unknowns); Full Launch is never requested or clicked.
+
+  status:
+    # Hypotheses (unknowns): the launch stages are documented, the labels are not.
+    states: [Draft, In review, Basic Launch, Full Launch, Rejected]
+    submitted_states: [In review]
+    live_states: [Basic Launch, Full Launch]
+    rejected_states: [Rejected]
+    pending_states: [In review]
+
   constraints:
     replaces_index_html: true    # the portal rewrites index.html on upload; inline wrappers are lost
     archive_root_index: true
-  verification:
-    states: [Draft, In review, Published, Rejected]
-    submitted_states: [In review]
-    live_states: [Published]
-    rejected_states: [Rejected]
-  notes: >
-    Basic Launch vs Full Launch, the Progress Save toggle and the payout method are console
-    switches a person sets; the adapter uploads, fills the listing and submits for QA only.
+    upload_max_mb: 250           # carried over from 1.0.0; unsourced (see unknowns)
+
+  fields:
+    title: {required: true, max: null, locales: shared, listing: listing.title, basis: hypothesis}
+    description: {required: true, max: null, locales: shared, listing: listing.text.en.description, basis: documented}
+    controls: {required: true, max: null, locales: shared, basis: documented}
+    instructions: {required: null, max: null, locales: shared, listing: listing.text.en.how_to_play, basis: documented}
+    thumbnails: {required: true, formats: null, size: null, basis: documented}
+    cover: {required: true, formats: null, size: null, basis: documented}
+    trailer: {required: null, formats: null, size: null, basis: documented}
+
+  restrictions:
+    - rule: Initial QA (bugs, quality, English, originality, PEGI 12), then Basic Launch (7-21 days, monetization off), then Full Launch at CrazyGames' decision.
+      source: https://docs.crazygames.com/requirements/intro/
+    - rule: Pay only in Full Launch and only with the CrazyGames SDK; no other portal branding, no other ads.
+      source: https://files.crazygames.com/documents/developer_terms_20250818.pdf

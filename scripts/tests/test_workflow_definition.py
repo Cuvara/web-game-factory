@@ -89,7 +89,11 @@ class ParsesValidDefinitions(unittest.TestCase):
         publish = definition.step("submit")
         self.assertEqual(publish.retry.max_attempts, 1)  # the irreversible submit: once
         self.assertEqual(publish.inputs, ["release-manifest", "platform-publication",
-                                          "decision-record", "scaffold-record"])
+                                          "decision-record", "scaffold-record",
+                                          "verification-report", "store-listing",
+                                          "listing-validation-report"])
+        # A create-before-build portal's ids go back to sdk, which writes them into the build.
+        self.assertEqual(publish.on, {"platform-ids": "sdk"})
         self.assertEqual(definition.step("verify").on, {"fail": "triage"})
         # The production gates route by what failed: an asset to assets, the game to develop
         # - through triage, which routes it to the specialist that owns it.

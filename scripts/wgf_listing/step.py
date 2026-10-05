@@ -190,7 +190,8 @@ class StoreListingStep(WorkflowStep):
         self._ground_in_build(facts, design, loaded, reference, commit, context)
         self._ctx["facts"] = facts
 
-        targets = platforms.targets(scaffold, self.settings.platforms)
+        targets = platforms.targets(scaffold, self.settings.platforms,
+                                    verified=vr.get("platform_readiness"))
         profiles = {}
         for pid, _role, _version in targets:
             try:

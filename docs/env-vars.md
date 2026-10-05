@@ -21,8 +21,10 @@ set `=1` and both readings agree.
 |---|---|---|---|
 | `WGF_GAME_REPO` | `scripts/wgflib/checkout.py` | The game checkout EVERY step that works in the game repository uses - init (where it creates the project), assets, develop, review, sdk, verify and release - when the step's own `with: repo_dir` / `game_repo` is not set. Checked before the scaffold-record's `local_path` and `factory.checkouts`. A relative path resolves against the Factory root ([checkouts.md](checkouts.md)). | unset: the scaffold-record's `local_path`, else `factory.checkouts` + the repository name |
 | `WGF_PROJECT_DIR` | `scripts/wgflib/paths.py` | The project root: where `workspace/` (instance data and the installation's own `workspace/config/`), the run store and the checkouts base resolve. Never where `core/` or the engine is read - that is always beside `wgflib/`. Set by the installed runtime for every process it starts, so a child in another directory finds the same project. ([plugin-runtime.md](plugin-runtime.md)) | development checkout: the repository; installed plugin runtime: the working directory |
-| `WGF_PUBLISH_LIVE` | `scripts/wgf_publish/common.py` | `1`, together with `factory.publish.mode: live`, lets the `submit` step make the irreversible portal submit. Either alone is a dry run. ([publish-module.md](publish-module.md)) | unset: dry run |
-| `WGF_PUBLISH_<PLATFORM>_STORAGE_STATE` | `scripts/wgf_publish/session.py` (the name is each publication profile's `submission.credential.env`) | The path (or JSON) of the Playwright storage state a person captured for that portal's console (`scripts/wgf-publish.py capture`). Read only when `factory.publish.env_passthrough` lists the name, only for its platform, and redacted everywhere. | unset: the platform is HUMAN_REQUIRED |
+| `WGF_PUBLISH_LIVE` | `scripts/wgf_publish/common.py` | `1`, together with `factory.publish.mode: live`, lets the `submit` step upload to the portal's draft (the review request still waits for a person's `submit` decision in a later visit). Either alone is a dry run. ([publish-module.md](publish-module.md)) | unset: dry run |
+| ~~`WGF_PUBLISH_<PLATFORM>_STORAGE_STATE`~~ | retired (publication profile 2.1.0) | No portal session is captured or kept: a person logs in, live, in the browser window the `submit` step opens, and the session ends with it. Nothing reads these variables any more; delete any that are set, and the captured files they named. | - |
+| `WGF_PUBLISH_PLATFORMS` | `scripts/wgf_publish/step.py` (set by `wgf publish --platform`) | Comma-separated platform ids: the `submit` step acts on those packaged platforms only and leaves every other record as it is. Set by the CLI for its own process; never configured. | unset: every packaged platform |
+| `WGF_PUBLISH_TRACK` | `scripts/wgf_publish/step.py` (set by `wgf publish --track`) | `1`: the `submit` step only reads each platform's status on its portal (no upload, no click) and updates the record and the portal registry from it. Set by the CLI for its own process. | unset: a publishing visit |
 | `WGF_RESEARCH_LIVE` | `scripts/wgf_discovery/step.py` | `1` makes the `research` step fetch the pages in `probes.yaml` during the run, like `live: true` on the step. | off: evidence snapshots only |
 | `WGF_TEMPLATE_COMMIT` | `scripts/wgflib/template.py` | A deliberate override of the web-game-template commit in `workspace/config/template.lock.json`. Must be a full 40-hex sha. Used to validate a new pin before moving the lock. | the lock's `commit` |
 | `WGF_TEMPLATE_DIR` | `scripts/wgflib/template.py` | Offer an existing template checkout instead of the cache. Refused (`TemplateDrift`) unless its HEAD is exactly the expected commit; never moved. | unset: cache, then clone |
@@ -55,13 +57,16 @@ Python, not by its children.
 | `WGF_VISUALQA_FRAMES`, `WGF_VISUALQA_BRIEF`, `WGF_VISUALQA_VERDICT` | `scripts/wgf_visualqa/judge.py` | Given to a `command` visual-qa judge: the directory of staged frame copies, the judge brief, and where to write the verdict - the same values as the `{frames_dir}`, `{brief}`, `{verdict}` argv placeholders. |
 | `WGF_LISTING_BRIEF`, `WGF_LISTING_OUTPUT` | `scripts/wgf_listing/copywriter.py` | Given to a `command` store copy writer: the brief (the facts, the claim vocabulary, the shape to produce) and where to write the JSON answer - the same values as the `{brief}` and `{output}` argv placeholders. |
 | `WGF_PLAY_OUT`, `WGF_PLAY_CONFIG` | `scripts/wgf_playability/step.py`; read by `scripts/wgf_playability/bot.spec.ts` | Where the playability bot writes what it recorded (per viewport: JSON and frames), and its settings file (idle, acknowledgement and play windows, the goal metric). |
+| `WGF_OBSERVE_CONFIG` | `scripts/wgf_publish/observe.py`; read by `scripts/wgf_publish/browser/observe.spec.ts` | The console observer's settings file: the console url, allowed origins, the authenticated-url regex, the login and observation windows, and where the state file and page records go (`wgf-publish.py observe`). |
 | `WGF_E2E_PORT` | not set; read by `scripts/wgf_sdk/e2e/playwright.config.ts` | The preview server port for the SDK browser e2e; `4461` when unset. |
+| `WGF_GAME_CONFIG` | `scripts/wgf_verification/platform_builds.py` (each platform's build and its `collect-facts` / `evaluate-assertions`), `scripts/wgf_release/step.py` (each platform's `release:package --platform`); read by the template's `vite.config.ts` and `scripts/_shared.mjs` `readGameConfig` | The config one platform's bundle is built, measured and packaged against: `build/platforms/<id>/game.config.json` (relative to the checkout), naming that platform alone. Set only for a title with more than one target on template contract 1; unset, the template reads `game.config.yaml`. |
 | `WGF_Y8_APP_ID`, `WGF_Y8_GAME_ID` | `scripts/wgf_sdk/e2e.py` (placeholder ids) | The Y8 build ids the template's build reads; the e2e sets test values so a Y8 build can be made. |
 | `WGF_SCRIPTS` | `scripts/tests/test_release_module.py`; read by `scripts/tests/fixtures/release/fake-pnpm.py` | Where the Factory's `scripts/` is, for the release tests' fake `pnpm`. |
 | `WGF_TEST_TESTS_DIR`, `WGF_TEST_DEV_LOG`, `WGF_TEST_DEV_MODE`, `WGF_TEST_CHILD_PID` | `scripts/tests/test_core_agents.py` | Plumbing between the AGENTS tests and the scripted developer they start (its behaviour, its log, its child-pid file). |
 
 `WGF_GAME_CONFIG` is read by the *template's* `vite.config.ts` (build against another
-config file). The Factory never sets it; the golden harness removes it, with
+config file). The Factory sets it only on the one command that builds, measures or packages
+a platform's own bundle (above), never in its own environment; the golden harness removes it, with
 `WGF_GAME_REPO` and `WGF_RESEARCH_LIVE`, from a golden run's environment
 (`scripts/golden/harness.py`, `FOREIGN_ENV`), so a developer's shell cannot point a golden
 run at anything but its own checkout.
@@ -74,7 +79,7 @@ run at anything but its own checkout.
 
 | Variable | Read by | Meaning | Default |
 |---|---|---|---|
-| `WGF_PUBLISH_BROWSER_TEST` | `test_publish_module` | `1` drives the fixture portal (`scripts/tests/fixtures/publish/portal.py`) with real Chromium through the publish module's console executor, in the pinned template's checkout. Contacts nothing but 127.0.0.1. | off |
+| `WGF_PUBLISH_BROWSER_TEST` | `test_publish_module`, `test_publish_executor`, `test_publish_observe` | `1` drives the fixture portal (`scripts/tests/fixtures/publish/portal.py`) with real headless Chromium through the publish module's console executor and the read-only console observer, with the test playing the person who logs in, in the pinned template's checkout. Contacts nothing but 127.0.0.1. | off |
 | `WGF_GOLDEN` | `scripts/golden/testing.py` (via `test_golden_2d`, `test_golden_3d`) | `1` runs the 2D and 3D golden pipelines (minutes each). Otherwise the `2D GOLDEN` / `3D GOLDEN` categories are `SKIP`. | off |
 | `WGF_GOLDEN_KEEP` | `scripts/golden/testing.py` | `1` keeps a golden run's work directory after the test. | off: removed |
 | `WGF_GOLDEN_DIR` | `scripts/golden/harness.py` | Parent of a golden run's fresh work directory. | `/tmp` |
@@ -120,4 +125,13 @@ one's description.
 
 | Secrets | Variables |
 |---|---|
-| `WGF_CF_API_TOKEN`, `WGF_POKI_AUTH_JSON`, `WGF_YANDEX_CONSOLE_SESSION` (reserved), `WGF_CRAZYGAMES_TOKEN` (reserved), `WGF_GAMEVUI_TOKEN` (reserved) | `WGF_CF_ACCOUNT_ID`, `WGF_CF_PROJECT_PREFIX` (default `wgf`), `WGF_YANDEX_APP_ID`, `WGF_POKI_GAME_ID`, `WGF_CRAZYGAMES_GAME_ID`, `WGF_GAMEVUI_GAME_ID` |
+| `WGF_CF_API_TOKEN` (develop preview deploy), `WGF_LIVE_OPT_IN` (`1` runs the live portal SDK validation suite; not a credential) | `WGF_CF_ACCOUNT_ID`, `WGF_CF_PROJECT_PREFIX` (default `wgf`), `WGF_Y8_APP_ID`, `WGF_Y8_GAME_ID`, `WGF_GAMEMONETIZE_GAME_ID` (public ids a build bakes in) |
+
+CI never publishes a game to a portal, so **no portal credential belongs in CI or in the
+organization**: publication is the Factory's `publish` group, behind a person's G6, in a
+browser window where a person logs in live; no session is captured or kept anywhere
+(`docs/publish-module.md`). The script only reconciles the names it manages and never deletes
+one. The names it managed before - secrets `WGF_POKI_AUTH_JSON`,
+`WGF_YANDEX_CONSOLE_SESSION`, `WGF_CRAZYGAMES_TOKEN`, `WGF_GAMEVUI_TOKEN`; variables
+`WGF_POKI_GAME_ID`, `WGF_CRAZYGAMES_GAME_ID`, `WGF_GAMEVUI_GAME_ID`, `WGF_YANDEX_APP_ID` - are
+read by no workflow; a person should delete them from an organization that still holds them.

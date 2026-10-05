@@ -22,9 +22,12 @@ class ReleaseRunner:
         self.hooks = dict(hooks or {})
         self.calls = []
 
-    def run(self, argv, cwd, timeout=None):
+    def run(self, argv, cwd, timeout=None, env=None):
+        """`env` adds to the runner's environment for this command only (a platform build's
+        WGF_GAME_CONFIG)."""
         self.calls.append(list(argv))
-        return procs.run(list(argv), cwd=cwd, timeout=timeout, env=self.env, **self.hooks)
+        merged = dict(self.env, **env) if env else self.env
+        return procs.run(list(argv), cwd=cwd, timeout=timeout, env=merged, **self.hooks)
 
 
 def describe(result):

@@ -73,6 +73,9 @@ FILES = [
     "workspace/config/mcp-playwright-localhost.json",
     # Named in the workflow entry point's read-first list (gen-adapters.sh).
     "docs/workflow-engine.md",
+    # Named in the release agent's, the release skill's and /wgf-publish's read-first lists.
+    "docs/publish-module.md",
+    "docs/portal-publishing-architecture.md",
 ]
 EXCLUDE = ["__pycache__", "*.pyc", "*.pyo", ".DS_Store", "Thumbs.db"]
 

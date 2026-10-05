@@ -158,8 +158,8 @@ states:
     kind: automatic
     role: release
     procedure: stages/publish.md
-    inputs: [release-manifest, platform-publication]
-    outputs: [platform-publication]
+    inputs: [release-manifest, platform-publication, portal-registry]
+    outputs: [platform-publication, portal-registry]
     description: >
       Packaging and metadata preparation are automated. The submission is made by the
       Factory's publish step through a platform adapter - the portal's own API or CLI where

@@ -249,7 +249,9 @@ class InitCase(unittest.TestCase):
         """Pin the Factory to `commit` of TEMPLATE for this test, whatever the real lock says
         and whatever WGF_TEMPLATE_COMMIT is set to outside."""
         lock = {"repository": TEMPLATE, "url": url, "commit": commit, "ref": "test",
-                "validated_on": "2026-09-24"}
+                "validated_on": "2026-09-24",
+                # The real pin's adapter registry: tech-plan refuses a lock without it.
+                "platform_adapters": list(template_pin.platform_adapters())}
         patcher = mock.patch.object(template_pin, "load_lock", lambda path=None: dict(lock))
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -390,8 +392,16 @@ class InitStepTest(InitCase):
         self.execute()
         self.assertEqual(missing_infrastructure(self.local), [])
         for path in ("packages/platform-sdk", ".github/workflows/ci.yml",
-                     ".github/workflows/publish.yml", "tests/unit", "config/platforms"):
+                     "tests/unit", "config/platforms"):
             self.assertTrue(os.path.exists(os.path.join(self.local, path)), path)
+
+    def test_a_template_without_ci_publication_is_accepted(self):
+        # CI never publishes a game (contract 2.1.0): the fixture template, built from the
+        # contract, has no publish.yml and no scripts/publish/, and init accepts it.
+        result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        for path in (".github/workflows/publish.yml", "scripts/publish"):
+            self.assertFalse(os.path.exists(os.path.join(self.local, path)), path)
 
     def test_init_writes_nothing_into_the_generated_project(self):
         self.execute()

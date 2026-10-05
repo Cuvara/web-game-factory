@@ -2,7 +2,7 @@
 
 **Machine** release · **State** `submitting` · **Kind** automatic + human · **Role** release
 **Gate** G6 (on entry to `validating`)
-**Inputs** `release-manifest`, `platform-publication` · **Outputs** `platform-publication`
+**Inputs** `release-manifest`, `platform-publication`, `portal-registry` · **Outputs** `platform-publication`, `portal-registry`
 
 Submit the validated packages to each targeted portal.
 
@@ -37,12 +37,34 @@ required. It is a policy change, so it is recorded.
   it with `wgf decide <run> done --note <portal reference>`. The idempotency key is looked up
   before any upload; the submit is attempted once; the portal's own status, read back, is the
   only thing that advances the record. See docs/publish-module.md.
+- Every packaged platform is handled on its own: one record each, one portal at a time, and
+  a wait, a failure or a pending review on one never changes another's. The G6 decision pins
+  the release-manifest, the store listing and its validation; any of them changed after G6
+  and nothing is uploaded until G6 is decided again. The package must be the one verified
+  for that platform.
+- Upload and request are separate acts. A live visit uploads the build and saves the draft,
+  then waits; a person answers `submit` (the review is requested once), `hold` (the draft
+  stays) or `abandon`. A passing QA is never permission to publish.
+- A portal that issues the build's ids only when the game is created (its publication
+  profile's `identity.issued_on_create`) is created first: the ids are recorded in the
+  portal registry, written into the build, and the build is made, verified, released and
+  authorized again before anything is uploaded there.
 - A login, a CAPTCHA, a second factor, unconfirmed terms or a missing session stop the step
   for a person. Nothing is bypassed.
 
 **Secrets never live in source.** A portal session is captured once by a person, kept where
 the installation keeps secrets, named to the Factory by an environment variable, and redacted
 from every artifact, event and log.
+
+## One portal game per title and platform
+
+A title has at most one game on each portal; a later release is a new version of that game,
+never a new game. The `portal-registry` (`workspace/titles/<title-id>/portals.json`, one
+entry per platform) records the portal game id read back after creation, or linked by a
+person who created the game by hand, and is the first id tried before anything is created.
+A status only the portal can establish (pending review, verified, published, rejected) is
+recorded only with the portal's own status text as evidence. Changing a recorded game id is
+a person's act. Each platform's entry is independent of the others.
 
 ## Rejections are the valuable path
 

@@ -59,12 +59,21 @@ def spec_status(profile):
     return "verified" if block.get("status") == "verified" else "unverified"
 
 
-def targets(scaffold, settings_platforms=None):
+def targets(scaffold, settings_platforms=None, verified=None):
     """[(platform id, role, profile version)] the listing is rendered for: the step's own
-    list when configured, else the scaffold-record's game.config platforms."""
+    list when configured, else the platforms the verified build targets (the
+    verification-report's platform_readiness: what the release will package), else the
+    scaffold-record's game.config platforms. The verified ones come first because a title
+    retargeted after scaffolding (docs/platform-targets-2026-10.md) has a scaffold-record
+    that still names its first targets."""
     out = []
-    entries = ((scaffold or {}).get("game_config") or {}).get("platforms") or []
     by_id = {}
+    for entry in verified or ():
+        if not isinstance(entry, dict) or not entry.get("platform_id"):
+            continue
+        version = str(entry.get("profile") or "").partition("@")[2] or None
+        by_id[entry["platform_id"]] = (entry.get("role") or "required", version)
+    entries = [] if by_id else ((scaffold or {}).get("game_config") or {}).get("platforms") or []
     for entry in entries:
         if not isinstance(entry, dict) or not entry.get("id"):
             continue
@@ -145,7 +154,8 @@ def requirements(profile, reference):
                     "known": "screenshots_min" in meta})
         out.append({"id": "video", "kind": "video", "required": None, "formats": None,
                     "min_seconds": None, "max_seconds": None, "max_mb": None,
-                    "min_width": None, "min_height": None, "aspect": None, "known": False})
+                    "min_width": None, "min_height": None, "aspect": None, "orientation": None,
+                    "known": False})
         out.append({"id": "age_rating", "kind": "age_rating",
                     "required": meta.get("age_rating_required"), "system": None,
                     "known": "age_rating_required" in meta})
@@ -176,7 +186,7 @@ def requirements(profile, reference):
                     "formats": video.get("formats"), "min_seconds": video.get("min_seconds"),
                     "max_seconds": video.get("max_seconds"), "max_mb": video.get("max_mb"),
                     "min_width": video.get("min_width"), "min_height": video.get("min_height"),
-                    "aspect": video.get("aspect"),
+                    "aspect": video.get("aspect"), "orientation": video.get("orientation"),
                     "known": "required" in video})
         rating = block.get("age_rating") if isinstance(block.get("age_rating"), dict) else {}
         out.append({"id": "age_rating", "kind": "age_rating",

@@ -1,29 +1,237 @@
 # Publication profile - GameDistribution (docs/publish-module.md)
 #
-# The developer panel issues the Game ID and requires the pre-roll to be viewed in full once
-# from the panel before the SDK integration is approved (core/reference/platforms/
-# gamedistribution.yaml). No upload API is documented. No console flow has been exercised:
-# the publish step stops HUMAN_REQUIRED.
+# 2.0.0 (core/artifacts/shared/publication-profile.schema.json), re-read from public pages
+# only on 2026-10-04 (docs/platform-targets-2026-10.md, GameDistribution): nobody has logged
+# in, created an account, uploaded or submitted for this file. GameDistribution publishes no
+# upload or submission API; games are uploaded and submitted in the developer panel
+# (https://developer.gamedistribution.com/, a single-page app behind Azerion Connect login).
+#
+# The documented flow, in order:
+#   1. register a developer account (gamedistribution.com/developers: First name, Last name,
+#      Email, Country and Company required, Website optional; two terms checkboxes - the
+#      Developer Terms and Platform Privacy Policy, and Azerion Connect's);
+#   2. the game's Game ID ("game hash") comes from the control panel - "unique for each one of
+#      your games" (wiki SDK-Implementation). Whether the panel issues it on creating the game,
+#      before any upload, is not stated; that it must exist before the build is derived: the
+#      SDK must be implemented before uploading (terms 2.6.3) and needs the Game ID;
+#   3. build with the SDK carrying that Game ID (GD_OPTIONS.gameId);
+#   4. upload the zip; then, from the upload view, open the game in its iframe and watch the
+#      pre-roll completely once - this flags the SDK as implemented ("can currently take up
+#      to two weeks");
+#   5. request publication with "the designated button within your control panel";
+#   6. review and QA; the game is "activated" or the developer gets feedback.
+# GameDistribution is create-before-build like Y8: a first release needs the Game ID from the
+# panel before the build that is uploaded. Whether creating the game issues it is not stated,
+# so the flow creates nothing: a person creates the game and enters its Game ID in
+# game.config.yaml, and the adapter finds the game by it. No panel label is documented: the
+# upload, listing and save intents below are hypotheses (unknowns), and with `status:
+# unverified` the publish step stops HUMAN_REQUIRED before contacting the panel.
+#
+# Domain: NOT required for the developer account (the registration form's Website field is
+# optional). It is required to self-host: a self-hosted submission is a zipped index.html
+# framing the game from the developer's own URL (README), and external hosting is permitted
+# only for real multiplayer games with GameDistribution's written consent (guidelines 3.1,
+# terms 2.9) - the `self-hosting` prerequisite below.
 
 id: gamedistribution
-version: 1.0.0
+version: 2.2.0  # 2.2.0: the GameDistribution adapter - the account and terms prerequisites;
+                #        upload, listing fields and save as hypotheses; still no create, no request
+                # 2.1.0: re-read from public pages 2026-10-04; prerequisites, fields, human flow
 status: unverified
-docs: https://gamedistribution.com/
+docs: https://github.com/GameDistribution/GD-HTML5/wiki
+
+sources:
+  - {url: "https://gamedistribution.com/developers/", read: "2026-10-04", note: "Rendered page (redirects to /developers/partnership/): registration form fields, the four steps, the FAQ (approval up to 3 weeks)."}
+  - {url: "https://github.com/GameDistribution/GD-HTML5/wiki/SDK-Implementation", read: "2026-10-04", note: "Game ID from the control panel; activating the SDK from the upload view."}
+  - {url: "https://github.com/GameDistribution/GD-HTML5/wiki/F.A.Q.", read: "2026-10-04", note: "Publication requested by a panel button; review up to 2 days; payment minimum 50 euro (the 2025 terms say EUR 100)."}
+  - {url: "https://github.com/GameDistribution/GD-HTML5/wiki/Rewarded-Ads", read: "2026-10-04", note: "The rewarded ads flag on developer.gamedistribution.com."}
+  - {url: "https://github.com/GameDistribution/GD-HTML5", read: "2026-10-04", note: "README: self-hosted games."}
+  - {url: "https://static.gamedistribution.com/developer/developers-guidelines.html", read: "2026-10-04", note: "Review process (up to one week), ads, hosting, key information (section 5)."}
+  - {url: "https://static.gamedistribution.com/developer/design-guidelines.html", read: "2026-10-04"}
+  - {url: "https://static.gamedistribution.com/terms/developer.html", read: "2026-10-04", note: "Developer Game License Agreement, last updated 19 June 2025."}
+
+prerequisites:
+  - id: developer-account
+    reason: legal
+    note: >
+      A GameDistribution developer account, registered by a person: First name, Last name,
+      Email, Country and Company are required by the registration form (Website optional).
+    source: https://gamedistribution.com/developers/
+  - id: developer-terms
+    reason: legal
+    note: >
+      The Developer Terms and Platform Privacy Policy, and Azerion Connect's terms, accepted
+      by a person at registration (two checkboxes).
+    source: https://gamedistribution.com/developers/, https://static.gamedistribution.com/terms/developer.html
+  - id: self-hosting
+    reason: legal
+    when: {hosting: self-hosted}
+    note: >
+      GameDistribution's written consent to host the game outside its platform (permitted only
+      for real multiplayer games), and an HTTPS host of the person's own serving the game at
+      the game_url the wrapper frames (GD_SDK_REFERRER_URL).
+    source: https://static.gamedistribution.com/terms/developer.html (2.9), https://static.gamedistribution.com/developer/developers-guidelines.html (3.1), https://github.com/GameDistribution/GD-HTML5 (README)
+
+unknowns:
+  - Every panel label, and the panel's layout - the creation of a game, the build upload view, the iframe button, the publication request button (upload.zip, field.*, media.thumbnail and draft.save are hypotheses).
+  - The panel's games list and where it shows a game's Game ID (the adapter finds the game by the Game ID game.config.yaml carries).
+  - The markers by which the pre-roll activation, the rewarded flag and the age groups show as done.
+  - Whether creating a game in the panel issues the Game ID before any upload (derived, not stated).
+  - The upload size limit and file-count limit, and the zip's expected layout.
+  - The panel's listing fields beyond guidelines section 5 (screenshots, video, image formats and byte limits).
+  - The status labels the panel shows (the 1.0.0 words Draft, Pending, Live, Rejected are unsourced).
+  - Whether the developer terms permit automated use of the panel (they forbid accessing the platform "for monitoring availability, performance, or functionality" without written consent; automated submission is not addressed).
+  - Any policy on generated listing text, or on generated assets other than deep fakes.
+  - Whether a CAPTCHA, a second factor or an anti-bot check protects Azerion Connect login.
+  - The payment and VAT forms in the account.
+  - "Which review timeline holds (up to 2 days, up to one week, up to 3 weeks, SDK activation up to two weeks: four public pages disagree)."
 
 submission:
   method: console
   automation_terms: unverified
+  terms_checked:
+    at: "2026-10-04"
+    source: https://static.gamedistribution.com/terms/developer.html
+    note: >
+      Read for this file, not established: the agreement forbids monitoring access without
+      written consent and does not address automated submission. A person decides.
+  content_policy:
+    ai_generated_text: unknown
+    ai_generated_assets: unknown
+    source: https://static.gamedistribution.com/terms/developer.html
+    note: >
+      Terms 2.6.11 and guidelines 1.5: deep fake content (AI-generated content resembling
+      real persons, objects, places, entities or events) must be labelled with its artificial
+      origin. Nothing is said about other generated assets or listing text.
   console:
     url: https://developer.gamedistribution.com/
     allowed_origins: [https://developer.gamedistribution.com]
-    upload_max_mb: null
     upload_timeout_s: 900
   credential:
-    kind: storage-state
-    env: WGF_PUBLISH_GAMEDISTRIBUTION_STORAGE_STATE
-  human_required: [login, two-factor, terms, review, console-switch]
-  verification:
+    # A person logs in, live, in the browser window the publish step opens, and
+    # handles any CAPTCHA or second factor there. Nothing of the session is kept.
+    kind: human-login
+  human_required: [login, two-factor, terms, payout-setup, review, console-switch, declaration, age-rating]
+  adaptive: forbidden
+
+  identity:
+    portal_id_from: [registry, config:game_id, title]
+    title_match: exact-casefold
+    basis: hypothesis
+
+  flow:
+    - id: upload.zip
+      phase: upload_build
+      class: reversible
+      action: upload
+      value: package.file
+      target: [{label: "Zip file"}]
+      basis: hypothesis
+      note: The zip upload of the game's upload view (the README documents a zip; the label is a hypothesis).
+    - id: field.title
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.title
+      target: [{label: "Title"}]
+      names: [Title, Game title]
+      expect: {value_equals: listing.title}
+      basis: hypothesis
+    - id: field.description
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.en.description
+      target: [{label: "Description"}]
+      names: [Description]
+      expect: {value_equals: listing.text.en.description}
+      basis: hypothesis
+      note: 200-500 characters of standard English (guidelines 5.3); listing-validation checks the copy.
+    - id: field.instructions
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.en.how_to_play
+      target: [{label: "Instructions"}]
+      names: [Instructions]
+      expect: {value_equals: listing.text.en.how_to_play}
+      basis: hypothesis
+    - id: media.thumbnail
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.icon
+      target: [{label: "Thumbnail 512x512"}]
+      names: [Thumbnail]
+      basis: hypothesis
+      note: The mandatory 512x512 thumbnail (guidelines 5.6); the other sizes are not mapped yet.
+    - id: draft.save
+      phase: save_draft
+      class: reversible
+      action: click
+      target: [{role: button, name: "Save"}]
+      names: [Save]
+      basis: hypothesis
+    - id: declare.preroll
+      phase: human_fields
+      class: human
+      note: >
+        After uploading, open the game in its iframe from the bottom of the upload view and
+        watch the pre-roll completely once; this flags the SDK as implemented (up to two
+        weeks), which publication needs.
+      basis: documented
+      source: https://github.com/GameDistribution/GD-HTML5/wiki/SDK-Implementation
+    - id: declare.rewarded-flag
+      phase: human_fields
+      class: human
+      note: Check the game's rewarded ads flag in the panel when the game uses rewarded ads; without it the SDK cannot request them.
+      basis: documented
+      source: https://github.com/GameDistribution/GD-HTML5/wiki/Rewarded-Ads
+    - id: declare.age-group
+      phase: human_fields
+      class: human
+      note: Select the age groups, and "kids friendly" or "no blood" where they apply (guidelines 5.5) - a person's declaration.
+      basis: documented
+      source: https://static.gamedistribution.com/developer/developers-guidelines.html
+
+  status:
     states: [Draft, Pending, Live, Rejected]
     submitted_states: [Pending]
     live_states: [Live]
     rejected_states: [Rejected]
+    pending_states: [Pending]
+
+  constraints:
+    upload_max_mb: null
+
+  notes: >
+    request_review has no intent on purpose: publication is requested with "the designated
+    button within your control panel" (wiki F.A.Q.), whose label is not public, and a review
+    request is irreversible - never written without a profile locator. A person clicks it;
+    the game is then reviewed and either activated or returned with feedback
+    (gamedistribution.com/developers).
+
+  fields:
+    title: {required: true, max: null, locales: shared, listing: listing.title, basis: documented, note: "Distinct; no duplicate of an existing title and no copyrighted name (guidelines 1.4.1, 5.2)."}
+    description: {required: true, min: 200, max: 500, locales: shared, listing: listing.text.en.description, basis: documented, note: "Standard English, naming the game exactly as titled at least once (guidelines 5.3)."}
+    instructions: {required: true, min: 200, max: 500, locales: shared, listing: listing.text.en.how_to_play, basis: documented, note: "Specific controls, not \"Mouse\" or \"Keyboard\" (guidelines 5.3)."}
+    genres: {required: true, min: 1, max_count: 2, locales: shared, human: true, basis: documented}
+    tags: {required: true, min: 1, max_count: 5, locales: shared, human: true, basis: documented}
+    age_groups: {required: true, locales: shared, human: true, basis: documented, note: "With optional \"kids friendly\" and \"no blood\" categories (guidelines 5.5)."}
+    thumbnails: {required: true, formats: null, size: "512x512, 512x384 and 200x120 mandatory; 1280x720 and 1280x550 optional", basis: documented}
+    backlinks: {required: false, human: true, basis: documented, note: "App Store or Play Store references go in the game's Backlinks tab, never in the game (guidelines 6.3)."}
+  restrictions:
+    - rule: The SDK must be implemented before uploading, or publication is denied.
+      source: https://static.gamedistribution.com/terms/developer.html (2.6.3)
+    - rule: The build on GameDistribution must always be identical to the latest version published on other platforms.
+      source: https://static.gamedistribution.com/terms/developer.html (2.6.4)
+    - rule: No link to a web domain or content outside the platform without consent; no third-party ads, purchases or data tracking.
+      source: https://static.gamedistribution.com/terms/developer.html (2.6.7, 2.6.8)
+    - rule: No monitoring access to the platform (availability, performance, functionality) without written consent.
+      source: https://static.gamedistribution.com/terms/developer.html
+    - rule: Games are hosted in full on the platform; external hosting only with written consent, and only for real multiplayer games.
+      source: https://static.gamedistribution.com/terms/developer.html (2.9), https://static.gamedistribution.com/developer/developers-guidelines.html (3.1)
+    - rule: Revenue share 33% of net revenue, paid within 60 days of the monthly report once at least EUR 100 and the payment information (with VAT) is filled in.
+      source: https://static.gamedistribution.com/terms/developer.html (3.1, 3.3)
+    - rule: No identical game may already exist in the catalogue; content must not violate IP rights.
+      source: https://gamedistribution.com/developers/

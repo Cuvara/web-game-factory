@@ -155,7 +155,9 @@ ask the user to give the idea as one quoted string).
    at a drafted release (a `--mock` run stops earlier, at G4). Publication is the workflow's `publish` group, in the same run:
    `/new-game publish <run-id>` (`bin/wgf publish --run <run-id>`) validates the release per
    platform and stops at G5 and then G6, each a person's decision; the portal submission
-   follows only a G6 `publish` and is a dry run unless the installation made it live.
+   follows only a G6 `publish`, is a dry run unless the installation made it live, and
+   waits for the person's login and, after an upload, for the person's submit confirmation
+   (`docs/publish-module.md`).
 
 ## The gate rule
 
@@ -181,6 +183,18 @@ stopped, and continues it if that shell was interrupted.
   report the step, its message and the brief path it gives; the developer finishes the work
   and runs `! bin/wgf resume <run-id> --decision done`, then `/new-game resume <run-id>`.
   Development is not complete until the engine says so.
+- in the `publish` group, at a portal visit (the run's `message` names the waiting
+  platforms; each one's `platform-publication` record carries its `waiting` block):
+  - WAITING_FOR_HUMAN_LOGIN: the portal's console is open in a headed browser window. Tell
+    the user to log in there and to handle any CAPTCHA or second factor themselves. Never
+    ask for, accept, type or store a password, one-time code, cookie or token. A timed-out
+    login or a closed window is a wait, not a failure: `/new-game resume <run-id>` opens
+    the window again.
+  - WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION: the build is uploaded and saved as a draft, and
+    nothing has requested review. Its choices - submit (request review once), hold, abandon,
+    done (requested by hand) - are the user's, one line per choice as at a gate.
+
+  Never operate a portal page yourself: the step's executor is the only browser actor.
 
 Do not change the factory configuration to make a run more autonomous, and do not
 advance a lifecycle state: the engine never moves one, and neither does this surface.

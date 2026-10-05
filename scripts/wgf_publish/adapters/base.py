@@ -16,18 +16,65 @@ def utc_now():
 
 class Job:
     """Everything one publication attempt needs, assembled by the step. Nothing here is a
-    credential except `storage_state`, the path of a private, short-lived copy."""
+    credential: a console's login is a person's, live, in the window the adapter opens, and
+    no session is ever loaded or kept.
+
+    What the visit may do (the step decides; an adapter never widens it):
+
+        live              factory.publish.mode live AND WGF_PUBLISH_LIVE=1: the build may be
+                          uploaded to the portal and the draft saved. False (dry run): nothing
+                          is uploaded to a real portal.
+        submit            the irreversible request (review, publish) may be made in this
+                          visit: live, and a person answered `submit` to the upload. Never
+                          true on the visit that uploads.
+        submit_confirmed  a person answered `submit` (WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION);
+                          the visit requests review once and reads the status back.
+        track             read-only: read the game's status and nothing else - no upload,
+                          no click (`wgf publish --run <id> --track`).
+        known_ids         the portal registry's lookup_candidates: the ids find_game tries
+                          first ([{"source", "field", "id"}]).
+        registry_status   the registry's status for the game here (NOT_CREATED when none).
+        required_ids      the ids the portal issues on create that the build must carry and
+                          the registry does not hold yet (identity.issued_on_create): the
+                          visit creates (or finds) the game, returns IDS_ISSUED with
+                          created_ids, and uploads nothing.
+        identity          what names the game: {portal_game_id (the registry's),
+                          config_game_id, config_app_id (game.config.yaml's for this
+                          platform), title (the listing's, else the game's name)}.
+        allow_create      False when the registry already knows a game here: find it, never
+                          create another (True only for NOT_CREATED).
+        login_timeout_s   factory.publish.login_timeout_s: how long a person has to log in on
+                          the portal's page; None lets the adapter use its default.
+        campaign          the store listing the release shipped for this platform
+                          (wgf_publish.campaign): every listing text and medium an intent
+                          names comes from it, the rendition's files first.
+        registry_entry    the portal registry's entry for the game here (a copy), or None:
+                          what a portal adapter reads its own history from (rejections and
+                          the resubmission cooldown they started, a publication before).
+    """
 
     def __init__(self, *, platform_id, release_id, idempotency_key, package_path, package,
                  metadata, checkout, release_dir, run_dir, scratch_dir, submit, env, hooks,
-                 storage_state=None, logger=None, timeouts=None, console_url=None,
-                 run_process=None):
+                 logger=None, timeouts=None, console_url=None,
+                 run_process=None, listing=None, platform_profile=None, live=None,
+                 submit_confirmed=False, track=False, known_ids=None, registry_status=None,
+                 required_ids=None, identity=None, allow_create=True, login_timeout_s=None,
+                 adaptive=None, campaign=None,
+                 registry_entry=None):
+        # The bounded adaptive mode's settings for this visit (wgf_publish/adaptive.py
+        # settings_for), resolved by the step from the run's configuration; None: from config.
+        self.adaptive = adaptive
         self.platform_id = platform_id
         self.release_id = release_id
         self.idempotency_key = idempotency_key
         self.package_path = package_path
         self.package = package or {}
         self.metadata = metadata or {}
+        # {locale: copy} of the shipped store listing's rendition for this platform, and the
+        # platform profile (core/reference/platforms/<id>.yaml) whose store_listing block
+        # and metadata_requirements say which listing fields and locales are required.
+        self.listing = listing or {}
+        self.platform_profile = platform_profile or {}
         self.checkout = checkout
         self.release_dir = release_dir
         self.run_dir = run_dir
@@ -35,11 +82,23 @@ class Job:
         self.submit = bool(submit)
         self.env = env
         self.hooks = hooks or {}
-        self.storage_state = storage_state
         self.logger = logger
         self.timeouts = timeouts or {}
         self.console_url = console_url
         self.run_process = run_process
+        self.live = bool(submit) if live is None else bool(live)
+        self.submit_confirmed = bool(submit_confirmed)
+        self.track = bool(track)
+        self.known_ids = list(known_ids or [])
+        self.registry_status = registry_status or "NOT_CREATED"
+        self.required_ids = list(required_ids or [])
+        self.identity = dict(identity or {})
+        self.allow_create = bool(allow_create)
+        self.login_timeout_s = login_timeout_s
+        # The shipped campaign (wgf_publish.campaign.Campaign) every listing value comes
+        # from; None: read from release_dir when first needed.
+        self.campaign = campaign
+        self.registry_entry = dict(registry_entry) if registry_entry else None
 
 
 class Publication:
@@ -48,7 +107,9 @@ class Publication:
 
     def __init__(self, outcome, message, *, state=None, draft_id=None, found_existing=False,
                  verified_state=None, evidence=(), human_reason=None, resume_with=None,
-                 submitted=False, measurement_class="automation-console"):
+                 submitted=False, measurement_class="automation-console", found_game=None,
+                 created_ids=None, uploaded=False, saved=False, status_text=None,
+                 login_handoffs=(), actions_log=None, phase_reached=None, registry=None):
         if outcome not in outcomes.OUTCOMES:
             raise ValueError(f"unknown publication outcome {outcome!r}")
         self.outcome = outcome
@@ -62,6 +123,30 @@ class Publication:
         self.resume_with = resume_with
         self.submitted = submitted
         self.measurement_class = measurement_class
+        # What the console run observed, for the step (wave 2 interface):
+        #   found_game     {"id", "title", "status_text", "source": registry|config|key|title}
+        #                  or None when the lookup ran and matched nothing
+        #   created_ids    {"external_game_id", "app_id", ...} the portal issued on create
+        #   uploaded/saved the build reached the draft / the draft was saved, read back
+        #   status_text    the portal's own status words for the game, as read
+        #   login_handoffs [{"at", "url" (origin+path), "reason", "action", "resume",
+        #                    "resolved_at" or None}] - each WAITING_FOR_HUMAN_LOGIN period
+        #   actions_log    run-relative path of this visit's actions.jsonl
+        #   phase_reached  the last phase that completed
+        self.found_game = found_game
+        self.created_ids = dict(created_ids or {})
+        self.uploaded = bool(uploaded)
+        self.saved = bool(saved)
+        self.status_text = status_text
+        self.login_handoffs = list(login_handoffs)
+        self.actions_log = actions_log
+        self.phase_reached = phase_reached
+        # What a portal adapter asks the step to record in the portal registry beyond what
+        # the outcome implies: {"status": a registry status the portal's own words establish
+        # (Yandex's Verified is VERIFIED), "other_ids": {name: str} merged into the entry's
+        # (a resubmission cooldown's next allowed time), "note": str}. The registry's own
+        # rules still apply: an evidence-bound status needs the status text read.
+        self.registry = dict(registry or {})
 
 
 class PublicationAdapter:

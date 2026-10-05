@@ -1,0 +1,142 @@
+# Platform profile — GamePix
+#
+# See yandex.yaml for how profiles are consumed. Every figure below comes from GamePix's own
+# public pages, read 2026-10-04 (docs/platform-targets-2026-10.md, GamePix):
+#   JS   https://partners.gamepix.com/sdk/doc/javascript      (the JavaScript SDK reference)
+#   SUB  https://partners.gamepix.com/guidelines/submission   (submission guidelines)
+#   DEV  https://partners.gamepix.com/developers              (developer program)
+# Where they say nothing - bundle size, listing sizes, review time, age rating - the field is
+# null or left out rather than guessed.
+#
+# NOT A TARGET YET. The Factory's pinned template (v1.2.0) has no GamePix SDK adapter: its
+# registry's createPlatform("gamepix") throws at boot. Strategy and tech-plan refuse the
+# platform while `gamepix` is absent from workspace/config/template.lock.json
+# `platform_adapters` (wgflib.template.platform_adapters): "GamePix needs a template release
+# carrying its SDK adapter (HUMAN_ACTION_REQUIRED: release and pin)". The adapter is on
+# template main (Cuvara/web-game-template#23, merged 2026-10-04), with a proposed
+# config/platforms/gamepix.yaml at the same version; reconcile the two when the pin moves.
+#
+# Portal ids: none. No Game ID or key goes into the code (JS). Exclusivity: a game is
+# exclusive to gamepix.com unless "Allow Distribution" is selected when uploading it (SUB) -
+# a person's commercial choice at submission, not a build setting.
+
+id: gamepix
+name: GamePix
+version: 1.0.0
+status: unverified
+docs: https://partners.gamepix.com/sdk/doc/javascript
+
+# audience: not documented; left out rather than guessed.
+
+capabilities:
+  # JS: GamePix.interstitialAd() and GamePix.rewardAd() ("still in beta"). No banner is
+  # documented.
+  ads: [interstitial, rewarded]
+  iap: false
+  # JS: GamePix.localStorage is browser storage behind GamePix's API, which some mobile
+  # browsers purge ("when the user closes the application or a week has passed"); a cloud
+  # mechanism is announced, not shipped. Not a cloud save.
+  cloud_saves: false
+  leaderboards: false
+  achievements: false
+  auth: none
+  # SUB: "Games must not include external analytics"; "GamePix provides a dashboard".
+  analytics: platform-provided
+
+requirements:
+  # SUB: "If the user's language is not supported, the default language must be English."
+  # JS: GamePix.lang() reports one of ar zh nl en fr de it ja ko pl pt ru es tr.
+  locales_required: [en]
+  locales_recommended: []
+  # JS: "Keep the final size of your Game the smallest possible" - no figure.
+  max_bundle_mb: null
+  # SUB: no "Rotate Your Device" prompt, "allow gameplay in both orientations"; resizes to an
+  # iframe of at least 640x480.
+  orientation: [landscape, portrait]
+  # JS: GAMEPIX_LOADED_NOT_CALLED - "GamePix.loaded() is not called. Please use it before any
+  # other GamePix SDK methods"; GamePix.loading() takes 0-100 (LOADING_VALUE_IS_NOT_A_NUMBER).
+  loading_api: required
+  offline_start: false
+  # SUB: "No External Links ... or any other form of external linking"; resources from a
+  # relative path; no third-party SDK other than GamePix's and Xsolla's.
+  no_external_links: true
+
+ads:
+  # JS: "Not every single interstitialAd() will trigger an ad. GamePix's system will determine
+  # when a user is ready for another ad" - no interval to set here.
+  interstitial_min_interval_s: null
+  rewarded_available: true
+  banner_available: false
+  notes: >
+    Pause the game, audio included, before interstitialAd() and resume in its callback; never
+    call interstitialAd() or rewardAd() again before it settles (INTERSTITIAL_AD_CALLED_TWICE,
+    REWARD_AD_CALLED_TWICE). Ads between levels, never during gameplay, never timer-triggered
+    (SUB). A reward only on res.success; tell the player the reward first, and skipping must
+    always be possible (SUB). Pause on a hidden tab; no window.alert or window.confirm (JS).
+
+metadata_requirements:
+  # SUB: "The game's assets (icon and cover) must be representative of the game."
+  icon_required: true
+
+review:
+  # SUB: "only complete games should be submitted; drafts or demos will not be approved" -
+  # a review exists; its length is not documented.
+  process: manual
+  common_rejections:
+    - The SDK script is not the first script in <head> (JS, "MANDATORY").
+    - Ads during gameplay, or triggered by a timer (SUB).
+    - External links, external analytics or ads, or a third-party SDK other than Xsolla's (SUB).
+    - A "rotate your device" prompt, a quit button, system popups, or a game that does not resize to its iframe (SUB).
+    - A draft or demo, a game already in the GamePix catalogue, or religious or explicit content (SUB).
+    - An icon, cover or description that does not match the game or its title (SUB).
+
+# What the portal's listing takes. SUB names an icon, a cover and a description; the
+# dashboard that takes them is behind a login, so every size and limit is null (UNKNOWN to
+# validation, never passed) until a person records it with its source.
+store_listing:
+  status: unverified
+  source: https://partners.gamepix.com/guidelines/submission (read 2026-10-04)
+  notes: >
+    An icon and a cover representative of the game, the title on them matching the game's,
+    and a description covering theme, mission, characters and how to play (SUB). Sizes,
+    formats, text limits, categories and tags are not public.
+  title: {required: true, max_chars: null}
+  # Not named by SUB: false means the package is not required to carry it, not that the
+  # dashboard takes none - the dashboard is unknown.
+  short_description: {required: false, max_chars: null}
+  long_description: {required: true, max_chars: null}
+  locales: null
+  icon: {id: icon, required: true, sizes: null, aspect: null, formats: null, max_kb: null, source: icon}
+  covers:
+    - {id: cover, label: Cover, required: true, sizes: null, aspect: null, formats: null, max_kb: null, source: thumbnail}
+  screenshots: {required: null, min: null, max: null, sizes: null, aspect: null, formats: null, max_kb: null}
+  video: {required: false, formats: null, min_seconds: null, max_seconds: null, max_mb: null}
+
+assertions:
+  - id: gamepix_sdk_present
+    check: { left: package.platform_sdk, op: eq, right: gamepix }
+    severity: blocking
+    rationale: >
+      The GamePix SDK (https://integration.gamepix.com/sdk/v3/gamepix.sdk.js) as the first
+      script in <head> is the one integration step GamePix marks mandatory (JS).
+  - id: gamepix_loading_api
+    check: { left: package.calls_loading_api, op: eq, right: true }
+    severity: blocking
+    rationale: GamePix.loaded() must be called before any other SDK method (JS).
+  - id: gamepix_english
+    check: { left: package.locales, op: in, right: [en] }
+    severity: blocking
+  - id: gamepix_no_external_links
+    check: { left: package.external_links, op: eq, right: 0 }
+    severity: blocking
+  - id: gamepix_no_banner_ads
+    check: { left: package.uses_banner_ads, op: eq, right: false }
+    severity: blocking
+
+scoring_hints:
+  platform_fit_favours:
+    - Casual titles with frequent natural breaks to signal as commercial breaks.
+    - Designs that play in both orientations and in a small (640x480) iframe.
+  platform_fit_penalizes:
+    - Designs that need cloud saves, sign-in, leaderboards or IAP.
+    - Monetization that depends on rewarded ads alone (beta, variable fill).

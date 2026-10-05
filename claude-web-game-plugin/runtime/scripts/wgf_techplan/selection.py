@@ -19,6 +19,12 @@ resolve to core/reference/platforms/<id>.yaml at that version, and becomes the t
 game.config.yaml entry `{id, profile: <id>@<version>, role}`. Required platforms come first,
 because the template's primaryPlatform() is the first `role: required` entry. Nothing here
 knows what any portal is; everything read is profile data.
+
+A platform with a profile is still not a target until the pinned template can build it: the
+template's createPlatform() throws at boot for an id its adapter registry lacks. The pin's
+adapter list is the lock's `platform_adapters` (wgflib.template.platform_adapters), and
+require_adapters refuses every pinned platform outside it - a person releases a template
+carrying the adapter and moves the pin.
 """
 
 import os
@@ -27,7 +33,7 @@ from wgflib import paths
 from wgflib.yamllite import load_file
 
 __all__ = ["ENGINE_FOR_DIMENSION", "EngineError", "PhysicsError", "PlatformError", "Platform",
-           "PHYSICS_CHOICES", "select_engine", "select_physics", "pin_platforms",
+           "PHYSICS_CHOICES", "select_engine", "select_physics", "pin_platforms", "require_adapters",
            "tightest_bundle_mb", "load_asset_kinds"]
 
 # Every engine the template carries, by dimensionality. Mirrors the tech-plan schema's enum.
@@ -227,6 +233,17 @@ def pin_platforms(strategy, directory=None):
         resolved.append(Platform(platform_id, version, role, profile))
     # Stable: required first, strategy order within each role.
     return sorted(resolved, key=lambda p: 0 if p.role == "required" else 1)
+
+
+def require_adapters(platforms, adapters):
+    """Refuse every platform the pinned template has no SDK adapter for (`adapters`, the
+    lock's platform_adapters): a build for it could not start."""
+    missing = [p for p in platforms if p.id not in set(adapters)]
+    if missing:
+        from wgflib.template import adapter_missing
+        raise PlatformError("; ".join(
+            f"{adapter_missing(p.profile.get('name') or p.id)} - {p.id} is not among the "
+            f"pinned template's adapters ({', '.join(adapters)})" for p in missing))
 
 
 def tightest_bundle_mb(platforms):

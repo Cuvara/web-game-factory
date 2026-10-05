@@ -19,6 +19,18 @@
 #   3. GitHub never returns a secret's value. This script cannot read what is already there,
 #      so it will not overwrite a real value with the sentinel — see SET_SENTINELS below.
 #
+#   4. CI never publishes a game to a portal, so no portal credential belongs in the
+#      organization or in CI. Publication is the Factory's `publish` group, behind a person's
+#      G6, with a session a person captures locally (docs/publish-module.md). The script only
+#      reconciles the names it manages and never deletes an organization secret or variable.
+#      These names were managed here before and are no longer read by any workflow; if an
+#      organization still holds them, a person should delete them by hand:
+#        secrets    WGF_POKI_AUTH_JSON, WGF_YANDEX_CONSOLE_SESSION, WGF_CRAZYGAMES_TOKEN,
+#                   WGF_GAMEVUI_TOKEN
+#        variables  WGF_POKI_GAME_ID, WGF_CRAZYGAMES_GAME_ID, WGF_GAMEVUI_GAME_ID,
+#                   WGF_YANDEX_APP_ID
+#      e.g. `gh secret delete WGF_POKI_AUTH_JSON --org <ORG>`.
+#
 # Usage:
 #   bash scripts/wgf-org-setup.sh [--org Cuvara] [--repos a,b,c] [--set-sentinels] [--dry-run]
 #
@@ -38,7 +50,7 @@ while [ $# -gt 0 ]; do
     --repos) REPOS="$2"; shift 2 ;;
     --set-sentinels) SET_SENTINELS=true; shift ;;
     --dry-run) DRY_RUN=true; shift ;;
-    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -64,25 +76,22 @@ run() {
 # created from the template is on no selected list until bootstrap puts it on one.
 SECRETS="
 WGF_CF_API_TOKEN|selected|Cloudflare API token for deploying develop builds to Pages.
-WGF_POKI_AUTH_JSON|selected|Contents of ~/.config/poki/auth.json, captured once locally. Poki's CLI login is a browser flow.
-WGF_YANDEX_CONSOLE_SESSION|selected|Reserved. Yandex publishes no upload API; submission is manual.
-WGF_CRAZYGAMES_TOKEN|selected|Reserved. CrazyGames publishes no upload API; submission is manual.
-WGF_GAMEVUI_TOKEN|selected|Reserved. GameVui publishes no upload API; submission is manual.
+WGF_LIVE_OPT_IN|selected|1 to run live-portal-validation.yml against real portal SDKs; unset, that suite exits BLOCKED. Not a credential.
 "
 
 # --- variables ---------------------------------------------------------------------------
 #
 # Not secrets. An app id and a game id are identifiers, not credentials, and storing them as
-# secrets only means nobody can read them back to check them.
+# secrets only means nobody can read them back to check them. Only the ids a build reads are
+# here: bootstrap.yml copies exactly these into a new game repository.
 #
 # name|value|visibility|what it is for
 VARIABLES="
 WGF_CF_ACCOUNT_ID|__UNSET__|selected|Cloudflare account id.
 WGF_CF_PROJECT_PREFIX|wgf|selected|Prefix for the Cloudflare Pages project of each game.
-WGF_YANDEX_APP_ID|__UNSET__|selected|Yandex Games draft id for the current title.
-WGF_POKI_GAME_ID|__UNSET__|selected|Poki game id (a UUID from developers.poki.com).
-WGF_CRAZYGAMES_GAME_ID|__UNSET__|selected|CrazyGames game id.
-WGF_GAMEVUI_GAME_ID|__UNSET__|selected|GameVui game id.
+WGF_Y8_APP_ID|__UNSET__|selected|Y8 (ID.net) app id the Y8 build bakes in at build time (or game.config.yaml). Public, not a credential.
+WGF_Y8_GAME_ID|__UNSET__|selected|Y8 game id the Y8 build bakes in at build time (or game.config.yaml). Public, not a credential.
+WGF_GAMEMONETIZE_GAME_ID|__UNSET__|selected|GameMonetize game id, required by a GameMonetize build (or game.config.yaml). Public, not a credential.
 "
 
 echo "organization : $ORG"
@@ -174,11 +183,14 @@ Next:
      still holds: organization secrets W, organization variables W, and, per repository,
      contents W, actions W, variables W, administration W, metadata R.
 
-  3. Game repositories get their gate environments from bootstrap.yml. Verify after the first
-     one is created that `production` and `campaign-spend` exist AND have required reviewers.
-     An environment with no reviewers is not a gate, and publish.yml/campaign.yml will refuse
-     to run rather than proceed unapproved.
+  3. Game repositories get their gate environment from bootstrap.yml. Verify after the first
+     one is created that `campaign-spend` exists AND has required reviewers. An environment
+     with no reviewers is not a gate, and campaign.yml will refuse to run rather than proceed
+     unapproved. There is no `production` environment: no workflow publishes to a portal.
 
      Required reviewers are unavailable on PRIVATE repositories under a free plan. A private
-     game repository on a free organization cannot enforce G6 or G7 this way at all.
+     game repository on a free organization cannot enforce G7 this way at all.
+
+  4. If the organization still holds a portal credential or portal id this script no longer
+     manages (see the header), delete it by hand. This script never deletes anything.
 EOF

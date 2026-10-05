@@ -1015,13 +1015,14 @@ def release_strategy(family="arcade", **budget):
     return strategy
 
 
-def release_design(family="arcade", n_total=32, groups=4, n_elements=12, models=None):
+def release_design(family="arcade", n_total=32, groups=4, n_elements=12, models=None,
+                   profile="standard"):
     """A design of `family` at tier release that holds against every content rule: `n_total`
     units in `groups` groups (none when the family has none), `n_elements` declared elements
     introduced across the post-mvp units up to the last sixth, every unit its own combination
     of elements, four structures and four objective kinds cycled, every group closed by a
     climax."""
-    design = authored_design(family, n_total=n_total, models=models)
+    design = authored_design(family, n_total=n_total, models=models, profile=profile)
     fam = (models or MODELS)["families"][family]
     shape = fam.get("budget") or {}
     block = design["build_spec"]["content"]
@@ -1325,6 +1326,139 @@ class TheQualityTier(ContentCase):
         validator = jsonschema_lite.Validator(dict(node, **{"$defs": schema["$defs"]}))
         errors = list(validator.iter_errors(release_design()["build_spec"]["content"]))
         self.assertEqual(errors, [])
+
+
+# The 3D run of 2026-10-05 (new-game-20261005-002923-597b5e, design 1-last-draft.json): a
+# casual arcade design at tier release, 12 units in 3 worlds. Every escalating axis rises over
+# the release units, with relief; over the 3 MVP units, which a casual profile lets raise one
+# axis each, speed and variety cannot. The rule judged the MVP alone and the repair agent
+# oscillated: lowering one axis to satisfy the per-unit cap broke the rise.
+#   (index, tier, purpose, group, speed, density, variety, precision, variation)
+LIVE_3D_RELEASE = (
+    (1, "mvp", "teach", "world-1", 0.1, 0.1, 0.1, 0.2, []),
+    (2, "mvp", "teach", "world-1", 0.1, 0.1, 0.1, 0.35,
+     ["introduces", "pattern_set", "objective"]),
+    (3, "mvp", "breather", "world-1", 0.1, 0.3, 0.1, 0.2,
+     ["introduces", "pattern_set", "tempo", "objective"]),
+    (4, "post-mvp", "climax", "world-1", 0.2, 0.3, 0.3, 0.2, ["pattern_set", "tempo"]),
+    (5, "post-mvp", "twist", "world-2", 0.3, 0.3, 0.3, 0.2,
+     ["introduces", "hazard_kind", "pattern_set", "objective"]),
+    (6, "post-mvp", "test", "world-2", 0.3, 0.3, 0.3, 0.4,
+     ["introduces", "hazard_kind", "objective"]),
+    (7, "post-mvp", "breather", "world-2", 0.3, 0.2, 0.4, 0.25,
+     ["introduces", "hazard_kind", "tempo", "objective"]),
+    (8, "post-mvp", "climax", "world-2", 0.3, 0.5, 0.4, 0.25,
+     ["pattern_set", "objective", "tempo"]),
+    (9, "post-mvp", "twist", "world-3", 0.45, 0.5, 0.4, 0.25,
+     ["introduces", "hazard_kind", "pattern_set", "objective"]),
+    (10, "post-mvp", "test", "world-3", 0.45, 0.5, 0.4, 0.45, ["pattern_set", "objective"]),
+    (11, "post-mvp", "breather", "world-3", 0.45, 0.5, 0.55, 0.3,
+     ["pattern_set", "tempo", "objective"]),
+    (12, "post-mvp", "climax", "world-3", 0.6, 0.5, 0.55, 0.3,
+     ["pattern_set", "tempo", "objective"]),
+)
+
+ESCALATION_RULES = ("content.axes_declared", "content.axes_monotone_with_relief")
+
+
+def live_3d_design(tier="release"):
+    """The live draft's difficulty table on the holding arcade fixture."""
+    design = authored_design("arcade", n_units=3, n_total=12, profile="casual")
+    block = design["build_spec"]["content"]
+    block["quality_tier"] = tier
+    block["groups"] = [{"id": f"world-{n}", "name": f"World {n}"} for n in (1, 2, 3)]
+    for item, row in zip(block["units"], LIVE_3D_RELEASE):
+        index, tier_of, purpose, group, speed, density, variety, precision, variation = row
+        assert item["index"] == index and item["tier"] == tier_of
+        item.update({"purpose": purpose, "group": group, "variation_from_previous": variation,
+                     "difficulty": {"speed": speed, "density": density, "variety": variety,
+                                    "precision": precision}})
+    return design
+
+
+class EscalationOverTheShippedUnits(ContentCase):
+    """content.axes_monotone_with_relief judges escalation over the units the tier ships: the
+    MVP at tier mvp, every release unit above it. Above mvp the MVP - a prefix that a session
+    profile lets raise only `max_axes_raised_per_unit` axes per unit - still climbs and never
+    regresses, a rule it can always satisfy."""
+
+    def strategy(self, via="concept", family=None):
+        return release_strategy(family or self.family)
+
+    def escalation(self, design, strategy=None):
+        _problems, results = self.check(design, strategy)
+        return {r["criterion_id"]: r for r in results if r["criterion_id"] in ESCALATION_RULES}
+
+    def assertHolds(self, results):
+        self.assertEqual(sorted(results), sorted(ESCALATION_RULES))
+        for rule_id, result in results.items():
+            self.assertFalse(result["breached"], (rule_id, result))
+
+    def test_the_live_3d_release_design_holds(self):
+        results = self.escalation(live_3d_design())
+        self.assertHolds(results)
+        self.assertIn("escalation over the 12 release unit(s)",
+                      results["content.axes_monotone_with_relief"]["note"])
+
+    def test_the_same_units_at_tier_mvp_are_still_judged_on_the_mvp(self):
+        # At tier mvp the prototype is what ships: three units that leave speed and variety
+        # where they started are no curve.
+        strategy = release_strategy()
+        strategy["concept"]["content_model"]["quality_tier"] = "mvp"
+        problems = self.breaches(live_3d_design(tier="mvp"), "content.axes_monotone_with_relief",
+                                 "is 0.1 on the first MVP unit and 0.1 on the last",
+                                 strategy=strategy)
+        self.assertEqual(len(problems), 2, problems)
+
+    def test_an_axis_that_does_not_rise_over_the_release_still_fails(self):
+        design = live_3d_design()
+        for item in units(design):
+            item["difficulty"]["speed"] = 0.1
+        self.breaches(design, "content.axes_monotone_with_relief",
+                      "difficulty 'speed' is 0.1 on the first release unit and 0.1 on the last")
+
+    def test_a_nudge_over_the_release_still_fails(self):
+        design = live_3d_design()
+        for item in units(design):
+            item["difficulty"]["variety"] = 0.1 if item["index"] < 12 else 0.15
+        self.breaches(design, "content.axes_monotone_with_relief",
+                      "rises at least 0.1 of its range by the last release unit")
+
+    def test_a_dip_past_the_mvp_is_held_to_relief(self):
+        design = live_3d_design()
+        unit(design, "u-07")["difficulty"]["density"] = 0.1          # 0.3 to 0.1: two thirds
+        self.breaches(design, "content.axes_monotone_with_relief", "a breather dips at most")
+
+    def test_an_unrecovered_dip_past_the_mvp_fails(self):
+        design = live_3d_design()
+        for index in (10, 11, 12):
+            unit(design, f"u-{index:02d}")["difficulty"]["speed"] = 0.35   # 0.45 never back
+        self.breaches(design, "content.axes_monotone_with_relief", "is not back to 0.45")
+
+    def test_an_mvp_that_regresses_fails(self):
+        design = live_3d_design()
+        unit(design, "u-03")["difficulty"]["speed"] = 0.08
+        self.breaches(design, "content.axes_monotone_with_relief",
+                      "does not end it lower than it starts")
+
+    def test_a_flat_mvp_fails(self):
+        design = live_3d_design()
+        unit(design, "u-03")["difficulty"]["density"] = 0.1
+        self.breaches(design, "content.axes_monotone_with_relief",
+                      "no escalating axis rises 0.1 of its range over the MVP units")
+
+    def test_the_per_unit_cap_still_binds_the_mvp(self):
+        design = live_3d_design()
+        unit(design, "u-02")["difficulty"].update({"speed": 0.2, "variety": 0.2})
+        self.breaches(design, "content.axes_monotone_with_relief",
+                      "a casual session raises 1 per unit")
+
+    def test_every_family_and_profile_holds_at_release(self):
+        for family in sorted(MODELS["families"]):
+            for profile in sorted(MODELS["session_profiles"]):
+                with self.subTest(family=family, profile=profile):
+                    design = release_design(family, profile=profile)
+                    self.assertHolds(self.escalation(design, release_strategy(family)))
 
 
 class TheTierInTheStep(unittest.TestCase):

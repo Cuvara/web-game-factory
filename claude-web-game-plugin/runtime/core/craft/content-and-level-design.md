@@ -100,9 +100,12 @@ Difficulty is data per unit, on the axes the family names (`build_spec.difficult
 drawn from `core/reference/genre-models.yaml`), each in 0..1. A design may not invent an
 axis, and every unit carries a value on every axis of its family.
 
-- **Escalation.** Every axis marked `escalates` ends higher across the MVP units than it
-  starts. An axis that never moves is not a difficulty axis for this game; say so rather
-  than listing it flat.
+- **Escalation.** Every axis marked `escalates` ends higher than it starts across the units
+  the design's tier ships: the MVP units at tier `mvp`, every release unit in order above it.
+  Above `mvp` the MVP is the start of that curve - one axis raised per casual unit cannot
+  raise every axis in three units - so it climbs (at least one escalating axis rises, none
+  ends lower than it starts) and the release carries the rest. An axis that never moves is
+  not a difficulty axis for this game; say so rather than listing it flat.
 - **One or two axes per unit.** A unit raises at most `max_axes_raised_per_unit` axes over the
   previous one: 1 on the `casual` session profile, 2 on `standard`. Stacked increases read as
   unfair even when each is small.

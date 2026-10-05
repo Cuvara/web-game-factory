@@ -32,7 +32,7 @@
 # Change a bar only with a reason a person could defend from a playtest; a looser bar here lets
 # a one-level prototype through as a game.
 
-version: 1.2.0
+version: 1.2.1
 
 session_profiles:
   # max_unit_s: the longest a single unit is designed to last. max_first_session_s: the
@@ -62,8 +62,9 @@ variety:
   # not a regression; deeper, or not recovered within `relief_recovery_units`, breaches.
   relief_dip_max: 0.35
   relief_recovery_units: 2
-  # An escalating axis ends at least this much higher (of its 0..1 range) on the last MVP
-  # unit than on the first: a rise of a few hundredths satisfies "higher" and teaches
+  # An escalating axis ends at least this much higher (of its 0..1 range) on the last unit
+  # the tier ships than on the first (above tier mvp, at least one escalating axis also rises
+  # this much over the MVP): a rise of a few hundredths satisfies "higher" and teaches
   # nothing.
   min_axis_rise: 0.1
 
@@ -84,7 +85,10 @@ implementation:
 #   difficulty_models   allowed build_spec.difficulty.model values
 #   ending              allowed genre.ending values; `finite` requires build_spec.experience.win
 #   axes                the difficulty dimensions, each 0..1; `escalates`: the axis must end
-#                       higher than it starts over the MVP units; `probe`: the build reports it
+#                       higher than it starts over the units the design's tier ships - the
+#                       MVP units at tier mvp, every release unit in order above it, where the
+#                       MVP still climbs and never ends an escalating axis lower than it starts
+#                       (1.2.1); `probe`: the build reports it
 #                       as metrics.difficulty.<id> (required | optional)
 #   win / lose          the shape of success and failure; per_unit: every unit states its own
 #   units               min_mvp: MVP units the prototype builds; min_total: units at any tier

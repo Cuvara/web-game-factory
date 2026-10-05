@@ -332,6 +332,11 @@ def seed_units(family, seed_units_block, strategy, mechanics, profile, run_secon
     purposes = purposes_for(arc, mvp_count, profile.get("relief_every_units"))
     tail = [str(p) for p in arc] or ["test"]
     purposes += [tail[(index - mvp_count) % len(tail)] for index in range(mvp_count, total)]
+    if total > mvp_count:
+        # The release closes the way the MVP does: on the arc's last purpose, never on a
+        # breather's dip that no later unit recovers (content.axes_monotone_with_relief reads
+        # every release unit above tier mvp).
+        purposes[-1] = tail[-1]
 
     axis_profile = seed_units_block.get("axis_profile") or {}
     readings = _difficulty(family, axis_profile, purposes, profile)

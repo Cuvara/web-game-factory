@@ -471,5 +471,41 @@ class EveryArchetypeEmitsItsContent(unittest.TestCase):
                     self.assertTrue(set(unit["difficulty"]) <= set(declared), unit["id"])
 
 
+class TheEscalationRulesHoldTogether(unittest.TestCase):
+    """content.axes_monotone_with_relief is satisfiable at every tier, with the session
+    profile's `max_axes_raised_per_unit` binding the same units: the seed author's design,
+    held at tier release, passes the escalation rules for every family on both profiles. A
+    rule the seed cannot meet is one an agent author cannot repair its way out of either (the
+    3D run of 2026-10-05 oscillated between the per-unit cap and an MVP-only rise)."""
+
+    STANDARD = {"audience": {"type": "midcore", "device": "both",
+                             "player_description": "FIXTURE"},
+                "session": {"target_seconds": 900, "first_session_seconds": 600,
+                            "sessions_per_day_target": 2}}
+    RULES = ("content.axes_declared", "content.axes_monotone_with_relief")
+
+    def test_every_family_seed_holds_the_escalation_rules_at_release(self):
+        for family in sorted(FAMILIES):
+            for profile, changes in (("casual", {}), ("standard", self.STANDARD)):
+                with self.subTest(family=family, profile=profile):
+                    strategy = strategy_for(family, **changes)
+                    result = design_for(family, strategy)
+                    self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+                    design = copy.deepcopy(result.artifacts[0].content)
+                    self.assertEqual(design["genre"]["session_profile"], profile)
+                    design["build_spec"]["content"]["quality_tier"] = "release"
+                    listed = units(design)
+                    self.assertGreater(len([u for u in listed if u["tier"] != "optional"]),
+                                       len(units(design, "mvp")))
+                    _problems, results = content.check(design, strategy, MODELS)
+                    held = {r["criterion_id"]: r for r in results
+                            if r["criterion_id"] in self.RULES}
+                    self.assertEqual(sorted(held), sorted(self.RULES))
+                    for rule_id, rule in held.items():
+                        self.assertFalse(rule["breached"], (rule_id, rule["note"]))
+                    self.assertIn("release unit(s)",
+                                  held["content.axes_monotone_with_relief"]["note"])
+
+
 if __name__ == "__main__":
     unittest.main()

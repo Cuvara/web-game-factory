@@ -18,9 +18,12 @@ number:
     again after the unit that teaches it;
   * consecutive units differ on the family's variety dimensions, and a run of units that
     change only a number is refused;
-  * difficulty moves on the family's declared axes, escalates on the ones it says escalate,
-    dips only as far as relief allows and recovers, and raises no more axes at once than the
-    session profile permits, with a breather inside every `relief_every_units`;
+  * difficulty moves on the family's declared axes, escalates on the ones it says escalate
+    over the units the tier ships (the MVP at tier mvp; every release unit, in order, above
+    it - where the MVP, a prefix the session profile lets raise only so many axes, still
+    climbs and never regresses), dips only as far as relief allows and recovers, and raises no
+    more axes at once than the session profile permits, with a breather inside every
+    `relief_every_units`;
   * objectives vary, every unit says how it is won and lost in its own words, and its
     acceptance lines are specific enough to tell two units apart;
   * `scope.content_units` agrees with the list, and mastery is stated in hud metrics a player
@@ -115,7 +118,7 @@ RULES = (
     ("content.axes_declared",
      "Every difficulty value is on a declared axis, in range, and every escalating axis is set"),
     ("content.axes_monotone_with_relief",
-     "Escalating axes end higher than they start, dip only for relief, and recover"),
+     "Escalating axes rise over the units the tier ships, dip only for relief, and recover"),
     ("content.objectives_vary",
      "The MVP units do not all ask the player for the same thing"),
     ("content.win_lose_stated",
@@ -826,11 +829,15 @@ def _axes_declared(d):
         f"{d.label} axes: {', '.join(sorted(d.fam_axes))}"
 
 
-def _axes_monotone_with_relief(d):
+def _escalation(d, units, where):
+    """The escalation problems of `units` read in order: every escalating axis ends at least
+    `min_axis_rise` higher than it starts, and a dip is a breather - no deeper than
+    `relief_dip_max` and recovered within `relief_recovery_units`. `where` names the units in
+    a finding ("MVP", "release")."""
     problems = []
-    units = d.mvp_units
     dip_max = d.bar("relief_dip_max")
     recovery = d.bar("relief_recovery_units") or 0
+    rise = d.bar("min_axis_rise") or 0
     for axis_id, axis in sorted(d.fam_axes.items()):
         if not axis.get("escalates"):
             continue
@@ -839,16 +846,15 @@ def _axes_monotone_with_relief(d):
         if len(series) < 2:
             continue
         first, last = series[0][1], series[-1][1]
-        rise = d.bar("min_axis_rise") or 0
         if last <= first:
-            problems.append(f"difficulty {axis_id!r} is {first:g} on the first MVP unit and "
+            problems.append(f"difficulty {axis_id!r} is {first:g} on the first {where} unit and "
                             f"{last:g} on the last; an axis a {d.label} game escalates on ends "
                             f"higher than it starts")
         elif last - first < rise - 1e-9:
-            problems.append(f"difficulty {axis_id!r} rises only {last - first:g} over the MVP "
-                            f"units ({first:g} to {last:g}); an axis a {d.label} game escalates "
-                            f"on rises at least {rise:g} of its range by the last MVP unit - a "
-                            f"nudge is not a curve")
+            problems.append(f"difficulty {axis_id!r} rises only {last - first:g} over the "
+                            f"{where} units ({first:g} to {last:g}); an axis a {d.label} game "
+                            f"escalates on rises at least {rise:g} of its range by the last "
+                            f"{where} unit - a nudge is not a curve")
         for position in range(1, len(series)):
             unit, value = series[position]
             before = series[position - 1][1]
@@ -863,6 +869,47 @@ def _axes_monotone_with_relief(d):
                 problems.append(f"{d.where(unit, 'difficulty')}.{axis_id} dips to {value:g} from "
                                 f"{before:g} and is not back to {before:g} within {recovery} "
                                 f"unit(s): a dip that is never recovered is a flat curve")
+    return problems
+
+
+def _mvp_climbs(d):
+    """The MVP of a design above tier mvp: a prefix of the release, which escalates over the
+    release (`_escalation`). A session profile raises `max_axes_raised_per_unit` axes per unit,
+    so a short MVP cannot raise every escalating axis - but it climbs: no escalating axis ends
+    the MVP lower than it starts, and at least one rises by `min_axis_rise`."""
+    units = d.mvp_units
+    rise = d.bar("min_axis_rise") or 0
+    problems, best = [], None
+    for axis_id, axis in sorted(d.fam_axes.items()):
+        if not axis.get("escalates"):
+            continue
+        series = [v for v in (d.value(unit, axis_id) for unit in units) if v is not None]
+        if len(series) < 2:
+            continue
+        first, last = series[0], series[-1]
+        best = last - first if best is None else max(best, last - first)
+        if last < first:
+            problems.append(f"difficulty {axis_id!r} is {first:g} on the first MVP unit and "
+                            f"{last:g} on the last; the prototype is the start of the release's "
+                            f"curve and an axis a {d.label} game escalates on does not end it "
+                            f"lower than it starts")
+    if best is not None and best < rise - 1e-9:
+        problems.append(f"no escalating axis rises {rise:g} of its range over the MVP units (the "
+                        f"most is {best:g}); the prototype raises at least one of the axes a "
+                        f"{d.label} game escalates on - a flat prototype tests no curve")
+    return problems
+
+
+def _axes_monotone_with_relief(d):
+    units = d.mvp_units
+    # Above tier mvp the design ships every release unit: escalation is judged over all of
+    # them, in order (as content.tier_difficulty reads them), and the MVP only has to climb.
+    # At tier mvp - or with nothing past the prototype - the MVP is what ships.
+    shipped = d.tier in QUALITY_TIERS[1:] and len(d.release_units) > len(units)
+    if shipped:
+        problems = _escalation(d, d.release_units, "release") + _mvp_climbs(d)
+    else:
+        problems = _escalation(d, units, "MVP")
     cap = d.profile.get("max_axes_raised_per_unit")
     for position in range(1, len(units)):
         unit = units[position]
@@ -882,8 +929,10 @@ def _axes_monotone_with_relief(d):
             problems.append(f"{d.where(unit)} is MVP unit {run} in a row that raises an axis; "
                             f"a {d.profile_name} session gets a breather - a 'breather' purpose, "
                             f"or a unit that raises nothing - every {every} units")
-    return problems, len(units), f"{d.profile_name} profile: {cap} axes per unit, relief every " \
-                                 f"{every}"
+    note = f"{d.profile_name} profile: {cap} axes per unit, relief every {every}"
+    if shipped:
+        note += f"; escalation over the {len(d.release_units)} release unit(s)"
+    return problems, len(units), note
 
 
 def _objectives_vary(d):

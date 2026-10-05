@@ -78,15 +78,20 @@ const CFG = JSON.parse(fs.readFileSync(process.env.WGF_PLAY_CONFIG as string, "u
   session_target_ms: number;
   session_max_ms: number;
   window_ms: number;
-  // The time ramp (analysis.time_ramp): the run it is read on - `session`, or `mode`: a run
-  // of ramp_mode, entered through the probe's optional play.mode and played for ramp_ms -
-  // or null. While the longest run's first third holds fewer than ramp_min_inputs oracle
-  // inputs, that run is played on for up to ramp_extend_ms more.
+  // The time ramp (analysis.time_ramp): the play it is read on - `session` (the endless play
+  // itself), or `mode`: ramp_mode, entered through the probe's optional play.mode - or null.
+  // The ramp test plays ramp_samples fresh runs of it, ramp_ms each, and further whole
+  // samples within ramp_extend_ms while the pooled counts are undecided (fewer than
+  // ramp_min_inputs in the first thirds, or a difference within ramp_noise_z x sqrt(n)).
+  // ramp_stall_ms: the stall bar (depth.stall), past which a sample is decided as stalled.
   ramp_run?: string | null;
   ramp_mode?: string | null;
   ramp_ms?: number;
+  ramp_samples?: number;
+  ramp_noise_z?: number;
   ramp_min_inputs?: number;
   ramp_extend_ms?: number;
+  ramp_stall_ms?: number;
   axes: string[];
   advance_actions: string[];
   // The family says a unit can be restarted from inside it (genre-models qa.reset_in_unit).
@@ -1151,17 +1156,14 @@ function thirdsOf(inputs: number[], duration: number): number[] {
 type Run = { duration_ms: number; inputs: number; oracle_inputs_per_third: number[] };
 
 // The oracle plays and retries at once for `windowMs`, run after run. Recorded: each run with
-// the oracle's input rate per third of it (does the game ask more of the player as it goes?),
-// when the designed closing beat first arrived, and the difficulty in force in each window.
-// With `minInputs`, play goes on past the window - for up to `extendMs` - while the longest
-// run's first third holds fewer oracle inputs than that: too few to tell a ramp from noise.
-async function playRuns(page: Page, watch: Watch, touch: boolean, windowMs: number,
-                        minInputs: number, extendMs: number) {
+// the oracle's input rate per third of it, when the designed closing beat first arrived, and
+// the difficulty in force in each window. The time ramp is not read here: the ramp test
+// samples its own fresh runs (playSample).
+async function playRuns(page: Page, watch: Watch, touch: boolean, windowMs: number) {
   const runs: Run[] = [];
   const windows: { at_ms: number; difficulty: Record<string, number> }[] = [];
   let beatAtMs: number | null = null;
   let endedOn = "window";
-  let extendedMs = 0;
   const t0 = Date.now();
   const opening = watch.saw(await snap(page));
   let best = opening?.metrics?.best ?? null;
@@ -1176,25 +1178,8 @@ async function playRuns(page: Page, watch: Watch, touch: boolean, windowMs: numb
     inputs = [];
     runStart = Date.now();
   };
-  // Whether the longest run so far - the one still in play included - is enough to read.
-  const sampled = (): boolean => {
-    const open = Date.now() - runStart;
-    let longest: number[] = thirdsOf(inputs, open);
-    let longestMs = open;
-    for (const run of runs) {
-      if (run.duration_ms > longestMs) {
-        longestMs = run.duration_ms;
-        longest = run.oracle_inputs_per_third;
-      }
-    }
-    return (longest[0] ?? 0) >= minInputs;
-  };
   for (;;) {
-    const elapsed = Date.now() - t0;
-    if (elapsed >= windowMs) {
-      if (!minInputs || sampled() || elapsed >= windowMs + extendMs) break;
-      extendedMs = elapsed - windowMs;
-    }
+    if (Date.now() - t0 >= windowMs) break;
     const s = watch.saw(await snap(page));
     if (!s) break;
     const ms = Date.now() - t0;
@@ -1235,13 +1220,96 @@ async function playRuns(page: Page, watch: Watch, touch: boolean, windowMs: numb
   }
   if (Date.now() - runStart > 500) close();
   if (beatAtMs !== null && endedOn === "window") endedOn = "beat reached";
-  return { runs, windows, lengthMs: Date.now() - t0, beatAtMs, endedOn, extendedMs };
+  return { runs, windows, lengthMs: Date.now() - t0, beatAtMs, endedOn };
+}
+
+type Sample = Run & { input_ms: number[]; longest_idle_ms: number; idle_at_ms: number | null;
+                      ended: string };
+
+// What a run has achieved, as far as the probe says: the design's goal metric, the unit's
+// progress, the unit reached. A change in it is progress; the time it is read is not.
+function achieved(s: Snapshot): string {
+  return JSON.stringify([s.metrics?.[CFG.goal_metric] ?? null, s.content?.progress?.value ?? null,
+                         s.content?.unit_index ?? null]);
+}
+
+// One sample of the time ramp: the run in play now, played by the oracle for `windowMs` or
+// until the game ends it (no retry: a sample is one run). Recorded: the oracle's inputs per
+// third and their times, and the longest stretch in play (state `playing`) with no oracle
+// input and no progress (achieved) - a stall, depth.stall, when over ramp_stall_ms.
+async function playSample(page: Page, watch: Watch, touch: boolean, windowMs: number): Promise<Sample> {
+  const t0 = Date.now();
+  const inputs: number[] = [];
+  let active = t0;
+  let longestIdle = 0;
+  let idleAt: number | null = null;
+  let last: string | null = null;
+  let ended = "window";
+  const idle = (now: number): void => {
+    if (now - active > longestIdle) {
+      longestIdle = now - active;
+      idleAt = active - t0;
+    }
+  };
+  while (Date.now() - t0 < windowMs) {
+    const s = watch.saw(await snap(page));
+    const now = Date.now();
+    if (!s) {
+      ended = "no snapshot";
+      break;
+    }
+    if (s.state === "lost" || s.state === "won") {
+      ended = s.state;
+      break;
+    }
+    if (s.state !== "playing") {
+      // Paused, between waves, an interstitial: not play, so not idle play either.
+      active = now;
+      await page.waitForTimeout(40);
+      continue;
+    }
+    const mark = achieved(s);
+    if (mark !== last) {
+      last = mark;
+      active = now;
+    }
+    idle(now);
+    if (s.oracle) {
+      await act(page, s.oracle, touch);
+      inputs.push(Date.now() - t0);
+      active = Date.now();
+      await page.waitForTimeout(120);
+    } else {
+      await page.waitForTimeout(40);
+    }
+  }
+  const duration = Date.now() - t0;
+  if (ended === "window") idle(Date.now());
+  return { duration_ms: duration, inputs: inputs.length,
+           oracle_inputs_per_third: thirdsOf(inputs, duration), input_ms: inputs,
+           longest_idle_ms: longestIdle, idle_at_ms: idleAt, ended };
+}
+
+// Whether the samples so far decide the ramp (analysis.ramp_verdict, which judges; this only
+// says whether more samples could change the answer): a stall, a single sample's fall beyond
+// its own band, or - with enough inputs - a pooled difference beyond the pooled band.
+function rampDecided(samples: Sample[]): boolean {
+  const z = CFG.ramp_noise_z ?? 0;
+  const minimum = CFG.ramp_min_inputs ?? 0;
+  if (samples.some((s) => s.longest_idle_ms > (CFG.ramp_stall_ms ?? Infinity))) return true;
+  let first = 0;
+  let last = 0;
+  for (const s of samples) {
+    const [a = 0, , c = 0] = s.oracle_inputs_per_third;
+    if (a >= minimum && a - c > z * Math.sqrt(a + c)) return true;
+    first += a;
+    last += c;
+  }
+  return first >= minimum && Math.abs(last - first) > z * Math.sqrt(first + last);
 }
 
 // One first session, as the design designed it: the oracle plays and retries at once, and the
-// session is held open to the design's own first-session length (playRuns). When the play is
-// endless the session is the run the time ramp is read on, and it is played on while too
-// short to read.
+// session is held open to the design's own first-session length (playRuns).
 test("session: a first session's length and ramp", async ({ page }, info) => {
   const project = info.project.name;
   const frames: string[] = [];
@@ -1253,17 +1321,14 @@ test("session: a first session's length and ramp", async ({ page }, info) => {
   const touch = Boolean(info.project.use.hasTouch);
   const started = await start(page, touch, watch);
   let played = { runs: [] as Run[], windows: [] as { at_ms: number; difficulty: Record<string, number> }[],
-                 lengthMs: 0, beatAtMs: null as number | null, endedOn: "play never began", extendedMs: 0 };
+                 lengthMs: 0, beatAtMs: null as number | null, endedOn: "play never began" };
   if (started.playingMs !== null) {
-    const ramp = CFG.ramp_run === "session";
-    played = await playRuns(page, watch, touch, CFG.session_max_ms,
-                            ramp ? CFG.ramp_min_inputs ?? 0 : 0, ramp ? CFG.ramp_extend_ms ?? 0 : 0);
+    played = await playRuns(page, watch, touch, CFG.session_max_ms);
     await frame(page, project, "session-end", frames);
   }
   write(project, "session", { ...started, applies: true, length_ms: played.lengthMs,
                               beat_at_ms: played.beatAtMs, ended_on: played.endedOn,
                               runs: played.runs, windows: played.windows,
-                              extended_ms: played.extendedMs,
                               target_ms: CFG.session_target_ms, window_ms: CFG.window_ms,
                               ...watch.record(), frames });
 });
@@ -1298,41 +1363,66 @@ async function enterMode(page: Page, mode: string): Promise<{ offered: string[] 
   }, mode);
 }
 
-// The time ramp's own run, when the design's play is authored and its time ramp is promised
-// by a mode it includes (an endless mode): the bot enters that mode through the probe and
-// plays it as a player would - the oracle, instant retries - for ramp_ms, on while too short
-// to read. A design whose ramp is not read on a mode gets a record that says so.
-test("ramp: a run of the mode that promises the time ramp", async ({ page }, info) => {
+// The time ramp's samples (design-depth.yaml playability.ramp 1.4.0), when the design promises
+// one (analysis.time_ramp): ramp_samples fresh runs - a fresh page each, and for a ramp read
+// on a mode (an endless mode beside authored units) that mode entered through the probe's
+// play.mode - each played by the oracle for ramp_ms or until the game ends it. While the
+// samples do not decide the ramp (rampDecided), further whole samples are played within
+// ramp_extend_ms. One run was a coin toss: the verdict is read on all of them, pooled.
+test("ramp: samples of the play that promises the time ramp", async ({ page }, info) => {
   const project = info.project.name;
   const frames: string[] = [];
   const watch = new Watch(page, project, frames);
-  const mode = CFG.ramp_run === "mode" ? CFG.ramp_mode ?? null : null;
-  if (!mode) {
-    write(project, "ramp", { applies: false, reason: "the time ramp is not read on a mode run" });
+  const run = CFG.ramp_run ?? null;
+  const mode = run === "mode" ? CFG.ramp_mode ?? null : null;
+  const planned = CFG.ramp_samples ?? 0;
+  const windowMs = CFG.ramp_ms ?? 0;
+  if (!run || (run === "mode" && !mode) || planned < 1 || windowMs <= 0) {
+    write(project, "ramp", { applies: false, reason: "the design promises no time ramp" });
     return;
   }
+  const extendMs = CFG.ramp_extend_ms ?? 0;
+  const most = planned + Math.floor(extendMs / windowMs);
+  test.setTimeout(most * (windowMs + CFG.start_timeout_ms + 5000) + 60_000);
   const touch = Boolean(info.project.use.hasTouch);
-  const started = await start(page, touch, watch);
-  if (started.playingMs === null) {
-    write(project, "ramp", { ...started, applies: true, mode, entered: false,
-                             reason: "play never began", runs: [], ...watch.record(), frames });
-    return;
+  const samples: Sample[] = [];
+  let entry: { offered: string[] | null; entered: boolean; reason: string | null } | null = null;
+  let reason: string | null = null;
+  let extendedMs = 0;
+  let extendFrom = 0;
+  let firstStart: Record<string, unknown> | null = null;
+  while (samples.length < most) {
+    if (samples.length >= planned) {
+      if (rampDecided(samples)) break;
+      if (!extendFrom) extendFrom = Date.now();
+      if (Date.now() - extendFrom + windowMs > extendMs) break;
+    }
+    const started = await start(page, touch, watch);
+    if (firstStart === null) firstStart = started;
+    if (started.playingMs === null) {
+      reason = `sample ${samples.length + 1}: play never began`;
+      break;
+    }
+    if (mode) {
+      entry = await enterMode(page, mode);
+      if (!entry.entered) {
+        reason = `sample ${samples.length + 1}: ${entry.reason ?? "the mode was not entered"}`;
+        break;
+      }
+      await page.waitForTimeout(300);
+    }
+    if (!samples.length) await frame(page, project, `ramp-${mode ?? "session"}-start`, frames);
+    samples.push(await playSample(page, watch, touch, windowMs));
+    if (extendFrom) extendedMs = Date.now() - extendFrom;
   }
-  const entry = await enterMode(page, mode);
-  if (!entry.entered) {
-    write(project, "ramp", { ...started, applies: true, mode, ...entry, runs: [],
-                             ...watch.record(), frames });
-    return;
-  }
-  await page.waitForTimeout(300);
-  await frame(page, project, `ramp-${mode}-start`, frames);
-  const played = await playRuns(page, watch, touch, CFG.ramp_ms ?? 0,
-                                CFG.ramp_min_inputs ?? 0, CFG.ramp_extend_ms ?? 0);
-  await frame(page, project, `ramp-${mode}-end`, frames);
-  write(project, "ramp", { ...started, applies: true, mode, ...entry, runs: played.runs,
-                           windows: played.windows, length_ms: played.lengthMs,
-                           ended_on: played.endedOn, extended_ms: played.extendedMs,
-                           window_ms: CFG.ramp_ms, ...watch.record(), frames });
+  if (samples.length) await frame(page, project, `ramp-${mode ?? "session"}-end`, frames);
+  // `entered`: the mode was entered for the samples played (a session ramp enters none); a
+  // later entry that failed stops the sampling, with its `reason`.
+  const entered = mode ? samples.length > 0 : null;
+  write(project, "ramp", { ...(firstStart ?? {}), applies: true, run, mode,
+                           offered: entry?.offered ?? null, entered, reason,
+                           samples, planned_samples: planned, window_ms: windowMs,
+                           extended_ms: extendedMs, ...watch.record(), frames });
 });
 
 // -- the showcase ---------------------------------------------------------------------------

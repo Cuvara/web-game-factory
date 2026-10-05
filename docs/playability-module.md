@@ -113,19 +113,25 @@ probe. The developer brief embeds the schema, so a developer knows how the build
 - **Session** (only with a depth contract): one first session with instant retries, held open
   to the design's own first-session length. Records how long play lasted, each attempt's
   oracle input rate per third of it, when the designed closing beat first arrived, and the
-  difficulty in each `endless_window_s` window. When the session is the run the time ramp is
-  read on (an endless play, below), the bot plays on past the window - for up to
-  `ramp.extend_s` - while the longest run's first third holds fewer than
-  `ramp.min_inputs_per_third` oracle inputs, and records `extended_ms`.
-- **Ramp** (only when the time ramp is promised by a mode the design includes - an endless
-  mode beside authored units, below): a fresh first session, then the bot enters that mode
-  through the probe's optional `play.mode.enter(mode)` (see
-  [template-contract.md](template-contract.md#the-play-probe-mode)) and plays it as the
-  session does - the oracle, instant retries - for `ramp.run_s`, played on as above while
-  too short to read. The record (`ramp.json`) says whether the mode was entered and why not
-  (`play.mode` absent, `modes()` not offering it, `enter` answering false), each run's
-  oracle inputs per third, and its frames `ramp-<mode>-start` and `-end`. Any other design
-  gets `{applies: false}`.
+  difficulty in each `endless_window_s` window. The time ramp is not read on the session
+  (design-depth.yaml 1.4.0): the ramp test samples its own runs.
+- **Ramp** (only when the design promises a time ramp, `analysis.time_ramp`: the endless
+  play itself, or an endless mode beside authored units): `ramp.samples` (3) **fresh runs**,
+  each on a fresh page - and, for a mode, with the mode entered again through the probe's
+  optional `play.mode.enter(mode)` (see
+  [template-contract.md](template-contract.md#the-play-probe-mode)) - each played by the
+  oracle for `ramp.run_s` (the budget's share of it) or until the game ends it; no retry
+  inside a sample. Per sample the record keeps the oracle inputs per third and their times
+  (`input_ms`), how it ended, and `longest_idle_ms` / `idle_at_ms`: the longest stretch in
+  state `playing` with **no oracle input and no progress** - no change in the design's goal
+  metric, the unit's `progress.value` or `unit_index` (a pause, a wave break or an
+  interstitial is not play, so not idle). While the samples do not decide the ramp (the
+  pooled counts short of `min_inputs_per_third` or inside the noise band, no stall, no
+  sample's own fall), the bot plays further **whole** samples, as many as fit in
+  `ramp.extend_s`, and records `extended_ms`. The record (`ramp.json`) also says whether the
+  mode was entered and why sampling stopped (`reason`: play never began, `play.mode` absent,
+  `modes()` not offering it, `enter` answering false), with frames
+  `ramp-<mode|session>-start` and `-end`. Any other design gets `{applies: false}`.
 - **Showcase** (only when the probe declares the optional `play.showcase`; see
   [template-contract.md](template-contract.md#the-play-probe-showcase)): last, after every
   fresh-save test, which all only meet the opening content. The bot reads
@@ -169,8 +175,10 @@ traverse, persist, session and ramp windows in proportion to what they asked for
 judged from a window that was cut carries `measured.truncated: true` - and, where the
 shortfall is the budget's rather than the build's, drops to a warning. The bot's process
 timeout is `2 x (bot_total_s + SHOWCASE_S + 45) + 120` s, not a fixed number, plus the
-survey's window and a start per surveyed unit when it runs, and `2 x ramp.extend_s` when a
-time ramp is read.
+survey's window and a start per surveyed unit when it runs, and, when a time ramp is read,
+`2 x ramp.extend_s` and a start per ramp sample. The ramp asks the budget for `ramp.samples x
+ramp.run_s` (180 s as shipped) and each sample gets an even share of what the cut leaves;
+the starts of its fresh pages (a few seconds each) are outside the cap.
 
 ### What every record also carries
 
@@ -253,7 +261,8 @@ for a family:
 | `difficulty.axes_progress` | authored: every traversed unit reports the difficulty the **design** authored for it, within `genre-models.yaml implementation.difficulty_tolerance`, on every declared axis; and on every axis the family says escalates, ≥ `min_rise_share` of consecutive units hold or dip no deeper than `relief_dip_max`. The last above the first is asked only when every MVP unit was traversed (otherwise `measured.partial: true`), and judged at the design's own `quality_tier` the way `content.axes_monotone_with_relief` judges the design: at tier mvp on every escalating axis; above it (units past the prototype) only where the design's own values for the traversed units rise - an axis the release design's MVP holds flat is held to the design's values and never below its start (`measured.held_by_design`). Above tier mvp, when the survey entered every release unit, each visit is held to the design's value too and every reported escalating axis ends the release above where it started (`measured.release`); a survey short of the release reports `measured.release_partial` with its reason, never a pass of that curve. Generated or endless: the last `endless_window_s` window is above the first. An axis the family marks `probe: required` and the build does not report **fails**; an optional one it does not report is a warning |
 | `progression.persists` | after a reload, read before any input, every MVP `meta_loop.persists[]` metric the probe reports - and `content.unit_index` - is what it was. An entry's measure is the HUD metric its `delivered_by` names, else its kind's in `core/reference/design-depth.yaml` `playability.persists.probe_measures` (1.2.0): a best is `metrics.best`, stage progress the unit reached, `content.unit_index`, which the probe reports with every unit. Stage progress counts as shown only once the bot reached a unit past the first before the reload (a build that saves nothing starts at unit 1 too); a kind with no measure is SKIPPED, and the quality floor fails a release build on it. Required only for the generation modes in `persists.required_generations`; a warning otherwise. With `qa.checkpoint`, the unit's own progress must also survive an in-unit loss |
 | `depth.session_length` | one oracle session with instant retries reaches `min_share` x `depth.first_session.target_s`. The window is that bar plus a margin, never `max_multiplier` x the target: playing longer measures nothing more and slows every measurement after it on the same machine. Required for authored designs; a warning otherwise, and never a failure when the budget cut the window |
-| `depth.ramp` | bad play ends a run inside `bad_play_max_multiplier` x the run length, and the oracle's input rate in the last third of its longest run is at least the first third's. **Required only where a time ramp is promised** (`analysis.time_ramp`): a family whose `qa` states `endless_window_s`, and then read on a run of the play that promises the ramp - the session when the play itself is endless (`genre.ending: endless`, or content that is not authored), else the run of a mode the design includes at a tier the build carries (a feature whose `catalogue` is in `design-depth.yaml playability.ramp.mode_features`, decided `include`; the greybox carries the MVP tier only), entered through `play.mode` (`measured.ramp_run`, `mode`, `mode_entered`). A unit-authored design with no such mode ramps between units (`difficulty.axes_progress`): its longest unit is not a time ramp, and its rate is recorded with `measured.reason` "no time ramp" rather than judged. The rate is compared only when the longest run's first third holds at least `ramp.min_inputs_per_third` (10) oracle inputs; fewer - after the bot played on for up to `ramp.extend_s` - or a mode the bot could not enter is `measured.unmeasured`: a warning, never a pass, and a FAIL at a tier whose skipped checks are not passed (`quality-policy.yaml skipped_checks`, the release tier as shipped) |
+| `depth.ramp` | bad play ends a run inside `bad_play_max_multiplier` x the run length, and good play is asked for more as a run goes on, **shown beyond noise on several runs** (design-depth.yaml 1.4.0, `analysis.ramp_verdict`). **Required only where a time ramp is promised** (`analysis.time_ramp`): a family whose `qa` states `endless_window_s`, and then read on runs of the play that promises the ramp - the endless play itself (`genre.ending: endless`, or content that is not authored), else a mode the design includes at a tier the build carries (a feature whose `catalogue` is in `design-depth.yaml playability.ramp.mode_features`, decided `include`; the greybox carries the MVP tier only), entered through `play.mode` (`measured.ramp_run`, `mode`, `mode_entered`). A unit-authored design with no such mode ramps between units (`difficulty.axes_progress`): its longest unit is not a time ramp, and its rate is recorded with `measured.reason` "no time ramp" rather than judged. The ramp samples' thirds are **pooled**, leaving out any sample that stalled (`depth.stall`); with n = first + last thirds' inputs, the noise band is `ramp.noise_z` x sqrt(n) (2 x: under an unchanging rate the split is Binomial(n, 1/2), so a flat game reads as a rise about 2.3% of the time per look). **FAIL**: one sample's own fall beyond its own band (its first third holding at least `min_inputs_per_third`), or the pooled fall beyond the pooled band - however few samples were played. **PASS**: `ramp.samples` (3) clean samples whose pooled last thirds exceed the first by more than the band. **Unmeasured** (`measured.unmeasured`): no clean sample, pooled first thirds under `ramp.min_inputs_per_third` (10), fewer clean samples than planned, a mode the bot could not enter, or - after the extension - a difference inside the band; a warning, never a pass, and a FAIL at a tier whose skipped checks are not passed (`quality-policy.yaml skipped_checks`, the release tier as shipped). A rate that does not change therefore never passes. `measured` carries every sample (`samples`: thirds, duration, longest idle, how it ended), `pooled_inputs_per_third`, `noise_band`, `stalled_samples`, `planned_samples` and `extended_ms`. Why several runs: one endless run per viewport, cut by the bot the moment its first third reached 10 inputs, read [10, 14, 23] PASS on one commit of the 2026-10-05 brick game and [10, 29, 9] FAIL on the next, an art-only commit with identical gameplay code - the fall was a ball trapped above steel bricks, a real defect (game fix 48a80bb) sampled by chance and blamed on the art. (`relief_dip_s`, "one relief dip of at least 2 s allowed", was removed in 1.4.0: it was stated and never measured. Only the first and last thirds are compared, so a breather in the middle third is allowed at any length; a dip into the last third is the decline this check catches; play that stops is `depth.stall`.) |
+| `depth.stall` | in every ramp sample, no stretch in play longer than `ramp.stall_max_s` (10 s) with no oracle input and no progress (`measured.longest_idle_ms` per sample). **Emitted only where ramp samples were played**, required there. Its own finding - routed to gameplay (no `depth.` entry in `specialist-routing.yaml`, whose `default_dimension` is `gameplay`) - so a game that stops being playable is classified as that, not as a ramp that asks for less: a stalled sample's counts are left out of `depth.ramp`. 10 s is the experience floor's opening grace (`experience-rules.yaml onboarding.min_grace_s`) and a third of the time-ramp families' endless window; an oracle playing those games acts about once a second (the live brick game's endless runs: 38-76 inputs in 32-67 s) |
 
 **`SKIPPED` is never a pass.** A check is skipped only when the design does not claim what it
 measures - no `build_spec.content` at all, or generated content where a unit sequence would be

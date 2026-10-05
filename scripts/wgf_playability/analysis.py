@@ -18,6 +18,7 @@ names it in its summary. A thing the design does claim and the probe cannot show
 """
 
 import json
+import math
 import os
 import re
 import statistics
@@ -178,6 +179,99 @@ def thirds_of(run):
     """The oracle's inputs per third of one recorded run, or None when it has none."""
     thirds = (run or {}).get("oracle_inputs_per_third") or []
     return thirds if len(thirds) == 3 else None
+
+
+RAMP_BARS = ("samples", "noise_z", "min_inputs_per_third", "stall_max_s")
+
+
+def ramp_verdict(samples, bars):
+    """The time ramp judged on the bot's samples (design-depth.yaml `playability.ramp`, 1.4.0):
+    a dict with `verdict` - `pass`, `fail` or `unmeasured` - its `reason`, and what it was
+    read from (`per_sample`, `pooled`, `band`, `stalled`, `clean`, `planned`).
+
+    Each sample is one fresh run the oracle played (bot.spec.ts `playSample`): its
+    `oracle_inputs_per_third` and its `longest_idle_ms` - the longest stretch in play with no
+    oracle input and no progress. A sample whose idle stretch is over `stall_max_s` stalled:
+    that is depth.stall's finding, and its counts, which the stall deflates, are left out.
+    The clean samples' thirds are pooled. With n = first + last, a difference within
+    `noise_z` x sqrt(n) is noise (under an unchanging rate the split is Binomial(n, 1/2)):
+
+      fail        one clean sample's own fall beyond its own band (its first third holding at
+                  least `min_inputs_per_third`), or the pooled fall beyond the pooled band -
+                  decided on whatever was sampled, however few
+      unmeasured  no clean sample, the pooled first thirds under `min_inputs_per_third`, fewer
+                  clean samples than `samples`, or a pooled difference inside the band
+      pass        `samples` clean samples whose pooled last thirds exceed the first by more
+                  than the band
+
+    A rate that does not change never passes: its difference stays inside the band. Never
+    defaulted in code: a bar the file does not state leaves the ramp unmeasured.
+    """
+    missing = [k for k in RAMP_BARS if not isinstance(bars.get(k), (int, float))]
+    rows = []
+    for number, sample in enumerate(samples or [], start=1):
+        if not isinstance(sample, dict):
+            continue
+        idle = sample.get("longest_idle_ms")
+        rows.append({"sample": number, "duration_ms": sample.get("duration_ms"),
+                     "thirds": thirds_of(sample), "longest_idle_ms": idle,
+                     "idle_at_ms": sample.get("idle_at_ms"), "ended": sample.get("ended")})
+    out = {"per_sample": rows, "planned": bars.get("samples")}
+    if missing:
+        return dict(out, verdict="unmeasured",
+                    reason="design-depth.yaml playability.ramp states no "
+                           + ", ".join(missing))
+    z, minimum, planned = bars["noise_z"], bars["min_inputs_per_third"], int(bars["samples"])
+    stall_ms = bars["stall_max_s"] * 1000
+    for row in rows:
+        row["stalled"] = (isinstance(row["longest_idle_ms"], (int, float))
+                          and row["longest_idle_ms"] > stall_ms)
+    stalled = [r["sample"] for r in rows if r["stalled"]]
+    clean = [r for r in rows if not r["stalled"] and r["thirds"]]
+    pooled = [sum(r["thirds"][i] for r in clean) for i in range(3)]
+    first, last = pooled[0], pooled[2]
+    band = z * math.sqrt(first + last)
+    out.update(stalled=stalled, clean=len(clean), pooled=pooled, band=round(band, 2))
+    falls = [r for r in clean if r["thirds"][0] >= minimum
+             and r["thirds"][0] - r["thirds"][2] > z * math.sqrt(r["thirds"][0] + r["thirds"][2])]
+    left_out = (f" ({len(stalled)} stalled sample(s) left out: depth.stall)" if stalled else "")
+    if falls:
+        row = falls[0]
+        return dict(out, verdict="fail",
+                    reason=(f"sample {row['sample']}: the oracle acted {row['thirds'][2]} times "
+                            f"in the last third and {row['thirds'][0]} in the first "
+                            f"{row['thirds']}, a fall beyond the noise band of "
+                            f"{z * math.sqrt(row['thirds'][0] + row['thirds'][2]):.1f}: the "
+                            "game asks for less as it goes"))
+    if not clean:
+        return dict(out, verdict="unmeasured",
+                    reason=("every sample stalled" + left_out if stalled
+                            else "no sample was played to read the input rate on"))
+    if first < minimum:
+        return dict(out, verdict="unmeasured",
+                    reason=(f"the first thirds of {len(clean)} sample(s) hold {first} oracle "
+                            f"input(s), fewer than the {minimum} a rate is compared on"
+                            + left_out))
+    if first - last > band:
+        return dict(out, verdict="fail",
+                    reason=(f"over {len(clean)} sample(s) the oracle acted {last} times in the "
+                            f"last thirds and {first} in the first {pooled}, a fall beyond the "
+                            f"noise band of {band:.1f}: the game asks for less as it goes"
+                            + left_out))
+    if len(clean) < planned:
+        return dict(out, verdict="unmeasured",
+                    reason=(f"{len(clean)} clean sample(s) of the {planned} the ramp is judged "
+                            f"on" + left_out))
+    if last - first > band:
+        return dict(out, verdict="pass",
+                    reason=(f"over {len(clean)} samples the oracle acted {last} times in the "
+                            f"last thirds and {first} in the first {pooled}, a rise beyond the "
+                            f"noise band of {band:.1f}"))
+    return dict(out, verdict="unmeasured",
+                reason=(f"over {len(clean)} samples the last thirds hold {last} oracle inputs "
+                        f"and the first {first} {pooled}: a difference inside the noise band "
+                        f"of {band:.1f} ({z} x sqrt {first + last}), so neither a ramp nor a "
+                        "fall is shown" + left_out))
 
 
 def _content_checks(ctx):
@@ -812,63 +906,66 @@ def _depth_checks(ctx):
         problems.append(f"bad play ended after {ended} ms, over {cap} ms "
                         f"({bars.get('bad_play_max_multiplier')} x a {run_s} s run)")
     # The input rate across a run's thirds is a time ramp: the longer one run lasts, the more
-    # it asks. It is read only on a run of the play that promises one (time_ramp): the session
-    # when the play is endless, else a run of the endless mode the bot entered through the
-    # probe. A unit-authored design without such a mode ramps between units - which
-    # difficulty.axes_progress judges - so its rate is recorded, not held: the longest unit
-    # it played is not a time ramp.
+    # it asks. It is read only on the play that promises one (time_ramp): the session's play
+    # when it is endless, else the endless mode the bot entered through the probe - and on
+    # `samples` fresh runs of it, pooled (ramp_verdict), never on one. A unit-authored design
+    # without such a mode ramps between units - which difficulty.axes_progress judges - so
+    # its longest session run's rate is recorded, not held: one unit is not a time ramp.
     ramp = time_ramp(ctx["design"], qa, ctx.get("ramp_tiers"))
     timed = ramp is not None
     minimum = bars.get("min_inputs_per_third")
-    unmeasured = None
+    unmeasured = verdict = None
     on_mode = bool(ramp and ramp["run"] == "mode")
-    record = (records.get("ramp") if on_mode else records.get("session")) or {}
-    runs = [r for r in record.get("runs") or [] if isinstance(r, dict)]
+    record = records.get("ramp") or {}
+    samples = [s for s in record.get("samples") or [] if isinstance(s, dict)]
     if ramp is None:
         measured["reason"] = ("no time ramp: the genre family's `qa` states no endless_window_s, "
                               "or the design is unit-authored and includes no endless mode "
                               "(design-depth.yaml playability.ramp.mode_features)")
-        played_on = "longest run"
-    elif not on_mode:
-        measured["ramp_run"] = "session"
-        played_on = "longest session run"
+        runs = [r for r in (records.get("session") or {}).get("runs") or []
+                if isinstance(r, dict)]
+        longest = max(runs, key=lambda r: r.get("duration_ms") or 0) if runs else None
+        thirds = thirds_of(longest)
+        if thirds:
+            measured["oracle_inputs_per_third"] = thirds
+        played_on = "samples"
     else:
-        measured.update(ramp_run="mode", mode=ramp["mode"], feature=ramp["feature"],
-                        mode_entered=bool(record.get("entered")))
-        played_on = f"longest {ramp['mode']}-mode run"
-        if not record.get("entered"):
+        measured["ramp_run"] = ramp["run"]
+        played_on = (f"{ramp['mode']}-mode samples" if on_mode else "samples of the endless play")
+        if on_mode:
+            measured.update(mode=ramp["mode"], feature=ramp["feature"],
+                            mode_entered=bool(record.get("entered")))
+        if on_mode and not record.get("entered"):
             unmeasured = (f"the design includes the {ramp['mode']} mode ({ramp['feature']}), "
                           "whose run the time ramp is read on, and the bot could not enter it: "
                           + (record.get("reason") or "no ramp record")
                           + " (the probe's optional play.mode.enter, docs/template-contract.md)")
-            runs = []
-    longest = max(runs, key=lambda r: r.get("duration_ms") or 0) if runs else None
-    thirds = thirds_of(longest) or []
-    extended = record.get("extended_ms")
-    if thirds:
-        measured["oracle_inputs_per_third"] = thirds
-        measured["longest_run_ms"] = longest.get("duration_ms")
-    if extended:
-        measured["extended_ms"] = extended
-    if timed and unmeasured is None:
-        if not thirds:
-            unmeasured = "no run was played to read the input rate on"
-        elif not isinstance(minimum, (int, float)) or thirds[0] < minimum:
-            # Too few inputs to tell a ramp from noise: never a pass, whatever the last third.
-            unmeasured = (f"the first third of the {played_on} holds {thirds[0]} oracle "
-                          f"input(s), fewer than the {minimum} a rate is compared on"
-                          + (f", after the bot played on {extended} ms for more"
-                             if extended else ""))
-        elif thirds[2] < thirds[0]:
-            problems.append(f"the oracle acted {thirds[2]} times in the last third of its "
-                            f"{played_on} and {thirds[0]} in the first: the game asks for less "
-                            "as it goes")
+        else:
+            verdict = ramp_verdict(samples, bars)
+            measured.update(samples=verdict["per_sample"], planned_samples=verdict["planned"])
+            for key, name in (("pooled", "pooled_inputs_per_third"), ("band", "noise_band"),
+                              ("stalled", "stalled_samples")):
+                if key in verdict:
+                    measured[name] = verdict[key]
+            if record.get("reason") and len(samples) < (bars.get("samples") or 0):
+                measured["sampling_stopped"] = record["reason"]
+            if record.get("extended_ms"):
+                measured["extended_ms"] = record["extended_ms"]
+            if verdict["verdict"] == "fail":
+                problems.append(verdict["reason"])
+            elif verdict["verdict"] == "unmeasured":
+                unmeasured = verdict["reason"] + (
+                    f" (sampling stopped: {record['reason']})"
+                    if measured.get("sampling_stopped") else "")
     if unmeasured:
         measured["unmeasured"] = unmeasured
     expected = (f"a bad run inside {cap} ms"
-                + (f", and on the {played_on}, with at least {minimum} oracle inputs in its "
-                   "first third, the last third's input rate at least the first third's (one "
-                   f"relief dip of {bars.get('relief_dip_s')} s allowed)" if timed else ""))
+                + (f", and over {bars.get('samples')} fresh runs of the "
+                   f"{ramp['mode'] + ' mode' if on_mode else 'endless play'}, pooled (at least {minimum} oracle inputs in the first thirds), the "
+                   f"last thirds' inputs above the first thirds' by more than "
+                   f"{bars.get('noise_z')} x sqrt(first + last), and no run's own fall beyond "
+                   "its band; a difference inside the band is extended, then unmeasured"
+                   if timed else ""))
     if problems:
         ok, required = False, timed
         summary = "; ".join(problems[:3])
@@ -882,14 +979,52 @@ def _depth_checks(ctx):
     else:
         ok, required = True, timed
         summary = (f"bad play ended in {ended} ms"
-                   + (f", and the oracle's input rate held or rose across its {played_on} "
-                      f"{thirds}" if timed else
-                      f"; the oracle's input rate per third of its longest run was {thirds}"
-                      if thirds else ""))
+                   + (f", and the oracle's input rate rose across the {played_on}: "
+                      f"{verdict['reason']}" if timed else
+                      f"; the oracle's input rate per third of its longest run was "
+                      f"{measured['oracle_inputs_per_third']}"
+                      if measured.get("oracle_inputs_per_third") else ""))
     out.append(_check("depth.ramp", project, ok, summary,
                       required=required, measured=measured, expected=expected,
-                      truncated=ctx["truncated"].get("ramp" if on_mode else "session")))
+                      truncated=ctx["truncated"].get("ramp")))
+    if timed and samples:
+        out.append(_stall_check(project, samples, bars, played_on,
+                                ctx["truncated"].get("ramp")))
     return out
+
+
+def _stall_check(project, samples, bars, played_on, truncated):
+    """depth.stall: no ramp sample went longer than `stall_max_s` in play with no oracle input
+    and no progress. Its own finding, so a game that stops being playable - a ball trapped
+    where no input can free it - is classified as that, routed to gameplay, instead of
+    deflating the ramp's last third and reading as a game that asks for less."""
+    bar = bars.get("stall_max_s")
+    idle = [(n, s.get("longest_idle_ms"), s.get("idle_at_ms"))
+            for n, s in enumerate(samples, start=1)]
+    known = [(n, ms, at) for n, ms, at in idle if isinstance(ms, (int, float))]
+    measured = {"longest_idle_ms": [ms for _n, ms, _at in idle], "stall_max_s": bar}
+    expected = (f"in every ramp sample, no stretch in play over {bar} s with no oracle input and "
+                "no change in the goal metric, the unit's progress or the unit reached")
+    if not isinstance(bar, (int, float)) or not known:
+        measured["unmeasured"] = ("design-depth.yaml playability.ramp states no stall_max_s"
+                                  if not isinstance(bar, (int, float)) else
+                                  "the samples record no idle stretch")
+        return _check("depth.stall", project, False,
+                      f"no stall was measured: {measured['unmeasured']}", required=False,
+                      measured=measured, expected=expected, truncated=truncated)
+    over = [(n, ms, at) for n, ms, at in known if ms > bar * 1000]
+    worst = max(known, key=lambda k: k[1])
+    if over:
+        summary = "; ".join(
+            f"ramp sample {n} ({played_on}) went {ms / 1000:.1f} s in play with no oracle input "
+            f"and no progress (from {at} ms into it), over the {bar} s bar: play stopped"
+            for n, ms, at in over[:3])
+    else:
+        summary = (f"the longest stretch with no oracle input and no progress in any of "
+                   f"{len(known)} sample(s) was {worst[1] / 1000:.1f} s (sample {worst[0]}), "
+                   f"inside the {bar} s bar")
+    return _check("depth.stall", project, not over, summary, required=True, measured=measured,
+                  expected=expected, truncated=truncated)
 
 
 def judge(records, frames_dir, design, rules, experience_rules, project, qa=None,

@@ -255,12 +255,21 @@ wrong.
    brief by name, so an installation without an agent author sees the gaps and stops, which
    is the honest outcome rather than the same design returned. The agent's request puts the
    gaps first (each with an id, the field it names, and observed against bar where a finding
-   measured one), then the instructions; the previous design is the draft file itself and the
-   strategy a file of its own, both named by path, and the gaps are also written alone to
-   `<visit>-<attempt>-gaps.gaps.json`, which the prompt names first. A gap visit whose draft
-   comes back unchanged fails naming every gap it was given - on 2026-10-04 a 12,778-line
-   request with the gaps after the previous design left an agent with only Read and Edit
-   unable to find them.
+   measured one), then the instructions; the previous design (the game-design the build was
+   made against, `<visit>-<attempt>-gaps.previous.json`) and the strategy are files of their
+   own, both named by path, the draft file is seeded with that design, and the gaps are also
+   written alone to `<visit>-<attempt>-gaps.gaps.json`, which the prompt names first. A gap
+   visit whose draft comes back equal to the previous design fails naming every gap it was
+   given - on 2026-10-04 a 12,778-line request with the gaps after the previous design left an
+   agent with only Read and Edit unable to find them - unless the agent marked a gap answered
+   with a reason (the draft's top-level `gaps_answered`, removed before the checks and kept in
+   `<visit>-gaps-answered.json`: the design already answers it, or a fix made it obsolete).
+   "Unchanged" is judged against the previous design, never against the draft a round was
+   seeded with: a draft that answers the gaps but fails a check goes to a repair round whose
+   request and prompt lead with the problems, and a resumed visit continues from its last
+   rejected draft the same way - on 2026-10-05 a resumed visit led with its 15 already-answered
+   gaps, the agent edited nothing, and the step failed as "unchanged" with the content-rule
+   problems never shown first.
 
 ---
 

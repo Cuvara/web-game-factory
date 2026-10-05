@@ -1086,6 +1086,13 @@ lets an agent host write the draft:
   retryably. The deterministic authors do not revise. Found live (2026-10-04): a
   brick-breaker whose strategy grew from 12 to 32 levels was redesigned from scratch with
   another identity kit.
+- **Design gaps.** A gap visit's draft is judged against the design the gaps were found in,
+  never against the draft a round (or a resumed execution) was seeded with. A draft that
+  answers the gaps but fails a check gets a repair round that leads with the problems; one
+  returned as it was goes back to the checks, which name the problems again. The visit fails
+  as unchanged only when the draft equals that design and a gap is neither answered nor marked
+  answered with a reason in the draft's `gaps_answered` (removed before the checks, kept in
+  `<run>/design/<visit>-gaps-answered.json`). See [core-contracts.md](core-contracts.md) §4.3, item 9.
 - **Provenance.** The design's `produced_by.actor` is `ai`.
 
 `workspace/config/factory.yaml` carries a commented read-only host example.

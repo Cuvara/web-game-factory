@@ -235,6 +235,98 @@ def _content_checks(ctx):
     return out
 
 
+def _designed_id(units, played):
+    return (_designed(units, played) or {}).get("id") or played.get("unit_id") or played.get("asked")
+
+
+def _off_design(design, units, played, axes, tolerance, seen=()):
+    """Every `<unit> <axis>: the build reports X, the design states Y` past `tolerance`, for
+    the played units (traverse `per_unit`, or survey visits) not already in `seen`."""
+    off = []
+    for unit in played:
+        designed = _designed(units, unit) or {}
+        if designed.get("id") in seen:
+            continue
+        for axis in axes:
+            want = (designed.get("difficulty") or {}).get(axis["id"])
+            got = (unit.get("difficulty") or {}).get(axis["id"])
+            if not (isinstance(want, (int, float)) and isinstance(got, (int, float))):
+                continue
+            if abs(got - want) > tolerance:
+                off.append(f"{designed.get('id') or unit.get('unit_id')} "
+                           f"{axis['id']}: the build reports {got}, the design states "
+                           f"{want}")
+    return off
+
+
+def _designed_series(units, played, axis):
+    """The design's own values on `axis` for the played units, in play order; None when the
+    design states none for one of them."""
+    series = [((_designed(units, u) or {}).get("difficulty") or {}).get(axis) for u in played]
+    if not series or not all(isinstance(v, (int, float)) for v in series):
+        return None
+    return series
+
+
+def _held(axis, values, rise, dip):
+    """The series holds or dips for relief on at least `rise` of its steps."""
+    pairs = list(zip(values, values[1:]))
+    held = sum(1 for a, b in pairs if b >= a or (a - b) <= dip * abs(a or 1))
+    share = _share(held, len(pairs))
+    if share < rise:
+        return [f"{axis}: only {share} of its steps held or dipped for relief"]
+    return []
+
+
+def _release_curve(ctx):
+    """Above tier mvp, the release units the design ships and the survey's visits to them -
+    the curve content.axes_monotone_with_relief judges the design on - else None.
+
+    The tier is the design's own (wgf_design.content.quality_tier), read the way the design
+    rule reads it: above `mvp` and with units past the prototype, escalation is a property of
+    every release unit in order. At tier mvp - or with nothing past the prototype - None, and
+    the MVP traversed is what ships."""
+    from wgf_design.content import QUALITY_TIERS, quality_tier, units_of
+
+    tier = quality_tier(ctx["design"], None)[0]
+    shipped = [u for u in units_of(ctx["design"]) if u.get("tier") != "optional"]
+    if tier not in QUALITY_TIERS[1:] or len(shipped) <= len(ctx["units"]):
+        return None
+    survey = ctx["records"].get("survey") or {}
+    visits = [dict(v, unit_id=v.get("asked")) for v in survey.get("visits") or []
+              if isinstance(v, dict) and v.get("entered")]
+    return {"tier": tier, "units": shipped, "visits": visits,
+            "surveyed": bool(survey.get("applies")), "reason": survey.get("reason")}
+
+
+def _release_escalation(release, present, measured, rise, dip):
+    """Every escalating axis the build reports rises over the release units, in the design's
+    order, when the survey entered every one of them; else the release curve is reported as
+    not judged here, never as passed (content-sufficiency counts what the survey reached)."""
+    by_id = {v.get("asked"): v for v in release["visits"]}
+    missing = [u.get("id") for u in release["units"] if u.get("id") not in by_id]
+    if missing:
+        measured["release_partial"] = {
+            "units": len(release["units"]), "entered": len(release["units"]) - len(missing),
+            "reason": (release["reason"] or "no survey ran") if not release["surveyed"] else
+            f"the survey did not enter {', '.join(str(m) for m in missing[:4])}"}
+        return []
+    problems, series = [], {}
+    for axis in present:
+        values = [(by_id[u.get("id")].get("difficulty") or {}).get(axis["id"])
+                  for u in release["units"]]
+        values = [v for v in values if isinstance(v, (int, float))]
+        series[axis["id"]] = values
+        if len(values) < 2:
+            continue
+        problems += [f"release {p}" for p in _held(axis["id"], values, rise, dip)]
+        if values[-1] <= values[0]:
+            problems.append(f"{axis['id']}: ended the release at {values[-1]}, started it at "
+                            f"{values[0]}")
+    measured["release"] = series
+    return problems
+
+
 def _difficulty_checks(ctx):
     """difficulty.axes_progress: the build carries the design's difficulty, and it moves.
 
@@ -246,6 +338,14 @@ def _difficulty_checks(ctx):
     first) is the design's curve, so it is asked only when every MVP unit was traversed; a
     capped or cut traversal reports `partial` and is not held to a curve it never saw. The
     design's own curve is the design step's business, not the bot's.
+
+    The rise is judged the way content.axes_monotone_with_relief judges the design, at the
+    design's quality tier. At tier mvp every escalating axis rises over the MVP traversed. Above
+    it the design escalates over every release unit and its MVP, a prefix, may hold an axis
+    flat: the build is held to the rise on the MVP only where the design's own values for the
+    traversed units rise (or state none), and to the design's values everywhere. When the
+    survey entered every release unit, those visits are compared to the design too, and every
+    reported escalating axis must end the release above where it started it.
     """
     project, axes, units = ctx["project"], ctx["axes"], ctx["units"]
     bars = ctx["qa"].get("difficulty") or {}
@@ -296,22 +396,20 @@ def _difficulty_checks(ctx):
         # The build against the design, unit by unit and axis by axis.
         tolerance = genre_models.implementation().get("difficulty_tolerance")
         measured["difficulty_tolerance"] = tolerance
+        matched = isinstance(tolerance, (int, float))
+        release = _release_curve(ctx)
+        if release:
+            measured["quality_tier"] = release["tier"]
         off = []
-        if isinstance(tolerance, (int, float)):
-            for unit in ordered:
-                designed = _designed(units, unit) or {}
-                for axis in axes:
-                    want = (designed.get("difficulty") or {}).get(axis["id"])
-                    got = (unit.get("difficulty") or {}).get(axis["id"])
-                    if not (isinstance(want, (int, float)) and isinstance(got, (int, float))):
-                        continue
-                    if abs(got - want) > tolerance:
-                        off.append(f"{designed.get('id') or unit.get('unit_id')} "
-                                   f"{axis['id']}: the build reports {got}, the design states "
-                                   f"{want}")
+        if matched:
+            off = _off_design(ctx["design"], units, ordered, axes, tolerance)
+            if release:
+                off += _off_design(ctx["design"], release["units"], release["visits"], axes,
+                                   tolerance, seen={_designed_id(units, u) for u in ordered})
         if off:
             measured["off_design"] = off
             problems += off[:6]
+        flat = []
         for axis in present:
             values = [(u.get("difficulty") or {}).get(axis["id"]) for u in ordered]
             values = [v for v in values if isinstance(v, (int, float))]
@@ -319,22 +417,40 @@ def _difficulty_checks(ctx):
             if len(values) < 2:
                 problems.append(f"{axis['id']}: only one unit reported it")
                 continue
-            pairs = list(zip(values, values[1:]))
-            held = sum(1 for a, b in pairs if b >= a or (a - b) <= dip * abs(a or 1))
-            share = _share(held, len(pairs))
-            if share < rise:
-                problems.append(f"{axis['id']}: only {share} of its steps held or dipped for "
-                                f"relief")
-            if values[-1] <= values[0] and not partial:
+            problems += _held(axis["id"], values, rise, dip)
+            if partial:
+                continue
+            # Above tier mvp the design ships every release unit and escalates over all of them
+            # (content.axes_monotone_with_relief); its MVP, a prefix of that curve, may hold an
+            # escalating axis flat. The build is held to the rise wherever the design's own
+            # values for the units traversed rise - or state none - and, where they hold, to
+            # those values (off_design above), never below its start.
+            designed = _designed_series(units, ordered, axis["id"])
+            holds = (release is not None and matched and designed is not None
+                     and designed[-1] <= designed[0])
+            if holds:
+                flat.append(axis["id"])
+                if values[-1] < values[0] - tolerance:
+                    problems.append(f"{axis['id']}: ended at {values[-1]}, started at "
+                                    f"{values[0]}")
+            elif values[-1] <= values[0]:
                 problems.append(f"{axis['id']}: ended at {values[-1]}, started at {values[0]}")
+        if flat:
+            measured["held_by_design"] = flat
+        if release:
+            problems += _release_escalation(release, present, measured, rise, dip)
         expected = ((f"each traversed unit within {tolerance} of the design's value for it on "
-                     f"every declared axis" if isinstance(tolerance, (int, float)) else
+                     f"every declared axis" if matched else
                      "genre-models states no implementation.difficulty_tolerance, so the build "
                      "was not compared to the design's unit values")
                     + f"; >= {bars.get('min_rise_share')} of consecutive units non-decreasing or "
                       f"dipping at most {bars.get('relief_dip_max')}"
                     + ("; the traversal stopped short of the design's units, so no rise across "
-                       "the set is asked of it" if partial else ", and the last above the first"))
+                       "the set is asked of it" if partial else
+                       ", and the last above the first where the design's own units rise"
+                       + (" (the MVP of a release design may hold an axis flat; the rise is "
+                          "judged over every release unit the survey entered)"
+                          if release else "")))
     else:
         for axis in present:
             series = [(w.get("difficulty") or {}).get(axis["id"]) for w in windows]
@@ -357,7 +473,12 @@ def _difficulty_checks(ctx):
                      + ", ".join(a["id"] for a in present)
                      + (f"; not reported: {', '.join(optional_absent)}" if optional_absent else "")
                      + ("; the traversal stopped short of the design's units, so the rise across "
-                        "the set was not judged" if measured.get("partial") else ""))
+                        "the set was not judged" if measured.get("partial") else "")
+                     + (f"; held flat by the design's own MVP: {', '.join(measured['held_by_design'])}"
+                        if measured.get("held_by_design") else "")
+                     + (f"; the release curve was not judged here "
+                        f"({measured['release_partial']['reason']})"
+                        if measured.get("release_partial") else ""))
                     if not problems else "; ".join(problems[:4])),
                    measured=measured, expected=expected,
                    truncated=ctx["truncated"].get("traverse" if authored else "session"))]

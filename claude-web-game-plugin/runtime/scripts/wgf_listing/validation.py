@@ -40,7 +40,7 @@ import hashlib
 import os
 import re
 
-from wgflib import provenance
+from wgflib import provenance, publication
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.yamllite import YamlError, load_file
 
@@ -138,8 +138,44 @@ def _video_problems(made, req, run_dir, trailer):
     return problems
 
 
-def validate(listing, run_dir, reference, profiles, facts=None):
-    """The checks over one store-listing. Returns (checks, platform_requirements)."""
+# What the store-listing step (or a person) does about a campaign media finding.
+_MEDIA_FIX = {"no-provenance": "recapture", "capture-commit-mismatch": "recapture",
+              "placeholder": "recapture", "media-changed": "recapture", "media-missing": "rerender",
+              "media-count": "rerender", "media-format": "configure", "media-locale-missing": "configure",
+              "video-orientation": "configure", "media-orientation": "configure"}
+
+
+def _campaign_checks(checks, listing, run_dir, pid, profile, publication_profile):
+    """The campaign media check (wgf_publish.campaign.check_media) over this platform's
+    rendition: provenance from the capture, no placeholder, and what the publication
+    profile's fields and upload intents ask - the block's own limits are judged above.
+    Returns (failed ids, unknown ids)."""
+    from wgf_publish import campaign
+    findings = campaign.check_media(campaign.from_listing(listing, run_dir, pid), profile,
+                                    publication_profile, profile_limits=False)
+    failed, unknown = [], []
+    # A medium this platform's block already failed (not rendered, wrong size) is that one
+    # problem, with that one fix: the campaign check of the canonical fallback (every size of
+    # the master) would only restate it as a re-render that cannot help.
+    image_failed = {item["id"] for item in checks.items
+                    if item.get("status") == "FAIL" and item.get("platform_id") == pid}
+    for n, finding in enumerate(findings, 1):
+        if f"platforms.{pid}.image:{finding.get('subject')}" in image_failed:
+            continue
+        cid = f"platforms.{pid}.media.{finding['code']}.{n}"
+        is_unknown = finding["status"] == "UNKNOWN"
+        entry = checks.add(cid, "platforms", False, f"{pid}: {finding['message']}",
+                           platform_id=pid, unknown=is_unknown,
+                           fix="configure" if is_unknown else _MEDIA_FIX.get(finding["code"], "rerender"),
+                           files=[str(finding["subject"])] if finding.get("subject") else None)
+        (unknown if is_unknown else failed).append(entry["id"])
+    return failed, unknown
+
+
+def validate(listing, run_dir, reference, profiles, facts=None, publication_profiles=None):
+    """The checks over one store-listing. Returns (checks, platform_requirements).
+    `publication_profiles` ({platform id: publication profile}) adds the campaign media check
+    against each portal's fields and upload intents."""
     checks = _Checks()
     renditions = reference.get("renditions") or {}
     copy_bounds = reference.get("copy") or {}
@@ -369,6 +405,11 @@ def validate(listing, run_dir, reference, profiles, facts=None):
         no_copy = sorted(r["locale"] for r in reqs if r["kind"] == "locale"
                          and r["locale"] not in (rendition.get("text") or {}))
         gap = f" (no copy in required locale {', '.join(no_copy)})" if no_copy else ""
+        # A required text or list is judged in the required locales; the rendition carries
+        # the other locales the copy has too, and they never stand in for a required one.
+        required_here = [r["locale"] for r in reqs if r["kind"] == "locale"]
+        judged = {loc: t for loc, t in (rendition.get("text") or {}).items()
+                  if not required_here or loc in required_here}
         empty_fix = "configure" if no_copy else "rewrite"
         for req in reqs:
             cid = f"platforms.{pid}.{req['id']}"
@@ -379,7 +420,7 @@ def validate(listing, run_dir, reference, profiles, facts=None):
                                    platform_id=pid, locale=req["locale"], fix="configure")
             elif req["kind"] == "text":
                 present_any = any(isinstance((t or {}).get(req["field"]), str) and (t or {}).get(req["field"]).strip()
-                                  for t in (rendition.get("text") or {}).values())
+                                  for t in judged.values())
                 if not req.get("required") and not present_any:
                     continue
                 if req.get("max_chars") is None:
@@ -399,7 +440,7 @@ def validate(listing, run_dir, reference, profiles, facts=None):
                                        platform_id=pid, expected={"max_chars": req["max_chars"]},
                                        fix="rewrite" if present_any else empty_fix)
             elif req["kind"] == "list":
-                counts = {loc: len((t or {}).get(req["field"]) or []) for loc, t in (rendition.get("text") or {}).items()}
+                counts = {loc: len((t or {}).get(req["field"]) or []) for loc, t in judged.items()}
                 worst = min(counts.values()) if counts else 0
                 if not req.get("required") and worst == 0:
                     continue
@@ -520,6 +561,10 @@ def validate(listing, run_dir, reference, profiles, facts=None):
                 failed.append(cid)
             elif entry["status"] == "WARNING":
                 warnings.append(cid)
+        media_failed, media_unknown = _campaign_checks(
+            checks, listing, run_dir, pid, profile, (publication_profiles or {}).get(pid))
+        failed.extend(media_failed)
+        unknown.extend(media_unknown)
         for unmet in rendition.get("unmet") or []:
             if unmet.get("severity") == "warning":
                 warnings.append(f"{pid}:{unmet.get('code')}")
@@ -643,7 +688,14 @@ class ListingValidationStep(WorkflowStep):
             except platforms.ProfileError as exc:
                 return StepResult.failed(str(exc), retryable=False)
         facts = listing.get("facts") or {}
-        checks, platform_results = validate(listing, context.run_dir, reference, profiles, facts)
+        publication_profiles = {}
+        for pid in profiles:
+            try:
+                publication_profiles[pid] = publication.load_publication_profile(pid)
+            except ValueError:
+                publication_profiles[pid] = None
+        checks, platform_results = validate(listing, context.run_dir, reference, profiles, facts,
+                                            publication_profiles)
         return self._finish(None, checks, platform_results, reference)
 
     def _finish(self, outcome, checks, platform_results, reference, blocked=None):

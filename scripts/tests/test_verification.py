@@ -94,6 +94,9 @@ class FakeRunner:
 
     def __init__(self, overrides=None):
         self.calls = []
+        self.envs = []
+        self.build_configs = []    # WGF_GAME_CONFIG of each build, in order
+        self.facts_configs = []    # ... of each collect-facts
         self.handlers = dict(overrides or {})
         for key, handler in self.defaults().items():
             self.handlers.setdefault(key, handler)
@@ -117,7 +120,13 @@ class FakeRunner:
 
     def run(self, command, cwd, timeout=None, env=None):
         self.calls.append(" ".join(command))
+        self.envs.append(env)
         joined = " ".join(command)
+        chosen = (env or {}).get("WGF_GAME_CONFIG")
+        if chosen and "collect-facts" in joined:
+            self.facts_configs.append(chosen)
+        elif chosen and joined == "pnpm build":
+            self.build_configs.append(chosen)
         for key, handler in self.handlers.items():
             if key in joined:
                 result = handler(command, cwd, env or {})
@@ -167,6 +176,26 @@ class FakeRunner:
             json.dump(data, handle)
         blocking = any(r["breached"] and r["severity"] == "blocking" for r in data)
         return failing() if blocking else ok()
+
+
+def read_json(*parts):
+    with open(os.path.join(*parts), encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def honoring_build(command, cwd, env):
+    """A healthy build that honours WGF_GAME_CONFIG, as the pinned template's vite config
+    does: the bundle says which platform it boots (dist/platform.txt), so two platforms'
+    bundles differ."""
+    FakeRunner.build(command, cwd, env)
+    chosen = env.get("WGF_GAME_CONFIG")
+    platform = "all"
+    if chosen:
+        with open(os.path.join(cwd, *chosen.split("/")), encoding="utf-8") as handle:
+            platform = json.load(handle)["platforms"][0]["id"]
+    with open(os.path.join(cwd, "dist", "platform.txt"), "w") as handle:
+        handle.write(platform)
+    return ok("vite v6 building for production...")
 
 
 # -- fakes for the step's inputs and context ------------------------------------------------
@@ -978,9 +1007,56 @@ class PlatformAndPolicy(VerificationCase):
         runner = FakeRunner({"evaluate-assertions": lambda c, cwd, env: FakeRunner.evaluate(
             c, cwd, env, results=results)})
         result, report, _ = self.verify(runner=runner)
-        self.assertEqual(self.check(report, "policy.assertions:generic-web")["status"],
-                         "WARNING")
         self.assertEqual(result.outcome, StepOutcome.SUCCESS)
+        # The required check states what it established: every blocking assertion holds.
+        check = self.check(report, "policy.assertions:generic-web")
+        self.assertEqual((check["status"], check["evidence_status"]), ("PASS", "PASS"))
+        self.assertTrue(check["required"])
+        # The breach stays a WARNING, on an optional check of its own, with the measurement.
+        warned = self.check(report, "policy.assertion-warnings:generic-web")
+        self.assertEqual((warned["status"], warned["required"]), ("WARNING", False))
+        self.assertIn("generic_web_fps (measured 20)", warned["message"])
+        self.assertIn("policy.assertion-warnings:generic-web",
+                      report["platform_readiness"][0]["warnings"])
+        # ... so a warning does not make the evidence too weak for a release to draft.
+        self.assertNotEqual(report["evidence_status"], "UNVERIFIED")
+
+    def test_a_store_metadata_warning_on_a_required_target_leaves_the_evidence_releasable(self):
+        # Both golden runs, after every target became required: yandex's warning-severity
+        # yandex_screenshots counts store screenshots, which do not exist until store-listing
+        # runs after verify. The required policy.assertions:yandex was a WARNING, so
+        # UNVERIFIED, and release refused the draft: "evidence-too-weak".
+        self.add_platform("- { id: yandex, profile: yandex@1.2.0, role: optional }")
+        sdk = fixture("inputs/sdk-report.json")
+        sdk["platforms"].append(dict(sdk["platforms"][0], platform_id="yandex",
+                                     profile_version="1.2.0"))
+        results = {"generic-web": fixture("assertions-generic-web.json"),
+                   "yandex": [
+                       {"criterion_id": "yandex_sdk_present", "measured": "yandex",
+                        "breached": False, "evaluated_at": NOW, "severity": "blocking"},
+                       {"criterion_id": "yandex_screenshots", "measured": 0,
+                        "breached": True, "evaluated_at": NOW, "severity": "warning"}]}
+        def build_with_ru(command, cwd, env):  # ru is a yandex requirement
+            outcome = honoring_build(command, cwd, env)
+            with open(os.path.join(cwd, "dist", "locales", "ru.json"), "w") as handle:
+                handle.write("{}")
+            return outcome
+
+        runner = FakeRunner({"pnpm build": build_with_ru,
+                             "evaluate-assertions": lambda c, cwd, env: FakeRunner.evaluate(
+                                 c, cwd, env, results=results[c[c.index("--platform") + 1]])})
+        result, report, qa = self.verify(runner=runner,
+                                         inputs=self.inputs(**{"sdk-report": sdk}))
+
+        check = self.check(report, "policy.assertions:yandex")
+        self.assertEqual((check["status"], check["required"]), ("PASS", True))
+        self.assertEqual(self.check(report, "policy.assertion-warnings:yandex")["status"],
+                         "WARNING")
+        self.assertNotIn("UNVERIFIED", [c["evidence_status"] for c in report["checks"]
+                                        if c["required"]])
+        self.assertIn(report["evidence_status"], ("PASS", "PASS_MOCK"))
+        self.assertEqual(qa["evidence_status"], report["evidence_status"])
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.message)
 
     def test_missing_sdk_evidence_blocks(self):
         result, report, _ = self.verify(inputs=self.inputs(**{"sdk-report": None}))
@@ -989,57 +1065,173 @@ class PlatformAndPolicy(VerificationCase):
         self.assertEqual(report["platform_readiness"][0]["readiness"], "unverified")
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)
 
-    def test_an_optional_platform_that_is_not_ready_does_not_block_release(self):
+    def test_every_targeted_platform_is_required(self):
+        # Each target gets a bundle of its own, so each is shippable or the build is not:
+        # an optional platform that is not ready fails the verdict like a required one.
         self.add_platform("- { id: yandex, profile: yandex@1.2.0, role: optional }")
         results = {"generic-web": fixture("assertions-generic-web.json"),
                    "yandex": [{"criterion_id": "yandex_sdk_present", "measured": "none",
                                "breached": True, "evaluated_at": NOW, "severity": "blocking"}]}
-        runner = FakeRunner({"evaluate-assertions": lambda c, cwd, env: FakeRunner.evaluate(
-            c, cwd, env, results=results[c[c.index("--platform") + 1]])})
+        runner = FakeRunner({"pnpm build": honoring_build,
+                             "evaluate-assertions": lambda c, cwd, env: FakeRunner.evaluate(
+                                 c, cwd, env, results=results[c[c.index("--platform") + 1]])})
         result, report, _ = self.verify(runner=runner)
 
-        self.assertEqual(result.outcome, StepOutcome.SUCCESS)
+        self.assertEqual(result.route, "fail")
         readiness = {r["platform_id"]: r for r in report["platform_readiness"]}
         self.assertEqual(readiness["generic-web"]["readiness"], "ready")
         self.assertEqual(readiness["yandex"]["readiness"], "not-ready")
         self.assertIn("platform.sdk-init:yandex", readiness["yandex"]["blocking_checks"])
         self.assertIn("policy.assertions:yandex", readiness["yandex"]["blocking_checks"])
+        for cid in ("platform.sdk-init:yandex", "policy.assertions:yandex",
+                    "platform.requirements:yandex", "build.platform:yandex"):
+            self.assertTrue(self.check(report, cid)["required"], cid)
         # Its profile is the Factory's own, because the fixture vendors only generic-web.
         self.assertIn("core/reference/platforms/yandex.yaml",
                       json.dumps(self.check(report, "platform.profile:yandex")))
-        # ru is required by yandex and not shipped.
-        self.assertIn("ru", self.check(report, "platform.requirements:yandex")["message"])
+        # ru is required by yandex and not shipped in yandex's own bundle.
+        requirements = self.check(report, "platform.requirements:yandex")
+        self.assertIn("ru", requirements["message"])
+        self.assertIn("build/platforms/yandex/dist/locales", json.dumps(requirements))
 
     def all_assertions_pass(self):
         results = fixture("assertions-generic-web.json")
         return FakeRunner({"evaluate-assertions": lambda c, cwd, env: FakeRunner.evaluate(
             c, cwd, env, results=results)})
 
-    def test_only_the_platform_the_build_targets_is_ready(self):
-        # The 2.1.2 production run: one bundle, booting the first required platform's
-        # adapter, was reported ready for two optional portals whose SDK it never loads -
-        # their assertions passed because `platform_sdk` echoes the platform asked about.
-        self.add_platform("- { id: yandex, profile: yandex@1.2.0, role: optional }")
-        result, report, _ = self.verify(runner=self.all_assertions_pass())
-        self.assertEqual(self.check(report, "platform.build-target:generic-web")["status"],
-                         "PASS")
-        foreign = self.check(report, "platform.build-target:yandex")
-        self.assertEqual(foreign["status"], "FAIL")
-        self.assertIn("boots generic-web, not yandex", foreign["message"])
-        self.assertIn("needs its own build", foreign["message"])
-        readiness = {r["platform_id"]: r for r in report["platform_readiness"]}
-        self.assertEqual(readiness["generic-web"]["readiness"], "ready")
-        self.assertEqual(readiness["yandex"]["readiness"], "not-ready")
-        self.assertIn("platform.build-target:yandex", readiness["yandex"]["blocking_checks"])
-        # An optional platform the build cannot serve does not fail the verdict.
-        self.assertEqual(result.outcome, StepOutcome.SUCCESS)
+    def test_each_platform_is_built_and_judged_on_its_own_bundle(self):
+        # Template contract 1 boots one adapter per bundle; with two targets the Factory
+        # builds each against a config naming it alone (WGF_GAME_CONFIG), the target last.
+        self.add_platform("- { id: crazygames, profile: crazygames@1.2.0, role: optional }")
+        sdk = fixture("inputs/sdk-report.json")
+        sdk["platforms"].append(dict(sdk["platforms"][0], platform_id="crazygames",
+                                     profile_version="1.2.0"))
+        runner = FakeRunner({"pnpm build": honoring_build,
+                             "evaluate-assertions": lambda c, cwd, env: FakeRunner.evaluate(
+                                 c, cwd, env, results=fixture("assertions-generic-web.json"))})
+        result, report, _ = self.verify(runner=runner,
+                                        inputs=self.inputs(**{"sdk-report": sdk}))
 
-    def test_a_second_required_platform_fails_the_verdict(self):
-        # One bundle cannot be two portals' build: a second required platform is unshippable.
-        self.add_platform("- { id: yandex, profile: yandex@1.2.0, role: required }")
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.message)
+        builds = [c for c in runner.calls if c == "pnpm build"]
+        self.assertEqual(len(builds), 2)  # one per platform, no extra ordinary build
+        self.assertEqual(runner.build_configs, [
+            "build/platforms/crazygames/game.config.json",
+            "build/platforms/generic-web/game.config.json"])  # the build target last
+        for pid in ("generic-web", "crazygames"):
+            config = read_json(self.repo, "build", "platforms", pid, "game.config.json")
+            self.assertEqual(config["platforms"], [
+                dict(id=pid, profile={"generic-web": "generic-web@1.1.0",
+                                      "crazygames": "crazygames@1.2.0"}[pid], role="required")])
+            self.assertEqual(config["build"]["output"], f"build/platforms/{pid}/dist")
+            self.assertEqual(config["game"]["id"], "fixture-game")
+            with open(os.path.join(self.repo, "build", "platforms", pid, "dist",
+                                   "platform.txt")) as handle:
+                self.assertEqual(handle.read(), pid)
+            record = read_json(self.repo, "build", "platforms", pid, "build.json")
+            self.assertEqual((record["platform"], record["commit_sha"]), (pid, COMMIT))
+            self.assertEqual(self.check(report, f"build.platform:{pid}")["status"], "PASS")
+            self.assertEqual(self.check(report, f"platform.build-target:{pid}")["status"],
+                             "PASS")
+            self.assertTrue(self.check(report, f"policy.assertions:{pid}")["required"])
+        # dist/ holds the build target's bundle: the one the browser checks played.
+        with open(os.path.join(self.repo, "dist", "platform.txt")) as handle:
+            self.assertEqual(handle.read(), "generic-web")
+        # The facts of each platform were collected from its own bundle.
+        self.assertEqual(sorted(runner.facts_configs), [
+            "build/platforms/crazygames/game.config.json",
+            "build/platforms/generic-web/game.config.json"])
+        pinned = {b["platform_id"]: b for b in report["build_artifact"]["platforms"]}
+        self.assertEqual(list(pinned), ["generic-web", "crazygames"])
+        self.assertNotEqual(pinned["generic-web"]["content_hash"],
+                            pinned["crazygames"]["content_hash"])
+        self.assertEqual(pinned["crazygames"]["built_by"], "factory")
+        self.assertEqual(pinned["crazygames"]["path"], "build/platforms/crazygames/dist")
+        readiness = {r["platform_id"]: r["readiness"] for r in report["platform_readiness"]}
+        self.assertEqual(readiness, {"generic-web": "ready", "crazygames": "ready"})
+
+        # Idempotent: the same verification again builds the same bundles.
+        again = FakeRunner({"pnpm build": honoring_build,
+                            "evaluate-assertions": lambda c, cwd, env: FakeRunner.evaluate(
+                                c, cwd, env, results=fixture("assertions-generic-web.json"))})
+        _, second, _ = self.verify(runner=again, inputs=self.inputs(**{"sdk-report": sdk}))
+        self.assertEqual(second["build_artifact"]["platforms"],
+                         report["build_artifact"]["platforms"])
+
+    def test_a_build_that_ignores_the_platform_config_fails(self):
+        # The same bytes for two platforms: the template did not honour WGF_GAME_CONFIG, so
+        # one adapter would boot on both portals.
+        self.add_platform("- { id: crazygames, profile: crazygames@1.2.0, role: optional }")
         result, report, _ = self.verify(runner=self.all_assertions_pass())
-        self.assertEqual(self.check(report, "platform.build-target:yandex")["status"], "FAIL")
+        check = self.check(report, "build.platform:crazygames")
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("byte-identical", check["message"])
         self.assertEqual(result.route, "fail")
+
+    def test_one_failed_platform_build_fails_the_verdict(self):
+        self.add_platform("- { id: crazygames, profile: crazygames@1.2.0, role: optional }")
+
+        def build(command, cwd, env):
+            if "crazygames" in env.get("WGF_GAME_CONFIG", ""):
+                return failing("y8 app id missing")
+            return honoring_build(command, cwd, env)
+        runner = FakeRunner({"pnpm build": build})
+        result, report, _ = self.verify(runner=runner)
+        self.assertEqual(self.check(report, "build.build")["status"], "FAIL")
+        self.assertIn("crazygames", self.check(report, "build.build")["message"])
+        self.assertEqual(self.check(report, "build.platform:crazygames")["status"], "FAIL")
+        self.assertEqual(result.route, "fail")
+
+    def test_a_single_platform_is_built_once_as_before(self):
+        runner = self.all_assertions_pass()
+        result, report, _ = self.verify(runner=runner)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS)
+        self.assertEqual([c for c in runner.calls if "build" in c and "git" not in c][:1],
+                         ["pnpm build"])
+        self.assertEqual(sum(c == "pnpm build" for c in runner.calls), 1)
+        self.assertNotIn("platforms", report["build_artifact"])
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "build", "platforms")))
+        self.assertFalse(any(c["id"].startswith("build.platform:") for c in report["checks"]))
+        self.assertTrue(all(env is None or "WGF_GAME_CONFIG" not in env
+                            for env in runner.envs))
+
+    def test_a_contract_2_repository_builds_its_platforms_itself(self):
+        package = read_json(self.repo, "package.json")
+        package["wgf"] = {"template": {"version": "1.3.0", "contract": 2}}
+        package.setdefault("scripts", {})["build:platforms"] = "node scripts/build/x.mjs"
+        self.write("package.json", json.dumps(package))
+        self.add_platform("- { id: crazygames, profile: crazygames@1.2.0, role: optional }")
+        sdk = fixture("inputs/sdk-report.json")
+        sdk["platforms"].append(dict(sdk["platforms"][0], platform_id="crazygames",
+                                     profile_version="1.2.0"))
+
+        def build_platforms(command, cwd, env):
+            from wgf_verification.platform_builds import digest_tree
+            index = {"platforms": []}
+            for pid in ("generic-web", "crazygames"):
+                dist = os.path.join(cwd, "build", "platforms", pid, "dist")
+                shutil.copytree(os.path.join(FIXTURES, "bundle"), dist, dirs_exist_ok=True)
+                with open(os.path.join(dist, "platform.txt"), "w") as handle:
+                    handle.write(pid)
+                rel = f"build/platforms/{pid}/dist"
+                index["platforms"].append({"id": pid, "dir": rel,
+                                           "dist_digest": digest_tree(cwd, rel)[0]})
+            with open(os.path.join(cwd, "build", "platforms", "index.json"), "w") as handle:
+                json.dump(index, handle)
+            return ok()
+        runner = FakeRunner({"run build:platforms": build_platforms,
+                             "evaluate-assertions": lambda c, cwd, env: FakeRunner.evaluate(
+                                 c, cwd, env, results=fixture("assertions-generic-web.json"))})
+        result, report, _ = self.verify(runner=runner,
+                                        inputs=self.inputs(**{"sdk-report": sdk}))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.message)
+        self.assertEqual(sum(c == "pnpm build" for c in runner.calls), 1)
+        self.assertTrue(runner.ran("run build:platforms"))
+        pinned = {b["platform_id"]: b for b in report["build_artifact"]["platforms"]}
+        self.assertEqual(pinned["crazygames"]["built_by"], "repository")
+        self.assertNotIn("config", pinned["crazygames"])
+        self.assertEqual(self.check(report, "platform.build-target:crazygames")["status"],
+                         "PASS")
 
     def test_proxy_performance_is_labelled_a_proxy(self):
         # The template's fps is CPU-throttled desktop Chromium; it read as PASS evidence.

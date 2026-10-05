@@ -170,7 +170,7 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `visual-qa` | `visual-qa` | `playability-report`, `game-design`, `asset-manifest`, `production-quality-report` | `visual-qa-report` |
 | `content-sufficiency` | `content-sufficiency` | `playability-report`, `game-design`, `scaffold-record`, `title-strategy`, `visual-qa-report` | `content-sufficiency-report` |
 | `review` | `review` | `prototype-report`, `game-design`, `scaffold-record`, `qa-report` | `review-report` |
-| `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report` | `sdk-report` |
+| `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report`, `tech-plan` | `sdk-report` |
 | `sdk-review` | `review` | `sdk-report`, `prototype-report`, `game-design`, `scaffold-record`, `qa-report` | `review-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest`, `playability-report` | `verification-report`, `qa-report` |
 | `quality-gate` | `quality-gate` | `playability-report`, `production-quality-report`, `visual-qa-report`, `content-sufficiency-report`, `qa-report`, `verification-report`, `prototype-report`, `game-design`, `sdk-report`, `review-report`, `asset-manifest`, `title-strategy` | `quality-report` |
@@ -182,7 +182,7 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `platform-validate` | `platform-validate` | `release-manifest`, `verification-report`, `qa-report`, `sdk-report`, `scaffold-record` | `platform-publication` |
 | `release-review` | `human-checkpoint` | `qa-report`, `verification-report`, `release-manifest` | `decision-record` |
 | `publish-review` | `human-checkpoint` | `release-manifest`, `platform-publication`, `store-listing`, `listing-validation-report` | `decision-record` |
-| `submit` | `publish` | `release-manifest`, `platform-publication`, `decision-record`, `scaffold-record` | `platform-publication` |
+| `submit` | `publish` | `release-manifest`, `platform-publication`, `decision-record`, `scaffold-record`, `verification-report`, `store-listing`, `listing-validation-report` | `platform-publication` |
 <!-- io-contract:end -->
 
 A `human-checkpoint` lists the artifacts its gate is decided on (gates.yaml

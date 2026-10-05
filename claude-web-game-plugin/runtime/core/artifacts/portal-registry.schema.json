@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/portal-registry.schema.json",
+  "title": "Portal registry",
+  "description": "Every portal game the Factory knows for one title: one file per title, one entry per platform. It exists so that no publish visit ever creates a second game for a title on a portal, and so that a game a person created by hand in a portal's console can be linked to the title instead of duplicated.\n\nLike `state`, this is a mutable cursor and carries no provenance: it is rewritten whenever a portal game is created, found, associated or observed, and pinning it by hash would make every observation invalidate every reference to it. What makes it auditable is each entry's `history[]`, append-only, one item per recorded change, saying who made it (automation or a person), in which run, and why.\n\nA status that only a portal can establish - `PENDING_REVIEW`, `VERIFIED`, `PUBLISHED`, `REJECTED` - is recorded only with evidence of the portal's own status text, never inferred from a click that returned. Changing the portal game id of an existing entry is a person's act. Entries are independent: a rejection on one platform leaves every other platform's entry as it was.",
+
+  "x-wgf": {
+    "id": "portal-registry",
+    "kind": "state",
+    "producer": "release:submitting",
+    "updated_by": ["release:submitting"],
+    "consumers": ["release:submitting", "release:validating", "title:prototype"],
+    "format": "json",
+    "version": "1.0.0",
+    "repo_path": "workspace/titles/{title}/portals.json",
+    "mutable": true,
+    "note": "Written by scripts/wgf_publish/registry.py, which refuses a transition the module's table does not allow, a portal-established status without evidence, and an automated change of a recorded game id. A person links a game with `wgf-publish.py registry associate`."
+  },
+
+  "type": "object",
+  "required": ["title_id", "updated_at", "portals"],
+
+  "properties": {
+    "title_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "portals": {
+      "type": "object",
+      "description": "Platform id (a platform profile id) to the portal game known there. A platform with no entry is NOT_CREATED: no game is known for this title on it.",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/portal" }
+    }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+    "status": {
+      "enum": ["NOT_CREATED", "DRAFT", "DRAFT_CREATED", "PENDING_REVIEW", "VERIFIED", "REJECTED", "PUBLISHED", "BLOCKED", "UNKNOWN"]
+    },
+
+    "portal": {
+      "type": "object",
+      "required": ["status", "history"],
+      "properties": {
+        "portal": { "type": "string", "description": "The portal's own name for itself, as its console shows it." },
+        "game_title": { "type": "string", "description": "The game's title as entered on the portal." },
+        "external_game_id": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "description": "The portal's id for the game, read back from the portal or linked by a person. The first id the find-game phase tries. Changed only by a person."
+        },
+        "app_id": { "type": ["string", "null"], "minLength": 1, "description": "A second portal id where the portal has one (an app id distinct from the game id)." },
+        "other_ids": {
+          "type": "object",
+          "description": "Any further portal identifiers, by the portal's own name for them.",
+          "additionalProperties": { "type": "string" }
+        },
+        "slug": { "type": ["string", "null"] },
+        "url": { "type": ["string", "null"], "description": "The game's page or console URL on the portal." },
+        "status": { "$ref": "#/$defs/status" },
+        "submission_status": { "type": ["string", "null"], "description": "The portal's own wording for the last submission's state, verbatim." },
+        "publication_status": { "type": ["string", "null"], "description": "The portal's own wording for the game's publication state, verbatim." },
+        "build_hash": {
+          "oneOf": [{ "$ref": "./shared/provenance.schema.json#/$defs/hash" }, { "type": "null" }],
+          "description": "The build last uploaded to this game. A different build makes every submission fact recorded for the old one stale."
+        },
+        "campaign_hash": {
+          "oneOf": [{ "$ref": "./shared/provenance.schema.json#/$defs/hash" }, { "type": "null" }],
+          "description": "The store listing (copy and media) last applied to this game."
+        },
+        "release_id": { "type": ["string", "null"], "pattern": "^r[0-9]+$" },
+        "association": {
+          "enum": ["created-by-factory", "associated-by-person", "observed"],
+          "description": "How this game came to be known: the Factory created it and read its id back; a person linked a game they created; or the Factory found it on the portal (a recorded or configured id that resolved)."
+        },
+        "last_checked_at": { "type": "string", "format": "date-time", "description": "When the portal's state was last read." },
+        "evidence": {
+          "type": "array",
+          "description": "What the recorded statuses rest on: the portal's status text, a screenshot, an API response. Hashed; the content lives where `ref` says, redacted.",
+          "items": { "$ref": "#/$defs/evidence" }
+        },
+        "history": {
+          "type": "array",
+          "description": "Append-only, oldest first: one item per recorded change to this entry.",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/change" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "evidence": {
+      "type": "object",
+      "required": ["kind", "ref", "sha256"],
+      "properties": {
+        "kind": { "enum": ["portal-status", "console-text", "api-response", "screenshot", "file", "note"] },
+        "ref": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "./shared/provenance.schema.json#/$defs/hash" }
+      },
+      "additionalProperties": false
+    },
+
+    "change": {
+      "type": "object",
+      "required": ["at", "from", "to", "by"],
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "from": { "$ref": "#/$defs/status" },
+        "to": { "$ref": "#/$defs/status" },
+        "by": { "enum": ["automation", "human"] },
+        "run_id": { "type": ["string", "null"] },
+        "note": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    }
+  }
+}

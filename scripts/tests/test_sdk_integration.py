@@ -381,6 +381,14 @@ class SdkCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
         self.repo = os.path.join(self.scratch, "game")
         self.design = fixture("game-design")
+        # The fixture design names only yandex and crazygames; GAME_CONFIG also targets poki
+        # and gamevui. Recorded as considered, so the design's placement lists stand as
+        # written (a target the design never considered gets every placement its profile
+        # offers: Integration.test_a_target_the_design_never_considered_gets_its_placements).
+        self.design["platform_constraints_applied"] = list(
+            self.design.get("platform_constraints_applied") or []) + [
+            {"platform_id": pid, "requirement": "fixture", "how_addressed": "considered"}
+            for pid in ("poki", "gamevui")]
         self.scaffold = fixture("scaffold-record")
 
     def execute(self, runner=None, params=None, sdk=None, commit_first=True, **inputs):
@@ -670,6 +678,27 @@ class Integration(SdkCase):
         self.assertFalse(placements["rewarded-game-over"]["integrated"])
         self.assertIn("ad_kinds", placements["rewarded-game-over"]["note"])
         self.assertNotIn("rewarded-game-over", read(self.repo, "src/platform/integration-plan.ts"))
+
+    def test_a_target_the_design_never_considered_gets_its_placements(self):
+        # Both 2026-10 audits: the design named crazygames, yandex and poki; a y8 target added
+        # later got no placement at all, so its build showed no ads.
+        make_repo(self.repo)
+        self.design["platform_constraints_applied"] = [
+            c for c in self.design["platform_constraints_applied"]
+            if c["platform_id"] not in ("poki", "gamevui")]
+        report = self.report(self.execute())
+        plan = read(self.repo, "src/platform/integration-plan.ts")
+        rewarded = plan[plan.index('id: "rewarded-game-over"'):]
+        interstitial = plan[plan.index('id: "interstitial-game-over"'):]
+        # poki offers both kinds, gamevui interstitials only (their profiles' capabilities.ads).
+        self.assertIn('platforms: ["yandex", "crazygames", "poki"]', rewarded[:300])
+        # crazygames was considered by the design and left out of this one: it stays out.
+        self.assertIn('platforms: ["yandex", "poki", "gamevui"]', interstitial[:300])
+        notes = " ".join(report["integration"].get("notes") or [])
+        self.assertIn("poki is a target no design placement or constraint names", notes)
+        self.assertIn("gamevui is a target no design placement or constraint names", notes)
+        self.assertIn("monetization placement",
+                      self.feature(report, "poki", "rewarded")["required_by"])
 
     def test_poki_needs_a_break_before_every_continue(self):
         make_repo(self.repo)
@@ -1046,6 +1075,107 @@ class Commits(SdkCase):
         self.assertEqual(build_ref, {"commit_sha": self.head(), "base_commit_sha": base,
                                      "sdk_commits": [self.head()]})
         self.assertNotEqual(self.head(), base)
+        self.assertEqual(git(self.repo, "status", "--porcelain").stdout, "")
+
+    @staticmethod
+    def tech_plan(*platforms):
+        plan = fixture("tech-plan") if os.path.exists(os.path.join(FIXTURES, "tech-plan.json")) \
+            else {"provenance": {"artifact_id": "wgf:tech-plan:mock-title:20260101-01",
+                                 "content_hash": "sha256:" + "0" * 64}}
+        plan["repo_params"] = {"game_config": {"platforms": [dict(p) for p in platforms]}}
+        return plan
+
+    def test_a_retarget_writes_the_tech_plans_platforms_in_its_commit(self):
+        # A title re-planned after develop (new strategy, G2, tech plan, G3): the sdk step
+        # writes the approved platforms and their profiles, keyed like its integration, so
+        # develop's commit - and every gate that pinned it - stands.
+        make_repo(self.repo)
+        base = self.head()
+        with open(os.path.join(self.repo, "game.config.yaml"), encoding="utf-8") as handle:
+            before = handle.read()
+        plan = self.tech_plan({"id": "yandex", "profile": "yandex@1.2.0", "role": "required"},
+                              {"id": "crazygames", "profile": "crazygames@1.2.0",
+                               "role": "optional"})
+        result = self.execute(prototype_report=prototype_at(base), tech_plan=plan)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
+        report = self.report(result)
+        self.assertEqual(report["build_ref"], {"commit_sha": self.head(),
+                                               "base_commit_sha": base,
+                                               "sdk_commits": [self.head()]})
+        self.assertEqual([p["platform_id"] for p in report["platforms"]],
+                         ["yandex", "crazygames"])
+        with open(os.path.join(self.repo, "game.config.yaml"), encoding="utf-8") as handle:
+            after = handle.read()
+        self.assertIn("  - { id: yandex, profile: yandex@1.2.0, role: required }\n", after)
+        self.assertIn("  - { id: crazygames, profile: crazygames@1.2.0, role: optional }\n",
+                      after)
+        self.assertNotIn("poki", after)
+        # Nothing but the platforms changed in it.
+        strip = lambda text: [l for l in text.splitlines() if not l.startswith("  - { id:")]
+        self.assertEqual(strip(after), strip(before))
+        changed = git(self.repo, "diff", "--name-only", base, "HEAD").stdout.split()
+        for path in ("game.config.yaml", "config/platforms/yandex.yaml",
+                     "config/platforms/crazygames.yaml", "config/platforms/pinned.json"):
+            self.assertIn(path, changed)
+        self.assertEqual(git(self.repo, "status", "--porcelain").stdout, "")
+        # Run again: the checkout agrees with the plan, nothing more is written.
+        again = self.execute(prototype_report=prototype_at(base), tech_plan=plan)
+        self.assertEqual(again.outcome, StepOutcome.SUCCESS, again.error or again.message)
+        self.assertEqual(git(self.repo, "rev-list", "--count", f"{base}..HEAD").stdout.strip(),
+                         "1")
+
+    def test_a_portal_s_issued_ids_are_written_into_the_build_in_its_commit(self):
+        # A create-before-build portal (y8: identity.issued_on_create): the ids the submit
+        # step recorded in the portal registry reach game.config.yaml in the sdk commit.
+        from wgf_publish import registry as portal_registry
+        titles = os.path.join(self.scratch, "titles")
+        self.addCleanup(setattr, SdkStep, "titles_dir", SdkStep.__dict__.get("titles_dir"))
+        SdkStep.titles_dir = titles
+        portal_registry.load("mock-title", titles).record(
+            "y8", status="DRAFT_CREATED", by="automation", external_game_id="y8-4711",
+            app_id="app-0042", association="created-by-factory")
+        make_repo(self.repo)
+        base = self.head()
+        plan = self.tech_plan({"id": "yandex", "profile": "yandex@1.2.0", "role": "required"},
+                              {"id": "y8", "profile": "y8@1.2.0", "role": "optional"})
+        result = self.execute(prototype_report=prototype_at(base), tech_plan=plan)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
+        with open(os.path.join(self.repo, "game.config.yaml"), encoding="utf-8") as handle:
+            after = handle.read()
+        self.assertIn("  - { id: y8, profile: y8@1.2.0, role: optional, game_id: y8-4711, "
+                      "app_id: app-0042 }\n", after)
+        self.assertIn("  - { id: yandex, profile: yandex@1.2.0, role: required }\n", after)
+        self.assertIn("game.config.yaml",
+                      git(self.repo, "diff", "--name-only", base, "HEAD").stdout.split())
+        self.assertEqual(git(self.repo, "status", "--porcelain").stdout, "")
+        # Again: the retarget rewrites the platforms, the ids are written back, nothing new.
+        again = self.execute(prototype_report=prototype_at(base), tech_plan=plan)
+        self.assertEqual(again.outcome, StepOutcome.SUCCESS, again.error or again.message)
+        self.assertEqual(git(self.repo, "rev-list", "--count", f"{base}..HEAD").stdout.strip(),
+                         "1")
+
+    def test_a_tech_plan_that_agrees_with_the_checkout_writes_nothing_of_it(self):
+        make_repo(self.repo)
+        base = self.head()
+        plan = self.tech_plan(*[{"id": i, "profile": p, "role": r} for i, p, r in (
+            ("yandex", "yandex@1.2.0", "required"), ("crazygames", "crazygames@1.2.0", "optional"),
+            ("poki", "poki@1.1.0", "optional"), ("gamevui", "gamevui@1.1.0", "optional"))])
+        result = self.execute(prototype_report=prototype_at(base), tech_plan=plan)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
+        changed = git(self.repo, "diff", "--name-only", base, "HEAD").stdout.split()
+        self.assertNotIn("game.config.yaml", changed)
+        self.assertFalse([p for p in changed if p.startswith("config/platforms/")])
+
+    def test_a_retarget_to_a_moved_profile_blocks_and_writes_nothing(self):
+        make_repo(self.repo)
+        base = self.head()
+        plan = self.tech_plan({"id": "crazygames", "profile": "crazygames@1.2.0",
+                               "role": "required"},
+                              {"id": "yandex", "profile": "yandex@0.9.0", "role": "optional"})
+        result = self.execute(prototype_report=prototype_at(base), tech_plan=plan)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("yandex@0.9.0", result.message)
+        self.assertEqual(self.head(), base)
         self.assertEqual(git(self.repo, "status", "--porcelain").stdout, "")
 
     def test_a_retry_finds_its_commit_instead_of_committing_again(self):

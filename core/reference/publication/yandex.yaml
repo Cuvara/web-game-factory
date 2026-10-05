@@ -1,38 +1,258 @@
 # Publication profile - Yandex Games (docs/publish-module.md)
 #
-# Checked 2026-10-02 against https://yandex.com/dev/games/doc/en/console/update-game: no API
-# or CLI for uploading a draft or submitting it for moderation is documented; everything goes
-# through the Games Console (Draft tab: upload archive, Submit for moderation). Only one
-# moderation can be in progress at a time. Automated use of the console is not addressed by
-# a public document found: `automation_terms: unverified` - the publish step stops
-# HUMAN_REQUIRED before contacting the console until a person records otherwise.
+# 2.0.0 (core/artifacts/shared/publication-profile.schema.json): the console flow as intents.
+# Written from public pages only (docs/portal-publishing-architecture.md, Part 3, read
+# 2026-10-04): nobody has logged into the Games Console for this file. No API or CLI for
+# uploading a draft or submitting it for moderation is documented; everything goes through
+# the Games Console. Only one moderation can be in progress at a time. Automated use of the
+# console is not addressed by a public document found: `automation_terms: unverified` - the
+# publish step stops HUMAN_REQUIRED before contacting the console until a person records
+# otherwise.
 
 id: yandex
-version: 1.0.0
+version: 2.2.0  # 2.2.0: the Yandex adapter's flow - Create draft at upload, the language tabs,
+                #        media and save as hypotheses (docs/publish-module.md, Yandex)
 status: unverified
 docs: https://yandex.com/dev/games/doc/en/
+
+sources:
+  - {url: "https://yandex.com/dev/games/doc/en/console/add-new-game", read: "2026-10-04"}
+  - {url: "https://yandex.com/dev/games/doc/en/console/add-new-game/draft", read: "2026-10-04"}
+  - {url: "https://yandex.com/dev/games/doc/en/console/update-game", read: "2026-10-04"}
+  - {url: "https://yandex.com/dev/games/doc/en/concepts/moderation", read: "2026-10-04"}
+  - {url: "https://yandex.com/dev/games/doc/en/concepts/requirements", read: "2026-10-04"}
+  - {url: "https://yandex.com/dev/games/doc/en/concepts/quick-start", read: "2026-10-04"}
+  - {url: "https://yandex.com/legal/yandexgames/en/", read: "2026-10-04"}
+
+unknowns:
+  - Console labels beyond those the documentation quotes, and their Russian forms (the Russian names below are translations, not read on the console).
+  - The age-rating and category lists.
+  - The archive upload widget.
+  - Whether the horizontal video is required (a summarised page suggests it may be).
+  - The text limits of every per-language field except those the documentation states.
+  - Icon, cover, hero image and screenshot sizes.
+  - The contract screens (licensing model or YAN with payout details).
+  - Whether a CAPTCHA, a second factor or an anti-bot check protects Yandex ID for the console.
+  - The session markers (logged in, login form, challenges) on the console page.
+  - Where the console shows the app id, and how the game list is laid out.
+  - How the per-language "Description and Promotion" tabs are named and switched (tab.language names a tab by the locale code - a hypothesis).
+  - Whether icon, cover and screenshots are uploaded once or per language tab, and their upload widgets (media.* are hypotheses).
+  - Whether the draft is saved with a button and its label (draft.save "Save" is a hypothesis).
+  - How the console shows the "Create draft" result for a live game (draft.create is documented; what the page shows after it is not).
+  - The markers by which a person's declarations (contract, age rating, categories, Postpone publication, AI descriptions, Developer's comment) show as done.
 
 submission:
   method: console
   automation_terms: unverified
+  content_policy:
+    ai_generated_text: unknown
+    ai_generated_assets: unknown
+    source: https://yandex.com/dev/games/doc/en/concepts/requirements
+    note: >
+      REQ 1.23 prohibits interactive AI in games and allows pre-generated AI material; no
+      statement on listing copy was found. Unknown until a person records the policy.
   console:
     url: https://games.yandex.com/console/
     allowed_origins: [https://games.yandex.com, https://games.yandex.ru, https://yandex.ru, https://yandex.com]
-    upload_max_mb: 100
     upload_timeout_s: 900
   credential:
-    kind: storage-state
-    env: WGF_PUBLISH_YANDEX_STORAGE_STATE
-    capture: >
-      A person logs into the Games Console once in a headed browser and saves the Playwright
-      storage state where the installation keeps secrets; the variable names the file.
-  human_required: [login, captcha, two-factor, terms, review]
-  constraints:
-    one_moderation_at_a_time: true
-    postpone_publication: true   # the adapter sets it: publication timing stays a person's
-    archive_root_index: true
-  verification:
-    states: [Created, Waiting for moderation, Rejected, Verified, Published]
+    # A person logs in, live, in the browser window the publish step opens, and
+    # handles any CAPTCHA or second factor there. Nothing of the session is kept.
+    kind: human-login
+  human_required: [login, captcha, two-factor, terms, review, contract, age-rating, console-switch]
+
+  adaptive: allowed
+  adaptive_bounds: {max_per_intent: 3, max_per_visit: 10}
+  dismissable: [Close, Got it, Skip, Not now, Закрыть, Понятно, Пропустить]
+  deny: [Отправить, Опубликовать, Удалить, Отменить, Отозвать, Архивировать, Принять, Согласен, Подтвердить, Подписать, Оплатить, Цена, Налог, Возрастной рейтинг, Лицензия, Модерация]
+
+  identity:
+    portal_id_from: [registry, config:app_id, title]
+    title_match: exact-casefold
+    basis: hypothesis
+
+  flow:
+    - id: create.open
+      phase: create_game
+      class: reversible
+      action: click
+      target: [{role: button, name: "Add app"}, {text: "Add app"}]
+      names: [Add app, Добавить приложение]
+      basis: documented
+      source: https://yandex.com/dev/games/doc/en/console/add-new-game
+    - id: draft.create
+      phase: upload_build
+      class: reversible
+      action: click
+      target: [{role: button, name: "Create draft"}, {text: "Create draft"}]
+      names: [Create draft, Создать черновик]
+      optional: true
+      basis: documented
+      source: https://yandex.com/dev/games/doc/en/console/update-game
+      note: >
+        An update of a live game starts a new draft on the Draft tab; the live version stays
+        during review. Optional: a new app has no live version and shows no such button. At
+        upload_build so it runs on a found game too (create_game runs only for a new one).
+    - id: upload.archive
+      phase: upload_build
+      class: reversible
+      action: upload
+      value: package.file
+      target: [{label: "Archive"}, {css: "input[type=file]"}]
+      basis: documented
+      source: https://yandex.com/dev/games/doc/en/console/add-new-game/draft
+      note: >
+        No `names`: the console labels the field "Archive", and "archive" is deny vocabulary,
+        so an adaptive resolution would be refused - drift here stops for a person.
+    - id: tab.language
+      phase: fill_metadata
+      class: reversible
+      action: click
+      per_locale: true
+      target: [{role: tab, name: "<locale>"}]
+      basis: hypothesis
+      note: >
+        The per-language "Description and Promotion" tab, opened before that language's
+        fields (the adapter runs the per-locale intents language by language). Naming a tab
+        by its locale code is a hypothesis (unknowns).
+    - id: field.title
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.<locale>.title
+      per_locale: true
+      target: [{label: "Title"}, {placeholder: "Title"}]
+      names: [Title, Название]
+      expect: {value_equals: listing.text.<locale>.title}
+      basis: documented
+    - id: field.description
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.<locale>.description
+      per_locale: true
+      target: [{label: "Description"}, {placeholder: "Description"}]
+      names: [Description, Описание]
+      expect: {value_equals: listing.text.<locale>.description}
+      basis: documented
+    - id: field.how_to_play
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.<locale>.how_to_play
+      per_locale: true
+      target: [{label: "How to play"}, {placeholder: "How to play"}]
+      names: [How to play, Как играть]
+      expect: {value_equals: listing.text.<locale>.how_to_play}
+      basis: documented
+    - id: media.icon
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.icon
+      target: [{label: "Icon"}]
+      names: [Icon, Иконка]
+      basis: hypothesis
+    - id: media.cover
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.cover
+      target: [{label: "Cover"}]
+      names: [Cover, Обложка]
+      basis: hypothesis
+    - id: media.screenshots
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.screenshots
+      multiple: true
+      target: [{label: "Screenshots"}]
+      names: [Screenshots, Скриншоты]
+      basis: hypothesis
+    - id: draft.save
+      phase: save_draft
+      class: reversible
+      action: click
+      target: [{role: button, name: "Save"}]
+      names: [Save, Сохранить]
+      basis: hypothesis
+    - id: declare.contract
+      phase: human_fields
+      class: human
+      note: The contract (licensing model or YAN) and payout details unlock moderation and payments.
+      source: https://yandex.com/dev/games/doc/en/concepts/quick-start
+    - id: declare.age_rating
+      phase: human_fields
+      class: human
+      note: Age rating - the developer is solely liable for the classification (Terms 1.6, REQ 2.7).
+    - id: declare.categories
+      phase: human_fields
+      class: human
+      note: Categories (up to 2) and tags (up to 20).
+    - id: declare.postpone_publication
+      phase: human_fields
+      class: human
+      note: >
+        Postpone publication, so a passed moderation lands in Verified and the Publish click
+        stays a person's. The later Publish click on a Verified game is a person's too - an
+        irreversible act no intent of this flow names (the adapter stops HUMAN_REQUIRED on
+        Verified).
+    - id: declare.ai_descriptions
+      phase: human_fields
+      class: human
+      note: The "I want to enable AI descriptions" switch (on by default; machine translation from English).
+    - id: declare.developer_comment
+      phase: human_fields
+      class: human
+      note: Developer's comment (2048 chars, read by moderators) - a person writes it or leaves it empty.
+    - id: review.request
+      phase: request_review
+      class: irreversible
+      action: click
+      target: [{role: button, name: "Submit for moderation"}, {text: "Submit for moderation"}]
+      expect: {status_in: submitted_states}
+      basis: documented
+      source: https://yandex.com/dev/games/doc/en/console/add-new-game
+
+  status:
+    states: [Created, Waiting for moderation, Verified, Published, Rejected]
     submitted_states: [Waiting for moderation]
+    approved_states: [Verified]
     live_states: [Published]
     rejected_states: [Rejected]
+    pending_states: [Waiting for moderation]
+
+  constraints:
+    one_moderation_at_a_time: true
+    postpone_publication: true   # a person sets it: publication timing stays a person's
+    archive_root_index: true
+    upload_max_mb: 100
+    max_new_game_requests: 2
+    resubmission_cooldown: "24 h, doubling to 2, 4, 8 and 16 days; reset once per 28 days"
+
+  fields:
+    title: {required: true, max: null, locales: per-locale, listing: listing.text.<locale>.title, basis: documented}
+    seo_description: {required: null, max: null, locales: per-locale, basis: documented}
+    description: {required: true, max: null, locales: per-locale, listing: listing.text.<locale>.description, basis: documented}
+    short_description: {required: null, max: null, locales: per-locale, basis: documented}
+    how_to_play: {required: null, max: null, locales: per-locale, listing: listing.text.<locale>.how_to_play, basis: documented}
+    icon: {required: true, locales: per-locale, size: null, basis: documented}
+    maskable_icon: {required: null, locales: per-locale, size: null, basis: documented}
+    cover: {required: true, locales: per-locale, size: null, basis: documented}
+    hero_image: {required: null, locales: per-locale, size: null, basis: documented}
+    vertical_video: {required: null, locales: per-locale, size: null, basis: documented}
+    horizontal_video: {required: null, locales: per-locale, formats: [mp4], size: "16:9, up to 28 s, 100 MB", basis: documented, note: May be required; unconfirmed.}
+    screenshots: {required: true, locales: per-locale, size: null, basis: documented}
+    categories: {required: true, max_count: 2, locales: shared, human: true, basis: documented}
+    tags: {required: null, max_count: 20, locales: shared, human: true, basis: documented}
+    keywords: {required: null, max: 100, locales: shared, basis: documented}
+    developer_comment: {required: false, max: 2048, locales: shared, human: true, basis: documented}
+
+  restrictions:
+    - rule: Moderation takes 3-5 business days, one per game at a time, at most 2 new-game requests per account.
+      source: https://yandex.com/dev/games/doc/en/concepts/moderation
+    - rule: Interactive AI in games is prohibited; pre-generated AI material is allowed (REQ 1.23).
+      source: https://yandex.com/dev/games/doc/en/concepts/requirements
+    - rule: Content must match the declared age rating (REQ 2.7); copyright on all materials (REQ 3.5).
+      source: https://yandex.com/dev/games/doc/en/concepts/requirements

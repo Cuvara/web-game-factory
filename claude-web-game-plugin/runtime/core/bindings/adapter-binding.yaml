@@ -18,7 +18,9 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.10.0  # 1.10.0: specialist routing (specialists charter, routing data, quality finding) in the gameplay agent
+version: 1.11.0  # 1.11.0: the two 1.10.0 lines below, merged
+# 1.10.0 (publishing): the publish surfaces and the release agent follow the as-built portal publisher
+# 1.10.0 (quality): specialist routing (specialists charter, routing data, quality finding) in the gameplay agent
 # 1.9.0: feature evaluation (playbook and catalogue) in the game-designer surfaces
 
 surface_kinds:
@@ -149,11 +151,23 @@ agents:
       - core/artifacts/review-report.schema.json
       - core/artifacts/store-listing.schema.json
       - core/artifacts/listing-validation-report.schema.json
+      - core/artifacts/portal-registry.schema.json
+      - core/artifacts/shared/publication-profile.schema.json
       - core/reference/platforms/
+      - core/reference/publication/
       - core/reference/store-listing.yaml
       - core/templates/release-report.md
       - core/craft/onboarding-and-portal-ux.md
       - core/craft/store-listing.md
+      - docs/publish-module.md
+      - docs/portal-publishing-architecture.md
+    # The portal publisher as built (docs/portal-publishing-architecture.md Part 0): the
+    # agent never operates a portal page itself - the submit step's executor is the only
+    # browser actor, and a drifted step is answered only through its adaptive resolver. A
+    # person logs in in the window the step opens; nothing asks for, types or keeps a
+    # password, one-time code, cookie or token. G5, G6, the submit confirmation and every
+    # declaration are a person's. Readiness is reported in the publisher's vocabulary
+    # (IMPLEMENTED ... UNVERIFIED, HUMAN_ACTION_REQUIRED), never as "supported".
     produces: [scaffold-record, release-manifest, platform-publication, store-listing, listing-validation-report]
     consumes: [tech-plan, qa-report, verification-report, sdk-report, prototype-report, review-report, scaffold-record, game-design]
 
@@ -301,6 +315,22 @@ commands:
     triggers: "release: approved -> validating -> submitting -> live"
     role: release
     gate: G6
+    must_read:
+      - docs/publish-module.md
+      - docs/portal-publishing-architecture.md
+      - core/reference/publication/
+      - core/artifacts/portal-registry.schema.json
+      - core/artifacts/shared/publication-profile.schema.json
+    note: >
+      Drives the as-built portal publisher: `wgf publish --run <id> [--platform P] [--track]`
+      continues the run that drafted the release through platform validation, G5, G6 and the
+      submit step. WAITING_FOR_HUMAN_LOGIN is answered by a person logging in in the opened
+      window (never by a password, one-time code, cookie or token given to the agent);
+      WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION by the person's own `wgf decide <run> submit |
+      hold | abandon | done`. The surface also points at the real-console observer
+      (`wgf-publish.py observe`, `observe-summary`: profile corrections from observed facts
+      only), the portal registry (`registry show | associate`) and `drift-review`, and
+      reports readiness in the publisher's vocabulary, never as "supported".
   - id: live
     triggers: "title: live (scheduled performance review)"
     role: liveops
@@ -607,6 +637,9 @@ skills:
       - core/artifacts/release-manifest.schema.json
       - core/craft/onboarding-and-portal-ux.md
       - core/craft/store-listing.md
+      - core/reference/publication/
+      - core/artifacts/portal-registry.schema.json
+      - docs/publish-module.md
   - id: store-listing
     supports: [release]
     covers: >

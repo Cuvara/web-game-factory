@@ -325,10 +325,11 @@ person records that a portal permits automated console use the `submit` step sto
 HUMAN_REQUIRED before contacting it. Playwright MCP is not the submission executor; it stays
 the localhost QA tool.
 
-**Secrets never live in source.** A portal session is captured once by a person
-(`scripts/wgf-publish.py capture`), kept where the installation keeps secrets, named to the
-Factory by one environment variable per platform (`factory.publish.env_passthrough`), read
-only by the `submit` step, and redacted from every event, log and artifact.
+**No portal session is kept.** A person logs in, live, in the headed browser window the
+`submit` step opens (publication profile 2.1.0, credential `human-login`) and handles any
+CAPTCHA or second factor there; nothing is captured, loaded or saved, and the session ends
+with the window. Every text the step records is redacted from every event, log and artifact
+(`docs/publish-module.md`).
 
 ---
 

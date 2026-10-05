@@ -44,6 +44,7 @@ claude_paths() {
     -e 's#(^|[^A-Za-z0-9_./-])core/#\1'"$CR"'/core/#g' \
     -e 's#(^|[^A-Za-z0-9_./-])docs/#\1'"$CR"'/docs/#g' \
     -e 's#(^|[^A-Za-z0-9_./-])scripts/wgf\.py#\1'"$CR"'/scripts/wgf.py#g' \
+    -e 's#(^|[^A-Za-z0-9_./-])scripts/(wgf-[a-z-]+\.py)#\1'"$CR"'/scripts/\2#g' \
     -e 's#(^|[^A-Za-z0-9_./-])bin/wgf([^A-Za-z0-9_.-]|$)#\1'"$CW"'\2#g'
 }
 
@@ -55,7 +56,7 @@ agents=(
 "game-designer|title:strategy, title:design|Authors the title strategy including its kill criteria, then designs scope, session, retention and monetization together as one artifact. Use when drafting a strategy, producing a game design, or presenting prototype evidence at gate G4.|core/roles/game-designer.md;core/lifecycle/stages/strategy.md;core/lifecycle/stages/design.md;core/artifacts/title-strategy.schema.json;core/artifacts/game-design.schema.json;core/reference/design-consistency-rules.yaml;core/templates/gdd.md;core/craft/core-loop-and-difficulty.md;core/craft/onboarding-and-portal-ux.md;core/craft/art-direction.md;core/craft/production-art-and-ui.md;core/craft/production-art-2d.md;core/craft/production-art-3d.md;core/craft/game-ui-kit.md;core/craft/juice.md;core/craft/retention-and-progression.md;core/craft/content-and-level-design.md;core/reference/genre-models.yaml;core/reference/design-depth.yaml;core/craft/feature-evaluation.md;core/reference/feature-catalogue.yaml;core/artifacts/shared/research-opportunity.schema.json|Kill criteria are written at strategy, before any code exists. out_of_scope must be non-empty. When the consistency check fails, cut scope rather than relaxing a rule. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
 "architect|title:tech-plan; reviews development commits in title:prototype|Selects the engine, defines architecture and performance budgets, and writes the development plan a coding agent works from; then reviews each development commit read-only and returns a review-report. Use when turning an approved design into a technical plan, preparing gate G3, or reviewing a prototype commit.|core/roles/architect.md;core/lifecycle/stages/tech-plan.md;core/artifacts/tech-plan.schema.json;core/templates/tech-plan.md;core/lifecycle/stages/prototype.md;core/artifacts/review-report.schema.json;core/craft/web-performance.md;core/craft/gameplay-review.md|PixiJS for 2D, Three.js for 3D, nothing else. Every task needs acceptance criteria and tests. repo_params carries the full game.config.yaml content with platforms pinned as id@profile-version. As a reviewer you are read-only: never edit, stage or commit in the game repository. The Factory fingerprints the checkout, and a review that changed anything is undone and discarded. The verdict shape is the one in the review brief the Factory writes. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
 "qa|release:qa|Independently verifies a built release candidate and produces the QA report read at gate G5. Use when a release is in QA, or when prototype evidence needs its numbers checked at G4.|core/roles/qa.md;core/lifecycle/stages/qa.md;core/artifacts/verification-report.schema.json;core/artifacts/qa-report.schema.json;core/artifacts/shared/gameplay-session.schema.json;core/templates/qa-report.md;core/craft/playtesting.md;core/craft/web-performance.md;core/craft/accessibility.md|You verify work you did not author, and you may fail a build its author believes is finished. Every defect needs reproduction steps. verdict is derived from blocking defects and performance budgets. When a Playwright browser tool is available, play the built bundle (a preview server, never the dev server) through each gameplay aspect and record the session to build/verification/gameplay-session.json in the game repository, naming the commit under test, before running \`bin/wgf verify\`; without one, verification falls back to the repository's Playwright suites. Never report a portal's approval. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
-"release|title:scaffolding, release:draft/rc/validating/submitting|Creates game repositories from the template, assembles and freezes releases, runs platform validation, and prepares portal submissions. Also owns compliance and localization. Use for scaffolding, release assembly, validation, or publishing.|core/roles/release.md;core/lifecycle/stages/scaffolding.md;core/lifecycle/stages/release-draft.md;core/lifecycle/stages/release-candidate.md;core/lifecycle/stages/platform-validation.md;core/lifecycle/stages/publish.md;core/lifecycle/stages/store-listing.md;core/artifacts/release-manifest.schema.json;core/artifacts/platform-publication.schema.json;core/artifacts/review-report.schema.json;core/artifacts/store-listing.schema.json;core/artifacts/listing-validation-report.schema.json;core/reference/store-listing.yaml;core/templates/release-report.md;core/craft/onboarding-and-portal-ux.md;core/craft/store-listing.md|Game repositories originate from web-game-template, never from scratch. A frozen manifest is immutable. Validate against the pinned profile version. Secrets never enter source. A portal rejection must produce a compliance finding and a profile version bump. The store listing is captured from the verified build by the store-listing step, never written by hand: a platform requirement nobody has read from the portal stays null in its profile and is reported UNKNOWN, and store copy may claim nothing the shipped game does not have. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
+"release|title:scaffolding, release:draft/rc/validating/submitting|Creates game repositories from the template, assembles and freezes releases, runs platform validation, and prepares portal submissions. Also owns compliance and localization. Use for scaffolding, release assembly, validation, or publishing.|core/roles/release.md;core/lifecycle/stages/scaffolding.md;core/lifecycle/stages/release-draft.md;core/lifecycle/stages/release-candidate.md;core/lifecycle/stages/platform-validation.md;core/lifecycle/stages/publish.md;core/lifecycle/stages/store-listing.md;core/artifacts/release-manifest.schema.json;core/artifacts/platform-publication.schema.json;core/artifacts/review-report.schema.json;core/artifacts/store-listing.schema.json;core/artifacts/listing-validation-report.schema.json;core/artifacts/portal-registry.schema.json;core/artifacts/shared/publication-profile.schema.json;core/reference/publication/;core/reference/store-listing.yaml;core/templates/release-report.md;core/craft/onboarding-and-portal-ux.md;core/craft/store-listing.md;docs/publish-module.md;docs/portal-publishing-architecture.md|Game repositories originate from web-game-template, never from scratch. A frozen manifest is immutable. Validate against the pinned profile version. Secrets never enter source. A portal rejection must produce a compliance finding and a profile version bump. The store listing is captured from the verified build by the store-listing step, never written by hand: a platform requirement nobody has read from the portal stays null in its profile and is reported UNKNOWN, and store copy may claim nothing the shipped game does not have. Publishing is the submit step's portal publisher (docs/publish-module.md; docs/portal-publishing-architecture.md Part 0): you never operate a portal page yourself - the step's executor is the only browser actor, and a drifted step is answered only through its adaptive resolver, never by you. A person logs in in the window the step opens (WAITING_FOR_HUMAN_LOGIN): never ask for, accept, type or keep a password, one-time code, cookie, session or token. G5, G6, the submit confirmation after an upload (WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION) and every declaration, terms or legal field are a person's; never answer one. A publication profile is corrected only from what a person's console observation (wgf-publish.py observe-summary) or the portal's own documentation shows, as a reviewed change; drift-review proposals are for a person to review. Report a portal's readiness as IMPLEMENTED, FIXTURE_VALIDATED, DRY_RUN_VALIDATED, REAL_CONSOLE_VERIFIED, REAL_UPLOAD_VALIDATED, SUBMITTED, PUBLISHED, UNVERIFIED or HUMAN_ACTION_REQUIRED - never as supported. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
 "liveops|title:live|Interprets post-launch analytics, runs scheduled performance reviews, and decides iterate, scale, hold or sunset. Use for any post-launch analysis, experiment design, or campaign proposal at gate G7.|core/roles/liveops.md;core/lifecycle/stages/live.md;core/lifecycle/stages/performance-review.md;core/lifecycle/stages/campaign.md;core/artifacts/performance-review.schema.json;core/craft/retention-and-progression.md|Keep metrics, findings, hypotheses and experiments in their separate fields. Report per platform with sample size, never averaged. A projection is a hypothesis with a number attached; label it. Campaigns need a human-authorized ceiling. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
 "gameplay|works in title:prototype, title:production|Implements core mechanics, game loop, systems and progression from the development plan, and writes the prototype report. Use when building prototype or production tasks.|core/roles/implementers.md;core/lifecycle/stages/prototype.md;core/lifecycle/stages/production.md;core/artifacts/prototype-report.schema.json;core/artifacts/review-report.schema.json;core/artifacts/game-design.schema.json;core/craft/game-feel.md;core/craft/core-loop-and-difficulty.md;core/craft/production-art-and-ui.md;core/craft/production-art-2d.md;core/craft/production-art-3d.md;core/craft/juice.md;core/craft/production-wiring.md;core/craft/retention-and-progression.md;core/craft/content-and-level-design.md;core/reference/genre-models.yaml;core/reference/design-depth.yaml;core/craft/game-audio.md;core/roles/specialists.md;core/reference/specialist-routing.yaml;core/artifacts/shared/quality-finding.schema.json|Work the plan's tasks in dependency order and satisfy both acceptance criteria and tests. When the brief opens with blockers from code review or verification, fix those first. When it opens with *This visit* as a specialist, you are that discipline: fix only the findings it lists, read its playbooks, and write only its writable scope. Scope, monetization, platform strategy, core gameplay and architecture change only through the production change process. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
 "ui|works in title:prototype, title:production|Implements interface, HUD, menus, onboarding flow and platform UI constraints. Use when building or revising any player-facing interface.|core/roles/implementers.md;core/lifecycle/stages/production.md;core/lifecycle/stages/prototype.md;core/artifacts/game-design.schema.json;core/craft/onboarding-and-portal-ux.md;core/craft/ui-hud-mobile.md;core/craft/accessibility.md;core/craft/game-feel.md;core/craft/production-art-and-ui.md;core/craft/game-ui-kit.md;core/craft/juice.md;core/craft/production-wiring.md;core/craft/game-audio.md|time_to_first_play_s and time_to_first_reward_s are design targets, not aspirations. Portal traffic has no install cost anchoring players through a slow start. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
@@ -132,10 +133,77 @@ commands=(
 "prototype|gameplay|title: prototype -> prototype-review|-|Build the prototype to a fun-testable standard, have each development commit reviewed (review-report), and write the prototype report."
 "review|portfolio-owner|title: prototype-review -> production, prototype or abandoned|G4|The kill gate. Judge the prototype against the kill criteria set at strategy. (Not the code review of a commit; that runs inside /wgf-prototype.)"
 "release|release|title: production -> releasing; release: draft -> qa -> rc -> approved|G5|Assemble, QA and freeze a release candidate, then take it to approval."
-"publish|release|release: approved -> validating -> submitting -> live|G6|Authorize publication, validate per platform, and prepare submissions."
+"publish|release|release: approved -> validating -> submitting -> live|G6|Continue the run that drafted a release through platform validation, G5, G6 and the portal submit step; a person logs in and decides."
 "live|liveops|title: live (scheduled review)|G7|Run a performance review and decide iterate, scale, hold or sunset."
 "status|-|read-only|-|Report portfolio and title state from workspace/."
 )
+
+# command_extra <id>: what one transition command adds to the shared procedure, emitted after
+# it. Only `publish` has any: the portal publisher as built (docs/publish-module.md,
+# docs/portal-publishing-architecture.md Part 0), which the surface drives through the engine
+# and the publisher's CLI and never by operating a portal page itself.
+command_extra() {
+  case "$1" in
+    publish) cat <<'EOF'
+
+
+## The portal publisher (as built)
+
+Read `docs/publish-module.md` and Part 0 of `docs/portal-publishing-architecture.md` before
+acting. They, the publication profiles in `core/reference/publication/` and the step's own
+records are authoritative over this section. Where `python3` is not on PATH (Windows), use
+`python` in its place.
+
+- **Run it in the run that drafted the release.** `bin/wgf publish --run <run-id>` continues
+  that run through platform validation, G5, G6 and the portal submit step. `--platform <id>`
+  (repeatable) acts on that platform only; `--track` reads every known game's status on its
+  portal and clicks nothing. Start it in the background: a visit waits for a person. Report
+  each platform from its own `platform-publication` record.
+- **The executor is the only browser actor.** Never open, click, type in or read a portal
+  page yourself, with Playwright MCP or any other browser tool. A drifted step is answered
+  only by the adaptive resolver under the executor's checks (`factory.publish.adaptive`, off
+  by default) - never by you, and never for an irreversible or human intent.
+- **WAITING_FOR_HUMAN_LOGIN.** The portal's console is open in a headed browser window. Tell
+  the person to log in there and to handle any CAPTCHA, second factor or anti-bot check
+  themselves. Never ask for, accept, type or store a password, one-time code, cookie, session
+  or token; refuse one if it is offered. A timed-out login or a closed window is a wait, not
+  a failure: `bin/wgf resume <run-id>` opens the window again.
+- **G5, G6 and WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION are a person's.** Never run
+  `bin/wgf decide` for a gate, a submit confirmation or a declaration; hand the person the
+  line to type. G5 is `approve` or `reject`; G6 is `publish` or `reject`, pinning the
+  release-manifest, the build and the store listing by hash (anything changed after it is
+  `g6-stale`). After UPLOAD_COMPLETE the person types `bin/wgf decide <run-id> submit`
+  (request review once), `hold`, `abandon` or `done` (requested by hand), with
+  `--note platform=<id>` to name the platform. Terms, legal fields, declarations, age
+  rating, tax, payout and prerequisites stop for the person (HUMAN_REQUIRED); so do
+  `duplicate-candidate`, `review-pending` and `drift-irreversible`.
+- **Live is opted into twice, by a person.** The step is a dry run unless the installation
+  sets `factory.publish.mode: live` and the environment `WGF_PUBLISH_LIVE=1`. Never set
+  either, and never record a portal's `terms_confirmed`: that is a person's finding.
+- **Create-before-build (Y8).** IDS_ISSUED means the portal issued its Game ID and App ID on
+  create. The run routes back to `sdk`, rebuilds that platform and asks G5 and G6 again
+  before any upload. Report it; never edit `game.config.yaml` or the registry by hand.
+- **Observe a real console before trusting a profile.**
+  `python3 "scripts/wgf-publish.py" observe <platform> --checkout <game-checkout>` opens the
+  console; the person logs in and uses it, and the observer only records. Then read
+  `python3 "scripts/wgf-publish.py" observe-summary <dir>` and propose corrections to the
+  platform's file in `core/reference/publication/` from observed or documented facts only:
+  a reviewed change with a version bump, unknowns kept listed. An observation is never a
+  login, an upload or a submission.
+- **The portal registry.** `python3 "scripts/wgf-publish.py" registry show <title> [--json]`
+  lists each platform's portal game. `registry associate <title> <platform> <portal-game-id>
+  --note "why"` links a game a person made by hand: run it only with the id the person gives.
+- **Drift review.** `python3 "scripts/wgf-publish.py" drift-review <run-id>` lists the
+  adaptive mode's resolutions as proposed profile patches. A person reviews them; never apply
+  one to a profile in place.
+- **Report readiness in the publisher's vocabulary.** IMPLEMENTED, FIXTURE_VALIDATED,
+  DRY_RUN_VALIDATED, REAL_CONSOLE_VERIFIED, REAL_UPLOAD_VALIDATED, SUBMITTED, PUBLISHED,
+  UNVERIFIED, HUMAN_ACTION_REQUIRED - never "supported". A portal's state comes only from its
+  own status text; never report a portal's approval.
+EOF
+      ;;
+  esac
+}
 
 for row in "${commands[@]}"; do
   IFS='|' read -r id role triggers gate summary <<< "$row"
@@ -182,7 +250,7 @@ $summary
 5. $record_step
 
 Commands map to transitions rather than to stages, so this file stays correct as long as
-the machine does.
+the machine does.$(command_extra "$id")
 EOF
 
   cat > "$X/commands/wgf-$id.md" <<EOF
@@ -205,7 +273,7 @@ $summary
 5. $record_step
 
 Commands map to transitions rather than to stages, so this file stays correct as long as
-the machine does.
+the machine does.$(command_extra "$id")
 EOF
 done
 
@@ -391,7 +459,7 @@ stopped, and continues it if that shell was interrupted.
 - at \`develop\` with \`factory.develop.developer.kind: handoff\` (\`pending\` names no gate):
   report the step, its message and the brief path it gives; the developer finishes the work
   and runs \`! bin/wgf resume <run-id> --decision done\`, then \`$invoke resume <run-id>\`.
-  Development is not complete until the engine says so.
+  Development is not complete until the engine says so.${continues_waits//@INVOKE@/$invoke}
 
 Do not change the factory configuration to make a run more autonomous, and do not
 advance a lifecycle state: the engine never moves one, and neither does this surface.
@@ -406,7 +474,7 @@ for row in "${workflows[@]}"; do
   # The groups this surface continues inside a run (`<surface> <group> <run-id>` =
   # `wgf <group> --run <run-id>`). Only `publish` exists; its text is the publication rule.
   continues_md="" continues_use="" continues_pre="" continues_completed=""
-  continues_effects="" continues_start="" continues_next=""
+  continues_effects="" continues_start="" continues_next="" continues_waits=""
   hint_continues="" allow_continues=()
   IFS=';' read -ra arr <<< "$continues"
   for g in "${arr[@]}"; do
@@ -429,7 +497,22 @@ for row in "${workflows[@]}"; do
     continues_next+=" Publication is the workflow's \`$g\` group, in the same run:
    \`@INVOKE@ $g <run-id>\` (\`bin/wgf $g --run <run-id>\`) validates the release per
    platform and stops at G5 and then G6, each a person's decision; the portal submission
-   follows only a G6 \`publish\` and is a dry run unless the installation made it live."
+   follows only a G6 \`publish\`, is a dry run unless the installation made it live, and
+   waits for the person's login and, after an upload, for the person's submit confirmation
+   (\`docs/publish-module.md\`)."
+    continues_waits+="
+- in the \`$g\` group, at a portal visit (the run's \`message\` names the waiting
+  platforms; each one's \`platform-publication\` record carries its \`waiting\` block):
+  - WAITING_FOR_HUMAN_LOGIN: the portal's console is open in a headed browser window. Tell
+    the user to log in there and to handle any CAPTCHA or second factor themselves. Never
+    ask for, accept, type or store a password, one-time code, cookie or token. A timed-out
+    login or a closed window is a wait, not a failure: \`@INVOKE@ resume <run-id>\` opens
+    the window again.
+  - WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION: the build is uploaded and saved as a draft, and
+    nothing has requested review. Its choices - submit (request review once), hold, abandon,
+    done (requested by hand) - are the user's, one line per choice as at a gate.
+
+  Never operate a portal page yourself: the step's executor is the only browser actor."
     hint_continues+=" | $g <run-id>"
     allow_continues+=("$g")
   done
@@ -509,7 +592,7 @@ skills=(
 "gameplay-review|architect|Reviewing a development commit read-only for the defects players feel: restart state, frame-rate dependence, pause leakage, input handling, tuning as data, missing feedback hooks.|core/craft/gameplay-review.md;core/craft/3d-diagnostics.md;core/lifecycle/stages/prototype.md;core/artifacts/review-report.schema.json"
 "playtesting|qa, game-designer|Agent browser playthroughs that record a gameplay session, stranger playtest protocol, and the performance pass that feed the prototype report and QA.|core/craft/playtesting.md;core/artifacts/shared/gameplay-session.schema.json;core/artifacts/prototype-report.schema.json;core/lifecycle/stages/prototype-review.md"
 "qa|qa|Test suites, device matrices, defect triage, and performance measurement.|core/lifecycle/stages/qa.md;core/artifacts/verification-report.schema.json;core/artifacts/qa-report.schema.json;core/craft/playtesting.md;core/craft/3d-diagnostics.md"
-"release|release|Manifests, checksums, store metadata and presentation, platform assertions, and submission.|core/lifecycle/stages/release-candidate.md;core/lifecycle/stages/publish.md;core/lifecycle/stages/store-listing.md;core/artifacts/release-manifest.schema.json;core/craft/onboarding-and-portal-ux.md;core/craft/store-listing.md"
+"release|release|Manifests, checksums, store metadata and presentation, platform assertions, and submission.|core/lifecycle/stages/release-candidate.md;core/lifecycle/stages/publish.md;core/lifecycle/stages/store-listing.md;core/artifacts/release-manifest.schema.json;core/craft/onboarding-and-portal-ux.md;core/craft/store-listing.md;core/reference/publication/;core/artifacts/portal-registry.schema.json;docs/publish-module.md"
 "store-listing|release|The store listing: the canonical package captured from the verified build (branding from the game's own assets, screenshots and a gameplay recording of real play, copy grounded in the design), one rendition per platform under its profile's store_listing block, and the validation that reports unknown requirements as unknown.|core/lifecycle/stages/store-listing.md;core/artifacts/store-listing.schema.json;core/artifacts/listing-validation-report.schema.json;core/reference/store-listing.yaml;core/artifacts/shared/platform-profile.schema.json;core/reference/platforms/;core/craft/store-listing.md"
 "production-art-2d|asset, gameplay, game-designer|2D production art that reads as a product: silhouette-first sprites with a distinct shape per level and variant, palette roles, the layered-SVG style kit (outlines, misregistration, halftone), backgrounds, VFX sprites, sizes and anchors, and authoring through the assets step or a library.|core/craft/production-art-2d.md;core/craft/production-art-and-ui.md;core/craft/2d-assets.md;core/reference/asset-policy.yaml"
 "production-art-3d|asset, gameplay, game-designer|3D production art from model specs: part decomposition of recognisable low-poly objects, bevel, taper and mirror, materials and emissive, the lighting rig, fog and sky, chase camera and portrait framing, and building and inspecting models.|core/craft/production-art-3d.md;core/craft/production-art-and-ui.md;core/craft/3d-assets-and-animation.md;core/craft/3d-scene-and-physics.md;core/artifacts/shared/model-spec.schema.json"

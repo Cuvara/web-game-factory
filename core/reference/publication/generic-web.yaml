@@ -6,12 +6,15 @@
 # (manual-submission) for the person who deploys it.
 
 id: generic-web
-version: 1.0.0
+version: 2.0.0
 status: verified
 docs: null
 
 submission:
   method: manual
   automation_terms: permitted
+  content_policy:
+    ai_generated_text: allowed     # the installation hosts it; no portal policy applies
+    ai_generated_assets: allowed
   human_required: []
   notes: Hosting is the installation's; no submission exists for this target.

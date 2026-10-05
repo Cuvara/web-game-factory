@@ -181,20 +181,22 @@ factory:
   # (publish) - run in the drafting run by `wgf publish --run <run-id>`. Every key is
   # optional; a step's `with:` overrides any of them.
   publish:
-    # dry-run (default): everything up to the irreversible submit - the session is checked,
-    # the draft found or made, the listing filled, the portal state read back - and the
-    # submit is NOT made; the record says outcome DRY_RUN. live: the submit is made, once,
-    # and only when the Factory's environment also has WGF_PUBLISH_LIVE=1. Production
-    # submission is opted into twice, never by one edit.
+    # dry-run (default): a person logs in, the game is looked up and its status read, and
+    # the visit stops before its first change on the portal, saying what it would do; the
+    # record says outcome DRY_RUN. live: the build is uploaded to the draft and saved -
+    # only when the Factory's environment also has WGF_PUBLISH_LIVE=1, so production is
+    # opted into twice - and the visit stops UPLOAD_COMPLETE; the review request runs only
+    # in a later visit after a person's `wgf decide <run> submit`.
     mode: dry-run
-    # The credential variables the publish step may read - one per platform, named in
-    # core/reference/publication/<id>.yaml (submission.credential.env), each the path of a
-    # Playwright storage state a PERSON captured by logging in once (python
-    # scripts/wgf-publish.py capture <platform>). A third allowlist beside
-    # factory.agents.env_passthrough and game_env_passthrough: a portal session never reaches
-    # an agent or a build. Empty: every console platform is HUMAN_REQUIRED.
+    # A console is reached through a PERSON's live login: the submit step opens a headed
+    # browser and waits (WAITING_FOR_HUMAN_LOGIN) until the person has logged in there, up
+    # to this many seconds; then AUTH_REQUIRED, waiting, never a failure. No session is
+    # captured, loaded or saved (publication profile 2.1.0, credential human-login).
+    login_timeout_s: 900
+    # A tool's token credential (submission.credential.kind token) the publish step may read
+    # - a third allowlist beside factory.agents.env_passthrough and game_env_passthrough. No
+    # shipped adapter uses one; a console never does.
     env_passthrough: []
-    # env_passthrough: [WGF_PUBLISH_CRAZYGAMES_STORAGE_STATE]
     # Per platform. terms_confirmed: a person established, from the portal's own terms, that
     # automated use of its developer console is permitted (the publication profile says
     # `automation_terms: unverified` for every console portal shipped: until this is set,
@@ -208,6 +210,30 @@ factory:
     # The console executor's timeouts, ms: action 5000, navigation 60000, upload from the
     # profile (upload_timeout_s) else 900000.
     # timeouts: {}
+    # The bounded adaptive mode (docs/publish-module.md): when a REVERSIBLE intent of a
+    # console flow drifts on a portal whose profile says `adaptive: allowed`, the resolver
+    # below may propose one locator for the same intent, one overlay to dismiss or one path
+    # on the console; the executor checks every proposal before it acts and writes what
+    # worked to drift.json as a proposed profile change. Never an irreversible action, a
+    # value, a declaration, or anything past a login. Off unless true here AND a resolver
+    # is configured.
+    adaptive: false
+    # Lower the budget (never above 3 per intent, 10 per visit):
+    # adaptive_bounds: {max_per_intent: 3, max_per_visit: 10}
+    # The release role through the agent runner: kind none (default) or command. argv
+    # placeholders {request} (the redacted drift request), {answer} (answer_from: file),
+    # {schema} (the answer's JSON schema), {prompt}; answer_from: stdout (the last JSON
+    # object it prints) or file. Its environment is the agents' allowlist plus
+    # factory.agents.env_passthrough, never a WGF_PUBLISH_* or publish env_passthrough
+    # variable. Give it no tools, no browser and no MCP server: it reads one file.
+    resolver:
+      kind: none
+    # resolver:
+    #   kind: command
+    #   answer_from: stdout
+    #   timeout_seconds: 180
+    #   argv: [claude, -p, "{prompt}", --model, sonnet, --safe-mode, --strict-mcp-config,
+    #          --tools, "Read", --allowedTools, "Read({request})"]
 
   # The assets step (scripts/wgf_assets). Every key is optional; a step's `with:` block
   # overrides any of them. See docs/assets-module.md.

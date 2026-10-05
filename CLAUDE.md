@@ -88,10 +88,18 @@ bin/wgf decide <run-id> approve [--note TEXT]   # answer a waiting checkpoint
 bin/wgf publish --run <run-id>            # the `publish` group in the run that drafted the release:
                                           # platform-validate, G5 (approve|reject), G6 (publish|
                                           # reject, a person only), submit (docs/publish-module.md)
-python3 scripts/wgf-publish.py profiles   # every portal's submission method, terms, credential name
-python3 scripts/wgf-publish.py capture crazygames --out ~/secrets/cg.json --checkout ../my-game
-                                          # a person logs in once; the session is what the submit
-                                          # step acts with (never a typed password)
+python3 scripts/wgf-publish.py profiles   # every portal's submission method, terms, credential kind
+                                          # (consoles: human-login - a person logs in, live, in the
+                                          # window the submit step opens; no session is ever kept)
+bin/wgf publish --run <run-id> --platform y8   # one platform only; each keeps its own record
+bin/wgf publish --run <run-id> --track    # read-only: read every portal's status, click nothing
+bin/wgf decide <run-id> submit            # after UPLOAD_COMPLETE: request review once (or hold|
+                                          # abandon|done); never automatic
+python3 scripts/wgf-publish.py observe yandex --checkout ../my-game   # a person logs in to the
+                                          # REAL console; the observer only records what it shows
+python3 scripts/wgf-publish.py registry show <title>   # portal games known per title (portals.json)
+python3 scripts/wgf-publish.py drift-review <run-id>   # adaptive resolutions as proposed profile
+                                          # patches a person reviews (never applied in place)
 bin/wgf runs --waiting [--json]           # runs waiting for a decision: step, gate, choices,
                                           # timeout eligibility (reported; `resume` applies it)
 bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; exits as the run
@@ -142,9 +150,9 @@ validate against.
 
 Release artifacts (`release-manifest`, `qa-report`, `platform-publication`) belong in the game
 repository under `release/<release-id>/`, not in `workspace/`. So does the store metadata the
-publication guards read (`release/<release-id>/store-metadata.json`). A portal session a
-person captured for the `submit` step lives where the installation keeps secrets - never in
-any repository (`docs/publish-module.md`).
+publication guards read (`release/<release-id>/store-metadata.json`). No portal session is
+captured or stored anywhere: a person logs in, live, in the browser window the `submit` step
+opens, and the session ends with it (`docs/publish-module.md`).
 
 ## Lifecycle — two tiers, not one chain
 
@@ -207,11 +215,22 @@ release. G5 and G6 are the `publish` group's, after `release`: `wgf publish --ru
 continues the same run through `platform-validate` (release:validating: the publication
 guards, readiness READY | BLOCKED | HUMAN_REQUIRED | UNKNOWN), G5 (`approve`/`reject`), G6
 (`publish`/`reject`, pinning the release-manifest by hash; a person only) and `submit`
-(release:submitting: the platform adapter, one attempt, the portal state read back;
-`factory.publish.mode` is dry-run until an installation sets live AND `WGF_PUBLISH_LIVE=1`).
-A login, CAPTCHA, second factor, unconfirmed portal terms, a missing session or a portal
-without an automated method stops `submit` WAITING_FOR_HUMAN (`wgf decide <run> done|abandon`).
-See `docs/publish-module.md`. Workflow 5 judges the production build
+(release:submitting: one visit per packaged platform, each with its own record; the
+portal's adapter runs the profile's flow in a headed browser; `factory.publish.mode` is
+dry-run until an installation sets live AND `WGF_PUBLISH_LIVE=1`). The handoff model is
+HUMAN LOGIN -> AUTOMATED CONSOLE WORK -> HUMAN UPLOAD AUTHORIZATION (G6, pinning manifest,
+build and store listing; any hash changed after it is `g6-stale`) -> AUTOMATED UPLOAD ->
+HUMAN SUBMIT/PUBLISH DECISION: a login page waits WAITING_FOR_HUMAN_LOGIN (the person logs
+in and handles CAPTCHA/2FA in that window; never a failure), a live upload ends
+UPLOAD_COMPLETE -> WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION (`wgf decide <run> submit|hold|
+abandon|done`), and only a `submit` visit requests review, once. A create-before-build portal
+(Y8: Game ID and App ID exist only after the game is created) ends IDS_ISSUED: the ids go to
+the per-title portal registry (`workspace/titles/<id>/portals.json`, DRAFT_CREATED), route
+`platform-ids` returns to `sdk`, which writes them into game.config.yaml, and the platform is
+rebuilt, verified, packaged, validated (`platform_ids_present`) and G5/G6 decided again
+before any upload. Duplicates, a pending review, unconfirmed terms or prerequisites, legal and
+declaration fields stop for a person. See `docs/publish-module.md` and
+`docs/portal-publishing-architecture.md`. Workflow 5 judges the production build
 before review: `production-quality` and `visual-qa` route `assets` (an asset must be made
 again) to `assets` and `develop` to `develop`, and `release` refuses unless both passed the
 development commit it ships (`docs/production-architecture.md`). Workflow 9 then counts the
@@ -448,14 +467,17 @@ seen by the engine — validate what you write there with ajv.
 - `docs/techplan-module.md` — the `tech-plan` step: engine and platform pins, G3
 - `docs/release-module.md` — the `release` step: what it refuses, packaging checks
 - `docs/publish-module.md` — the `publish` group: `platform-validate` (the publication guards,
-  readiness), G5/G6 in the run, `submit` (platform adapters: the portal's API or CLI where
-  one exists, a deterministic direct-Playwright run of its console where none does, a person
-  otherwise), the idempotency key, the captured session, redaction, dry-run vs live, the
-  fixture portal; Playwright MCP is not the submission executor
-- `docs/portal-publishing-architecture.md` — DESIGN, not implemented (2026-10-04): publishing
-  leaves CI; the agent-owned portal publisher (profile-driven Playwright flows, bounded
-  adaptive mode, no duplicates, human intents), the audit behind it, the four portals'
-  console facts, and the implementation split. The rules above hold until it lands
+  readiness), G5/G6 in the run, `submit` (one first-class adapter per portal - yandex,
+  crazygames, y8, gamedistribution, gamepix - over the profile-driven intent runner, the
+  portal's API or CLI where one exists, a person otherwise), the live login handoff, upload
+  vs submit confirmation, the portal registry, create-before-build, the campaign and media
+  mapping, the bounded adaptive mode, `actions.jsonl` and `drift.json`, the observer, the
+  fixture portal and its per-portal flavors; Playwright MCP is not the submission executor
+- `docs/portal-publishing-architecture.md` — the portal publisher: why publishing left CI,
+  the design (profile-driven Playwright flows, bounded adaptive mode, no duplicates, human
+  intents), the human handoff model, the Y8 create-before-build workflow, and the
+  per-portal readiness matrix (IMPLEMENTED / FIXTURE_VALIDATED / ... / UNVERIFIED) with what
+  only a person logged in to each real console can still establish
 - `docs/core-contracts.md` — every pipeline boundary, lineage rules, the validator
 - `docs/checkouts.md` — where the game checkout is: one precedence for every step
   (`with:` → `WGF_GAME_REPO` → scaffold-record `local_path` → `factory.checkouts`), the
@@ -533,6 +555,13 @@ outward-facing and largely irreversible. Do not perform them unless explicitly i
 even when a procedure or stage file describes them. The `submit` step submits to a portal
 only behind a person's G6 decision pinning the manifest, only in `factory.publish.mode:
 live` with `WGF_PUBLISH_LIVE=1`, only where a person has recorded that the portal's terms
-permit it, and only through its documented tool or its own console - never through an agent
-deciding what to click, never past a login, a CAPTCHA or a second factor. Secrets never enter
-source; a portal session is named by an environment variable and redacted everywhere.
+permit it, and only through its documented tool or its own console, driven by the profile's
+intents. An agent may resolve a drifted reversible step of that flow, and only under the
+executor's checks (`factory.publish.adaptive`, off by default; `docs/publish-module.md`); it
+never chooses an irreversible action, never acts outside the profile's intents, and never
+passes a login, a CAPTCHA, a second factor or an anti-bot check. Upload and submission are
+separate human authorizations: G6 authorizes the upload of one exact release, and a person's
+`submit` decision after the upload authorizes the one review request. No password, OTP,
+cookie or session is asked for, typed, stored or kept: a person logs in, live, and the
+session ends with the browser window. CI/CD never publishes a game. Secrets never enter source,
+and everything the publisher logs is redacted.

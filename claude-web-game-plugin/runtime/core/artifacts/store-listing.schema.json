@@ -256,7 +256,8 @@
         "width": { "type": "integer", "minimum": 1 },
         "height": { "type": "integer", "minimum": 1 },
         "source": { "type": "string", "description": "What it was made from: a canonical rendition id, a screenshot id, an asset id." },
-        "requirement": { "type": "string", "description": "The platform block entry it satisfies, when a platform rendition." }
+        "requirement": { "type": "string", "description": "The platform block entry it satisfies, when a platform rendition." },
+        "locale": { "type": "string", "pattern": "^[a-z]{2,3}(-[a-z0-9]{2,8})*$", "description": "Since 1.2.0. The locale the file is for, when it is one locale's own (a screenshot of the build in that language). Absent: the file serves every locale. A portal that takes media per locale gets a locale's own files, else the shared ones." }
       },
       "additionalProperties": false
     },

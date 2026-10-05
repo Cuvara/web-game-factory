@@ -16,7 +16,10 @@ release-manifest shape. FAKE_PNPM (comma-separated) breaks it on purpose:
     impossible-date   the manifest was "produced" on 2026-02-30 (shaped like a date-time)
     nested            the bundle is packaged under a dist/ folder, not at the archive root
 
-Every invocation is appended to FAKE_PNPM_LOG as a JSON line when that is set.
+Like the template, it reads the config WGF_GAME_CONFIG names instead of game.config.yaml
+when that is set (a per-platform build's), and `release:package --platform <id>` packages
+that one platform. Every invocation is appended to FAKE_PNPM_LOG as a JSON line when that
+is set, with the WGF_GAME_CONFIG it ran with when there was one.
 """
 
 import hashlib
@@ -71,7 +74,13 @@ def package(root, opts, config):
                 continue
             files.append(rel)
     packages = []
-    for platform in config.get("platforms") or []:
+    targets = [p for p in config.get("platforms") or []
+               if "platform" not in opts or p["id"] == opts["platform"]]
+    if not targets:
+        print(f"game.config.yaml does not target platform {opts.get('platform')}",
+              file=sys.stderr)
+        return 1
+    for platform in targets:
         filename = f"{platform['id']}.zip"
         path = os.path.join(out, filename)
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -138,15 +147,21 @@ def manifest(root, opts, config):
 
 
 def main(argv):
+    chosen = os.environ.get("WGF_GAME_CONFIG")
     if os.environ.get("FAKE_PNPM_LOG"):
         with open(os.environ["FAKE_PNPM_LOG"], "a") as handle:
-            handle.write(json.dumps(argv) + "\n")
+            handle.write(json.dumps(argv + ([f"WGF_GAME_CONFIG={chosen}"] if chosen else []))
+                         + "\n")
     if argv[:1] == ["run"]:
         argv = argv[1:]
     if not argv:
         return 2
     root = os.getcwd()
-    config = load_file(os.path.join(root, "game.config.yaml"))
+    if chosen:
+        with open(os.path.join(root, *chosen.split("/")), encoding="utf-8") as handle:
+            config = json.load(handle)
+    else:
+        config = load_file(os.path.join(root, "game.config.yaml"))
     script, opts = argv[0], options(argv[1:])
     if script == "release:package":
         return package(root, opts, config)

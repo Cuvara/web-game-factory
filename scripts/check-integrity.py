@@ -363,7 +363,43 @@ def check_platforms():
             ERRORS.append(f"game.config.yaml (pinned template): platform '{pid}' has no "
                           "profile in core")
     check_template_profiles(directory, profiles)
+    check_template_adapters(directory, profiles)
     return profiles
+
+
+def check_template_adapters(directory, profiles):
+    """The lock's platform_adapters is the pinned template's adapter registry: the list
+    strategy and tech-plan refuse every other platform by. A profile without an adapter at the
+    pin is allowed - it describes a portal before the template can build for it - and named
+    as a note, because no title can target it until a person releases a template carrying the
+    adapter and moves the pin."""
+    from wgflib import template
+
+    try:
+        lock = template.load_lock()
+        adapters = template.platform_adapters(lock)
+    except template.TemplateError as exc:
+        ERRORS.append(f"template pin: {exc}")
+        return
+    if template.expected_commit(lock) != lock["commit"]:
+        NOTES.append("platform adapters not compared: WGF_TEMPLATE_COMMIT points away from "
+                     "the lock, whose platform_adapters describe its own commit")
+        return
+    found = template.registry_adapter_ids(directory)
+    if found is None:
+        # test_template_contract's drift test requires the registry at the pin; a checkout
+        # without one is not a template this list can be held against.
+        NOTES.append("platform adapters not compared: the template checkout has no adapter "
+                     "registry (KNOWN_PLATFORM_IDS)")
+        return
+    if sorted(found) != sorted(adapters):
+        ERRORS.append(f"workspace/config/template.lock.json platform_adapters "
+                      f"{sorted(adapters)} is not the pinned template's adapter registry "
+                      f"{sorted(found)}")
+    for pid in sorted(set(profiles) - set(found)):
+        NOTES.append(f"platform '{pid}' has a profile but no SDK adapter at the pinned template: "
+                     "strategy and tech-plan refuse it until a template release carrying it "
+                     "is pinned")
 
 
 def check_template_profiles(directory, profiles):
@@ -394,6 +430,36 @@ def check_template_profiles(directory, profiles):
                 f"{pid}@{versions[0]}: {ours} (sha256:{digests[0]}) differs from the pinned "
                 f"template's config/platforms/{pid}.yaml (sha256:{digests[1]}) under the same "
                 "version; template-side divergence, init vendors the core copy")
+
+
+def check_publication_profiles(directory=os.path.join("core", "reference", "publication"),
+                               platforms_dir=os.path.join("core", "reference", "platforms")):
+    """Publication profiles (2.0.0): the id is the filename stem and names a platform profile,
+    and the console flow keeps the rules the schema cannot state - no cancel, withdraw or
+    delete intent; every irreversible intent has a profile locator ladder; every intent has
+    a class; adaptive names and dismissable overlays outside the deny vocabulary; the status
+    words consistent (wgflib.publication.flow_problems). Returns the profiles checked."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from wgflib.publication import flow_problems
+    from wgflib.yamllite import YamlError, load_file
+
+    checked = []
+    for path in sorted(glob.glob(os.path.join(directory, "*.yaml"))):
+        stem = os.path.basename(path)[:-5]
+        try:
+            profile = load_file(path)
+        except (OSError, YamlError, ValueError) as exc:
+            ERRORS.append(f"{path}: does not parse: {exc}")
+            continue
+        if not isinstance(profile, dict) or profile.get("id") != stem:
+            ERRORS.append(f"{path}: id is not the filename stem {stem!r}")
+            continue
+        if not os.path.isfile(os.path.join(platforms_dir, f"{stem}.yaml")):
+            ERRORS.append(f"{path}: no platform profile {platforms_dir}/{stem}.yaml")
+        for problem in flow_problems(profile):
+            ERRORS.append(f"{path}: {problem}")
+        checked.append(stem)
+    return checked
 
 
 def check_provider_independence():
@@ -487,6 +553,7 @@ def main():
     check_charters()
     check_templates()
     platforms = check_platforms()
+    publication = check_publication_profiles()
     check_provider_independence()
     check_no_readme_only_dirs()
     check_plugin_version()
@@ -496,6 +563,7 @@ def main():
     print(f"artifacts   {len(artifacts)}")
     print(f"roles       {len(roles)}")
     print(f"platforms   {', '.join(sorted(platforms))}")
+    print(f"publication {len(publication)} profile(s)")
     print(f"machines    {len(glob.glob('core/lifecycle/*.machine.yaml'))}")
     print(f"stages      {len(glob.glob('core/lifecycle/stages/*.md'))}")
     print(f"workflows   {len(workflows)}")

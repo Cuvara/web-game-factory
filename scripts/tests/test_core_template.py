@@ -56,6 +56,21 @@ class TheLock(unittest.TestCase):
                 with self.assertRaises(template.TemplateError):
                     template.load_lock(path)
 
+    def test_the_pins_platform_adapters_are_recorded(self):
+        adapters = template.platform_adapters()
+        self.assertEqual(len(adapters), len(set(adapters)))
+        self.assertIn("generic-web", adapters)
+        lock = dict(template.load_lock())
+        for broken in (None, [], [""], "y8"):
+            lock["platform_adapters"] = broken
+            with self.subTest(broken=broken), self.assertRaises(template.TemplateError):
+                template.platform_adapters(lock)
+
+    def test_a_missing_adapter_names_the_human_action(self):
+        self.assertEqual(template.adapter_missing("GamePix"),
+                         "GamePix needs a template release carrying its SDK adapter "
+                         "(HUMAN_ACTION_REQUIRED: release and pin)")
+
     def test_an_override_must_be_a_full_sha(self):
         with mock.patch.dict(os.environ, {"WGF_TEMPLATE_COMMIT": "main"}):
             with self.assertRaises(template.TemplateError):
@@ -67,6 +82,13 @@ class ThePinnedCheckout(unittest.TestCase):
     def test_it_is_at_exactly_the_pinned_commit(self):
         path, _ = pinned_template.checkout()
         self.assertEqual(template.head_of(path), template.load_lock()["commit"])
+
+    def test_the_locks_platform_adapters_are_the_pinned_registry(self):
+        path, _ = pinned_template.checkout()
+        if template.head_of(path) != template.load_lock()["commit"]:
+            self.skipTest("WGF_TEMPLATE_COMMIT overrides the lock's commit")
+        self.assertEqual(sorted(template.registry_adapter_ids(path)),
+                         sorted(template.platform_adapters()))
 
     def test_it_holds_the_real_template_and_both_golden_examples(self):
         path, _ = pinned_template.checkout()
@@ -183,6 +205,11 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # browser.py), copied into the checkout's release/ scratch directory for one run.
         # Portal plumbing, no game in it.
         "scripts/wgf_publish/browser/console.spec.ts",
+        # The read-only console observer: a Playwright spec that opens a portal console in a
+        # fresh context for a person to log in, then records what it shows without acting
+        # (scripts/wgf_publish/observe.py), run from a temporary directory. Portal plumbing,
+        # no game in it.
+        "scripts/wgf_publish/browser/observe.spec.ts",
         # The developer's frame tool: serves a game's built dist/ and screenshots it with
         # the game's own Playwright (scripts/wgf_develop/brief.py, "See your build").
         # Tooling that looks at a game; it contains none.

@@ -23,7 +23,7 @@ from wgf_verification.lineage import (CODE, SDK_KEY_TRAILER, is_placeholder, sam
 
 from wgflib import gameseam
 
-from . import integrate
+from . import integrate, targets
 
 __all__ = ["SdkGit", "Ledger", "CommitRefused", "INTEGRATION_PATHS", "SDK_KEY_TRAILER",
            "prepare", "commit"]
@@ -32,6 +32,13 @@ __all__ = ["SdkGit", "Ledger", "CommitRefused", "INTEGRATION_PATHS", "SDK_KEY_TR
 # not made by this step, and is not committed by it.
 INTEGRATION_PATHS = frozenset(integrate.OWNED_FILES + integrate.SEAM_FILES
                               + (integrate.PLAN_FILE, integrate.WIRING_FILE))
+
+
+def owns(path):
+    """Whether the sdk step may write `path`: an integration file, or - on a retarget - the
+    platform targets it syncs from the tech plan (targets.py)."""
+    path = path.strip('"')
+    return path in INTEGRATION_PATHS or targets.owns(path)
 
 _TAIL = 800
 
@@ -130,7 +137,7 @@ class SdkGit(GitRepo):
 
     def foreign_changes(self):
         """Uncommitted paths the integration does not own."""
-        return sorted(p for p in self.dirty_paths() if p.strip('"') not in INTEGRATION_PATHS)
+        return sorted(p for p in self.dirty_paths() if not owns(p))
 
     def restore(self, changes):
         """Put integration paths back to HEAD: tracked ones checked out, untracked removed."""
@@ -242,7 +249,7 @@ def prepare(git, prototype_commit, has_prototype, run_id, ledger=None, key=None)
     # stopped before committing) - and even then it is put back to HEAD and regenerated, so
     # nothing in it survives that the integration did not write. Otherwise it is a hand
     # edit made after review, which the integration would keep and commit as its own.
-    owned = [(xy, path) for xy, path in git.status() if path in INTEGRATION_PATHS]
+    owned = [(xy, path) for xy, path in git.status() if owns(path)]
     if owned:
         if ledger is None or not key or not ledger.started(key):
             raise CommitRefused(

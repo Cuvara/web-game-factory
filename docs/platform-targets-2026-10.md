@@ -95,42 +95,85 @@ authentication, best practices, studio), `https://developer.y8.com/` and
 
 ### GameDistribution
 
-Sources: the GD-HTML5 wiki (`https://github.com/GameDistribution/GD-HTML5/wiki/...`), the
-Developer Guidelines (DEVG, `https://static.gamedistribution.com/developer/developers-guidelines.html`),
-the Design Guidelines (DESG, `.../design-guidelines.html`) and the developer terms
-(`https://static.gamedistribution.com/terms/developer.html`, 2025-06-19).
-`gamedistribution.com/sdk/` returned 404; the help centre returned 403.
+Sources: the GD-HTML5 wiki (`https://github.com/GameDistribution/GD-HTML5/wiki/...`: Home,
+SDK-Implementation, F.A.Q., Rewarded-Ads; read as raw markdown), the README
+(`https://github.com/GameDistribution/GD-HTML5`), the Developer Guidelines (DEVG,
+`https://static.gamedistribution.com/developer/developers-guidelines.html`), the Design
+Guidelines (DESG, `.../design-guidelines.html`), the Developer Game License Agreement (TERMS,
+`https://static.gamedistribution.com/terms/developer.html`, "last updated on 19 June 2025") and
+the developers page (DEVP, `https://gamedistribution.com/developers/`, which redirects to
+`/developers/partnership/`; a single-page app, read rendered in a headless browser without
+logging in). All re-read 2026-10-04. `gamedistribution.com/sdk/` returned 404;
+`developer.gamedistribution.com` is an empty app shell; `.../register/developer/` redirects
+to the Azerion Connect login (403 to a fetch). Nothing was registered, logged into or uploaded.
 
 | Topic | What the docs say | Source |
 |---|---|---|
-| SDK load / init | `window.GD_OPTIONS = {gameId, onEvent}` then `https://html5.api.gamedistribution.com/main.min.js`, once. Game ID from the control panel; its format is not stated (examples are 32 hex). The SDK counts as implemented only after one ad is watched from the upload view | wiki SDK-Implementation |
-| Loading / gameplay API | None documented (`SDK_READY`, `SDK_ERROR` only) | GD-HTML5 README |
-| Pause / mute | Pause and mute on `SDK_GAME_PAUSE`, resume on `SDK_GAME_START`; after an ad a pause screen resumes on player input | wiki, DEVG 2.1.2, 2.3 |
-| Interstitial | Preroll and midroll **mandatory**; the game calls `showAd()` (preroll on Play); SDK-enforced interval; only behind player input, outside gameplay | DEVG 2, wiki |
-| Rewarded | `preloadAd('rewarded')`/`showAd('rewarded')`; reward only on `SDK_REWARDED_WATCH_COMPLETE`; needs the rewarded flag in the account | wiki Rewarded-Ads, DEVG 2.2.1 |
-| Saves | "Any collection or storing of data ... strictly prohibited"; localStorage progress: UNKNOWN (ambiguous) | DEVG 7 |
-| Locales | English the default; multi-language games detect or let the player choose | DEVG 4.1-4.2 |
-| Bundle | Zip upload; HTTPS-ready; no external hosting except real multiplayer; no outgoing links, store references, third-party ads, purchases or trackers; sound and music required. Size and file limits: UNKNOWN | DEVG 1.2, 3.1, 6, 7; terms 2.6.7-2.6.8 |
-| Listing | Thumbnails 512x512, 512x384, 200x120 mandatory (1280x720, 1280x550 optional); description and instructions 200-500 chars each; 1-2 genres; 1-5 tags; age group mandatory. Screenshots, video, image formats: UNKNOWN | DESG, DEVG 5 |
-| Account | Developer account; **Game ID per title** (the build cannot run without it); 33% of net revenue; non-exclusive; the GD build must equal the latest published elsewhere; first review up to a week | terms 3.1, 2.1, 2.6.4; DEVG |
+| Developer account | Registration form: First name, Last name, Email, Country, **Company** required; **Website optional**; two checkboxes - GameDistribution's Developer Terms and Platform Privacy Policy, and Azerion Connect's Terms and Privacy Policy (Azerion Connect is the login for every Azerion platform). Accepting the agreement "by clicking a box" binds; for a company, the person must have authority to bind it | DEVP, TERMS preamble |
+| **Domain / website** | **Not required for a developer account** (the field is optional). Required only to self-host: the submission is then a zipped `index.html` framing the game from the developer's own URL (`GD_SDK_REFERRER_URL` = the parent URL), and external hosting is permitted **only for real multiplayer games**, by GameDistribution's **written consent**. Modelled as the publication profile's `self-hosting` prerequisite | DEVP, README, DEVG 3.1, TERMS 2.9 |
+| Flow | "Register -> Prepare a build in line with our GD guidelines -> Upload the build and go through our QA-checks -> Launch your game and track your earnings" | DEVP |
+| Game ID | `GD_OPTIONS.gameId`, "your game hash", "which you can retrieve from your Gamedistribution.com control panel"; "unique for each one of your games". Format not stated (examples 32 hex). That the panel issues it before the build is uploaded is derived, not stated: the SDK must be implemented "before uploading" (TERMS 2.6.3). **Create-before-build**, like Y8 | wiki SDK-Implementation |
+| SDK load / init | `window.GD_OPTIONS = {gameId, onEvent}` then `https://html5.api.gamedistribution.com/main.min.js`; "Only load the SDK once!" Mandatory: the game ID, pause **and mute** on `SDK_GAME_PAUSE`, resume on `SDK_GAME_START` | wiki SDK-Implementation |
+| SDK activation | Upload, open the game in its iframe from the bottom of the upload view, watch the pre-roll **completely** once; this flags the integration ("can currently take up to two weeks"); then publication can be requested | wiki SDK-Implementation, F.A.Q. |
+| Loading / gameplay API | None documented (`SDK_READY`, `SDK_ERROR` only) | README |
+| Interstitial | Pre-roll (on Play) and mid-roll **mandatory**; `gdsdk.showAd()` behind a touchUp/mouseUp, outside gameplay; the SDK regulates the interval (a 2-minute mid-roll timer may be set); a pause screen after an ad resumes on player input | DEVG 2.1, wiki |
+| Rewarded | `preloadAd('rewarded')` / `showAd('rewarded')`; reward only on `SDK_REWARDED_WATCH_COMPLETE`; **the rewarded ads flag must be checked** for the game in the panel | wiki Rewarded-Ads, DEVG 2.2.1 |
+| Display ads | Optional; must not cover game content; `showBanner()` deprecated | DEVG 2.2.2, wiki |
+| Saves | "Any collection or storing of data from a game is strictly prohibited"; localStorage progress: UNKNOWN (ambiguous) | DEVG 7 |
+| Locales | English the default (DEVG 4.1, TERMS 2.6.5); multi-language games detect or let the player choose; a "No-Text" option for text-free games | DEVG 4 |
+| Bundle | Zip upload; HTTPS-ready; desktop playable (Chrome, Firefox, Safari); responsive in iframe and fullscreen (800x600 recommended); sound and music required; no outgoing links, store references, third-party ads, purchases, trackers or login. Size, file count and zip layout: UNKNOWN | DEVG 1.2, 3, 6, 7; TERMS 2.6.7-2.6.8 |
+| Listing | Thumbnails 512x512, 512x384, 200x120 mandatory (1280x720, 1280x550 optional); description and instructions 200-500 chars each, the game's name at least once; 1-2 genres; 1-5 tags; age groups mandatory (plus "kids friendly", "no blood"); store references only in the game's Backlinks tab. Screenshots, video, image formats: UNKNOWN | DESG, DEVG 5, 6.3 |
+| Review | Every submission reviewed by content specialists; the game is activated or returned with feedback; publication is requested with "the designated button within your control panel". Timeline **disagrees across pages**: "up to 2 days" (wiki F.A.Q.), "up to one week" (DEVG), "up to 3 weeks" (DEVP FAQ), SDK activation "up to two weeks" | wiki F.A.Q., DEVG, DEVP |
+| Monetization | 33% of net revenue; paid within 60 days of the monthly report once at least **EUR 100** and payment and VAT details are filled in (the wiki F.A.Q.'s 50 euro is older); non-exclusive; the GD build must equal the latest version published elsewhere | TERMS 3.1, 3.3, 2.1, 2.6.4 |
+| AI content | Deep fakes (AI content resembling real persons, objects, places, entities or events) must be labelled with their artificial origin; nothing else said | TERMS 2.6.11, DEVG 1.5 |
+| Automated panel use | Not addressed. The agreement forbids accessing the platform "for monitoring availability, performance, or functionality, or for benchmarking" without written consent | TERMS preamble |
+| Publication states | Not documented ("activated" and "feedback" are the only words) | - |
+
+**UNVERIFIED - only a logged-in person can learn:** every panel label and layout (creating a
+game, the upload view, the iframe button, the publication request button); whether creating a
+game issues the Game ID before any upload; the upload limits and zip layout; the panel's
+listing fields beyond DEVG 5 (screenshots, video, formats, byte limits); the status labels;
+whether the terms allow automated use of the panel; payment and VAT forms; whether Azerion
+Connect login shows a CAPTCHA or second factor; which review timeline holds.
 
 ### GamePix
 
 Sources: `https://partners.gamepix.com/sdk/doc/javascript` (JS),
-`https://partners.gamepix.com/guidelines/submission` (SUB), `https://partners.gamepix.com/developers` (DEV).
+`https://partners.gamepix.com/guidelines/submission` (SUB), `https://partners.gamepix.com/developers` (DEV),
+the developer sign-up `https://partners.gamepix.com/join-us?t=developer` (JOIN) and the
+License and Distribution Agreement it accepts,
+`https://public.gamepix.com/partners/terms-conditions/developer-tc.pdf` (TC, undated). All
+re-read 2026-10-04, the partners pages rendered in a headless browser (they are a
+single-page app) without logging in.
 
 | Topic | What the docs say | Source |
 |---|---|---|
-| SDK load / init | `https://integration.gamepix.com/sdk/v3/gamepix.sdk.js`, first script in `<head>` (mandatory). `GamePix.loaded()` before any other call, once. No Game ID in code is documented | JS |
-| Loading / gameplay API | `GamePix.loading(0-100)`, `GamePix.loaded()`; gameplay stop: UNKNOWN (the Unity guide names a newer `lifecycle` API the JS page does not) | JS, sdk/doc/unity-plugin |
-| Pause / mute | Pause before `interstitialAd()`, resume in its callback; pause (audio too) on tab switch, following document visibility | JS, SUB |
-| Interstitial | `GamePix.interstitialAd()`; frequency decided by GamePix - signal every break; no ads during gameplay, **no timer-triggered ads** | JS, SUB |
-| Rewarded | `GamePix.rewardAd()` (beta); reward only on `success`; skipping always possible | JS, SUB |
-| Saves | `GamePix.localStorage` (strings) is the documented route | JS |
-| Locales | `GamePix.lang()`; default English; none required | JS, SUB |
-| Bundle | Relative paths, no external resources, links, analytics or other SDKs (Xsolla excepted); resizes in a 640x480 iframe, both orientations, **no "rotate device" prompt**, no quit button. Size limit: UNKNOWN | JS, SUB |
-| Listing | An icon and a cover, title matching the game; sizes and limits UNKNOWN (dashboard behind login) | SUB |
-| Account | Dashboard account; 45% revenue share; **exclusive to gamepix.com unless "Allow Distribution" is selected** | DEV, SUB |
+| Developer account | Sign-up: name, surname, email, date of birth (**18 or older**), public username (shown in a public URL), individual or company, country, and the terms checkbox. **No website or domain field**. Login is `https://my.gamepix.com/login` (the platform, "my.gamepix.com", in TC) | JOIN, TC preamble |
+| **Domain / website** | **Not required**: none asked at sign-up, and "GamePix will host your games on secure servers" | JOIN, DEV |
+| Flow | "Create your account -> Add SDK and submit your game -> Relax and get your revenues"; validate with the testkit on my.gamepix first | DEV, SUB |
+| SDK load / init | `https://integration.gamepix.com/sdk/v3/gamepix.sdk.js`, **first script in `<head>` (MANDATORY)**. No Game ID in code is documented | JS |
+| Loading / gameplay API | The page's numbered steps no longer list them, but its messages require `GamePix.loaded()` "before any other GamePix SDK methods", once (`LOADED_ALREADY_CALLED`), and `GamePix.loading(0-100)`; gameplay stop: UNKNOWN | JS |
+| Pause / mute | Pause before `interstitialAd()`, resume in its callback; pause (audio too) on tab switch and on calls, by document visibility, not on clicks outside the iframe | JS, SUB |
+| Interstitial | `GamePix.interstitialAd()`; GamePix decides frequency - signal every break; between levels, **no timer-triggered ads**, never two at once | JS, SUB |
+| Rewarded | `GamePix.rewardAd()` (beta, 50% success in the test environment); reward only on `success`; tell the player first; skipping always possible | JS, SUB |
+| Other API | `updateScore`, `updateLevel`, `happyMoment`, `lang()` (ar zh nl en fr de it ja ko pl pt ru es tr) | JS |
+| Saves | `GamePix.localStorage` (strings); some mobile browsers purge it after closing or a week | JS |
+| Locales | Display the system language when supported, else **English** the default | SUB |
+| Bundle | Relative paths; no external links (incl. More Games, Rate Us, privacy links), analytics, ads or SDKs other than GamePix's and Xsolla's; no `window.alert`/`confirm` or system popups; resizes in a 640x480 iframe; both orientations, **no "rotate device" prompt**; a loading screen; no quit button. Size limit: UNKNOWN. Unity builds upload a `.gpx`; the HTML5 upload format: UNKNOWN | JS, SUB |
+| Listing | An icon and a cover representative of the game, their title matching it; a description with theme, mission, characters, how to play. Sizes and limits UNKNOWN | SUB |
+| Declarations | On every upload and update, through the platform: whether the game is **child-directed** (COPPA; when uncertain, yes), whether it incorporates an **AI System**, and which submitted assets (artwork, icons, banners, promotional images, audio, descriptions) were made or materially altered with **generative AI** | TC 4.9, 4.10 |
+| Monetization | **45%** revenue share (DEV) vs **50%** of net revenues (TC 5.1): the pages disagree; balances under EUR 100 carry forward (TC 5.5) | DEV, TC |
+| Exclusivity | Exclusive to gamepix.com unless **"Allow Distribution"** is selected when uploading (SUB); the license is non-exclusive except where an earlier agreement gave GamePix exclusivity (TC 2.1, 8.12) | SUB, TC |
+| Other terms | Source code delivered on request (TC 3.3); the GamePix build identical to the latest version elsewhere, English at least, no network endpoint but GamePix's (TC 3.3, 4.9c) | TC |
+| Review | Complete games only, "drafts or demos will not be approved"; duplicates of catalogue games may not be. Timeline and status labels: UNKNOWN | SUB |
+| Automated dashboard use | Not addressed by TC | TC |
+
+**UNVERIFIED - only a logged-in person can learn:** the whole dashboard submission form, its
+fields and limits; icon and cover sizes and formats; whether screenshots, video, categories or
+tags are asked for; the build upload widget, format and size limit for HTML5; whether the
+dashboard issues an id the build must carry; status labels and review time; where the
+child-directed and AI declarations are made; the payment and tax forms; CAPTCHA or second
+factor on login; which revenue share applies to a new account.
 
 ---
 
@@ -156,7 +199,7 @@ Sources: `https://partners.gamepix.com/sdk/doc/javascript` (JS),
 | gamedistribution@1.1.0 | `store_listing` | text limits null, age rating not required | description 200-500, 1-2 genres, 1-5 tags, age group mandatory, optional 1280x720 / 1280x550 | **1.2.0** |
 | gamedistribution@1.1.0 | `metadata_requirements.age_rating_required` | false | mandatory | **1.2.0**: true |
 | gamedistribution | `game_id_pattern` 32-hex | stated | format not documented | kept (official examples and the template adapter), commented |
-| (none) | gamepix | no profile | - | **no profile added**, see below |
+| (none) | gamepix | no profile | - | **gamepix@1.0.0 added**, refused by strategy and tech-plan until the pin carries its adapter (below) |
 
 What the bump does to a title pinned at 1.1.0. Steps that read the vendored copy keep working:
 verify, release and the publish group (a game vendored at `@1.1.0` is validated against that
@@ -167,19 +210,41 @@ therefore finish their publish group on the new Factory. Any other run that stil
 design, tech-plan, init or sdk must re-plan first, so do not move a mid-run Factory checkout to
 this commit. A retarget re-plans anyway.
 
-### GamePix: why there is no profile
+### GamePix: a profile, refused until the pin carries its adapter
 
-The pinned template (v1.2.0, `packages/platform-sdk/src/registry.ts`) has no `gamepix`
-adapter: `createPlatform("gamepix")` throws at boot. Template main had none either; the adapter
-is Cuvara/web-game-template#23 (opened 2026-10-04). A profile would let research and the
-strategy choose GamePix and produce a build that cannot start. GamePix becomes a target in
-this order: a template adapter (load `gamepix.sdk.js` first in `<head>`, `loading()`/`loaded()`,
-`interstitialAd()` at every break, `rewardAd()`, `GamePix.localStorage`, `lang()`, a visibility
-pause, no rotate prompt) on a template release the Factory pins, then
-`core/reference/platforms/gamepix.yaml` from the table above (ads [interstitial, rewarded],
-loading_api required, locales_required [en] as a Factory choice, no_external_links true,
-store_listing all null), then integrity. The exclusivity default (gamepix.com only unless
-"Allow Distribution") is a person's choice at submission.
+GamePix now has `core/reference/platforms/gamepix.yaml` (1.0.0, from the table above: ads
+[interstitial, rewarded], loading_api required, locales_required [en] from SUB's English
+default, no_external_links true, store_listing with every size null) and
+`core/reference/publication/gamepix.yaml` (2.0.0, console `https://my.gamepix.com/`,
+`automation_terms: unverified`, `content_policy` `disclose` for generated text and assets from
+TC 4.10, human intents for "Allow Distribution", the child-directed and AI declarations and
+the testkit, everything else under `unknowns`).
+
+The pinned template (v1.2.0) still has no `gamepix` adapter: `createPlatform("gamepix")`
+throws at boot. The adapter is on template main (Cuvara/web-game-template#23, merged
+2026-10-04, with a proposed `config/platforms/gamepix.yaml` at the same version 1.0.0 - when
+the pin moves, `check-integrity.py` warns if the two differ). So the profile exists and
+targeting it is refused:
+
+- `workspace/config/template.lock.json` records `platform_adapters`, the pinned commit's
+  adapter registry (`KNOWN_PLATFORM_IDS` of `packages/platform-sdk/src/registry.ts`);
+  `wgflib.template.platform_adapters()` reads it, and `check-integrity.py` and
+  `test_core_template` hold it equal to the registry at the pin. Moving the pin moves the list
+  in the same commit.
+- **Strategy** refuses a person's choice of a platform outside that list, and drops such a
+  candidate from the opportunity with a risk (`wgf_strategy/planner.py`).
+- **Tech-plan** blocks on any pinned platform outside it (`wgf_techplan/selection.py`
+  `require_adapters`).
+- Both say: "GamePix needs a template release carrying its SDK adapter
+  (HUMAN_ACTION_REQUIRED: release and pin)".
+
+Integrity: the platform-id rule is that every id the pinned template's `game.config.yaml`
+names has a profile in core; a profile the template does not name is allowed (gamemonetize,
+gamevui and others already are). `gamepix` therefore passes, and `check-integrity.py` adds a
+note that it has no adapter at the pin. GamePix becomes a target when a template release
+carrying the adapter is pinned (golden runs at the new commit, then the lock and its
+`platform_adapters` in one commit). The exclusivity default (gamepix.com only unless "Allow
+Distribution") stays a person's choice at submission.
 
 ### The pinned template's adapters against the docs
 
@@ -213,8 +278,14 @@ store_listing all null), then integrity. The exclusivity default (gamepix.com on
 - **GamePix SDK in the template:** every supported network now has an adapter on template
   main once Cuvara/web-game-template#23 merges (`adapters/gamepix.ts`, the head script for a
   gamepix build, mocks and conformance tests, `docs/platforms/gamepix.md`, a proposed
-  `config/platforms/gamepix.yaml`). The Factory profile follows when the Factory pins a
-  template release that carries it.
+  `config/platforms/gamepix.yaml`; merged 2026-10-04). The Factory now has the profiles
+  (`core/reference/platforms/gamepix.yaml`, `core/reference/publication/gamepix.yaml`), and
+  strategy and tech-plan refuse the platform until the Factory pins a template release that
+  carries the adapter (the lock's `platform_adapters`).
+- **Platform prerequisites:** a publication profile may name what a person must have done or
+  obtained first (`prerequisites`); readiness reports an applicable one HUMAN_REQUIRED until a
+  person records it in `factory.publish.platforms.<id>.prerequisites_confirmed`.
+  GameDistribution's `self-hosting` (written consent, one's own HTTPS host) is the first.
 
 ---
 
@@ -232,73 +303,106 @@ store_listing all null), then integrity. The exclusivity default (gamepix.com on
    `wgf_techplan/step.py:183`). Its only `with:` is `physics`.
 3. **Init writes the checkout:** `game.config.yaml` platforms, `config/platforms/<id>.yaml`
    and `pinned.json` (`wgf_init/profiles.py:84-135`), one local commit.
-4. Downstream reads: `sdk` and `verify` read the checkout's `game.config.yaml`; `store-listing`
-   reads the **scaffold-record** (`wgf_listing/platforms.py:62`) unless
-   `factory.listing.platforms` names them; `listing-validation` the listing; `release` the
-   checkout; `platform-validate` the release-manifest.
+4. **The sdk step writes them on a retarget** (since 2.8.0): when the run's newest tech plan
+   names other platforms than the checkout's `game.config.yaml`, `sdk` rewrites only
+   `platforms` there and vendors the pinned profiles (`wgf_sdk/targets.py`, reusing init's
+   `apply_platforms` and `vendor_profiles`), every pin checked against the Factory's profile
+   before anything is written, and commits them with its integration - one keyed sdk commit.
+5. Downstream reads: `sdk` and `verify` read the checkout's `game.config.yaml`;
+   `store-listing` reads the verified build's platforms (the verification-report's
+   `platform_readiness`; before 2.8.0 the scaffold-record, which a retarget leaves stale)
+   unless `factory.listing.platforms` names them; `listing-validation` the listing;
+   `release` the checkout and the verification's per-platform bundles; `platform-validate`
+   the release-manifest.
 
-So a retarget is a superseding strategy, G2, design (it binds locales, cadence and placements
-to the platforms), tech plan, G3, init - and everything after init, because init's commit
-moves HEAD: `sdk` refuses a HEAD that is not the prototype-report's commit, and `release`
-refuses production-quality, visual-qa, review and listing results of another commit, or a G4
-older than upstream work (`wgf_release/lineage.py`).
+### Why a retarget no longer re-runs develop
+
+Every gate after develop pins the **developed commit**: review and sdk-review the commits
+they read, production-quality and visual-qa the commit `release` checks against the
+sdk-report's `base_commit_sha` (`wgf_release/lineage.py` `developed_commit`), the
+prototype-report the commit sdk must build on. Init's commit sits *below* develop's, so a
+retarget through init moves HEAD to a commit no gate judged and forces the whole develop round
+again - an agent session for a change that touches no game code. The lineage rule
+(`wgf_verification/lineage.py`) already admits exactly one kind of commit between develop's
+and the shipped one: this run's keyed sdk commits, recorded in the run's ledger. The sdk step
+is also the step that wires each platform's SDK. So the retarget's write moved there: the
+sdk commit carries the new `platforms` and profiles, sdk-review reads it (the diff is
+prototype commit..sdk commit, so the reviewer sees the retarget), verify builds and judges
+every new target's own bundle, and G4 is decided again on that verification. Nothing in the
+lineage rule changed; `wgf_sdk.commit.owns` admits `game.config.yaml` and
+`config/platforms/*` as paths the sdk step may write.
+
+What still re-runs: strategy and G2 (the new `platform_set`), design (it binds locales, ad
+cadence and placements to the platforms), tech-plan and G3 (the platforms the sdk step
+writes), sdk, sdk-review, verify and G4, store-listing, listing-validation, release, and the
+publish group. What does not: init, greybox, greybox-playability, assets, develop,
+playability, production-quality, visual-qa, review - their reports stay valid because the
+developed commit did not move. A retarget that also changes the locales the game must ship
+(a Yandex target on a game without `ru`) fails verify's `platform.requirements:yandex`, and
+then develop does run: that is a game change.
 
 ### What the Factory cannot do today (gaps, smallest proper fix)
 
-1. **One package per target - not possible on template contract 1.** `pnpm build` makes one
-   bundle that boots the first required platform's adapter; `release` deletes every other
-   platform's zip (`wgf_release/step.py:412` `_prune`), verify fails
-   `platform.build-target:<pid>` for each non-target (`wgf_verification/checks/platform.py:156`),
-   and `platform-validate` reports them "not packaged (optional)" (`wgf_publish/validate.py:87-98`).
-   A [yandex, crazygames, y8] retarget therefore ships **yandex.zip only**. The template has
-   already solved its half: template **main** (contract 2, 997795e, not yet a release) has
-   `pnpm build:platforms` (`scripts/build/build-platforms.mjs`) - one `vite build` per
-   `platforms[]` entry with `WGF_TARGET_PLATFORM=<id>`, each bundle carrying only its own
-   adapter, `build/platforms/<id>/build.json` with the Factory's `bundle_digest`, and a
-   refusal of a portal entry missing its ID (y8 app_id, gamedistribution / gamemonetize
-   game_id). Fix (not small, so proposed, not made): pin a template release carrying
-   contract 2, then make `verify` judge each per-platform bundle, record one digest per
-   platform in the manifest, package each, and drop `_prune` - `wgf_verification` +
-   `wgf_release` + `wgflib/template_contract.py`.
-2. **No person could choose the platforms** - fixed here: `factory.strategy.platforms` (or the
+1. **One package per target - done in 2.8.0, on template contract 1.** For a title with
+   more than one target, verify builds each platform against
+   `build/platforms/<id>/game.config.json` (that platform alone) through the pinned
+   template's own `WGF_GAME_CONFIG` override, keeps each bundle in `build/platforms/<id>/dist/`,
+   judges each (`build.platform:<id>`, `platform.build-target:<id>`, requirements and
+   profile assertions on its own bundle), requires every target, and pins each digest in the
+   verification-report; release packages each with `release:package --platform <id>` from its
+   own bundle and refuses a target without a verified one
+   ([verification-module.md](verification-module.md#one-bundle-per-platform),
+   [release-module.md](release-module.md#one-package-per-target-platform)). A [yandex,
+   crazygames, y8] title ships three zips with three different bundles. When the Factory pins
+   a template release carrying contract 2, its `build:platforms` is used instead - the
+   Factory already recognizes it (`wgf.template.contract: 2` in package.json).
+2. **No person could choose the platforms** - fixed: `factory.strategy.platforms` (or the
    step's `with:`) replaces the candidate list and the fit ranking (first = required); the
    compatibility checks and `max_platforms` still apply, and G2 still approves.
-3. **No command re-runs "from init to release" inside an existing run.** `wgf resume --from`
+3. **No command re-runs "from sdk to release" inside an existing run.** `wgf resume --from`
    needs a resumable run, and a run whose last command was a group (`wgf plan --run`,
-   `wgf publish --run`) ends `COMPLETED` "left scope" (`wgflib/workflow/engine.py:1316`);
-   `--from` with `--run` is refused by design (`docs/workflow-engine.md`). `wgf new-game --run`
-   skips every completed non-gate step, so after a re-plan it would **skip init** and re-ask
-   G4 about the old build - a trap, not a path (`engine.py:704-720`: only gates are re-checked).
-   Today's path is one `--run <id> --force` command per step (below). Fix (a core engine
-   change, so proposed): let `wgf resume <run> --from STEP` continue a run that ended by
-   leaving its scope, widening the scope to the workflow from STEP.
+   `wgf publish --run`) ends `COMPLETED` "left scope" (`wgflib/workflow/engine.py`); `--from`
+   with `--run` is refused by design (`docs/workflow-engine.md`). `wgf new-game --run` skips
+   every completed non-gate step, so after a re-plan it would **skip sdk** and re-ask G4
+   about the old build - a trap, not a path (only gates are re-checked). The path is one
+   `--run <id> --force` command per step (below). Fix (a core engine change, so proposed):
+   let `wgf resume <run> --from STEP` continue a run that ended by leaving its scope.
 4. **A Y8 build without its IDs is silently SDK-less.** The template warns; the Factory passes
    no `WGF_*` to game builds unless `factory.agents.game_env_passthrough` lists them
-   (`wgflib/agentenv.py:34-40`). Fix (small, proposed): verify or tech-plan refuses a y8 target
-   whose App ID is not in the build environment, instead of shipping a package with no SDK.
-5. **Init never removes a dropped platform's vendored profile** (`wgf_init/profiles.py:95,124`
-   start from the existing `pinned.json`): after a retarget `config/platforms/poki.yaml` and
-   its pin stay. Harmless to validation (targets come from `game.config.yaml`); untidy.
+   (`wgflib/agentenv.py`). With per-platform builds the y8 bundle is now its own, so the gap
+   is visible in it alone - but verify still cannot see it: the profiles name no head script,
+   and `y8_sdk_present` reads an echoed fact. Fix (small, proposed): a profile field naming
+   the build environment a target needs (`WGF_Y8_APP_ID`), which verify or tech-plan refuses
+   without.
+5. **Neither init nor the sdk retarget removes a dropped platform's vendored profile**
+   (`vendor_profiles` starts from the existing `pinned.json`): after a retarget
+   `config/platforms/poki.yaml` and its pin stay. Harmless to validation (targets come from
+   `game.config.yaml`); untidy.
 6. **The Y8 listing renders and validates UNKNOWN** (all-null `store_listing`): a rendition is
    made at the canonical sizes, every image and text limit is reported UNKNOWN, never passed;
    UNKNOWN never fails listing validation and `release` does not refuse it. A person reads the
    Y8 submission form.
+7. **Runtime facts are measured once,** against the build target's bundle (`test:verify`
+   serves `dist/`); each other platform's assertions read its own bundle's static facts
+   (size, locales, screenshots) and those shared runtime facts. Every bundle is the same game
+   code with another adapter, and no portal SDK loads in the local browser either way.
 
 ### What each step does on a retarget
 
-| Step | Re-run? | Why |
-|---|---|---|
-| strategy, G2 | yes | new `platform_set` (and profile 1.2.0 pins) |
-| design | yes | binds locales, ad cadence, placements per platform |
-| tech-plan, G3 | yes | `repo_params.game_config.platforms` |
-| init | yes | rewrites `game.config.yaml`, vendors the 1.2.0 profiles, commits |
-| greybox, greybox-playability, assets | re-run for a clean lineage; whether develop accepts their old outputs after a re-plan is unverified | |
-| develop (+ playability, production-quality, visual-qa, review) | yes | HEAD moved; every later gate pins the developed commit. An agent session: the costly step |
-| sdk, sdk-review | yes | wires the new primary's SDK hooks |
-| verify, G4 | yes | new bundle; G4 must be decided again by a person |
-| store-listing, listing-validation | yes | renditions for the new targets under the 1.2.0 blocks |
-| release | yes | one package: the required platform's |
-| platform-validate, G5, G6, submit | yes (`wgf publish --run`) | one publication record per packaged target |
+| Step | Re-run? | Agent session? | Why |
+|---|---|---|---|
+| strategy, G2 | yes | no (a person decides G2) | new `platform_set` (and profile 1.2.0 pins) |
+| design | yes | yes when `factory.design.author: agent` (both validation projects) | binds locales, ad cadence, placements per platform |
+| tech-plan, G3 | yes | no (a person decides G3) | `repo_params.game_config.platforms` |
+| init | **no** | - | the sdk step writes the platforms after develop's commit |
+| greybox, greybox-playability, assets | **no** | - | the developed commit does not move |
+| develop, playability, production-quality, visual-qa, review | **no** | - | their reports pin the developed commit, which does not move |
+| sdk | yes | no (deterministic) | writes the new platforms and profiles, wires each SDK, one keyed commit |
+| sdk-review | yes | yes (the reviewer) | the sdk commit now carries the retarget |
+| verify, G4 | yes | no; G4 is a person | one bundle per target, each judged; G4 must be decided again |
+| store-listing, listing-validation | yes | store-listing: yes when a copy writer is configured (the 3D project), else no | renditions for the new targets under the 1.2.0 blocks |
+| release | yes | no | one package per target, from its own bundle |
+| platform-validate, G5, G6, submit | yes (`wgf publish --run`) | no; G5/G6 are a person's | one publication record per packaged target |
 
 ### Exact commands
 
@@ -322,9 +426,9 @@ RUN=new-game-20261003-081154-4e5e0a
    ```yaml
    factory:
      strategy:
-       platforms: [yandex, crazygames, y8]   # first = required: the one packaged today
+       platforms: [yandex, crazygames, y8]   # first = required (the build target, built last)
      # agents:
-     #   game_env_passthrough: [WGF_Y8_APP_ID, WGF_Y8_GAME_ID]   # once the IDs exist
+     #   game_env_passthrough: [WGF_Y8_APP_ID, WGF_Y8_GAME_ID]   # once the IDs exist (gap 4)
    ```
 
    Yandex first: both games already ship `ru`, and Yandex is the platform whose code
@@ -340,12 +444,11 @@ RUN=new-game-20261003-081154-4e5e0a
    bin/wgf decide $RUN approve               # run ends COMPLETED ("left scope" before init)
    ```
 
-3. Rebuild from init, one step per command (each stops if its step fails; read
-   `bin/wgf status $RUN` before the next):
+3. From sdk, one step per command (each stops if its step fails; read
+   `bin/wgf status $RUN` before the next) - **not** init or develop:
 
    ```bash
-   for s in init greybox greybox-playability assets develop playability production-quality \
-            visual-qa review sdk sdk-review verify; do
+   for s in sdk sdk-review verify; do
      bin/wgf $s --run $RUN --force || break
    done
    bin/wgf prototype-review --run $RUN --force   # G4 -> WAITING
@@ -356,24 +459,47 @@ RUN=new-game-20261003-081154-4e5e0a
    bin/wgf publish --run $RUN --force             # platform-validate, G5, G6 (a person), submit (dry-run)
    ```
 
-   A step that routes elsewhere (verify -> develop, visual-qa -> assets) ends the one-step
-   command "left scope"; run the named step and continue the list from there. The develop
-   session budget is not refilled by `--run`; a develop step BLOCKED on it is resumed with
+   `sdk` logs "sdk retargets the checkout to the tech plan's platforms" and its commit holds
+   `game.config.yaml` and `config/platforms/{yandex,crazygames,y8}.yaml` + `pinned.json`.
+   `verify` then runs three builds (`build/platforms/{crazygames,y8,yandex}/`, yandex last)
+   and `release` writes `yandex.zip`, `crazygames.zip`, `y8.zip`. A step that routes
+   elsewhere (verify -> develop, sdk-review -> develop) ends the one-step command "left
+   scope": that is a real game change, and the sequence from Part 2's first version (init
+   onwards) no longer applies either - run develop and continue from it. The develop session
+   budget is not refilled by `--run`; a develop step BLOCKED on it is resumed with
    `bin/wgf resume $RUN --budget-sessions N`.
 
-This sequence was driven end to end on a `--mock` run on 2026-10-04 (new-game to G6, then
-`plan --run --force`, every step above, G4 `pass`, `publish --run --force` back to WAITING at
-G6): every command exited 0 and each step executed. The same mock run also showed the trap of
-gap 3: after `plan --run --force`, `bin/wgf new-game --run` emitted `STEP_SKIPPED` for init,
-greybox, assets, develop, sdk and verify, then asked G4 again - about the old build.
+The previous sequence (`init` through `verify`, every step re-run) is still correct, only
+dearer: it re-runs develop and every gate after it.
 
 ### Verdict per platform
 
 | Platform | Brick Breaker Worlds / Sky Marble: blocked in code | External (account, partnership, portal) |
 |---|---|---|
 | Yandex | Packageable after the retarget above (required). Known risks: PNG screenshots with alpha (24-bit asked); the 70%-gameplay media rule is a person's check | Developer profile, contract (licensing model or YAN), moderation 3-5 days, cloud-saves switch in the draft, age rating, how-to-play and SEO texts |
-| CrazyGames | **Not packageable alongside Yandex** (gap 1); as the required platform it would be. The listing now needs a 1080p trailer under 20 s (store-listing 1.1.0) and a portrait video (manual) | Developer Portal account, Progress Save toggle, Basic Launch (ads disabled, expected) and CrazyGames' Full Launch decision |
-| Y8 | **Not packageable alongside Yandex** (gap 1); even as required, the build needs `WGF_Y8_APP_ID` / `WGF_Y8_GAME_ID` passed through, or it ships SDK-less (gap 4) | Developer account and approved Studio, the App ID and Game ID from the portal, review, the listing fields (undocumented) |
-| GameDistribution | Tech plan blocks without a registered Game ID; not packageable alongside another required platform | Account, Game ID, rewarded flag, preroll viewed once from the upload view |
-| GamePix | No adapter at the pinned template (template#23 adds it to main): not a target until a template release carrying it is pinned and the profile is added | Account; exclusivity default |
+| CrazyGames | Packageable alongside Yandex since 2.8.0 (its own bundle, with the CrazyGames head script, gap 1). The listing now needs a 1080p trailer under 20 s (store-listing 1.1.0) and a portrait video (manual) | Developer Portal account, Progress Save toggle, Basic Launch (ads disabled, expected) and CrazyGames' Full Launch decision |
+| Y8 | Packageable alongside Yandex since 2.8.0 (its own bundle, gap 1); the build needs `WGF_Y8_APP_ID` / `WGF_Y8_GAME_ID` passed through, or it ships SDK-less, and verify cannot tell (gap 4) | Developer account and approved Studio, the App ID and Game ID from the portal, review, the listing fields (undocumented) |
+| GameDistribution | Tech plan blocks without a registered Game ID; with one, packageable alongside the others (its own bundle) | Account (no domain needed; Company required), Game ID from the panel before the build, rewarded flag, pre-roll viewed once from the upload view, publication request button; self-hosting only for real multiplayer with written consent and one's own HTTPS host |
+| GamePix | Profile added; no adapter at the pinned template (template#23 on main), so strategy and tech-plan refuse it: HUMAN_ACTION_REQUIRED, a template release carrying the adapter, then the pin | Account (18+, no domain); exclusivity default ("Allow Distribution"); child-directed and AI declarations on every upload |
 | Poki | Deferred: the current r1 package stays as it is | - |
+
+### Publication adapter status per portal
+
+What `scripts/wgf_publish/adapters/<id>.py` is today (docs/publish-module.md, "One adapter per
+portal"), in four words only: IMPLEMENTED (the adapter exists, with its own status mapping,
+review handling and handoffs), FIXTURE_VALIDATED (run through the real executor in headless
+Chromium against the portal's flavor of the fixture portal - never the portal), UNVERIFIED
+(not exercised against the live console by a person; every console label is documented or a
+hypothesis), HUMAN_ACTION_REQUIRED (something a person must do before it can run at all).
+
+| Portal | Adapter status |
+|---|---|
+| Yandex | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED |
+| CrazyGames | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED (zip vs files upload: both modeled) |
+| Y8 | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED; HUMAN_ACTION_REQUIRED: the Studio |
+| GameDistribution | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED; HUMAN_ACTION_REQUIRED: the account, the terms, the Game ID entered in game.config.yaml |
+| GamePix | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED; HUMAN_ACTION_REQUIRED: a template release carrying the GamePix SDK adapter, and the pin moved to it (the adapter refuses BLOCKED until a build carries the SDK) |
+
+For every portal: `automation_terms: unverified` in its publication profile, so the publish
+step stops HUMAN_REQUIRED before the adapter runs until a person records the terms finding
+(`factory.publish.platforms.<id>.terms_confirmed`) - HUMAN_ACTION_REQUIRED as well.

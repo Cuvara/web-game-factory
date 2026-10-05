@@ -78,7 +78,11 @@ workflow:
   # `listing-triage` (a triage after G4) to store-listing, whose copywriter is briefed with
   # the store-copy findings; store-listing reads the content-sufficiency report of the build
   # it lists (every count the copy states is a measured one) and the triage-report.
-  version: 12
+  # 13: publication per platform - submit acts on every packaged platform with its own
+  # record, checks G6 against the manifest, the store listing and its validation, waits for
+  # a person's `submit` after each upload, and routes a create-before-build portal's
+  # `platform-ids` back to sdk.
+  version: 13
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -446,13 +450,21 @@ workflow:
         request-changes: triage
 
     # Integrates the template's platform SDK into the game the design and init produced:
-    # it reads the design's placements, and writes into the repository init created.
+    # it reads the design's placements, and writes into the repository init created. When
+    # the newest tech-plan names other platforms than the checkout targets - a title
+    # retargeted after develop, re-planned through G2 and G3 - it first writes those
+    # platforms and their pinned profiles, committed with its integration, so a retarget
+    # re-runs sdk onwards and never develop (docs/platform-targets-2026-10.md).
     - id: sdk
       type: sdk
       stage: title:prototype
-      inputs: [game-design, scaffold-record, prototype-report]
+      inputs: [game-design, scaffold-record, prototype-report, tech-plan]
       outputs: [sdk-report]
       max_visits: 59
+      # A create-before-build portal's ids (wgf_publish.identity): once per portal, and once
+      # more for a person's retry.
+      max_visits_by_route:
+        submit.platform-ids: 3
 
     # The sdk step commits integration code on top of the reviewed development commit, and
     # that sdk commit is what verify checks and release ships. So it is reviewed too, by the
@@ -693,21 +705,38 @@ workflow:
       on:
         reject: $end
 
-    # release:submitting (scripts/wgf_publish, docs/publish-module.md). For the platform the
-    # platform-publication names: resolve its adapter from core/reference/publication/<id>.yaml
-    # (api/cli where the portal publishes one; a deterministic Playwright run of its console
-    # where it does not; email/manual by a person), look up the idempotency key before any
-    # upload, upload, configure, submit once, read the portal's state back, and record it all
-    # with hashed, redacted evidence. The irreversible submit is attempted once: retry is
-    # max_attempts 1 and a failure around it is never retryable. A login challenge, a
-    # CAPTCHA, unconfirmed terms, a missing credential or a method nobody automates stops
-    # the step WAITING_FOR_HUMAN (unrouted: the run parks until `wgf decide <run> done`
-    # after a person acted, or `abandon`). factory.publish.mode is dry-run until an
-    # installation sets live.
+    # release:submitting (scripts/wgf_publish, docs/publish-module.md). Every packaged
+    # platform, each with its own platform-publication: a wait, a failure or a pending
+    # review on one never changes another's (`wgf publish --run <id> --platform <p>` acts on
+    # one; `--track` only reads each one's status). Before any upload: G6 is a person's
+    # approval pinning THIS release-manifest, store-listing and listing-validation-report
+    # (a hash that changed after G6 is BLOCKED g6-stale: decide G6 again), the package's
+    # bytes are the manifest's and its bundle_hash the bundle verify built for THIS
+    # platform. The portal registry (workspace/titles/<id>/portals.json) says which game
+    # the title already has there; resolve the adapter from
+    # core/reference/publication/<id>.yaml (api/cli where the portal publishes one; a
+    # deterministic Playwright run of its console where it does not; email/manual by a
+    # person). A live visit uploads and saves, then waits for a person
+    # (WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION: `wgf decide <run> submit | hold | abandon`, or
+    # `done` after submitting by hand); `submit` requests review once and reads the status
+    # back. The irreversible request is attempted once: retry is max_attempts 1 and a
+    # failure around it is never retryable. A login challenge, a CAPTCHA, unconfirmed terms,
+    # a missing credential, a duplicate candidate, a pending review or a method nobody
+    # automates stops the step WAITING_FOR_HUMAN (unrouted: the run parks until `wgf decide
+    # <run> done` after a person acted, or `abandon`). factory.publish.mode is dry-run until
+    # an installation sets live. A create-before-build portal (identity.issued_on_create)
+    # issues the ids the build must carry when the game is created: IDS_ISSUED routes
+    # `platform-ids` to sdk, outside the publish slice: the run ends naming sdk next.
+    # `wgf sdk --run <id> --force` writes them into game.config.yaml; `wgf new-game --run
+    # <id>` runs sdk-review, verify, the quality gate, G4, the listing and release on the new
+    # build; `wgf publish --run <id>` validates it and asks G5 and G6 again. Until then the
+    # quality floor refuses submit: the checks it rests on passed the old build.
     - id: submit
       type: publish
       stage: release:submitting
-      inputs: [release-manifest, platform-publication, decision-record, scaffold-record]
+      inputs: [release-manifest, platform-publication, decision-record, scaffold-record, verification-report, store-listing, listing-validation-report]
       outputs: [platform-publication]
       retry: {max_attempts: 1}
       max_visits: 3
+      on:
+        platform-ids: sdk

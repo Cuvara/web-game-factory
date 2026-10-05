@@ -24,7 +24,8 @@ import re
 from wgflib.template_contract import ENGINES
 from wgflib.yamllite import YamlError, load
 
-__all__ = ["GameConfigError", "apply_game_config", "bootstrap_identity", "plain_scalar"]
+__all__ = ["GameConfigError", "apply_game_config", "apply_platforms", "platform_entries",
+           "bootstrap_identity", "plain_scalar"]
 
 _TOP = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*):(.*)$")
 _PLAIN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._@/+-]*$")
@@ -189,6 +190,39 @@ class _Document:
                 first -= 1
         items = [render(indent, entry) for entry in entries]
         self.lines[start + 1:end] = kept[:first] + items + kept[first:]
+
+
+def platform_entries(platforms):
+    """The platforms[] entries game.config.yaml holds for a plan's platforms: the keys the
+    file carries, in its order. What a checkout's platforms are compared against."""
+    return [_platform_entry(p) for p in platforms or []]
+
+
+def apply_platforms(text, platforms):
+    """The text of game.config.yaml with only its `platforms` list replaced, or raise
+    GameConfigError. Every other line is kept as it was - the retarget of an existing
+    title (the sdk step, docs/platform-targets-2026-10.md) changes nothing else."""
+    try:
+        before = load(text) or {}
+    except YamlError as exc:
+        raise GameConfigError(f"game.config.yaml does not parse: {exc}")
+    if not isinstance(before, dict):
+        raise GameConfigError("game.config.yaml is not a mapping")
+    if not isinstance(platforms, list) or not platforms:
+        raise GameConfigError("tech plan game_config.platforms is empty")
+    document = _Document(text)
+    document.set_list("platforms", platforms, _platform_line)
+    result = document.text()
+    try:
+        after = load(result) or {}
+    except YamlError as exc:
+        raise GameConfigError(f"rewritten game.config.yaml does not parse: {exc}")
+    changed = sorted(k for k in set(before) | set(after)
+                     if k != "platforms" and before.get(k) != after.get(k))
+    if after.get("platforms") != platform_entries(platforms) or changed:
+        raise GameConfigError("rewriting game.config.yaml platforms would change "
+                              + ", ".join(changed or ["platforms"]) + "; nothing was written")
+    return result
 
 
 def apply_game_config(text, game_config, identity=None):

@@ -87,6 +87,14 @@ platforms come first because the template's `primaryPlatform()` is the first req
 entry. A missing profile, or one whose version moved since the strategy pinned it, is
 `BLOCKED`: re-pin in a superseding strategy. Nothing here knows what any portal is.
 
+A profile is not enough: the pinned template must carry the platform's SDK adapter, or the
+build throws at boot. The adapter list is `workspace/config/template.lock.json`
+`platform_adapters` (the pinned registry's `KNOWN_PLATFORM_IDS`, held equal by
+`check-integrity.py`), and a platform outside it is `BLOCKED` with "<Name> needs a template
+release carrying its SDK adapter (HUMAN_ACTION_REQUIRED: release and pin)" (`selection.py`
+`require_adapters`). Strategy refuses the same platforms earlier. GamePix is the case today
+(`docs/platform-targets-2026-10.md`).
+
 From the profiles:
 
 - `perf_budgets.max_bundle_mb` — the tightest `requirements.max_bundle_mb` across required

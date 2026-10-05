@@ -3,29 +3,56 @@
 # Upload is a zip with index.html at its root through the dashboard (Dashboard, My games);
 # "Verify Game" confirms the integration against the uploaded build, then a content manager
 # reviews the activation request (core/reference/platforms/gamemonetize.yaml). No upload API
-# is documented. No console flow has been exercised: the publish step stops HUMAN_REQUIRED.
+# is documented. No console flow has been exercised and none is written: every phase is a
+# person's, so the publish step stops HUMAN_REQUIRED.
+#
+# 2.0.0 (core/artifacts/shared/publication-profile.schema.json): migrated without new facts.
+# The dashboard was not read for this file; what a person must log in to learn is under
+# `unknowns`.
 
 id: gamemonetize
-version: 1.0.0
+version: 2.1.0
 status: unverified
 docs: https://gamemonetize.com/
+
+unknowns:
+  - The dashboard's game creation and upload flow, and every label.
+  - The upload size limit.
+  - The listing fields the dashboard asks for, and their limits.
+  - The status labels the dashboard shows (the 1.0.0 words are unsourced).
+  - The developer terms, and whether they permit automated use of the dashboard.
+  - Any policy on generated text or assets.
+  - Whether a CAPTCHA, a second factor or an anti-bot check protects the dashboard.
 
 submission:
   method: console
   automation_terms: unverified
+  content_policy:
+    ai_generated_text: unknown
+    ai_generated_assets: unknown
   console:
     url: https://gamemonetize.com/
     allowed_origins: [https://gamemonetize.com]
-    upload_max_mb: null
     upload_timeout_s: 900
   credential:
-    kind: storage-state
-    env: WGF_PUBLISH_GAMEMONETIZE_STORAGE_STATE
+    # A person logs in, live, in the browser window the publish step opens, and
+    # handles any CAPTCHA or second factor there. Nothing of the session is kept.
+    kind: human-login
   human_required: [login, terms, review, console-switch]
-  constraints:
-    archive_root_index: true
-  verification:
+  adaptive: forbidden
+  flow:
+    - id: declare.activation
+      phase: human_fields
+      class: human
+      note: >
+        "Verify Game" against the uploaded build, then the activation request a content
+        manager reviews - a person runs both.
+  status:
     states: [Uploaded, Verification pending, Active, Rejected]
     submitted_states: [Verification pending]
     live_states: [Active]
     rejected_states: [Rejected]
+    pending_states: [Verification pending]
+  constraints:
+    archive_root_index: true
+    upload_max_mb: null

@@ -1047,20 +1047,28 @@ class WorkflowEngine:
                               error=f"step {step_def.id!r}: could not be constructed: "
                                     f"{type(exc).__name__}: {exc}")
 
-        refs, missing = {}, []
+        refs, missing, every = {}, [], {}
         for artifact_type in step_def.inputs:
             ref = state.latest_of_type(artifact_type)
             if ref is None:
                 missing.append(artifact_type)
             else:
                 refs[artifact_type] = ref
+                every[artifact_type] = state.latest_by_id(artifact_type)
         step_state.consumed = [f"{ref.id}@v{ref.version}" for ref in refs.values()]
         loaded, problem = self._check_inputs(state, refs)
+        if not problem:
+            # The newest of every other artifact id of an input type is checked the same way.
+            others = {ref.id: ref for found in every.values() for ref in found
+                      if (ref.id, ref.version) not in loaded}
+            more, problem = self._check_inputs(state, others)
+            loaded.update(more)
         if problem:
             return StepResult(StepOutcome.FAILED, error=problem, retryable=False)
         inputs = StepInputs(refs, lambda ref: copy.deepcopy(loaded[(ref.id, ref.version)])
                             if (ref.id, ref.version) in loaded
-                            else self.store.read_artifact(state.run_id, ref), missing)
+                            else self.store.read_artifact(state.run_id, ref), missing,
+                            every=every)
 
         decision = state.decisions.get(step_def.id)
         if decision and decision.get("visit") != step_state.visits:

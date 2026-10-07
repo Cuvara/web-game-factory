@@ -32,7 +32,7 @@ directly for this document).
 | Topic | What the docs say | Source |
 |---|---|---|
 | SDK load / init | `<script src="/sdk.js">` on Yandex hosting (absolute S3 URLs forbidden, REQ 1.7); `await YaGames.init()`; the SDK is mandatory (REQ 1.1, 1.19.1) | sdk/sdk-about, requirements/1/19 |
-| Game ready | `ysdk.features.LoadingAPI.ready()` when the game is playable, no loading screen left (REQ 1.19.2). A "90 s" figure appears in a summary but the 1.19.2 page returned 404: UNKNOWN | sdk/sdk-gameready |
+| Game ready | `ysdk.features.LoadingAPI.ready()` when the game is playable, no loading screen left (REQ 1.19.2). **Re-read 2026-10-07: within 90 s**, at the moment play really becomes possible, never on a timer; moderators check it with the loading screen dismissed by hand and left to close, over several reloads (the 1.19.2 page returned 404 on 2026-10-04; it is documented now) | sdk/sdk-gameready, requirements/1/19 |
 | Gameplay start/stop | `GameplayAPI.start()/stop()` - optional; if used, the moments must match the description (REQ 1.19.3) | sdk/sdk-game-events, requirements/1/19 |
 | Pause / mute around ads | `onOpen`/`onClose`/`onError` callbacks; `game_api_pause`/`game_api_resume` events also cover the startup ad the portal shows by itself. Sound stops on focus loss (REQ 1.3); sound and gameplay paused during fullscreen ads (REQ 4.7) | sdk/sdk-adv, sdk/sdk-events, REQ |
 | Interstitial | Frequency "controlled by Yandex Games"; an over-frequent call ends in `onClose`. No minimum interval is documented. Ads only at logical pauses; real-time levels under 5 min: never during play; over 5 min: paused with a 2 s notice (REQ 4.4) | sdk/sdk-adv, requirements/4/4 |
@@ -40,9 +40,9 @@ directly for this document).
 | Ads unavailable / blocked | `onClose` (+`onError`) after an error or refusal; no crashes or freezes around ads (REQ 1.14); progress kept after an ad click (REQ 4.2). Ad-blocker policy: UNKNOWN | sdk/sdk-adv, REQ |
 | Fullscreen | `ysdk.screen.fullscreen` (`request`/`exit`); the portal has its own button; mobile is fullscreen, desktop stretches with a long:short ratio at most 2:1 (REQ 1.6) | sdk/sdk-params, REQ |
 | Saves | `player.setData/getData` up to 200 KB, 100 requests / 5 min; progress saved right after the action, surviving refresh and rotation, logged in or not (REQ 1.9, 1.2.2); localStorage acceptable only for simple games without purchases; cloud saves mandatory with IAP (1.9, 1.13.3) and switched on in the draft (1.11) | sdk/sdk-player, requirements/1/9 |
-| Locales | Language detected through `environment.i18n.lang` before gameplay, for every game (REQ 2.14); every declared language translated (8.2.3). **No language is mandatory**; ru, en, tr, ... recommended | requirements/2/14, concepts/languages-and-domains, DRAFT |
+| Locales | Language detected through `environment.i18n.lang` before gameplay, for every game (REQ 2.14); every declared language translated (8.2.3). **No language is mandatory**; recommended (re-read 2026-10-07): Russian, Turkish, Chinese, Korean, Hindi, Vietnamese, English | requirements/2/14, concepts/languages-and-domains, DRAFT |
 | Bundle | Zip, `index.html` at the root, no spaces or Cyrillic in names (REQ 1.22); at most **100 MB uncompressed** (REQ 1.21); not tied to a URL (1.18). File count: UNKNOWN | REQ |
-| Listing | Title <= 50; short description <= 70; description 100-1000; how to play 100-1000; SEO description 50-160; keywords <= 100 chars; categories <= 2; tags <= 20; age rating required (0+, 6+, 12+, 16+, 18+, REQ 2.7); icon 512x512 PNG; cover 800x470 PNG; hero 1560x520 PNG/JPG; **screenshots at least 2 per selected platform**, 16:9 or 9:16, long side 1280-2560, JPEG or 24-bit PNG; video MP4 16:9 or 9:16, height >= 400, <= 28 s, <= 100 MB. Media >= 70% real gameplay (5.1.1); no screenshot as icon/cover (5.6); no borders or system UI (8.3.3-4) | DRAFT, REQ |
+| Listing | Title <= 50; short description <= 70; description 100-1000; how to play 100-1000; SEO description 50-160; keywords <= 100 chars; categories <= 2; tags <= 20; age rating required (0+, 6+, 12+, 16+, 18+, REQ 2.7); icon 512x512 PNG; cover 800x470 PNG; hero 1560x520 PNG/JPG; **screenshots at least 2 per selected platform** (re-read 2026-10-07: mobile at least 2 **per orientation**, desktop 16:9 landscape only), 16:9 or 9:16, long side 1280-2560, JPEG or 24-bit PNG; **horizontal video required** (re-read 2026-10-07): MP4 16:9, height >= 400, <= 28 s, <= 100 MB; vertical 9:16 video optional, same bounds. Media >= 70% real gameplay (5.1.1); no screenshot as icon/cover (5.6); no borders or system UI (8.3.3-4) | DRAFT, REQ |
 | Account (no code can solve) | Yandex ID developer profile; a contract (Russian entities: licensing model; everyone else: Yandex Advertising Network) unlocks moderation and payments; moderation 3-5 working days, at most 2 new-game requests open; licensee 18+ | concepts/quick-start, console/purchases |
 | Other | Monetized through ads or purchases (1.12); no external links or redirects (8.4); no third-party ads (4.1); no runtime interactive AI (1.23); > 10 minutes of content or replayable (2.9); unpublished after 3 weeks rated <= 30 (2.13) | REQ |
 
@@ -90,7 +90,7 @@ authentication, best practices, studio), `https://developer.y8.com/` and
 | Locales | None required; `getPlatformLocale()` from the domain, `en` also the fallback | /sdk/localization/ |
 | Bundle | HTML5/WebGL formats; uploaded through My Games -> Builds. Size limit, zip layout: UNKNOWN | developer.y8.com/games?new=1, /studio/overview/ |
 | Listing | Thumbnail and screenshot sizes, text limits, categories, age rating: **UNKNOWN** (only the studio profile's limits are documented) | /studio/studio/ |
-| Account | Developer account and a Studio (approval pending), terms accepted; every game reviewed; resubmission cooldowns 6 h to 5 days; 50% of eligible ad revenue; payout >= USD 100 (PayPal) | developer.y8.com, /studio/studio/ |
+| Account | Developer account and a Studio (approval pending), terms accepted; every game reviewed; resubmission cooldowns 6 h to 5 days; 50% of eligible ad revenue; payout >= USD 100 (PayPal) or >= USD 500 (bank transfer, re-read 2026-10-07) | developer.y8.com, /studio/studio/ |
 | Other | Guests must be able to play; **no external links, no foreign ads, pop-ups or redirects**; non-exclusive | /best-practices/, developer.y8.com/games?new=1 |
 
 ### GameDistribution
@@ -209,6 +209,122 @@ design (`wgf_design/platforms.py:73`), tech-plan (`wgf_techplan/selection.py:224
 therefore finish their publish group on the new Factory. Any other run that still has to pass
 design, tech-plan, init or sdk must re-plan first, so do not move a mid-run Factory checkout to
 this commit. A retarget re-plans anyway.
+
+### Part 1c - re-read 2026-10-07: profile versions 1.3.0
+
+The official pages were read again on 2026-10-07 (the research note
+`wgf-research/publishing-research-2026-10-07.md`, outside this repository, tags every fact
+OFFICIAL, COMMUNITY or UNKNOWN). Only OFFICIAL facts changed a profile. COMMUNITY knowledge is
+recorded below and nowhere else; UNKNOWN stays null.
+
+| Profile | Field | Was | Docs say (read 2026-10-07) | Now |
+|---|---|---|---|---|
+| yandex@1.2.0 | `store_listing.video` | optional, no aspect | horizontal video **required** (red asterisk on the ru draft page; "Horizontal Video (required)" on the en page): 16:9 MP4, height >= 400, <= 28 s, <= 100 MB; vertical 9:16 optional | **1.3.0**: `required: true`, `aspect: "16:9"`, `orientation: [landscape]` (DRAFT en + ru) |
+| yandex@1.2.0 | `store_listing.screenshots`, `metadata_requirements.screenshots_min` | min 2 (a total) | at least 2 per selected platform; mobile at least 2 **per orientation**; desktop 16:9 landscape only | min stays 2 (the one-platform floor); the per-platform and per-orientation rule in notes - gap Y-2 (DRAFT) |
+| yandex@1.2.0 | `requirements.loading_api`, assertions | the call only | `LoadingAPI.ready()` within **90 s**, when play is really possible, never on a timer | **1.3.0**: blocking `yandex_game_ready_within_90s` on `package.perf.time_to_interactive_s` (requirements/1/19) |
+| yandex@1.2.0 | `requirements.locales_recommended` | [en, tr] | Russian, Turkish, Chinese, Korean, Hindi, Vietnamese, English recommended; none mandatory | **1.3.0**: [en, tr, zh, ko, hi, vi]; ru stays required as the Factory's choice (concepts/languages-and-domains) |
+| yandex@1.2.0 | `review.typical_days` | [1, 5] | full moderation 3-5 working days; content moderation 1-2 | **1.3.0**: [3, 5]; content moderation in notes and the publication profile (concepts/moderation) |
+| yandex@1.2.0 | `review.common_rejections` | 8 entries | context menu on long tap / right-click (1.6.1.8), Game Ready missing or mistimed (1.19.2), SDK errors (1.1, 1.19.1), genre mismatch (2.3), ad orientation (4.3), update replacing the game (1.24, new) | **1.3.0**: added (REQ, concepts/moderation, requirements/1/19) |
+| yandex@1.2.0 | `ads.notes`, `store_listing.notes` | - | 4.3 ad orientation; ads in play count as ad fraud; sticky banners a console switch; required fields 5.2 include Version, Platforms, Orientation; title and short-description rules, keywords lowercase, SEO description shape, 5.11, 5.12 | **1.3.0**: in notes (sdk/sdk-adv, DRAFT) |
+| publication yandex@2.2.0 | `fields.horizontal_video`, `vertical_video`, `unknowns` | `required: null`, "may be required; unconfirmed"; icon/cover/hero/screenshot sizes unknown | required; vertical optional; the sizes are stated | **2.3.0**: `horizontal_video.required: true`, `vertical_video.required: false`, maskable icon and hero optional; sizes noted against the platform block that checks them; the two unknowns removed; restrictions: content moderation, the update flow (the live version stays), REQ 1.24, the Cloud saves switch (1.11) |
+| crazygames@1.2.0 | `capabilities.iap`, scoring hint | false, "there is no IAP here" | in-game purchases exist: invite-only, Xsolla, signed-in users; Automatic Progress Save then not allowed | **1.3.0**: stays `false`, commented as a Factory choice (an invitation is not something a design can assume); the hint corrected (/sdk/in-game-purchases/) |
+| crazygames@1.2.0 | `capabilities.cloud_saves` | true, no note | Full Launch **requires** account-linked progress where progress applies: Data module, User module, or Automatic Progress Save | **1.3.0**: commented; a common rejection (/requirements/account-integration/, /other/aps/) |
+| crazygames@1.2.0 | `ads.notes`, `common_rejections` | interval and mute rules | `settings.muteAudio` required for HTML5; banners only on useful screens open >= 5 s, at most 2, never in play, never over UI; rewarded buttons with a video icon | **1.3.0**: notes and rejections (/sdk/game/, /requirements/ads/) |
+| crazygames@1.2.0 | `requirements` | size, files, initial download (notes) | 20 s to play with external files; a 4 GB Chromebook; Chrome and Edge; safe area in the CrazyGames App; sitelock; DPR-1 legibility 800x450-1920x1080; 144/165 Hz physics; gameplay within 1 click | **1.3.0**: comments - no schema field (gap C-4) |
+| crazygames@1.2.0 | `store_listing.video.min_seconds` | null | "15-20 seconds maximum" - ambiguous | stays null; the reading in notes |
+| publication crazygames@2.3.0 | `constraints.upload_max_mb`, `unknowns`, `restrictions` | 250 "unsourced"; no update rule | 250 MB sourced; updates resubmitted, live "within the same working day" | **2.4.0**: sourced; restrictions: the update rule, account-linked progress, invite-only purchases (/requirements/technical/, /faq/) |
+| y8@1.2.0 | `capabilities.ads`, `ads.banner_available` | no banner; "No banner is documented" | banners exist (728x90, 300x250, ...) with Y8's per-game approval | **1.3.0**: still off until a person records approval; the comment corrected (/sdk/advertising/) |
+| y8@1.2.0 | `capabilities.cloud_saves`, `requirements` | - | auto-saves at most once a minute; the per-game SDK checklist in the Developer Portal (content UNKNOWN); every game connected to a Studio | **1.3.0**: comments (/best-practices/, developer.y8.com, /studio/create-game/) |
+| y8@1.2.0 | `review.common_rejections` | 4 | the published grounds: technical, quality, instructions, SDK integration, harmful/copyrighted/stolen content, malware, fake traffic, unauthorised ads; copied, reskinned or mass-generated games | **1.3.0**: added (developer.y8.com) |
+| publication y8@2.2.0 | `identity.issued_on_create` app_id | read on create | Game ID on create; App ID on first opening the game's page, may read "Not yet available" | **2.3.0**: a note on the entry - refresh, never record that text (gap Y8-1) (/studio/create-game/) |
+| publication y8@2.2.0 | `flow` | upload "Game file" (hypothesis) | builds are uploaded on the game's **Builds** tab | **2.3.0**: `tab.builds` (optional, documented) before `upload.build` (/studio/overview/) |
+| publication y8@2.2.0 | payout, update rule | PayPal only; no update rule | bank transfer from USD 500; a new build is reviewed before it replaces the live one | **2.3.0**: `declare.payout` note and restrictions (developer.y8.com) |
+| gamepix@1.0.0 | - | - | no difference against official text | unchanged; the community figures are below, never in the profile |
+
+**Enforcement wired** (data the existing validators already read):
+
+- **Yandex horizontal video.** `store_listing.video.required: true` with `aspect: "16:9"` and
+  `orientation: [landscape]`: the store-listing package reports a missing MP4 trailer as an
+  error-severity unmet, and listing validation's `platforms.yandex.video` fails (`fix:
+  configure`) on a rendition with no video, or one over 28 s or 100 MB, under 400 px high or
+  not 16:9; the submit step's media check (`campaign.check_media`) refuses the same and a
+  portrait file (`video-orientation`). The publication profile's `horizontal_video` field,
+  now required with `formats: [mp4]`, makes the campaign check refuse a campaign with no
+  landscape trailer (`media-missing`) or a non-MP4 one (`media-format`). The canonical trailer
+  is WebM; MP4 is derived only where an encoder is present, so on a host without one a Yandex
+  listing now stops for a person instead of shipping without the video.
+- **Yandex Game Ready within 90 s.** The blocking assertion `yandex_game_ready_within_90s` on
+  `package.perf.time_to_interactive_s` - the template measures it right after the adapter's
+  `signalReady()` (`src/main.ts`, template-owned) - so verify's `policy.assertions:yandex`
+  fails a build that reaches ready() after 90 s on the served bundle. Whether ready() fires
+  when play is really possible rather than on a timer stays a moderator's judgement.
+
+**Gaps, documented, not enforced** (the schema or the measured facts cannot express them):
+
+- **Y-2 Yandex screenshots per platform and orientation.** `store_listing.screenshots` has one
+  `min` over all files, and `metadata.screenshots` counts a total. The rule is 2 per declared
+  platform, 2 per declared mobile orientation, desktop 16:9 landscape only - 6 for a game
+  declared desktop + mobile in both orientations. The canonical capture already takes a
+  landscape and a portrait set (`core/reference/store-listing.yaml` renditions); a person
+  checks the counts against the draft's Platforms and Orientation. Smallest fix: a
+  `screenshots.per_orientation_min` in `shared/platform-profile.schema.json` `storeListing`,
+  counted per capture `viewport` in `wgf_listing/validation.py` and `wgf_publish/campaign.py`.
+- **Y-3 Yandex context menu (1.6.1.8; desktop right-click).** No measured fact says whether the
+  build cancels `contextmenu`: the pinned template's `tests/verify/facts.spec.ts` does not
+  record one, and its static `scripts/verify/yandex-audit.mjs` check (`context_menu_blocked`,
+  a warning) is not run by the Factory. An assertion on a fact nobody measures is "not
+  evaluable" and breaches on every build, so none was added. Smallest fix, in the template: a
+  `package.context_menu_blocked` runtime fact (dispatch a cancelable `contextmenu` on the
+  canvas, read `defaultPrevented`; the same for `selectstart`), then a blocking assertion in
+  this profile. The research found no suppression in either validation game.
+- **Y-4 no upload intent for the Yandex video.** The publication flow uploads icon, cover and
+  screenshots; no intent uploads the horizontal video, because its console widget is unknown
+  (the label "Horizontal video" is documented only as a field name). The media check refuses a
+  campaign without it, so a person uploads it in the draft. Fix: an `upload` intent with
+  `value: listing.media.trailer_landscape` once a person has observed the widget
+  (`wgf-publish.py observe yandex`).
+- **Y-5 judgement rules:** ad orientation (4.3), genre match (2.3), an update keeping the core
+  concept (1.24), the 70%-gameplay media rule (5.1.1). Common rejections and notes only.
+- **C-1 CrazyGames `settings.muteAudio`.** The template's CrazyGames adapter exposes
+  `settings.muteAudio` and `settings:change`; whether the game's audio follows it is not a
+  measured fact. Fix, in the template: a runtime fact from the CrazyGames mock toggling the
+  setting and reading `document.documentElement.dataset.audioMuted`, then an assertion.
+- **C-2 CrazyGames portrait 2:3 preview video.** The block states one video. A required
+  publication field for a portrait trailer would fail every run with a re-render the step
+  cannot satisfy (the canonical trailer is landscape only), so it stays a manual item.
+  Fix: `storeListing.video` as a list (or `videos`), and a portrait trailer capture.
+- **C-3 no audio in preview videos.** No `has_audio` is measured on the trailer file.
+- **C-4 CrazyGames technical rules** with no field (20 s to play with external files, 4 GB
+  Chromebook, safe area in the CrazyGames App, sitelock, 144/165 Hz, gameplay within 1
+  click): comments in the profile; the template's `crazygames-audit.mjs` covers part of it and
+  is not run by the Factory.
+- **Y8-1 the App ID's delay.** The executor records whatever non-empty text the `App ID`
+  locator shows (`wgf_publish/browser/console.spec.ts`, the `issued_on_create` read); "Not yet
+  available" would be recorded as an id. Fix: a
+  `pattern` on each `issued_on_create` entry, an id that does not match read as not issued
+  (refresh and read again, else stop for a person).
+- **Y8-2 the per-game SDK checklist** in the Developer Portal: UNKNOWN; a person reads it.
+
+**COMMUNITY, never a requirement:**
+
+- Yandex: wnhub.io, 2026-06-24 (`https://wnhub.io/news/other/item-51215`) - applications
+  doubled to about 10,000 a month, the moderation reset button is temporarily disabled, 72% of
+  rejections are UI, SDK or technical flaws. Read 3-5 days as optimistic.
+- Y8: the forum and an 8th Wall guide describe an upload without a Studio (a "Y8 Storage
+  account", Zip or iFrame) - superseded by "every game must be connected to a studio" and the
+  302 from `y8.com/upload` to `developer.y8.com/games?new=1`. A forum thread reports a large
+  build refused and cut to 41 MB - no stated limit (`max_bundle_mb` stays null).
+- GamePix: a third-party tool (`https://github.com/dannyking13/gamepix-publish`) reports
+  dashboard sections Info, Assets, Editorial, Build, an icon 256x256 PNG <= 1 MB, a cover
+  1360x850 PNG <= 1.5 MB, a description of 100-500 characters. `platforms/gamepix.yaml` keeps
+  every size null; nothing here says automated dashboard use is permitted.
+
+**What the bump does.** yandex, crazygames and y8 move to 1.3.0 (publication profiles: yandex
+2.3.0, crazygames 2.4.0, y8 2.3.0; GamePix unchanged). As with 1.2.0 (Part 1b): a title
+vendored at `@1.2.0` keeps verify, release and the publish group against its copy; design,
+tech-plan, init and sdk refuse the old pin until the title re-plans. Both validation games pin
+`yandex@1.2.0` and `crazygames@1.2.0`; their retarget (Part 2) re-plans anyway. Do not move a
+mid-run Factory checkout to this commit.
 
 ### GamePix: a profile, refused until the pin carries its adapter
 
@@ -476,7 +592,7 @@ dearer: it re-runs develop and every gate after it.
 
 | Platform | Brick Breaker Worlds / Sky Marble: blocked in code | External (account, partnership, portal) |
 |---|---|---|
-| Yandex | Packageable after the retarget above (required). Known risks: PNG screenshots with alpha (24-bit asked); the 70%-gameplay media rule is a person's check | Developer profile, contract (licensing model or YAN), moderation 3-5 days, cloud-saves switch in the draft, age rating, how-to-play and SEO texts |
+| Yandex | Packageable after the retarget above (required). Known risks: PNG screenshots with alpha (24-bit asked); the 70%-gameplay media rule is a person's check; since 1.3.0 the listing needs the MP4 horizontal trailer, screenshots per platform and orientation are a person's count (gap Y-2), and no context-menu suppression was found in either game (gap Y-3) | Developer profile, contract (licensing model or YAN), moderation 3-5 days, cloud-saves switch in the draft, age rating, how-to-play and SEO texts |
 | CrazyGames | Packageable alongside Yandex since 2.8.0 (its own bundle, with the CrazyGames head script, gap 1). The listing now needs a 1080p trailer under 20 s (store-listing 1.1.0) and a portrait video (manual) | Developer Portal account, Progress Save toggle, Basic Launch (ads disabled, expected) and CrazyGames' Full Launch decision |
 | Y8 | Packageable alongside Yandex since 2.8.0 (its own bundle, gap 1); the build needs `WGF_Y8_APP_ID` / `WGF_Y8_GAME_ID` passed through, or it ships SDK-less, and verify cannot tell (gap 4) | Developer account and approved Studio, the App ID and Game ID from the portal, review, the listing fields (undocumented) |
 | GameDistribution | Tech plan blocks without a registered Game ID; with one, packageable alongside the others (its own bundle) | Account (no domain needed; Company required), Game ID from the panel before the build, rewarded flag, pre-roll viewed once from the upload view, publication request button; self-hosting only for real multiplayer with written consent and one's own HTTPS host |

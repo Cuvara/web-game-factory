@@ -180,6 +180,70 @@ def thirds_of(run):
     return thirds if len(thirds) == 3 else None
 
 
+def _ended_read(snapshot, entry):
+    """A traverse snapshot shows its unit ended: `won`, or progress risen to its target."""
+    if snapshot.get("state") == "won":
+        return True
+    progress = snapshot.get("progress") or {}
+    target, value = progress.get("target"), progress.get("value")
+    if not isinstance(target, (int, float)) or target <= 0 or not isinstance(value, (int, float)):
+        return False
+    return value >= target and (entry is None or entry < target)
+
+
+def transition_timing(transition, snapshots=()):
+    """How long the GAME took to move on from a finished unit, apart from the bot's latency.
+
+    The bot reads the game by polling, so the game moved on somewhere between the last read
+    that still showed the finished unit and the first read that showed the next one. What is
+    the game's: the time it sat ended before it offered an advance (`unoffered_ms` - the
+    unit's first ended read), and the time it stayed in the finished unit after the bot's
+    first input was delivered (`last_old_ms` - `acted_ms`), or after the end when the game
+    advances by itself. What is the bot's: its reaction and click (`offered_ms` ->
+    `acted_ms`), its own pause, and the round-trip of the read that saw the next unit.
+    `game_ms` is the lower bound the game is judged on - the game was observed not to have
+    moved on for that long; `game_max_ms` the upper bound (the whole interval less the bot's
+    reaction and click). The end is the first `won` read, else the first at the progress
+    target: a target met before the game declared `won` ended at `won`. A record from a bot
+    before these fields (only `since_end_ms`) is timed from its snapshots: from the unit's
+    first ended read to its last read, which still includes the bot's clicks in between;
+    without snapshots covering the transition, from `since_end_ms` as recorded.
+    """
+    at = transition.get("at_ms")
+    ended = transition.get("ended_ms")
+    if isinstance(ended, (int, float)) and isinstance(at, (int, float)):
+        unoffered, offered = transition.get("unoffered_ms"), transition.get("offered_ms")
+        acted, last = transition.get("acted_ms"), transition.get("last_old_ms")
+        offer_wait = max(0, unoffered - ended) if isinstance(unoffered, (int, float)) else 0
+        since = acted if isinstance(acted, (int, float)) else ended
+        move_wait = max(0, last - since) if isinstance(last, (int, float)) else 0
+        bot = (acted - offered if isinstance(acted, (int, float)) and isinstance(offered, (int, float))
+               else 0)
+        return {"game_ms": offer_wait + move_wait, "game_max_ms": max(0, at - ended - bot),
+                "basis": "recorder"}
+    frm = transition.get("from")
+    if isinstance(at, (int, float)) and snapshots:
+        reads = [r for r in snapshots if isinstance(r, dict) and isinstance(r.get("ms"), (int, float))]
+        if any(r["ms"] == at and r.get("unit_index") == transition.get("to") for r in reads):
+            # The finished unit's reads: the run of reads in it that ends at this transition.
+            stay = []
+            for read in reversed([r for r in reads if r["ms"] < at]):
+                if read.get("unit_index") != frm:
+                    break
+                stay.append(read)
+            stay.reverse()
+            if stay:
+                entry = (stay[0].get("progress") or {}).get("value")
+                won = transition.get("how") == "won"
+                first = next((r["ms"] for r in stay
+                              if (r.get("state") == "won" if won else _ended_read(r, entry))), None)
+                if first is not None:
+                    return {"game_ms": max(0, stay[-1]["ms"] - first), "game_max_ms": at - first,
+                            "basis": "snapshots"}
+    raw = transition.get("since_end_ms")
+    return {"game_ms": raw, "game_max_ms": raw, "basis": "since_end_ms"}
+
+
 def _content_checks(ctx):
     """content.units_reachable, content.objective_shown, content.win_lose_per_unit."""
     project, units, mode = ctx["project"], ctx["units"], ctx["mode"]
@@ -202,22 +266,35 @@ def _content_checks(ctx):
     order = list(range(1, want + 1))
     grace = bars.get("transition_grace_ms")
     in_order = reached[:want] == order
-    unearned = [f"{t.get('from')}->{t.get('to')} ({t.get('how')}, "
-                f"{t.get('since_end_ms')} ms after it ended)" for t in transitions
-                if (t.get("to") or 0) <= want
-                and (t.get("how") not in ("won", "progress")
-                     or t.get("since_end_ms") is None or t["since_end_ms"] > grace)]
+    # Earned: the unit left was finished (`won` or its progress target) before the next was
+    # entered, and the GAME moved on within the grace - the bot's own reaction, click and
+    # polling are not the game's (transition_timing).
+    snapshots = traverse.get("snapshots") or []
+    timed = [{**t, **transition_timing(t, snapshots)}
+             for t in transitions]
+    unearned = []
+    for t in timed:
+        if (t.get("to") or 0) > want:
+            continue
+        if t.get("how") not in ("won", "progress"):
+            unearned.append(f"{t.get('from')}->{t.get('to')} (the unit left was {t.get('how')}, "
+                            "not won or at its progress target)")
+        elif t.get("game_ms") is None or t["game_ms"] > grace:
+            unearned.append(f"{t.get('from')}->{t.get('to')} ({t.get('how')}, the game moved on "
+                            f"{t.get('game_ms')} ms after it ended, {t.get('basis')}; raw "
+                            f"{t.get('since_end_ms')} ms with the bot's latency)")
     out = [_check("content.units_reachable", project, in_order and not unearned,
                   (f"units {order} were played in the design's order, each entered within "
-                   f"{grace} ms of the previous one ending" if in_order and not unearned else
+                   f"{grace} ms of the game finishing the previous one" if in_order and not unearned else
                    f"units reached: {reached or 'none'}; the design's first {want} are {order}"
                    if not in_order else
                    "a unit was entered without the previous one being completed: "
                    + "; ".join(unearned[:3])),
-                  measured={"units_reached": reached, "transitions": transitions[:12],
+                  measured={"units_reached": reached, "transitions": timed[:12],
                             "stopped": traverse.get("stopped")},
-                  expected=f"units {order} in order, each within {grace} ms of the previous "
-                           f"one reaching `won` or its progress target",
+                  expected=f"units {order} in order, each entered after the previous one reached "
+                           f"`won` or its progress target, the game moving on within {grace} ms "
+                           f"(game_ms; the bot's reaction and click excluded)",
                   frames=[f"unit-{i}-1s" for i in order], truncated=ctx["truncated"].get("traverse"))]
 
     bar = bars.get("objective_min_share")

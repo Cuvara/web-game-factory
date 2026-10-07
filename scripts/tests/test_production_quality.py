@@ -461,8 +461,18 @@ class Judge(unittest.TestCase):
         mid = [{"text": "GOAL", "box": [10, 10, 200, 40], "font_px": 32, "font_weight": 700,
                 "color": [130, 130, 130, 1], "background": [20, 20, 20]}]
         ui = {name: screen(name, texts=mid) for name in ("won", "lost", "retry")}
-        text = next(c for c in self.judge({"desktop": records(ui=ui)}) if c["id"] == "ui.text")
+        base = tempfile.mkdtemp(prefix="wgf-pq-large-")
+        self.addCleanup(shutil.rmtree, base, ignore_errors=True)
+        for name in ("won", "lost", "retry"):
+            write_frame(base, f"state-{name}", sprites=False)
+        text = next(c for c in self.judge({"desktop": records(ui=ui)}, frames={"desktop": base})
+                    if c["id"] == "ui.text")
         self.assertEqual(text["status"], "PASS", text)
+        # Without the state frames the same texts are unmeasured: never a pass.
+        unread = next(c for c in self.judge({"desktop": records(ui=ui)}) if c["id"] == "ui.text")
+        self.assertEqual((unread["status"], unread["required"]), ("WARNING", False), unread)
+        self.assertEqual(unread["measured"]["backdrop"]["unread"], 3)
+        self.assertIn("never a pass", unread["summary"])
 
     def test_text_over_the_canvas_is_read_against_the_frame(self):
         base = tempfile.mkdtemp(prefix="wgf-pq-")
@@ -569,7 +579,8 @@ class ABusyBackdrop(unittest.TestCase):
     def test_text_on_a_plain_panel_passes(self):
         check = self.text()
         self.assertEqual(check["status"], "PASS", check)
-        self.assertEqual(check["measured"]["backdrop"], {"measured": 1, "unread": 0})
+        self.assertEqual(check["measured"]["backdrop"],
+                         {"measured": 1, "unread": 0, "unread_texts": []})
         self.assertEqual(check["route"], "develop")
 
     def test_subpixel_fringes_are_not_art(self):
@@ -614,7 +625,8 @@ class ABusyBackdrop(unittest.TestCase):
         check = self.text({"clutter": True}, **control)
         self.assertEqual(check["status"], "FAIL", check)
         older = self.text({"clutter": True}, glyph_box=None, **control)  # a bot before glyph_box
-        self.assertEqual(older["measured"]["backdrop"], {"measured": 0, "unread": 1})
+        self.assertEqual(older["measured"]["backdrop"]["unread"], 1)
+        self.assertEqual(older["measured"]["backdrop"]["measured"], 0)
 
     def test_a_texts_own_shadow_colour_is_not_art(self):
         glow = (255, 46, 136)
@@ -632,6 +644,105 @@ class ABusyBackdrop(unittest.TestCase):
                                         [list(glow) + [1]], 40)
         self.assertGreater(bare["clutter"], shadowed["clutter"])
         self.assertEqual(shadowed["clutter"], 0.0)
+
+
+NIGHT, SUN, CYAN, WHITE = (11, 11, 22), (254, 68, 184), (46, 242, 255), (237, 235, 255)
+
+
+def paint_frame(directory, name, fill, rects, size=(200, 100)):
+    """A state frame (1x) of `fill` with `rects` [(x, y, w, h, rgb)] painted in order."""
+    w, h = size
+    image = Image(w, h, bytes(list(fill) + [255]) * (w * h))
+    for x0, y0, rw, rh, rgb in rects:
+        for y in range(y0, y0 + rh):
+            for x in range(x0, x0 + rw):
+                i = (y * w + x) * 4
+                image.pixels[i:i + 3] = bytes(rgb)
+    with open(os.path.join(directory, f"{name}.png"), "wb") as handle:
+        handle.write(encode_png(image))
+
+
+def stems(x0, y0, count, pitch, width, height, rgb):
+    """`count` glyph stems `width` px wide, `pitch` px apart: a text's ink, roughly."""
+    return [(x0 + i * pitch, y0, width, height, rgb) for i in range(count)]
+
+
+class TheFrameBehindAText(unittest.TestCase):
+    """Where the DOM cannot tell, a text is read against the worst region of the frame behind
+    it, not its most common colour; and a field of its own colour behind it is never read as
+    big glyphs (3D golden port, 2026-10-07: the cyan SCORE label over the pink sun measures
+    2.3:1; a wip fallback let white text over a white cloud pass)."""
+
+    def setUp(self):
+        self.rules = load_rules()
+        self.dir = tempfile.mkdtemp(prefix="wgf-pq-behind-")
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+
+    def check(self, rects, color, font=24, weight=700, box=(20, 20, 140, 40), fill=NIGHT,
+              background=None):
+        paint_frame(self.dir, "state-won", fill, rects)
+        item = {"text": "Score", "box": list(box), "glyph_box": list(box), "font_px": font,
+                "font_weight": weight, "color": list(color) + [1], "background": background}
+        ui = {"won": {"probe_state": "won", "frame": "state-won", "viewport": [200, 100],
+                      "elements": [], "texts": [item], "overlaps": []}}
+        return judging.ui_text("desktop", {"t": {"ui": ui}}, self.rules, judging._Frames(self.dir))
+
+    def test_a_label_partly_over_a_bright_shape_fails_on_that_part(self):
+        glyphs = stems(24, 26, 9, 15, 3, 26, CYAN)
+        night = self.check(glyphs, CYAN)
+        self.assertEqual(night["status"], "PASS", night)
+        # The sun behind the right 40 % of the label: the night sky is still the commonest
+        # colour of the box, and the label is unreadable where the sun is.
+        sun = self.check([(104, 20, 56, 40, SUN)] + glyphs, CYAN)
+        self.assertEqual((sun["status"], sun["route"]), ("FAIL", "develop"), sun)
+        self.assertIn("2.27:1", " ".join(sun["measured"]["low_contrast"]))
+
+    def test_big_bold_glyphs_are_not_their_own_background(self):
+        # Stems a quarter of an em thick, 4 px apart: the ink covers more of the box than the
+        # night behind it, so the box's commonest colour is the text's own.
+        glyphs = stems(22, 24, 11, 13, 10, 32, WHITE)
+        frames = judging._Frames(self.dir)
+        paint_frame(self.dir, "state-won", NIGHT, glyphs)
+        self.assertEqual(frames.background("state-won", [20, 20, 140, 40], [200, 100]), list(WHITE))
+        check = self.check(glyphs, WHITE, font=40)
+        self.assertEqual(check["status"], "PASS", check)
+        self.assertEqual(check["measured"]["busy_backdrop"], [])
+
+    def test_glyphs_drawn_dimmer_than_their_colour_are_not_a_region(self):
+        # A screen still fading in: white text drawn grey, in thin strokes. The strokes are
+        # no area behind the text, so they are not what it is read against.
+        grey = (130, 129, 145)
+        check = self.check(stems(24, 26, 9, 15, 2, 26, grey), WHITE, font=16, weight=500)
+        self.assertEqual(check["status"], "PASS", check)
+        self.assertEqual(check["measured"]["low_contrast"], [])
+
+    def test_white_text_over_a_white_cloud_cannot_be_seen(self):
+        cloud = [(70, 20, 90, 40, WHITE)]
+        glyphs = stems(24, 26, 9, 15, 3, 26, WHITE)
+        check = self.check(glyphs + cloud, WHITE)
+        self.assertEqual(check["status"], "FAIL", check)
+        self.assertIn("cannot be seen", " ".join(check["measured"]["busy_backdrop"]))
+        # Whatever the DOM says is behind it.
+        dom = self.check(glyphs + cloud, WHITE, background=list(NIGHT))
+        self.assertEqual(dom["status"], "FAIL", dom)
+        self.assertIn("cannot be seen", " ".join(dom["measured"]["busy_backdrop"]))
+        # A cloud under all of it: nothing else to read it against.
+        whole = self.check([(20, 20, 140, 40, WHITE)], WHITE)
+        self.assertEqual(whole["status"], "FAIL", whole)
+        self.assertTrue(whole["measured"]["low_contrast"], whole)
+
+    def test_a_missing_frame_is_unmeasured_never_a_pass(self):
+        paint_frame(self.dir, "state-won", NIGHT, stems(24, 26, 9, 15, 3, 26, WHITE))
+        item = {"text": "Score", "box": [20, 20, 140, 40], "glyph_box": [20, 20, 140, 40],
+                "font_px": 24, "font_weight": 700, "color": list(WHITE) + [1],
+                "background": list(NIGHT)}
+        ui = {"won": {"frame": "state-won", "viewport": [200, 100], "elements": [], "texts": [item]},
+              "lost": {"frame": "state-lost", "viewport": [200, 100], "elements": [],
+                       "texts": [dict(item)]}}
+        check = judging.ui_text("desktop", {"t": {"ui": ui}}, self.rules, judging._Frames(self.dir))
+        self.assertEqual((check["status"], check["required"]), ("WARNING", False), check)
+        self.assertEqual(check["measured"]["backdrop"]["unread"], 1)
+        self.assertEqual(check["measured"]["backdrop"]["unread_texts"], ["lost: 'Score'"])
 
 
 class TheStep(unittest.TestCase):

@@ -185,7 +185,7 @@ class _Frames:
         at = ratios[min(len(ratios) - 1, int(float(bars.get("percentile", 0.9)) * len(ratios)))]
         return {"ratio": round(at, 2), "surround_luminance": round(surround, 4)}
 
-    def text_backdrop(self, frame_id, box, viewport, ink, paint, delta):
+    def text_backdrop(self, frame_id, box, viewport, ink, paint, delta, em=None, region=0.2):
         """What is drawn behind a DOM text, read from the frame inside its glyph `box` (CSS
         px), for what the DOM cannot tell: a nine-slice border-image, a mask, a pseudo-element
         or another element painting art under or over the text while the computed background
@@ -198,8 +198,20 @@ class _Frames:
         `clutter` is the share of sampled pixels nothing explains: other art behind the text.
         `ink_run_px` is the longest horizontal run (CSS px) of pixels of the text's colour in
         one row: a glyph's stroke is at most about an em long, the edge of a tile or panel of
-        the same ink drawn through the text is not. `ink_distinct` is False when the text's
-        colour is the background's (the text cannot be told from it; contrast says so).
+        the same ink drawn through the text is not. The background is the box's dominant
+        colour, or - when that is the text's own (big bold glyphs) - the commonest colour that
+        is not; `ink_distinct` is False when there is none (the text cannot be told from
+        what is behind it).
+
+        What the text is read against, for its contrast when the DOM cannot tell: `behind` is
+        the colours of the box that are neither the text's colour, its own paints, nor next
+        to its ink (an antialiased edge), grouped like `background`; `worst_ratio` is the
+        lowest contrast of the text's colour with any of them covering at least `region` of
+        those pixels (or the largest one) - the pink sun behind part of a label, not the
+        night sky around it. None when under a tenth of the box is behind the text.
+        `ink_field` is the share of the box inside a solid square of the text's own colour
+        half an `em` (CSS px) wide: no glyph stroke is that thick, a cloud or a panel of the
+        text's colour behind it is, and the text cannot be seen there.
         None when the frame or the box cannot be read."""
         image = self.image(frame_id)
         if image is None or not box or len(box) < 4 or not viewport or not viewport[0] or not ink:
@@ -214,6 +226,23 @@ class _Frames:
         if x1 <= x0 or y1 <= y0:
             return None
         drawn = _over(ink, background)
+        if max(abs(background[k] - drawn[k]) for k in range(3)) <= delta:
+            # Big bold glyphs can cover more of their box than what is behind them: the
+            # background is then the commonest colour that is not the text's own. A box with
+            # none keeps it - the text cannot be told from it - and a field of the text's own
+            # colour behind it is `ink_field`, never taken for glyphs.
+            step = max(1, min(x1 - x0, y1 - y0) // 24)
+            buckets, px = {}, image.pixels
+            for y in range(y0, y1, step):
+                for x in range(x0, x1, step):
+                    i = (y * image.width + x) * 4
+                    rgb = (px[i], px[i + 1], px[i + 2])
+                    if max(abs(rgb[k] - drawn[k]) for k in range(3)) > delta:
+                        buckets.setdefault(tuple(v >> 4 for v in rgb), []).append(rgb)
+            if buckets:
+                dominant = max(buckets.values(), key=len)
+                background = [round(statistics.fmean(c[k] for c in dominant)) for k in range(3)]
+                drawn = _over(ink, background)
         palette = [tuple(background), tuple(drawn)] + [tuple(_over(p, background)) for p in paint or []
                                                        if isinstance(p, (list, tuple)) and len(p) >= 3]
         pairs = [(palette[i], palette[j]) for i in range(len(palette))
@@ -234,11 +263,15 @@ class _Frames:
         # a glyph's edge colour fringes that are no blend of ink and background, and cancel
         # out over three device pixels; art behind the text is wider than that.
         step = max(1, int(round(scale)))
+        own = [tuple(_over(p, background)) for p in paint or []
+               if isinstance(p, (list, tuple)) and len(p) >= 3]
         px, total, unexplained, longest = image.pixels, 0, 0, 0
         last = image.width - 1
+        inked, samples = [], []
         for y in range(y0, y1, step):
             run = 0
             row = y * image.width
+            inked_row, sample_row = [], []
             for x in range(x0, x1, step):
                 i = (row + x) * 4
                 p = (px[i], px[i + 1], px[i + 2])
@@ -247,16 +280,89 @@ class _Frames:
                 mean = tuple((px[left + k] + p[k] + px[right + k]) / 3.0 for k in range(3))
                 if not explained(mean):
                     unexplained += 1
-                if max(abs(p[k] - drawn[k]) for k in range(3)) <= delta:
+                near = max(abs(p[k] - drawn[k]) for k in range(3)) <= delta
+                if near:
                     run += 1
                     longest = max(longest, run)
                 else:
                     run = 0
+                inked_row.append(near)
+                sample_row.append(p)
+            inked.append(inked_row)
+            samples.append(sample_row)
         if not total:
             return None
+        rows, cols = len(inked), len(inked[0]) if inked else 0
+        # A solid square of the text's colour, half an em wide: no glyph stroke is that thick.
+        side = max(1, int(round(0.25 * float(em or 0) * scale / step))) if em else 0
+        field = 0
+        if side and rows > 2 * side and cols > 2 * side:
+            table = [[0] * (cols + 1) for _ in range(rows + 1)]
+            for r in range(rows):
+                acc = 0
+                for c in range(cols):
+                    acc += inked[r][c]
+                    table[r + 1][c + 1] = table[r][c + 1] + acc
+            full = (2 * side + 1) ** 2
+            for r in range(side, rows - side):
+                for c in range(side, cols - side):
+                    if inked[r][c] and (table[r + side + 1][c + side + 1] - table[r - side][c + side + 1]
+                                        - table[r + side + 1][c - side] + table[r - side][c - side]) == full:
+                        field += 1
+        # What the text is read against: neither its ink, its own paints, nor next to its
+        # ink, and an area - every sample within a tenth of an em (at least one, at most two
+        # samples) of it the same colour within `delta`. A glyph is strokes: drawn dimmer than
+        # its colour (an entering screen's fade, a thin face's antialiasing) it is still no
+        # area, while a sun or a panel behind the text is.
+        reach = min(2, max(1, int(round(0.1 * float(em or 0) * scale / step)))) if em else 1
+
+        def spread(grid):
+            # The per-channel max - min over the (2 reach + 1)^2 window of every sample.
+            out = []
+            for r in range(rows):
+                lo_row, hi_row = [], []
+                row = grid[r]
+                for c in range(cols):
+                    window = [row[cc] for cc in range(max(0, c - reach), min(cols, c + reach + 1))]
+                    lo_row.append(tuple(min(w[k] for w in window) for k in range(3)))
+                    hi_row.append(tuple(max(w[k] for w in window) for k in range(3)))
+                out.append((lo_row, hi_row))
+            flat = []
+            for r in range(rows):
+                rows_in = range(max(0, r - reach), min(rows, r + reach + 1))
+                flat.append([max(max(out[rr][1][c][k] for rr in rows_in)
+                                 - min(out[rr][0][c][k] for rr in rows_in) for k in range(3))
+                             for c in range(cols)])
+            return flat
+
+        ranges = spread(samples)
+        buckets, behind = {}, 0
+        for r in range(rows):
+            for c in range(cols):
+                if any(inked[rr][cc] for rr in range(max(0, r - 1), min(rows, r + 2))
+                       for cc in range(max(0, c - 1), min(cols, c + 2))):
+                    continue
+                if ranges[r][c] > delta:
+                    continue
+                p = samples[r][c]
+                if any(max(abs(p[k] - o[k]) for k in range(3)) <= delta for o in own):
+                    continue
+                behind += 1
+                buckets.setdefault(tuple(v >> 4 for v in p), []).append(p)
+        worst, worst_colour = None, None
+        if buckets and behind >= 0.1 * total:
+            ordered = sorted(buckets.values(), key=len, reverse=True)
+            regions = [b for b in ordered if len(b) >= float(region) * behind] or ordered[:1]
+            for colours in regions:
+                colour = [round(statistics.fmean(c[k] for c in colours)) for k in range(3)]
+                ratio = contrast_ratio(_over(ink, colour), colour)
+                if worst is None or ratio < worst:
+                    worst, worst_colour = ratio, colour
         return {"background": list(background), "clutter": round(unexplained / total, 3),
                 "ink_run_px": round(longest * step / scale, 1),
-                "ink_distinct": max(abs(drawn[k] - background[k]) for k in range(3)) > delta}
+                "ink_distinct": max(abs(drawn[k] - background[k]) for k in range(3)) > delta,
+                "ink_field": round(field / total, 3), "behind_share": round(behind / total, 3),
+                "worst_ratio": worst, "worst_colour": worst_colour}
 
 
 # -- assets --------------------------------------------------------------------------------
@@ -736,26 +842,41 @@ def ui_overlap(project, tests, rules):
                   DEVELOP, project=project, measured=found[:20], expected=f"< {floor} px shared area")
 
 
+# A text drawn not to be read (a visually hidden label): neither measured nor unread.
+_NOT_DRAWN = object()
+
+
 def _text_backdrop(item, ui, frames, bars):
-    """The busy-backdrop problems of one measured text in its state frame: [] when its box is
-    drawn on one plain background, None when the frame cannot tell. A control is read only on
-    its glyph box (`glyph_box`, the bot's rectangle of its own text): its border box holds its
-    border, face and icon, which are not behind the text."""
+    """(problems, measured) for one text in its state frame: the busy-backdrop problems ([]
+    when its box is drawn on one plain background) and the frame's reading of it
+    (`_Frames.text_backdrop`). None when the frame cannot tell - unread, never passed on it -
+    and _NOT_DRAWN for a text clipped to a pixel. A control is read only on its glyph box
+    (`glyph_box`, the bot's rectangle of its own text): its border box holds its border,
+    face and icon, which are not behind the text."""
     box = item.get("glyph_box") or (None if item.get("tag") else item.get("box"))
-    if not box or len(box) < 4 or not item.get("color"):
-        return None
     font = float(item.get("font_px") or 0)
     # A text clipped to a pixel (a visually hidden label) is not drawn to be read.
-    if font > 0 and min(box[2], box[3]) < font / 2:
+    if box and len(box) >= 4 and font > 0 and min(box[2], box[3]) < font / 2:
+        return _NOT_DRAWN
+    if not box or len(box) < 4 or not item.get("color"):
         return None
     measured = frames.text_backdrop(ui.get("frame"), box, ui.get("viewport"), item["color"],
-                                    item.get("paint") or [], float(bars.get("backdrop_delta", 40)))
+                                    item.get("paint") or [], float(bars.get("backdrop_delta", 40)),
+                                    em=font or None,
+                                    region=float(bars.get("contrast_region", 0.2)))
     if measured is None:
         return None
     problems = []
     clutter_bar = float(bars.get("max_backdrop_clutter", 0.3))
     if measured["clutter"] > clutter_bar:
         problems.append(f"{measured['clutter']:.2f} of its box is other art (> {clutter_bar:g})")
+    # Its own colour behind it: a field of it (a white cloud behind white text), or a box
+    # that is all but its colour with nothing else to read it against.
+    field_bar = float(bars.get("max_ink_field", 0.05))
+    if measured.get("ink_field", 0) > field_bar or (
+            measured.get("worst_ratio") is None and not measured["ink_distinct"]):
+        problems.append(f"the frame behind it is its own colour ({measured.get('ink_field', 0):.2f} "
+                        f"of its box a solid field of it): it cannot be seen")
     run_bar = float(bars.get("max_ink_run_em", 2.0))
     decorated = any(d in str(item.get("decoration") or "")
                     for d in ("underline", "line-through", "overline"))
@@ -763,14 +884,14 @@ def _text_backdrop(item, ui, frames, bars):
         run_em = measured["ink_run_px"] / font
         if run_em > run_bar:
             problems.append(f"a {run_em:.1f} em line of its colour runs through it (> {run_bar:g} em)")
-    return problems
+    return problems, measured
 
 
 def ui_text(project, tests, rules, frames):
     bars = rules.get("ui") or {}
     min_font = bars.get("min_font_px", 12)
     low, small, undetermined, measured = [], [], 0, 0
-    busy, backdrops, unread = [], 0, 0
+    busy, backdrops, unread, older = [], 0, [], 0
     for state, ui in _ui_states(tests):
         # A control named only by its aria-label (an icon button) draws no text: its CSS
         # colour paints nothing and the frame behind its box is its own icon (val-3d,
@@ -786,45 +907,74 @@ def ui_text(project, tests, rules, frames):
                 small.append(f"{label} {font} px")
             # What the frame shows behind the text, whatever the DOM says its background is.
             # A text the frame cannot be read for is counted, never passed on it.
-            problems = _text_backdrop(item, ui, frames, bars)
-            if problems is None:
-                unread += 1
-            else:
+            read = _text_backdrop(item, ui, frames, bars)
+            reading = None
+            if read is None:
+                unread.append(label)
+                older += bool(item.get("tag") and "glyph_box" not in item)
+            elif read is not _NOT_DRAWN:
+                problems, reading = read
                 backdrops += 1
                 busy.extend(f"{label} on a busy backdrop: {p}" for p in problems)
             color = item.get("color")
-            background = item.get("background") or frames.background(
-                ui.get("frame"), item.get("box"), ui.get("viewport"))
-            if not color or not background:
+            background = item.get("background")
+            ratio = None
+            if color and background:
+                ratio = contrast_ratio(_over(color, background), background)
+            elif color and reading and reading.get("worst_ratio") is not None:
+                # The DOM cannot tell: the worst region of the frame behind the text, not
+                # its most common colour (a label half over a sun, a numeral bigger than
+                # the sky around it).
+                ratio = reading["worst_ratio"]
+            elif color:
+                background = frames.background(ui.get("frame"), item.get("box"), ui.get("viewport"))
+                if background:
+                    ratio = contrast_ratio(_over(color, background), background)
+            if ratio is None:
                 undetermined += 1
                 continue
             measured += 1
             large = font >= bars.get("large_px", 24) or (
                 font >= bars.get("large_bold_px", 18.66) and (item.get("font_weight") or 400) >= 700)
             need = bars.get("min_contrast_large", 3.0) if large else bars.get("min_contrast", 4.5)
-            ratio = contrast_ratio(_over(color, background), background)
             if ratio < need:
                 low.append(f"{label} {ratio}:1 < {need}:1")
     bad = sorted(set(low)) + sorted(set(busy)) + sorted(set(small))
     if not measured and not small and not busy:
         return _check("ui.text", True, "no DOM text was on screen to measure", DEVELOP,
                       project=project, required=False, status="WARNING",
-                      measured={"undetermined": undetermined})
-    return _check("ui.text", not bad,
-                  f"{len(bad)} text problem(s): {'; '.join(bad[:5])}" if bad else
-                  f"all {measured} measured texts meet contrast and size"
-                  + (f", {backdrops} on a plain backdrop in their frames" if backdrops else ""),
-                  DEVELOP, project=project,
+                      measured={"undetermined": undetermined,
+                                "backdrop": {"measured": backdrops, "unread": len(unread)}})
+    unread_names = sorted(set(unread))
+    if bad:
+        summary = f"{len(bad)} text problem(s): {'; '.join(bad[:5])}"
+    elif unread:
+        # Never a pass on what the frame could not show: at the release tier an unmeasured
+        # UI check is below the floor (floor.ui_layout counts only PASS).
+        summary = (f"{len(unread)} text(s) could not be read on their state frame "
+                   f"({'; '.join(unread_names[:3])}): unmeasured, never a pass"
+                   + ("; the records predate the bot that records a control's glyph box: "
+                      "play the build again" if older else ""))
+    else:
+        summary = (f"all {measured} measured texts meet contrast and size"
+                   + (f", {backdrops} on a plain backdrop in their frames" if backdrops else ""))
+    return _check("ui.text", not bad, summary, DEVELOP, project=project,
+                  status=None if bad or not unread else "WARNING",
+                  required=bool(bad) or not unread,
                   measured={"low_contrast": sorted(set(low))[:20], "too_small": sorted(set(small))[:20],
                             "busy_backdrop": sorted(set(busy))[:20],
                             "measured": measured, "undetermined": undetermined,
-                            "backdrop": {"measured": backdrops, "unread": unread}},
+                            "backdrop": {"measured": backdrops, "unread": len(unread),
+                                         "unread_texts": unread_names[:20]}},
                   expected={"contrast": f">= {bars.get('min_contrast', 4.5)}:1 (large text "
-                                        f">= {bars.get('min_contrast_large', 3.0)}:1)",
+                                        f">= {bars.get('min_contrast_large', 3.0)}:1), against the "
+                                        f"worst region behind it when the DOM cannot tell",
                             "font_px": f">= {min_font}",
                             "backdrop": f"<= {float(bars.get('max_backdrop_clutter', 0.3)):g} of a "
                                         f"text's box other art, no line of its colour longer "
-                                        f"than {float(bars.get('max_ink_run_em', 2.0)):g} em"})
+                                        f"than {float(bars.get('max_ink_run_em', 2.0)):g} em, no "
+                                        f"field of its colour behind it",
+                            "frame": "every text read on its state frame"})
 
 
 def ui_styled(project, tests):

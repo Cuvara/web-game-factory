@@ -95,6 +95,19 @@ ui:
   backdrop_delta: 40
   max_backdrop_clutter: 0.3
   max_ink_run_em: 2.0
+  # Where the DOM cannot tell what is behind a text (the canvas, art, an image), its contrast
+  # is read against the worst region of the frame behind it, not the box's commonest colour:
+  # the areas of the box that are neither the text's colour, its own paints, nor next to its
+  # ink, grouped by colour; every group holding at least `contrast_region` of them is a
+  # region (the largest one when none does). The 3D golden port's cyan SCORE label over its
+  # pink sun (2026-10-07) measures 2.27:1 there, while most of its box is night sky; a
+  # numeral bigger than the sky between its strokes is read against the sky, not itself.
+  contrast_region: 0.2
+  # A solid square of the text's own colour half an em wide inside its box is a field of that
+  # colour behind it (white text over a white cloud), never glyphs: no stroke is that thick.
+  # More than `max_ink_field` of the box in such squares, or a box with nothing but the
+  # text's colour to read it against, fails: the text cannot be seen.
+  max_ink_field: 0.05
   # The screens a player must have seen: the loss and the screen after a retry always, the
   # win when the design's experience contract has one.
   required_states: [lost, retry]

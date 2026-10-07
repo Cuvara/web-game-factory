@@ -18,6 +18,7 @@ names it in its summary. A thing the design does claim and the probe cannot show
 """
 
 import json
+import math
 import os
 import re
 import statistics
@@ -28,7 +29,8 @@ from wgf_assets.raster import RasterError, decode_png
 
 __all__ = ["judge", "frame_stats", "changed_fraction", "objective_seen", "PROBE_SCHEMA",
            "content_units", "persisted_metrics", "persisted_measures", "UNIT_REACHED",
-           "time_ramp", "thirds_of"]
+           "time_ramp", "thirds_of", "environment_health", "EVIDENCE", "RETRIED_RECORDS",
+           "ENVIRONMENT_DEGRADED", "SAMPLE_CUT"]
 
 PROBE_SCHEMA = os.path.join(paths.ARTIFACTS, "shared", "play-probe.schema.json")
 _WORD = re.compile(r"[a-z0-9]+")
@@ -136,6 +138,153 @@ def _skips(project, ids, reason):
     return [_check(cid, project, False, reason, skipped=True) for cid in ids]
 
 
+def _cut_unit(traverse, played, truncated=False):
+    """The traversed unit the traverse stopped inside, cut short, or None: the last one, when
+    the traverse stopped short (_CUT_SHORT, or a window the budget cut) and the bot neither saw
+    it completed nor entered a later unit. Whatever it had not shown yet by then was not seen."""
+    if not played or not (traverse.get("stopped") in _CUT_SHORT or truncated):
+        return None
+    last = played[-1]
+    left = any(isinstance(t, dict) and t.get("from") == last.get("index")
+               for t in traverse.get("transitions") or [])
+    return None if last.get("won") or left else last
+
+
+# -- the measurement's own validity: the host the bot played on ------------------------------
+
+# Why a check was not judged although its recording was made: every attempt of the recording
+# ran on a degraded host (visual-quality.yaml `environment`), or the unit a negative rests on
+# was cut short by the traverse (`sample`). Either is `measured.unmeasured`; never a pass.
+ENVIRONMENT_DEGRADED = "environment-degraded"
+SAMPLE_CUT = "sample-cut"
+
+# The recordings each timing-sensitive check is read from. These are the recordings the bot
+# makes again when the host was degraded while it made them (bot.spec.ts `finish`): a stall
+# turns a fast start slow, a winning oracle into a losing one, a traverse short, and a ramp
+# sample idle - a ten-second host stall is a ten-second stretch with no oracle input, which
+# depth.stall would otherwise read as play that stopped (visual-quality.yaml 1.2.0).
+EVIDENCE = {
+    "start.playable": ("first-session",),
+    "start.objective": ("first-session",),
+    "idle.grace": ("first-session",),
+    "win.reachable": ("win",),
+    "entities.visible": ("win",),
+    "entities.projectile": ("win",),
+    "lose.reachable": ("lose",),
+    "restart.works": ("lose",),
+    "content.units_reachable": ("traverse",),
+    "content.objective_shown": ("traverse",),
+    "content.win_lose_per_unit": ("traverse", "lose"),
+    "content.variety": ("traverse",),
+    "difficulty.axes_progress": ("traverse",),
+    # depth.ramp reads how soon bad play ended (the lose recording) and the ramp's samples.
+    "depth.ramp": ("ramp", "lose"),
+    "depth.stall": ("ramp",),
+}
+RETRIED_RECORDS = tuple(sorted({r for records in EVIDENCE.values() for r in records}))
+
+
+def environment_health(health, bars):
+    """(degraded, reasons) of one attempt's `health` (bot.spec.ts) against
+    visual-quality.yaml `environment`: None when the attempt recorded no health (a record made
+    before 1.1.0), so nothing is claimed about its host. Only what the game cannot cause is
+    read: the bot's own timer, the page's worker timer, the local server's wait. The page's
+    frame gaps are the game's own and never make a host degraded."""
+    if not isinstance(health, dict) or not bars:
+        return None, []
+    reasons, read = [], False
+    longest, share = bars.get("max_stall_ms"), bars.get("max_stalled_share")
+    for name in ("bot", "worker"):
+        beat = health.get(name)
+        if not isinstance(beat, dict):
+            continue
+        read = True
+        lag, stalled, elapsed = (beat.get("max_lag_ms"), beat.get("stalled_ms"),
+                                 beat.get("elapsed_ms"))
+        if isinstance(lag, (int, float)) and isinstance(longest, (int, float)) and lag >= longest:
+            reasons.append(f"the {name} timer stalled {round(lag)} ms at once (>= {longest})")
+        if (isinstance(stalled, (int, float)) and isinstance(elapsed, (int, float)) and elapsed > 0
+                and isinstance(share, (int, float)) and stalled / elapsed >= share):
+            reasons.append(f"the {name} timer lost {round(stalled)} ms of {round(elapsed)} ms to "
+                           f"stalls (>= {share})")
+    wait = (health.get("nav") or {}).get("server_wait_max_ms")
+    bar = bars.get("max_server_wait_ms")
+    if isinstance(wait, (int, float)) and isinstance(bar, (int, float)) and wait >= bar:
+        reasons.append(f"the local server took {round(wait)} ms to start answering a request "
+                       f"(>= {bar})")
+    # Nothing the game cannot cause was read: nothing is claimed about the host either way.
+    if not read and not isinstance(wait, (int, float)):
+        return None, []
+    return bool(reasons), reasons
+
+
+def _attempts(record, bars):
+    """Every attempt the bot made of a recording, re-judged here: [{attempt, degraded,
+    reasons}], the last being the one the record holds. Empty for a record without health."""
+    out = []
+    for entry in record.get("attempts") or []:
+        if isinstance(entry, dict):
+            degraded, reasons = environment_health(entry.get("health"), bars)
+            out.append({"attempt": entry.get("attempt"), "degraded": degraded, "reasons": reasons})
+    if not out and isinstance(record.get("health"), dict):
+        degraded, reasons = environment_health(record["health"], bars)
+        out.append({"attempt": 1, "degraded": degraded, "reasons": reasons})
+    return out
+
+
+def _environment(checks, records, bars, held):
+    """Each timing-sensitive check, as the host its recordings were made on allows: judged
+    as it is when the attempt it reads was healthy (with the degraded attempts before it in
+    `measured.environment`); unmeasured - `environment-degraded`, never a pass - when every
+    attempt of a recording it reads was degraded: BLOCKED where an unmeasured check is not
+    passed (`held`, quality-policy.yaml skipped_checks), and BLOCKED at any tier when what
+    it read was a failure or the check is required (re-measured on a quiet host, never a
+    WARNING the step passes over); a WARNING only for a non-required check that read no
+    failure. A record without health (made before visual-quality.yaml 1.1.0) is judged as
+    it always was."""
+    for check in checks:
+        names = [n for n in EVIDENCE.get(check["id"], ()) if isinstance(records.get(n), dict)]
+        if not names or check["status"] == "SKIPPED":
+            continue
+        seen, bad = {}, []
+        for name in names:
+            attempts = _attempts(records[name], bars)
+            if len(attempts) > 1 or any(a["degraded"] for a in attempts):
+                seen[name] = attempts
+            if attempts and attempts[-1]["degraded"]:
+                bad.append(name)
+        if not seen:
+            continue
+        measured = check.get("measured")
+        measured = (dict(measured) if isinstance(measured, dict)
+                    else {} if measured is None else {"value": measured})
+        measured["environment"] = seen
+        check["measured"] = measured
+        if not bad:
+            continue
+        why = (held or {}).get(check["id"])
+        reasons = sorted({r for n in bad for r in seen[n][-1]["reasons"]})
+        # A check that read a failure, or that is required, is BLOCKED at every tier: a
+        # degraded host never softens a failure into a warning the step passes over, and
+        # never passes a required check it did not measure. Only a check that is neither -
+        # a non-required reading that did not fail - is a WARNING. The host's degradation is
+        # read from timers the game shares a machine with, so a game that floods the machine
+        # itself can make its host look degraded; this is why the most that can buy it is a
+        # BLOCKED step a person re-measures on a quiet host, never a pass.
+        would_fail = check["status"] in ("FAIL", "BLOCKED") or bool(check.get("required"))
+        stop = bool(why) or would_fail
+        measured.update(unmeasured=ENVIRONMENT_DEGRADED, judged_as=check["status"])
+        check.update(
+            status="BLOCKED" if stop else "WARNING", required=stop,
+            summary=(f"not judged: the host was degraded on every attempt of the "
+                     f"{', '.join(bad)} recording ({len(seen[bad[0]])} attempt(s); "
+                     f"{'; '.join(reasons[:3])}); what it read: {check['summary']}"
+                     + (f"; {why}" if why else
+                        "; re-measure on a quiet host: a degraded host never turns a failure "
+                        "or a required check into a warning" if would_fail else "")))
+    return checks
+
+
 # -- the time ramp: which run promises one ---------------------------------------------------
 
 def time_ramp(design, qa, tiers=None):
@@ -180,6 +329,163 @@ def thirds_of(run):
     return thirds if len(thirds) == 3 else None
 
 
+def _ended_read(snapshot, entry):
+    """A traverse snapshot shows its unit ended: `won`, or progress risen to its target."""
+    if snapshot.get("state") == "won":
+        return True
+    progress = snapshot.get("progress") or {}
+    target, value = progress.get("target"), progress.get("value")
+    if not isinstance(target, (int, float)) or target <= 0 or not isinstance(value, (int, float)):
+        return False
+    return value >= target and (entry is None or entry < target)
+
+
+def transition_timing(transition, snapshots=()):
+    """How long the GAME took to move on from a finished unit, apart from the bot's latency.
+
+    The bot reads the game by polling, so the game moved on somewhere between the last read
+    that still showed the finished unit and the first read that showed the next one. What is
+    the game's: the time it sat ended before it offered an advance (`unoffered_ms` - the
+    unit's first ended read), and the time it stayed in the finished unit after the bot's
+    first input was delivered (`last_old_ms` - `acted_ms`), or after the end when the game
+    advances by itself. What is the bot's: its reaction and click (`offered_ms` ->
+    `acted_ms`), its own pause, and the round-trip of the read that saw the next unit.
+    `game_ms` is the lower bound the game is judged on - the game was observed not to have
+    moved on for that long; `game_max_ms` the upper bound (the whole interval less the bot's
+    reaction and click). The end is the first `won` read, else the first at the progress
+    target: a target met before the game declared `won` ended at `won`. A record from a bot
+    before these fields (only `since_end_ms`) is timed from its snapshots: from the unit's
+    first ended read to its last read, which still includes the bot's clicks in between;
+    without snapshots covering the transition, from `since_end_ms` as recorded.
+    """
+    at = transition.get("at_ms")
+    ended = transition.get("ended_ms")
+    if isinstance(ended, (int, float)) and isinstance(at, (int, float)):
+        unoffered, offered = transition.get("unoffered_ms"), transition.get("offered_ms")
+        acted, last = transition.get("acted_ms"), transition.get("last_old_ms")
+        offer_wait = max(0, unoffered - ended) if isinstance(unoffered, (int, float)) else 0
+        since = acted if isinstance(acted, (int, float)) else ended
+        move_wait = max(0, last - since) if isinstance(last, (int, float)) else 0
+        bot = (acted - offered if isinstance(acted, (int, float)) and isinstance(offered, (int, float))
+               else 0)
+        return {"game_ms": offer_wait + move_wait, "game_max_ms": max(0, at - ended - bot),
+                "basis": "recorder"}
+    frm = transition.get("from")
+    if isinstance(at, (int, float)) and snapshots:
+        reads = [r for r in snapshots if isinstance(r, dict) and isinstance(r.get("ms"), (int, float))]
+        if any(r["ms"] == at and r.get("unit_index") == transition.get("to") for r in reads):
+            # The finished unit's reads: the run of reads in it that ends at this transition.
+            stay = []
+            for read in reversed([r for r in reads if r["ms"] < at]):
+                if read.get("unit_index") != frm:
+                    break
+                stay.append(read)
+            stay.reverse()
+            if stay:
+                entry = (stay[0].get("progress") or {}).get("value")
+                won = transition.get("how") == "won"
+                first = next((r["ms"] for r in stay
+                              if (r.get("state") == "won" if won else _ended_read(r, entry))), None)
+                if first is not None:
+                    return {"game_ms": max(0, stay[-1]["ms"] - first), "game_max_ms": at - first,
+                            "basis": "snapshots"}
+    raw = transition.get("since_end_ms")
+    return {"game_ms": raw, "game_max_ms": raw, "basis": "since_end_ms"}
+
+
+RAMP_BARS = ("samples", "noise_z", "min_inputs_per_third", "stall_max_s")
+
+
+def ramp_verdict(samples, bars):
+    """The time ramp judged on the bot's samples (design-depth.yaml `playability.ramp`, 1.4.0):
+    a dict with `verdict` - `pass`, `fail` or `unmeasured` - its `reason`, and what it was
+    read from (`per_sample`, `pooled`, `band`, `stalled`, `clean`, `planned`).
+
+    Each sample is one fresh run the oracle played (bot.spec.ts `playSample`): its
+    `oracle_inputs_per_third` and its `longest_idle_ms` - the longest stretch in play with no
+    oracle input and no progress. A sample whose idle stretch is over `stall_max_s` stalled:
+    that is depth.stall's finding, and its counts, which the stall deflates, are left out.
+    The clean samples' thirds are pooled. With n = first + last, a difference within
+    `noise_z` x sqrt(n) is noise (under an unchanging rate the split is Binomial(n, 1/2)):
+
+      fail        one clean sample's own fall beyond its own band (its first third holding at
+                  least `min_inputs_per_third`), or the pooled fall beyond the pooled band -
+                  decided on whatever was sampled, however few
+      unmeasured  no clean sample, the pooled first thirds under `min_inputs_per_third`, fewer
+                  clean samples than `samples`, or a pooled difference inside the band
+      pass        `samples` clean samples whose pooled last thirds exceed the first by more
+                  than the band
+
+    A rate that does not change never passes: its difference stays inside the band. Never
+    defaulted in code: a bar the file does not state leaves the ramp unmeasured.
+    """
+    missing = [k for k in RAMP_BARS if not isinstance(bars.get(k), (int, float))]
+    rows = []
+    for number, sample in enumerate(samples or [], start=1):
+        if not isinstance(sample, dict):
+            continue
+        idle = sample.get("longest_idle_ms")
+        rows.append({"sample": number, "duration_ms": sample.get("duration_ms"),
+                     "thirds": thirds_of(sample), "longest_idle_ms": idle,
+                     "idle_at_ms": sample.get("idle_at_ms"), "ended": sample.get("ended")})
+    out = {"per_sample": rows, "planned": bars.get("samples")}
+    if missing:
+        return dict(out, verdict="unmeasured",
+                    reason="design-depth.yaml playability.ramp states no "
+                           + ", ".join(missing))
+    z, minimum, planned = bars["noise_z"], bars["min_inputs_per_third"], int(bars["samples"])
+    stall_ms = bars["stall_max_s"] * 1000
+    for row in rows:
+        row["stalled"] = (isinstance(row["longest_idle_ms"], (int, float))
+                          and row["longest_idle_ms"] > stall_ms)
+    stalled = [r["sample"] for r in rows if r["stalled"]]
+    clean = [r for r in rows if not r["stalled"] and r["thirds"]]
+    pooled = [sum(r["thirds"][i] for r in clean) for i in range(3)]
+    first, last = pooled[0], pooled[2]
+    band = z * math.sqrt(first + last)
+    out.update(stalled=stalled, clean=len(clean), pooled=pooled, band=round(band, 2))
+    falls = [r for r in clean if r["thirds"][0] >= minimum
+             and r["thirds"][0] - r["thirds"][2] > z * math.sqrt(r["thirds"][0] + r["thirds"][2])]
+    left_out = (f" ({len(stalled)} stalled sample(s) left out: depth.stall)" if stalled else "")
+    if falls:
+        row = falls[0]
+        return dict(out, verdict="fail",
+                    reason=(f"sample {row['sample']}: the oracle acted {row['thirds'][2]} times "
+                            f"in the last third and {row['thirds'][0]} in the first "
+                            f"{row['thirds']}, a fall beyond the noise band of "
+                            f"{z * math.sqrt(row['thirds'][0] + row['thirds'][2]):.1f}: the "
+                            "game asks for less as it goes"))
+    if not clean:
+        return dict(out, verdict="unmeasured",
+                    reason=("every sample stalled" + left_out if stalled
+                            else "no sample was played to read the input rate on"))
+    if first < minimum:
+        return dict(out, verdict="unmeasured",
+                    reason=(f"the first thirds of {len(clean)} sample(s) hold {first} oracle "
+                            f"input(s), fewer than the {minimum} a rate is compared on"
+                            + left_out))
+    if first - last > band:
+        return dict(out, verdict="fail",
+                    reason=(f"over {len(clean)} sample(s) the oracle acted {last} times in the "
+                            f"last thirds and {first} in the first {pooled}, a fall beyond the "
+                            f"noise band of {band:.1f}: the game asks for less as it goes"
+                            + left_out))
+    if len(clean) < planned:
+        return dict(out, verdict="unmeasured",
+                    reason=(f"{len(clean)} clean sample(s) of the {planned} the ramp is judged "
+                            f"on" + left_out))
+    if last - first > band:
+        return dict(out, verdict="pass",
+                    reason=(f"over {len(clean)} samples the oracle acted {last} times in the "
+                            f"last thirds and {first} in the first {pooled}, a rise beyond the "
+                            f"noise band of {band:.1f}"))
+    return dict(out, verdict="unmeasured",
+                reason=(f"over {len(clean)} samples the last thirds hold {last} oracle inputs "
+                        f"and the first {first} {pooled}: a difference inside the noise band "
+                        f"of {band:.1f} ({z} x sqrt {first + last}), so neither a ramp nor a "
+                        "fall is shown" + left_out))
+
+
 def _content_checks(ctx):
     """content.units_reachable, content.objective_shown, content.win_lose_per_unit."""
     project, units, mode = ctx["project"], ctx["units"], ctx["mode"]
@@ -202,22 +508,35 @@ def _content_checks(ctx):
     order = list(range(1, want + 1))
     grace = bars.get("transition_grace_ms")
     in_order = reached[:want] == order
-    unearned = [f"{t.get('from')}->{t.get('to')} ({t.get('how')}, "
-                f"{t.get('since_end_ms')} ms after it ended)" for t in transitions
-                if (t.get("to") or 0) <= want
-                and (t.get("how") not in ("won", "progress")
-                     or t.get("since_end_ms") is None or t["since_end_ms"] > grace)]
+    # Earned: the unit left was finished (`won` or its progress target) before the next was
+    # entered, and the GAME moved on within the grace - the bot's own reaction, click and
+    # polling are not the game's (transition_timing).
+    snapshots = traverse.get("snapshots") or []
+    timed = [{**t, **transition_timing(t, snapshots)}
+             for t in transitions]
+    unearned = []
+    for t in timed:
+        if (t.get("to") or 0) > want:
+            continue
+        if t.get("how") not in ("won", "progress"):
+            unearned.append(f"{t.get('from')}->{t.get('to')} (the unit left was {t.get('how')}, "
+                            "not won or at its progress target)")
+        elif t.get("game_ms") is None or t["game_ms"] > grace:
+            unearned.append(f"{t.get('from')}->{t.get('to')} ({t.get('how')}, the game moved on "
+                            f"{t.get('game_ms')} ms after it ended, {t.get('basis')}; raw "
+                            f"{t.get('since_end_ms')} ms with the bot's latency)")
     out = [_check("content.units_reachable", project, in_order and not unearned,
                   (f"units {order} were played in the design's order, each entered within "
-                   f"{grace} ms of the previous one ending" if in_order and not unearned else
+                   f"{grace} ms of the game finishing the previous one" if in_order and not unearned else
                    f"units reached: {reached or 'none'}; the design's first {want} are {order}"
                    if not in_order else
                    "a unit was entered without the previous one being completed: "
                    + "; ".join(unearned[:3])),
-                  measured={"units_reached": reached, "transitions": transitions[:12],
+                  measured={"units_reached": reached, "transitions": timed[:12],
                             "stopped": traverse.get("stopped")},
-                  expected=f"units {order} in order, each within {grace} ms of the previous "
-                           f"one reaching `won` or its progress target",
+                  expected=f"units {order} in order, each entered after the previous one reached "
+                           f"`won` or its progress target, the game moving on within {grace} ms "
+                           f"(game_ms; the bot's reaction and click excluded)",
                   frames=[f"unit-{i}-1s" for i in order], truncated=ctx["truncated"].get("traverse"))]
 
     bar = bars.get("objective_min_share")
@@ -567,22 +886,58 @@ def _variety_check(ctx):
             return [_check("content.variety", project, False,
                            f"only {len(played)} unit(s) were played, so no two consecutive units "
                            "could be compared", measured={"units_played": len(played)})]
-        changed, pairs = 0, 0
+        # The unit in play when the traverse stopped short (its window, its unit count) was
+        # seen only up to the cut, however far the bot played on in it (bot.spec.ts, `sample`
+        # in visual-quality.yaml): what it showed counts, what it did not show yet decides
+        # nothing - a negative there would be decided by where the cut fell.
+        cut = _cut_unit(traverse, played, ctx["truncated"].get("traverse"))
+        # Unless the bot played on in it for the whole of `variety_extend_s` and it still
+        # showed too few new kinds: the cut no longer decides anything, the extension's full
+        # length does, and the unit is judged as seen whole - short of kinds is a failure,
+        # and its pair counts. Only an extension itself cut short (the page went, the unit
+        # was lost, a record made before the bot timed it) leaves the unit unmeasured.
+        whole = None
+        extend_s = (ctx.get("sample") or {}).get("variety_extend_s")
+        extended = traverse.get("extended_ms")
+        if (cut is not None and isinstance(extend_s, (int, float)) and extend_s > 0
+                and isinstance(extended, (int, float)) and extended >= extend_s * 1000):
+            whole = {"unit": cut.get("index"), "extended_ms": extended,
+                     "variety_extend_ms": int(extend_s * 1000)}
+            cut = None
+        changed, pairs, open_pairs = 0, 0, []
         for first, second in zip(played, played[1:]):
-            pairs += 1
             a, b = _designed(built, first) or {}, _designed(built, second) or {}
             if (set(first.get("kinds") or []) != set(second.get("kinds") or [])
                     or set(a.get("mechanics") or []) != set(b.get("mechanics") or [])):
                 changed += 1
+            elif second is cut:
+                open_pairs.append(f"{first.get('index')}->{second.get('index')}")
+                continue
+            pairs += 1
         share = _share(changed, pairs)
         bar = bars.get("min_changed_pairs_share")
         want_new = int(genre.get("min_new_kinds_per_unit") or 0)
-        new_short, seen = [], set(played[0].get("kinds") or [])
+        new_short, open_units, seen = [], [], set(played[0].get("kinds") or [])
         for unit in played[1:]:
             fresh = set(unit.get("kinds") or []) - seen
             if len(fresh) < want_new:
-                new_short.append(f"unit {unit.get('index')}: {len(fresh)} new kind(s)")
+                if unit is cut:
+                    open_units.append(f"unit {unit.get('index')}: {len(fresh)} new kind(s) in "
+                                      f"the {unit.get('duration_ms')} ms seen before the "
+                                      f"traverse stopped ({traverse.get('stopped')})")
+                else:
+                    new_short.append(
+                        f"unit {unit.get('index')}: {len(fresh)} new kind(s)"
+                        + (f" (played on {whole['extended_ms']} ms past the traverse's stop, "
+                           f"the whole {whole['variety_extend_ms']} ms extension)"
+                           if whole and unit.get("index") == whole["unit"] else ""))
             seen |= set(unit.get("kinds") or [])
+        # Decided only on as many units as the traverse is held to (content.units_reachable's
+        # N): a cut unit that already showed its new kinds is one of them, one that did not
+        # yet is not.
+        want_units = min(len(units), int((ctx["qa"].get("content") or {})
+                                         .get("min_units_traversed") or 1))
+        decided = len(played) - (1 if open_units else 0)
         if not kinds_reported and ctx.get("kinds_required"):
             return [_check("content.variety", project, False, omitted, required=True,
                            measured={"changed_pairs_share": share, "kinds_reported": [],
@@ -593,9 +948,35 @@ def _variety_check(ctx):
                            truncated=ctx["truncated"].get("traverse"))]
         measurable = bool(kinds_reported) or want_new == 0
         problems = ([f"only {share} of consecutive units change their kinds or mechanics"]
-                    if share < bar else [])
+                    if pairs and share < bar else [])
         if want_new and measurable:
             problems += new_short
+        cut_note = {}
+        if open_units or open_pairs:
+            cut_note = {"unmeasured_units": open_units, "unmeasured_pairs": open_pairs,
+                        "stopped": traverse.get("stopped"),
+                        **({"extended_ms": traverse["extended_ms"]}
+                           if traverse.get("extended_ms") else {})}
+        if whole:
+            cut_note["seen_whole_after_extension"] = whole
+        if (not problems and measurable and want_new >= 1 and open_units
+                and decided < want_units):
+            # Nothing the traverse saw whole falls short, and what it cut short is too much
+            # of what it is held to: unmeasured, never a pass - and never a failure read off
+            # the cut. Held like any unmeasured check (quality-policy.yaml skipped_checks).
+            held = ((ctx.get("unmeasured_held") or {}).get("content.variety")
+                    or ctx.get("kinds_required"))
+            return [_check(
+                "content.variety", project, False,
+                f"not judged: {'; '.join(open_units)} - the traverse saw {decided} unit(s) "
+                f"whole of the {want_units} it is held to, and a new kind that had not arrived "
+                "by the cut decides nothing" + (f"; {held}" if held else ""),
+                required=bool(held), blocked=bool(held),
+                measured={"changed_pairs_share": share, "kinds_reported": sorted(kinds_reported),
+                          "new_kinds_short": new_short, "unmeasured": SAMPLE_CUT, **cut_note},
+                expected=f">= {bar} of consecutive unit pairs changed, and >= {want_new} new "
+                         f"entity kind(s) per unit, over at least {want_units} units",
+                truncated=ctx["truncated"].get("traverse"))]
         # What a probe can show of variety is entity kinds. A family that asks for a new kind
         # in each unit (qa.min_new_kinds_per_unit >= 1) is held to that; one that does not
         # varies in what kinds cannot carry - the layout, the rules, the objective - and its
@@ -613,12 +994,14 @@ def _variety_check(ctx):
                         if not measurable and not problems else
                         "; ".join(problems[:4]) + (f"; {reason}" if reason else "") if problems else
                         f"{share} of consecutive units change their kinds or mechanics, and each "
-                        f"introduces at least {want_new} new kind(s)"),
+                        f"introduces at least {want_new} new kind(s)"
+                        + (f" (not judged, cut short by the traverse: {'; '.join(open_units)})"
+                           if open_units else "")),
                        required=required,
                        measured={"changed_pairs_share": share,
                                  "kinds_reported": sorted(kinds_reported),
                                  "new_kinds_short": new_short,
-                                 **({"reason": reason} if reason else {})},
+                                 **({"reason": reason} if reason else {}), **cut_note},
                        expected=f">= {bar} of consecutive unit pairs changed, and >= {want_new} "
                                 "new entity kind(s) per unit",
                        truncated=ctx["truncated"].get("traverse"))]
@@ -812,63 +1195,66 @@ def _depth_checks(ctx):
         problems.append(f"bad play ended after {ended} ms, over {cap} ms "
                         f"({bars.get('bad_play_max_multiplier')} x a {run_s} s run)")
     # The input rate across a run's thirds is a time ramp: the longer one run lasts, the more
-    # it asks. It is read only on a run of the play that promises one (time_ramp): the session
-    # when the play is endless, else a run of the endless mode the bot entered through the
-    # probe. A unit-authored design without such a mode ramps between units - which
-    # difficulty.axes_progress judges - so its rate is recorded, not held: the longest unit
-    # it played is not a time ramp.
+    # it asks. It is read only on the play that promises one (time_ramp): the session's play
+    # when it is endless, else the endless mode the bot entered through the probe - and on
+    # `samples` fresh runs of it, pooled (ramp_verdict), never on one. A unit-authored design
+    # without such a mode ramps between units - which difficulty.axes_progress judges - so
+    # its longest session run's rate is recorded, not held: one unit is not a time ramp.
     ramp = time_ramp(ctx["design"], qa, ctx.get("ramp_tiers"))
     timed = ramp is not None
     minimum = bars.get("min_inputs_per_third")
-    unmeasured = None
+    unmeasured = verdict = None
     on_mode = bool(ramp and ramp["run"] == "mode")
-    record = (records.get("ramp") if on_mode else records.get("session")) or {}
-    runs = [r for r in record.get("runs") or [] if isinstance(r, dict)]
+    record = records.get("ramp") or {}
+    samples = [s for s in record.get("samples") or [] if isinstance(s, dict)]
     if ramp is None:
         measured["reason"] = ("no time ramp: the genre family's `qa` states no endless_window_s, "
                               "or the design is unit-authored and includes no endless mode "
                               "(design-depth.yaml playability.ramp.mode_features)")
-        played_on = "longest run"
-    elif not on_mode:
-        measured["ramp_run"] = "session"
-        played_on = "longest session run"
+        runs = [r for r in (records.get("session") or {}).get("runs") or []
+                if isinstance(r, dict)]
+        longest = max(runs, key=lambda r: r.get("duration_ms") or 0) if runs else None
+        thirds = thirds_of(longest)
+        if thirds:
+            measured["oracle_inputs_per_third"] = thirds
+        played_on = "samples"
     else:
-        measured.update(ramp_run="mode", mode=ramp["mode"], feature=ramp["feature"],
-                        mode_entered=bool(record.get("entered")))
-        played_on = f"longest {ramp['mode']}-mode run"
-        if not record.get("entered"):
+        measured["ramp_run"] = ramp["run"]
+        played_on = (f"{ramp['mode']}-mode samples" if on_mode else "samples of the endless play")
+        if on_mode:
+            measured.update(mode=ramp["mode"], feature=ramp["feature"],
+                            mode_entered=bool(record.get("entered")))
+        if on_mode and not record.get("entered"):
             unmeasured = (f"the design includes the {ramp['mode']} mode ({ramp['feature']}), "
                           "whose run the time ramp is read on, and the bot could not enter it: "
                           + (record.get("reason") or "no ramp record")
                           + " (the probe's optional play.mode.enter, docs/template-contract.md)")
-            runs = []
-    longest = max(runs, key=lambda r: r.get("duration_ms") or 0) if runs else None
-    thirds = thirds_of(longest) or []
-    extended = record.get("extended_ms")
-    if thirds:
-        measured["oracle_inputs_per_third"] = thirds
-        measured["longest_run_ms"] = longest.get("duration_ms")
-    if extended:
-        measured["extended_ms"] = extended
-    if timed and unmeasured is None:
-        if not thirds:
-            unmeasured = "no run was played to read the input rate on"
-        elif not isinstance(minimum, (int, float)) or thirds[0] < minimum:
-            # Too few inputs to tell a ramp from noise: never a pass, whatever the last third.
-            unmeasured = (f"the first third of the {played_on} holds {thirds[0]} oracle "
-                          f"input(s), fewer than the {minimum} a rate is compared on"
-                          + (f", after the bot played on {extended} ms for more"
-                             if extended else ""))
-        elif thirds[2] < thirds[0]:
-            problems.append(f"the oracle acted {thirds[2]} times in the last third of its "
-                            f"{played_on} and {thirds[0]} in the first: the game asks for less "
-                            "as it goes")
+        else:
+            verdict = ramp_verdict(samples, bars)
+            measured.update(samples=verdict["per_sample"], planned_samples=verdict["planned"])
+            for key, name in (("pooled", "pooled_inputs_per_third"), ("band", "noise_band"),
+                              ("stalled", "stalled_samples")):
+                if key in verdict:
+                    measured[name] = verdict[key]
+            if record.get("reason") and len(samples) < (bars.get("samples") or 0):
+                measured["sampling_stopped"] = record["reason"]
+            if record.get("extended_ms"):
+                measured["extended_ms"] = record["extended_ms"]
+            if verdict["verdict"] == "fail":
+                problems.append(verdict["reason"])
+            elif verdict["verdict"] == "unmeasured":
+                unmeasured = verdict["reason"] + (
+                    f" (sampling stopped: {record['reason']})"
+                    if measured.get("sampling_stopped") else "")
     if unmeasured:
         measured["unmeasured"] = unmeasured
     expected = (f"a bad run inside {cap} ms"
-                + (f", and on the {played_on}, with at least {minimum} oracle inputs in its "
-                   "first third, the last third's input rate at least the first third's (one "
-                   f"relief dip of {bars.get('relief_dip_s')} s allowed)" if timed else ""))
+                + (f", and over {bars.get('samples')} fresh runs of the "
+                   f"{ramp['mode'] + ' mode' if on_mode else 'endless play'}, pooled (at least {minimum} oracle inputs in the first thirds), the "
+                   f"last thirds' inputs above the first thirds' by more than "
+                   f"{bars.get('noise_z')} x sqrt(first + last), and no run's own fall beyond "
+                   "its band; a difference inside the band is extended, then unmeasured"
+                   if timed else ""))
     if problems:
         ok, required = False, timed
         summary = "; ".join(problems[:3])
@@ -882,18 +1268,57 @@ def _depth_checks(ctx):
     else:
         ok, required = True, timed
         summary = (f"bad play ended in {ended} ms"
-                   + (f", and the oracle's input rate held or rose across its {played_on} "
-                      f"{thirds}" if timed else
-                      f"; the oracle's input rate per third of its longest run was {thirds}"
-                      if thirds else ""))
+                   + (f", and the oracle's input rate rose across the {played_on}: "
+                      f"{verdict['reason']}" if timed else
+                      f"; the oracle's input rate per third of its longest run was "
+                      f"{measured['oracle_inputs_per_third']}"
+                      if measured.get("oracle_inputs_per_third") else ""))
     out.append(_check("depth.ramp", project, ok, summary,
                       required=required, measured=measured, expected=expected,
-                      truncated=ctx["truncated"].get("ramp" if on_mode else "session")))
+                      truncated=ctx["truncated"].get("ramp")))
+    if timed and samples:
+        out.append(_stall_check(project, samples, bars, played_on,
+                                ctx["truncated"].get("ramp")))
     return out
 
 
+def _stall_check(project, samples, bars, played_on, truncated):
+    """depth.stall: no ramp sample went longer than `stall_max_s` in play with no oracle input
+    and no progress. Its own finding, so a game that stops being playable - a ball trapped
+    where no input can free it - is classified as that, routed to gameplay, instead of
+    deflating the ramp's last third and reading as a game that asks for less."""
+    bar = bars.get("stall_max_s")
+    idle = [(n, s.get("longest_idle_ms"), s.get("idle_at_ms"))
+            for n, s in enumerate(samples, start=1)]
+    known = [(n, ms, at) for n, ms, at in idle if isinstance(ms, (int, float))]
+    measured = {"longest_idle_ms": [ms for _n, ms, _at in idle], "stall_max_s": bar}
+    expected = (f"in every ramp sample, no stretch in play over {bar} s with no oracle input and "
+                "no change in the goal metric, the unit's progress or the unit reached")
+    if not isinstance(bar, (int, float)) or not known:
+        measured["unmeasured"] = ("design-depth.yaml playability.ramp states no stall_max_s"
+                                  if not isinstance(bar, (int, float)) else
+                                  "the samples record no idle stretch")
+        return _check("depth.stall", project, False,
+                      f"no stall was measured: {measured['unmeasured']}", required=False,
+                      measured=measured, expected=expected, truncated=truncated)
+    over = [(n, ms, at) for n, ms, at in known if ms > bar * 1000]
+    worst = max(known, key=lambda k: k[1])
+    if over:
+        summary = "; ".join(
+            f"ramp sample {n} ({played_on}) went {ms / 1000:.1f} s in play with no oracle input "
+            f"and no progress (from {at} ms into it), over the {bar} s bar: play stopped"
+            for n, ms, at in over[:3])
+    else:
+        summary = (f"the longest stretch with no oracle input and no progress in any of "
+                   f"{len(known)} sample(s) was {worst[1] / 1000:.1f} s (sample {worst[0]}), "
+                   f"inside the {bar} s bar")
+    return _check("depth.stall", project, not over, summary, required=True, measured=measured,
+                  expected=expected, truncated=truncated)
+
+
 def judge(records, frames_dir, design, rules, experience_rules, project, qa=None,
-          kinds_required=None, scope_tiers=None, ramp_required=None, ramp_tiers=None):
+          kinds_required=None, scope_tiers=None, ramp_required=None, ramp_tiers=None,
+          unmeasured_held=None):
     """Checks (dicts per playability-report.schema.json) for one viewport.
 
     `qa` is the merged bars (wgflib.genre_models.qa_of): core/reference/design-depth.yaml's
@@ -913,6 +1338,10 @@ def judge(records, frames_dir, design, rules, experience_rules, project, qa=None
     `ramp_required` is the same for a time ramp the bot could not measure (depth.ramp);
     `ramp_tiers` are the design tiers this build carries, which decide whether an included
     endless mode is owed by it (time_ramp).
+    `unmeasured_held` maps a check id to why it is not passed when it measured nothing (the
+    same rule, per check): a check whose recordings were all made on a degraded host
+    (`environment-degraded`), or content.variety on a unit the traverse cut short
+    (`sample-cut`), is then BLOCKED rather than a WARNING. Never a pass either way.
     """
     spec = ((design or {}).get("build_spec") or {})
     ex = spec.get("experience") or {}
@@ -934,7 +1363,8 @@ def judge(records, frames_dir, design, rules, experience_rules, project, qa=None
            "family": genre_models.for_design(design) or {},
            "truncated": rules.get("_truncated") or {},
            "kinds_required": kinds_required, "ramp_required": ramp_required,
-           "ramp_tiers": ramp_tiers}
+           "ramp_tiers": ramp_tiers, "unmeasured_held": unmeasured_held or {},
+           "sample": rules.get("sample") or {}}
     checks = []
     add = checks.append
 
@@ -1222,4 +1652,5 @@ def judge(records, frames_dir, design, rules, experience_rules, project, qa=None
     add(_check("page.errors", project, not errors,
                "no page errors" if not errors else f"{len(errors)} page error(s): {errors[0]}",
                measured=errors[:5]))
-    return checks
+    # Last: whether the host could measure what the timing-sensitive checks read.
+    return _environment(checks, records, rules.get("environment") or {}, unmeasured_held)

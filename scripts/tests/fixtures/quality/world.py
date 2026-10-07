@@ -494,6 +494,13 @@ class World:
                           "windows": windows,
                           "runs": [{"duration_ms": int(target_s * 1000),
                                     "oracle_inputs_per_third": [10, 12, 14]}]}
+        # The time ramp's samples (read only where the design promises one): fresh runs of
+        # a game that asks more as a run goes on, none of them stalled.
+        out["ramp"] = {"applies": True, "entered": True, "planned_samples": 3,
+                       "samples": [{"duration_ms": 30000, "inputs": 43,
+                                    "oracle_inputs_per_third": [10, 14, 19],
+                                    "longest_idle_ms": 1500, "idle_at_ms": 4000,
+                                    "ended": "window"} for _ in range(3)]}
         if project == "desktop":
             data = {u["id"]: u for u in self.built_units(build)}
             visits = []

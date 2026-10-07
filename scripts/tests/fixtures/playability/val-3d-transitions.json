@@ -1,0 +1,770 @@
+{
+ "source": "val-3d new-game-20261005-002923-597b5e, playability visits 6-1 (playability-report v12, game 3f394e2) and 7-1 (v13, game 1c6b099): each traverse's transitions and the snapshots from the last read before the finished unit's first ended read through the read that saw the next unit",
+ "visits": {
+  "v12-desktop": {
+   "transitions": [
+    {
+     "from": 1,
+     "to": 2,
+     "at_ms": 12217,
+     "how": "won",
+     "since_end_ms": 586
+    },
+    {
+     "from": 2,
+     "to": 3,
+     "at_ms": 23373,
+     "how": "won",
+     "since_end_ms": 1039
+    },
+    {
+     "from": 3,
+     "to": 4,
+     "at_ms": 50160,
+     "how": "won",
+     "since_end_ms": 737
+    }
+   ],
+   "stopped": "max units",
+   "snapshots": [
+    {
+     "ms": 12,
+     "unit_index": 1,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 10900,
+     "unit_index": 1,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 11631,
+     "unit_index": 1,
+     "state": "won",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 1,
+      "target": 1
+     }
+    },
+    {
+     "ms": 12217,
+     "unit_index": 2,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 21720,
+     "unit_index": 2,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 22334,
+     "unit_index": 2,
+     "state": "won",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 1,
+      "target": 1
+     }
+    },
+    {
+     "ms": 23373,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 0,
+      "target": 6
+     }
+    },
+    {
+     "ms": 44821,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 5,
+      "target": 6
+     }
+    },
+    {
+     "ms": 45425,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 45814,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 46412,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 46871,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 47533,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 48030,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 48524,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 49111,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 49423,
+     "unit_index": 3,
+     "state": "won",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 50160,
+     "unit_index": 4,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 0,
+      "target": 8
+     }
+    }
+   ]
+  },
+  "v12-mobile": {
+   "transitions": [
+    {
+     "from": 1,
+     "to": 2,
+     "at_ms": 11103,
+     "how": "won",
+     "since_end_ms": 357
+    },
+    {
+     "from": 2,
+     "to": 3,
+     "at_ms": 19173,
+     "how": "won",
+     "since_end_ms": 369
+    },
+    {
+     "from": 3,
+     "to": 4,
+     "at_ms": 52606,
+     "how": "won",
+     "since_end_ms": 476
+    }
+   ],
+   "stopped": "max units",
+   "snapshots": [
+    {
+     "ms": 121,
+     "unit_index": 1,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 10262,
+     "unit_index": 1,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 10746,
+     "unit_index": 1,
+     "state": "won",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 1,
+      "target": 1
+     }
+    },
+    {
+     "ms": 11103,
+     "unit_index": 2,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 18281,
+     "unit_index": 2,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 18804,
+     "unit_index": 2,
+     "state": "won",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 1,
+      "target": 1
+     }
+    },
+    {
+     "ms": 19173,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 0,
+      "target": 6
+     }
+    },
+    {
+     "ms": 46676,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 5,
+      "target": 6
+     }
+    },
+    {
+     "ms": 47111,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 47421,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 47691,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 48083,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 48422,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 48757,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 49132,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 49472,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 49833,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 50215,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 50539,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 50874,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 51215,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 51533,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 51845,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 52130,
+     "unit_index": 3,
+     "state": "won",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 52606,
+     "unit_index": 4,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 0,
+      "target": 8
+     }
+    }
+   ]
+  },
+  "v13-desktop": {
+   "transitions": [
+    {
+     "from": 1,
+     "to": 2,
+     "at_ms": 20703,
+     "how": "won",
+     "since_end_ms": 1687
+    },
+    {
+     "from": 2,
+     "to": 3,
+     "at_ms": 35470,
+     "how": "won",
+     "since_end_ms": 905
+    }
+   ],
+   "stopped": "window",
+   "snapshots": [
+    {
+     "ms": 2556,
+     "unit_index": 1,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 6749,
+     "unit_index": 1,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 19016,
+     "unit_index": 1,
+     "state": "won",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 1,
+      "target": 1
+     }
+    },
+    {
+     "ms": 20703,
+     "unit_index": 2,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 33534,
+     "unit_index": 2,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 34565,
+     "unit_index": 2,
+     "state": "won",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 1,
+      "target": 1
+     }
+    },
+    {
+     "ms": 35470,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 0,
+      "target": 6
+     }
+    }
+   ]
+  },
+  "v13-mobile": {
+   "transitions": [
+    {
+     "from": 1,
+     "to": 2,
+     "at_ms": 13027,
+     "how": "won",
+     "since_end_ms": 511
+    },
+    {
+     "from": 2,
+     "to": 3,
+     "at_ms": 20756,
+     "how": "won",
+     "since_end_ms": 493
+    },
+    {
+     "from": 3,
+     "to": 4,
+     "at_ms": 37061,
+     "how": "won",
+     "since_end_ms": 457
+    }
+   ],
+   "stopped": "max units",
+   "snapshots": [
+    {
+     "ms": 13,
+     "unit_index": 1,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 12008,
+     "unit_index": 1,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 12516,
+     "unit_index": 1,
+     "state": "won",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 1,
+      "target": 1
+     }
+    },
+    {
+     "ms": 13027,
+     "unit_index": 2,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 19730,
+     "unit_index": 2,
+     "state": "playing",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 0,
+      "target": 1
+     }
+    },
+    {
+     "ms": 20263,
+     "unit_index": 2,
+     "state": "won",
+     "progress": {
+      "metric": "goal_reached",
+      "value": 1,
+      "target": 1
+     }
+    },
+    {
+     "ms": 20756,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 0,
+      "target": 6
+     }
+    },
+    {
+     "ms": 34014,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 5,
+      "target": 6
+     }
+    },
+    {
+     "ms": 34386,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 34794,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 35199,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 35624,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 35952,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 36274,
+     "unit_index": 3,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 36604,
+     "unit_index": 3,
+     "state": "won",
+     "progress": {
+      "metric": "gems",
+      "value": 6,
+      "target": 6
+     }
+    },
+    {
+     "ms": 37061,
+     "unit_index": 4,
+     "state": "playing",
+     "progress": {
+      "metric": "gems",
+      "value": 0,
+      "target": 8
+     }
+    }
+   ]
+  }
+ }
+}

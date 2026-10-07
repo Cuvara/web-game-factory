@@ -865,5 +865,144 @@ class SpecialistLoopLimits(unittest.TestCase):
         self.assertEqual(state.steps["develop"].route_visits["triage.environment-artist"], 4)
 
 
+class SplitByRoute(unittest.TestCase):
+    """A check whose failing items have different owners is one finding per route
+    (specialist-routing.yaml `split`): production-quality's assets.runtime fails one asset at
+    `exists` (the assets step's) and another at `visible` (the game's code). Before the
+    split the whole check routed `assets`, an assets pass dropped it as handled, and the
+    develop part reached no specialist (the live 2D run, PQ v1-v3, triage v10-v12)."""
+
+    ASSETS = "production-quality-report:assets.runtime/assets"
+    DEVELOP = "production-quality-report:assets.runtime/develop"
+
+    @staticmethod
+    def runtime(commit, failures, verdict=None):
+        """A production-quality-report whose assets.runtime fails `failures` {asset: link},
+        routed as checks.py routes it: `assets` when any fails at `exists`."""
+        measured = {a: {"exists": link != "exists", "role": "player", "failed_at": link}
+                    for a, link in failures.items()}
+        measured["paddle"] = {"exists": True, "role": "player", "failed_at": None}
+        failing = bool(failures)
+        status = verdict or ("FAIL" if failing else "PASS")
+        return {"title_id": "demo", "commit": commit, "verdict": status,
+                "provenance": {"artifact_id": f"production-quality-report-{commit[:4]}"},
+                "checks": [{"id": "assets.runtime", "status": status, "required": True,
+                            "summary": "; ".join(f"{a}: fails at {f}"
+                                                 for a, f in sorted(failures.items())),
+                            "route": "assets" if "exists" in failures.values() else "develop",
+                            "measured": measured, "expected": "exists -> ... -> visible",
+                            "assets": sorted(failures)},
+                           {"id": "ui.targets", "status": "PASS", "required": True,
+                            "summary": "ok", "route": "develop"}]}
+
+    def test_a_mixed_check_is_one_finding_per_route_with_only_its_assets(self):
+        report = self.runtime("a" * 40, {"ball": "visible", "brick": "exists",
+                                         "capsule": "rendered"})
+        found = {f["id"]: f for f in normalize("production-quality-report", report, ROUTING)}
+        self.assertEqual(sorted(found), [self.ASSETS, self.DEVELOP])
+        assets, develop = found[self.ASSETS], found[self.DEVELOP]
+        self.assertEqual((assets["route"], assets["assets"]), ("assets", ["brick"]))
+        self.assertEqual((develop["route"], develop["assets"]), ("develop", ["ball", "capsule"]))
+        self.assertEqual(develop["owner"], "artist-2d")
+        # The check id and the failed_at semantics are the report's, unchanged.
+        for finding in (assets, develop):
+            self.assertEqual(finding["source"]["check"], "assets.runtime")
+        self.assertEqual(develop["measured"]["ball"]["failed_at"], "visible")
+        self.assertEqual(sorted(develop["measured"]), ["ball", "capsule"])
+        self.assertIn("ball: fails at visible", develop["summary"])
+        self.assertNotIn("brick", develop["summary"])
+
+    def test_single_route_and_unsplit_checks_keep_their_ids(self):
+        only_develop = self.runtime("a" * 40, {"ball": "visible"})
+        found = normalize("production-quality-report", only_develop, ROUTING)
+        # A split check is always suffixed: the same id on every measurement of its items.
+        self.assertEqual([f["id"] for f in found], [self.DEVELOP])
+        report = {"verdict": "FAIL", "checks": [
+            {"id": "assets.present", "status": "FAIL", "required": True,
+             "summary": "placeholders: player", "route": "assets", "assets": ["player"],
+             "measured": {"missing": [], "placeholder": ["player"]}},
+            {"id": "assets.loaded", "status": "FAIL", "required": True,
+             "summary": "never fetched: player", "route": "develop", "assets": ["player"]}]}
+        found = {f["id"]: f for f in normalize("production-quality-report", report, ROUTING)}
+        self.assertEqual(sorted(found), ["production-quality-report:assets.loaded",
+                                         "production-quality-report:assets.present"])
+        self.assertEqual(found["production-quality-report:assets.present"]["route"], "assets")
+        # A failed split check with nothing per item to split stays one finding.
+        empty = {"verdict": "FAIL", "checks": [
+            {"id": "assets.runtime", "status": "FAIL", "required": True, "route": "develop",
+             "summary": "no required asset in the design or manifest", "measured": {}}]}
+        self.assertEqual([f["id"] for f in normalize("production-quality-report", empty,
+                                                     ROUTING)],
+                         ["production-quality-report:assets.runtime"])
+
+    def test_the_rule_agrees_with_the_checks_whole_route(self):
+        """checks.py routes assets.runtime `assets` iff an asset fails at `exists`; the
+        split rule must give `assets` to exactly those assets, `develop` to the rest."""
+        from wgf_production.checks import CHAIN
+        rule = ROUTING.producer("production-quality-report")["split"]["assets.runtime"]
+        routes = {link: rule["routes"].get(link, rule["default"]) for link in CHAIN}
+        self.assertEqual({link for link, r in routes.items() if r == "assets"}, {"exists"})
+        self.assertEqual({r for link, r in routes.items() if link != "exists"}, {"develop"})
+
+    def test_an_assets_pass_leaves_the_develop_part_routed_to_its_owner(self):
+        a = "a" * 40
+        docs = {"game-design": DESIGN_2D,
+                "prototype-report": {"title_id": "demo", "iteration": 1,
+                                     "provenance": {"artifact_id": "prototype-report-demo-1"},
+                                     "build_ref": {"commit_sha": a}},
+                "production-quality-report": self.runtime(a, {"ball": "visible",
+                                                              "brick": "exists",
+                                                              "capsule": "rendered"}),
+                "asset-manifest": {"provenance": {"artifact_id": "asset-manifest-demo-2"}}}
+        seqs = {"prototype-report": 5, "production-quality-report": 8, "asset-manifest": 9}
+        result = run_triage(docs, seqs=seqs, entered="assets.success")
+        content = result.artifacts[0].content
+        self.assertEqual(result.route, "artist-2d")
+        self.assertEqual(content["selected"]["findings"], [self.DEVELOP])
+        records = {r["id"]: r for r in content["lifecycle"]}
+        # The assets part is in the ledger as made again by the assets pass.
+        self.assertEqual(records[self.ASSETS]["status"], "implemented")
+        self.assertEqual(records[self.ASSETS]["fix"]["specialist"], "assets")
+        self.assertEqual(records[self.DEVELOP]["status"], "assigned")
+
+    def test_a_split_finding_closes_only_when_its_own_items_measure_clean(self):
+        a, b, c = "a" * 40, "b" * 40, "c" * 40
+        proto = lambda commit, n, spec=None: dict(  # noqa: E731
+            {"title_id": "demo", "iteration": n,
+             "provenance": {"artifact_id": f"prototype-report-demo-{n}"},
+             "build_ref": {"commit_sha": commit}}, **({"specialist": spec} if spec else {}))
+        docs = {"game-design": DESIGN_2D, "prototype-report": proto(a, 1),
+                "production-quality-report": self.runtime(a, {"ball": "visible",
+                                                              "brick": "exists"}),
+                "asset-manifest": {"provenance": {"artifact_id": "asset-manifest-demo-2"}}}
+        seqs = {"prototype-report": 5, "production-quality-report": 8, "asset-manifest": 9}
+        first = run_triage(docs, seqs=seqs, entered="assets.success")
+        # The 2D artist's visit builds a change for the develop part.
+        docs.update({"triage-report": first.artifacts[0].content,
+                     "prototype-report": proto(b, 2, {"role": "artist-2d",
+                                                      "findings": [self.DEVELOP]})})
+        seqs.update({"triage-report": 10, "prototype-report": 11})
+        # Re-measured on build B: brick now exists; ball is still not visible.
+        docs["production-quality-report"] = self.runtime(b, {"ball": "visible"})
+        seqs["production-quality-report"] = 13
+        second = run_triage(docs, seqs=seqs, entered="production-quality.develop")
+        records = {r["id"]: r for r in second.artifacts[0].content["lifecycle"]}
+        self.assertIn(records[self.ASSETS]["status"], ("verified", "closed"))
+        self.assertEqual(records[self.DEVELOP]["status"], "assigned")  # reopened, routed
+        self.assertEqual(records[self.DEVELOP]["verification"]["verdict"], "still-failing")
+        self.assertEqual(second.route, "artist-2d")
+        # The next visit fixes it, and the gate measures build C clean: verified.
+        docs.update({"triage-report": second.artifacts[0].content,
+                     "prototype-report": proto(c, 3, {"role": "artist-2d",
+                                                      "findings": [self.DEVELOP]})})
+        seqs.update({"triage-report": 14, "prototype-report": 15})
+        docs["production-quality-report"] = self.runtime(c, {})
+        seqs["production-quality-report"] = 17
+        third = run_triage(docs, seqs=seqs, entered="visual-qa.develop")
+        records = {r["id"]: r for r in third.artifacts[0].content["lifecycle"]}
+        self.assertIn(records[self.DEVELOP]["status"], ("verified", "closed"))
+        self.assertEqual(records[self.DEVELOP]["verification"]["verdict"], "passed")
+
+
 if __name__ == "__main__":
     unittest.main()

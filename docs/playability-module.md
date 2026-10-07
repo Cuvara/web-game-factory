@@ -79,7 +79,7 @@ The bot reads the game's play probe (`core/artifacts/shared/play-probe.schema.js
 The bot acts **only** through real input at the listed positions, never through the
 probe. The developer brief embeds the schema, so a developer knows how the build is judged.
 
-### The bot's ten tests, per viewport
+### The bot's tests, per viewport
 
 - **First session:** opens the game. If the title screen lists a begin input (`play`,
   `start`, ...), the bot presses it. Then it makes no input at all for the idle window,
@@ -166,6 +166,23 @@ probe. The developer brief embeds the schema, so a developer knows how the build
   The step also keeps the played commit's `public/content/units.json` beside the records
   (`<records_dir>/content/units.json`), so that step measures exactly the build that was
   played.
+- **Naive** (desktop, `core/reference/play-realism.yaml` `naive`): the oracle plays
+  perfectly; a first-time player does not. The bot plays the opening unit from a first session
+  and the middle and last of the authored units the build carries through the unit link, each
+  under every policy for its input kind, for `naive.run_s` (25 s), retrying a loss at once:
+  `steady` holds and repeats the first move the oracle names ("hold forward"); `jitter` follows
+  the oracle `reaction_ms` late, a pointer up to `jitter_px` off, and with probability
+  `error_rate` another listed move (never a utility, retry or begin control). Seeded, and each
+  run starts as a first session (local and session storage cleared). `naive.json` records, per
+  run, how long it played, whether and when it cleared the unit, its losses, the probe's
+  `setbacks`, `content.par_s`, and a sample every 250 ms of `track` and `view`. Each unit and
+  policy is played once, or `clear_rate.runs` times when the step compares clear rates with an
+  accepted build (`with: accepted_play`). Like the timing-sensitive recordings it is made
+  again on a degraded host. Its window is outside the time budget, like the showcase's; the
+  process timeout grows by it.
+- **Risk** (only with `with: risk: true`; `play-realism.yaml` `risk`): sampled units played
+  under the game's own oracle policies `safe` and `greedy` (the probe's optional
+  `play.policy`), `risk.json` recording what each attempt earned and how it ended.
 - **The adopted floor** - when the design records the existing-content floor `unmeasured`
   (the adopted checkout ships no content data file) and this visit plays exactly its commit,
   the traverse plays up to `brief-commitments.yaml existing_content.probe.max_units` units
@@ -262,8 +279,13 @@ reads these from `records_dir`:
   window blur, the platform mute every portal requires - for the production check
   `audio.plays`;
 - the win test's per-frame entity samples are
-  `[id, role, visible, x, y, w, h, asset, render]` (the last two `null` when the probe
-  does not report them);
+  `[id, role, visible, x, y, w, h, asset, render, collider]` (`asset` and `render` `null`
+  when the probe does not report them; `collider` `[shape, x, y, w, h]` or `null`), and
+  `sampled.playfields` the probe's `playfield` per frame when it reports one;
+- `console`: every `console.error` line with where it was logged from and whether that is
+  the page's own origin, and how many `webglcontextlost` events a canvas fired (an init
+  script the bot adds to every page) - for `runtime.console_errors` and
+  `runtime.webgl_context`;
 - `ui`: the DOM UI measured on each screen state seen - `title` (before the begin input),
   `playing`, `paused`, `won` / `lost`, and `retry` (play after the retry) - each with its
   frame `frames/state-<name>.png`. Per state: every visible interactive element
@@ -349,6 +371,60 @@ The visual bars were calibrated on frames this step captured: the unreadable run
 and the template's two example games. The calibration and its margin are recorded in
 `visual-quality.yaml` itself. `lit_share` is a floor against a dark screen, not a measure
 of readability; `entities.*` judges what must be seen.
+
+### Play realism
+
+`scripts/wgf_playability/realism.py`, every bar in
+[`core/reference/play-realism.yaml`](../core/reference/play-realism.yaml) with its
+calibration. The checks above judge what is drawn and play with a perfect oracle; validation
+builds of 2026-10 passed them with a ball that turned at a ceiling nothing drew (2D 68a12b7),
+a course held forward through in about a third of its par and hairpins narrower than the
+track (3D 1c6b099), a collider grown until the steel rows' one-cell gaps could hardly be
+threaded (2D 894b4b8), and nothing that looked at the console (factory-learning-ledger L11,
+L13, L14, M1, M5). These read the play probe's optional realism fields
+([template-contract.md](template-contract.md#the-play-probe-realism-fields-and-the-layout-file)),
+the bot's records and the content data file of the commit played.
+
+**How hard they hold.** A measured FAIL is required - the step FAILs and routes the build to
+develop - at the tiers `play-realism.yaml enforce.fail_required_at` names (`release`,
+`premium`); below them it is a WARNING the report lists (a greybox, an MVP run, the golden
+runs). A check whose data the build does not report is **unmeasured** - never a pass,
+`measured.unmeasured: not-reported` with the reason - and is held as
+`core/reference/quality-policy.yaml skipped_checks` says: not passed at the release tier (a
+required FAIL naming the probe field to add), a WARNING below it. A recording the host
+degraded is re-made, then judged as `analysis._environment` judges every timing-sensitive
+check (a degraded host never softens a failure).
+
+| Check | Passes when |
+|---|---|
+| `physics.undrawn_collision` | (2D builds; a 3D build's screen positions are projections, so it is not judged there) every turn or stop of a projectile in the win test's per-frame samples happens at a drawn surface: the face of another visible entity on the side the mover was moving toward (in that frame or the one before - a brick the hit breaks), an edge of the probe's `playfield`, something the mover is inside, or a surface moving with it (a ball carried on a paddle), within `tolerance_px` plus the frame's travel, measured from the mover's `collider` when it reports one, else its drawn box. Without a `playfield`, a turn at nothing drawn fails only when a drawn entity still lies ahead of the mover; otherwise it is unmeasured |
+| `physics.collider_size` | every entity that reports a `collider` is drawn `min_drawn_to_collider`-`max_drawn_to_collider` x its body on each axis (median over the frames). No collider reported: unmeasured |
+| `naive.setbacks` | in the OPENING unit, the probe's `setbacks` rise at most `setbacks.max_per_min` a minute of jittered play (a FAIL needs `min_count`). Without `setbacks`, losses are a lower bound: a FAIL above the bar, unmeasured below it. Every unit's rate is reported |
+| `naive.drift` | the time-weighted mean of `track` `\|offset\| / half_width` under jittered play in the opening unit is at most `drift.max_mean_share`. No `track`: unmeasured on the dimensions `drift.dimensions` lists (3D), not judged elsewhere |
+| `naive.alignment` | the 90th percentile angle between `view.camera_forward` and `view.control_forward` is at most `alignment.max_p90_deg`. No `view`: unmeasured on `alignment.dimensions` (3D) |
+| `naive.pace` | every naive run that cleared a unit took at least `min_clear_to_par` x its par (`content.par_s`, else the design unit's `parameters.par_s` / `time_target`); a run still short of the end after that share of par is a lower bound that passes |
+| `naive.unit_duration` | the fastest naive clear of every unit took at least the tier's `min_unit_s`; a unit no policy cleared lasted at least its run (a lower bound) |
+| `naive.clear_rate` | with the step's `with: accepted_play` (the accepted build's naive record, or `{units: {id: {policy: {won, n}}}}`), no unit and player model clears at least `clear_rate.min_drop` less often with a one-sided two-proportion z of at least `min_z` (both builds `min_runs` runs or more; the bot then plays each unit `clear_rate.runs` times). Without an accepted build the rates are reported as unmeasured - never a pass, never a blocker |
+| `level.geometry` | (project `build`, once per build) no bend of a declared PATH layout is tighter than `min_radius_to_width` x the width, and none under `tight_radius_to_width` has an open inner edge |
+| `level.unit_length` | every path layout is at least `min_length_to_width` x its width long and is crossed at top speed (the layout's `top_speed`, else `play_geometry.top_speed`) in at least `min_traverse_to_par` x its par and the tier's `min_traverse_s`; no top speed stated: unmeasured |
+| `level.clearance` | in every GRID layout, each row holding a solid cell (`play_geometry.grid.solid`) leaves a passage at least `clearance.min_widest_to_body` x the moving body's diameter (`play_geometry.body`); a build whose units lay out what reads as a grid but declares no `play_geometry.grid` is unmeasured and not held (the grid is a guess from the data's shape); a declared grid missing its cell or body is held |
+| `runtime.console_errors` | no `console.error` from the game's own origin in any recording (lines matching `runtime.ignore` - the sandbox refusing a network request - are counted apart, never against the build) |
+| `runtime.webgl_context` | no `webglcontextlost` on any canvas in any recording |
+
+Geometry is read from the content contract's one declared place
+(`core/reference/content-sufficiency.yaml` `layout`: a unit's `layout` entry in
+`public/content/units.json`, and its entry in the layout source), the same files the
+content-sufficiency step compares units on.
+
+The **risk test** (`with: risk: true`, `play-realism.yaml risk`) plays sampled units under the
+game's own oracle policies `safe` and `greedy` through the probe's optional `play.policy` and
+writes `risk.json`; it judges nothing here (the level-design step reads it).
+
+Triage routes the checks by `core/reference/specialist-routing.yaml`: `physics.`, `runtime.`
+and `naive.alignment` to gameplay, the rest of `naive.` to difficulty, `level.` to the level
+designer. What is calibrated on which build, and what is only reasoned (`collider_size`,
+`alignment`, and `drift` on regressed builds), is stated beside each bar; the replay tests are
+`scripts/tests/test_play_realism.py` over `scripts/tests/fixtures/real/play-realism/`.
 
 ## What it does not claim
 

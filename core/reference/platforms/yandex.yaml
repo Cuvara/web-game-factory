@@ -108,8 +108,7 @@ review:
       text (1.6.1.8; named among the common causes on concepts/moderation).
     - LoadingAPI.ready() missing, called on a timer or while a loader still shows, or later
       than 90 s (1.19.2, https://yandex.com/dev/games/doc/en/requirements/1/19).
-    - SDK missing or initialised with errors, or not as "Connection and usage" describes
-      (1.1, 1.19.1).
+    - SDK not embedded or embedded incorrectly (moderation page; "Connection and usage").
     - Gameplay that contradicts the declared genre or categories (2.3).
     - An ad unit whose orientation does not match the game's (4.3).
     - An update that swaps in an entirely different game instead of keeping the core concept
@@ -186,7 +185,10 @@ assertions:
       REQ 1.19.2: LoadingAPI.ready() within 90 s (https://yandex.com/dev/games/doc/en/requirements/1/19,
       read 2026-10-07). The template measures time_to_interactive_s right after the adapter's
       signalReady() - the ready() call - on the served bundle; that it fires when play is
-      really possible, not on a timer, is a moderator's judgement.
+      really possible, not on a timer, is a moderator's judgement. Best case only: the runtime
+      facts come from one local run of the build target's bundle with external requests refused,
+      reused for every platform, so for a title whose build target is not yandex the figure is
+      not the Yandex adapter's ready(), and never portal network conditions.
   - id: yandex_https_only
     check: { left: package.insecure_requests, op: eq, right: 0 }
     severity: blocking

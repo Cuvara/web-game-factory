@@ -79,7 +79,7 @@ ads:
     the game must run normally without them; the same for an ad blocker
     (https://docs.crazygames.com/requirements/ads/, /sdk/video-ads/). Re-read 2026-10-07:
     the portal's settings.muteAudio is required for HTML5 and switches game audio off while
-    true (/sdk/game/). Rewarded buttons carry a video icon, skip and close buttons are styled
+    true (/sdk/game/). Rewarded buttons make clear an ad will be watched (e.g. a video icon), skip and close buttons are styled
     like the continue button, a non-ad alternative exists, and rewards are never offered on
     every death. Banners only on useful screens open at least 5 s on average, at most 2 per
     screen, never during gameplay, never covering UI (/requirements/ads/).
@@ -109,7 +109,7 @@ review:
     - Absolute paths in the bundle, or an initial download over 50 MB.
     - Game audio playing while the portal's settings.muteAudio is true (/sdk/game/).
     - Banners during gameplay, on short-lived screens, more than 2 per screen, or covering
-      UI; rewarded buttons without a video icon (/requirements/ads/).
+      UI; rewarded buttons that do not make clear an ad will be watched (/requirements/ads/).
     - Full Launch without account-linked progress where progress applies
       (/requirements/account-integration/).
     - Unoriginal content or inappropriate themes (/requirements/intro/).

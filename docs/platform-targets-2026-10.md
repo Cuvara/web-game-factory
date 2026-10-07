@@ -229,7 +229,7 @@ recorded below and nowhere else; UNKNOWN stays null.
 | publication yandex@2.2.0 | `fields.horizontal_video`, `vertical_video`, `unknowns` | `required: null`, "may be required; unconfirmed"; icon/cover/hero/screenshot sizes unknown | required; vertical optional; the sizes are stated | **2.3.0**: `horizontal_video.required: true`, `vertical_video.required: false`, maskable icon and hero optional; sizes noted against the platform block that checks them; the two unknowns removed; restrictions: content moderation, the update flow (the live version stays), REQ 1.24, the Cloud saves switch (1.11) |
 | crazygames@1.2.0 | `capabilities.iap`, scoring hint | false, "there is no IAP here" | in-game purchases exist: invite-only, Xsolla, signed-in users; Automatic Progress Save then not allowed | **1.3.0**: stays `false`, commented as a Factory choice (an invitation is not something a design can assume); the hint corrected (/sdk/in-game-purchases/) |
 | crazygames@1.2.0 | `capabilities.cloud_saves` | true, no note | Full Launch **requires** account-linked progress where progress applies: Data module, User module, or Automatic Progress Save | **1.3.0**: commented; a common rejection (/requirements/account-integration/, /other/aps/) |
-| crazygames@1.2.0 | `ads.notes`, `common_rejections` | interval and mute rules | `settings.muteAudio` required for HTML5; banners only on useful screens open >= 5 s, at most 2, never in play, never over UI; rewarded buttons with a video icon | **1.3.0**: notes and rejections (/sdk/game/, /requirements/ads/) |
+| crazygames@1.2.0 | `ads.notes`, `common_rejections` | interval and mute rules | `settings.muteAudio` required for HTML5; banners only on useful screens open >= 5 s, at most 2, never in play, never over UI; rewarded buttons make clear an ad will be watched (e.g. a video icon) | **1.3.0**: notes and rejections (/sdk/game/, /requirements/ads/) |
 | crazygames@1.2.0 | `requirements` | size, files, initial download (notes) | 20 s to play with external files; a 4 GB Chromebook; Chrome and Edge; safe area in the CrazyGames App; sitelock; DPR-1 legibility 800x450-1920x1080; 144/165 Hz physics; gameplay within 1 click | **1.3.0**: comments - no schema field (gap C-4) |
 | crazygames@1.2.0 | `store_listing.video.min_seconds` | null | "15-20 seconds maximum" - ambiguous | stays null; the reading in notes |
 | publication crazygames@2.3.0 | `constraints.upload_max_mb`, `unknowns`, `restrictions` | 250 "unsourced"; no update rule | 250 MB sourced; updates resubmitted, live "within the same working day" | **2.4.0**: sourced; restrictions: the update rule, account-linked progress, invite-only purchases (/requirements/technical/, /faq/) |
@@ -257,7 +257,10 @@ recorded below and nowhere else; UNKNOWN stays null.
   `package.perf.time_to_interactive_s` - the template measures it right after the adapter's
   `signalReady()` (`src/main.ts`, template-owned) - so verify's `policy.assertions:yandex`
   fails a build that reaches ready() after 90 s on the served bundle. Whether ready() fires
-  when play is really possible rather than on a timer stays a moderator's judgement.
+  when play is really possible rather than on a timer stays a moderator's judgement. Best case
+  only: the facts come from one local run of the build target's bundle, external requests
+  refused, reused for every platform - not the Yandex adapter's ready() when the build target
+  is another platform, and never portal network conditions.
 
 **Gaps, documented, not enforced** (the schema or the measured facts cannot express them):
 

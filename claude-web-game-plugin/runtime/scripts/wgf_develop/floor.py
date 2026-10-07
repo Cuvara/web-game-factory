@@ -23,6 +23,14 @@ commit to it:
                                     the probe and the tree ships no content data file), no
                                     visit may delete a shipped source file of a content module.
     shipped_units(checkout, design) the unit ids the checkout's content data lists
+    replacement(design, git, phase) why a visit may not start a developer: the design drops
+                                    units the adopted checkout ships while it lists units the
+                                    checkout does not - a rewrite of the shipped game, not an
+                                    improvement - or None
+
+Observed (2026-10-07, the 3D run): a person moved the adopted checkout to human-accepted
+courses; the design still listed the run's earlier replacement courses, and greybox started a
+paid developer session to rewrite the accepted courses into them. The visit is refused first.
 """
 
 import json
@@ -30,7 +38,8 @@ import os
 
 from wgf_design import commitments, existing
 
-__all__ = ["adopted", "effective", "problems", "shipped_units", "SHIPPED_ROOT"]
+__all__ = ["adopted", "effective", "problems", "shipped_units", "replacement",
+           "SHIPPED_ROOT"]
 
 # The shipped files a commit may not lose: what the game serves.
 SHIPPED_ROOT = "public"
@@ -122,3 +131,55 @@ def shipped_units(checkout, design):
         return list(floor.get("unit_ids") or [])
     return [str(u.get("id")) for u in (data or {}).get("units") or []
             if isinstance(u, dict) and u.get("id")]
+
+
+def _head_unit_ids(git, floor):
+    """The unit ids of the content data file at the checkout's HEAD commit, or None."""
+    path = (floor.get("source") or {}).get("path") or "public/content/units.json"
+    head = git.head()
+    text = git.file_at(head, path) if head else None
+    if text is None:
+        return None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return [str(u.get("id")) for u in data.get("units") or []
+            if isinstance(u, dict) and u.get("id")]
+
+
+def replacement(design, git, phase=None):
+    """A reason (str) the visit is refused before any developer starts, or None. The design
+    of an adopted run drops units the checkout ships - its floor's, and in greybox the ones
+    the content data lists at HEAD - while it lists units the checkout does not ship: briefed,
+    a developer would replace the shipped game with another one."""
+    floor = (design or {}).get("existing_content")
+    if not isinstance(floor, dict):
+        return None
+    planned = [str(u.get("id")) for u in commitments.planned_units(design) if u.get("id")]
+    shipped = list(existing.shipped_ids(floor) and floor.get("unit_ids") or [])
+    at = str((floor.get("source") or {}).get("commit") or "")[:12]
+    where = f"the floor at {at}"
+    # What the checkout holds: HEAD's content data in greybox (the design's floor may be
+    # stale - counted before a person moved the checkout), else the floor.
+    holds = shipped
+    if phase == "greybox" and git is not None:
+        head = _head_unit_ids(git, floor)
+        if head:
+            holds = head
+            shipped = list(dict.fromkeys(shipped + head))
+            where = f"the floor at {at} and HEAD's content data"
+    if not shipped:
+        return None
+    dropped = [u for u in shipped if u not in set(planned)]
+    added = [u for u in planned if u not in set(holds)]
+    if not dropped or not added:
+        return None
+    return (f"the game-design replaces the adopted game's content instead of extending it: it "
+            f"drops {len(dropped)} unit(s) the checkout ships ({where}: {_listed(dropped)}) "
+            f"and lists {len(added)} the checkout does not ({_listed(added)}). No developer is "
+            f"started on a rewrite of the shipped game. Run the design again on this checkout "
+            f"(`wgf resume <run> --from design`): it measures what the checkout ships now and "
+            f"starts from those units.")

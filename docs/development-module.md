@@ -119,6 +119,24 @@ from 32 units to 12. An adopted game is improved, never rebuilt:
   word naming levels, worlds, courses, content: `core/reference/brief-commitments.yaml`
   `existing_content.unmeasured`). Once measured the floor stays: a build that gains a
   content data file is held to the earlier count, never re-floored on its own file.
+- **Every design visit measures the floor again, at what the checkout ships.** Observed
+  (2026-10-07, the 3D run): a person moved the adopted checkout to human-accepted courses
+  and resumed from strategy; the re-entered design kept the floor its earlier visit had
+  counted at an intermediate commit of the run's own build, kept that build's units, and
+  greybox briefed a developer to rewrite the accepted courses. The floor is counted at HEAD
+  less the commits the run itself made on top of it (their `Wgf-<Step>-Key` trailers name
+  the run; `factory.init.accepted_baseline: <ref>`, when set, names the commit instead): the
+  run's own build never moves it, a person's commit does, and a moved floor records the one
+  it replaces (`existing_content.supersedes`). When the checkout ships units the run's last
+  design does not plan, the visit is an adoption: the agent author starts from the shipped
+  units (the request's `adoption`, the units in full in `<visit>-<attempt>.adopted-units.json`)
+  and extends them, the last design's gaps are not repaired, and a design missing a shipped
+  unit id breaches `existing_content_floor_kept`.
+- **A replacement is refused before a developer starts.** A design that drops units the
+  checkout ships (its floor's, and in greybox the ones HEAD's content data lists) while it
+  lists units the checkout does not is BLOCKED (`floor.replacement`), naming both: run the
+  design again. The brief of a design that keeps them names the shipped units to EXTEND,
+  each under its own id.
 
 ## The brief
 

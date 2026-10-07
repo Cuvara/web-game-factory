@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/shared/existing-content.schema.json",
   "title": "Existing-content floor",
-  "description": "What a game repository the run adopts (factory.init.adopt_existing) already ships: the floor the design may not plan below and the build may not drop below (core/reference/brief-commitments.yaml `existing_content`).\n\nCounted one of two ways, named by `source.method`. `content-data` (the default when absent): the content data file at the adopted checkout's HEAD commit, by the design step. `probe`: the checkout's HEAD ships no content data file, so the shipped build itself is played - the first greybox-playability visit of the adopted run plays HEAD before any developer change - and the units, groups, climax units and element kinds its play probe reaches are counted. Until that measurement exists the floor is `status: unmeasured`: it holds no number, the shipped source files of content modules may not be deleted, and the quality gate holds the content dimension below its floor (an unmeasured blocker, never a pass). A null floor never means no floor.\n\nA floor, once counted, is the run's: a build that gains a content data file later is held to the earlier count, never reset to its own file. A quantity no method could count is absent and holds nothing.",
+  "description": "What a game repository the run adopts (factory.init.adopt_existing) already ships: the floor the design may not plan below and the build may not drop below (core/reference/brief-commitments.yaml `existing_content`).\n\nCounted one of two ways, named by `source.method`. `content-data` (the default when absent): the content data file at the adopted checkout's HEAD commit, by the design step. `probe`: the checkout's HEAD ships no content data file, so the shipped build itself is played - the first greybox-playability visit of the adopted run plays HEAD before any developer change - and the units, groups, climax units and element kinds its play probe reaches are counted. Until that measurement exists the floor is `status: unmeasured`: it holds no number, the shipped source files of content modules may not be deleted, and the quality gate holds the content dimension below its floor (an unmeasured blocker, never a pass). A null floor never means no floor.\n\nA floor, once counted, is the run's: a build that gains a content data file later is held to the earlier count, never reset to its own file. The commit counted is HEAD less the commits the run itself made on top of it, measured again by every design visit: while it is the same commit the floor stands; when a person moved the checkout, the floor is the content it ships now and records the one it replaces in `supersedes`. A quantity no method could count is absent and holds nothing.",
   "$defs": {
     "floor": {
       "type": "object",
@@ -19,7 +19,9 @@
             "checkout": { "type": "string", "description": "Where the adopted checkout was, when it was read." },
             "located_by": { "type": "string", "description": "Which rule of the checkout precedence named it (docs/checkouts.md)." },
             "report": { "type": "string", "description": "`probe`: the artifact id of the playability-report whose records the floor was counted on." },
-            "step": { "type": "string", "description": "`probe`: the workflow step that played the build." }
+            "step": { "type": "string", "description": "`probe`: the workflow step that played the build." },
+            "head": { "type": "string", "pattern": "^[0-9a-f]{7,64}$", "description": "The checkout's HEAD when it was read, recorded when the floor was counted at another commit (`baseline` says why). Added in game-design 1.15.0." },
+            "baseline": { "type": "string", "description": "How `commit` was chosen when it is not HEAD: HEAD less the commits the run itself made on top of it (their `Wgf-<Step>-Key` trailers name the run), or factory.init.accepted_baseline. Added in game-design 1.15.0." }
           },
           "additionalProperties": false
         },
@@ -30,7 +32,22 @@
         "climax_units": { "type": "integer", "minimum": 0 },
         "elements": { "type": "integer", "minimum": 0 },
         "unit_ids": { "type": "array", "items": { "type": "string" }, "description": "The units shipped (`probe`: reached), so a regression names the ones a build dropped." },
-        "measured_by": { "type": "object", "additionalProperties": { "type": "string" }, "description": "How each quantity was counted (a field of the units, a unit id prefix, a climax term in their text, the probe's own unit count)." }
+        "measured_by": { "type": "object", "additionalProperties": { "type": "string" }, "description": "How each quantity was counted (a field of the units, a unit id prefix, a climax term in their text, the probe's own unit count)." },
+        "supersedes": {
+          "type": "object",
+          "description": "The floor an earlier design of the run recorded, replaced because the checkout ships other content now: a person moved the adopted checkout (a re-entered design measures the floor again on every visit). Added in game-design 1.15.0.",
+          "required": ["unit_ids"],
+          "properties": {
+            "commit": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" },
+            "status": { "enum": ["measured", "unmeasured"] },
+            "unit_ids": { "type": "array", "items": { "type": "string" } },
+            "units": { "type": "integer", "minimum": 0 },
+            "groups": { "type": "integer", "minimum": 0 },
+            "climax_units": { "type": "integer", "minimum": 0 },
+            "elements": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
       },
       "allOf": [
         {

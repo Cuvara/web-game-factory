@@ -56,6 +56,7 @@ import re
 from wgflib import checkout as checkouts
 from wgflib import publication as pub
 from wgflib.workflow import StepOutcome, StepResult, WorkflowStep
+from wgflib.yamllite import YamlError
 
 from . import campaign, common, identity, outcomes
 from . import adaptive as adaptive_mode
@@ -970,6 +971,7 @@ class PublishStep(WorkflowStep):
         })
         if submission:
             body["submission"] = {k: v for k, v in submission.items() if v is not None}
+            body["submission"].update(self._publication_identity(visit, prior, submission))
         if verified_state:
             body["verified_state"] = verified_state
         if body["state"] == "live" and prior.get("state") != "live":
@@ -996,6 +998,21 @@ class PublishStep(WorkflowStep):
                             draft=(submission or {}).get("portal_draft_id"))
         visit.messages = dict(getattr(visit, "messages", {}), **{pid: message})
         return artifact
+
+    @staticmethod
+    def _publication_identity(visit, prior, submission):
+        """The publishing workflow's key and version for this record: one artifact (the
+        package checksum, under its release manifest) on one portal game of one title."""
+        try:
+            workflow = pub.load_publishing_workflow()
+        except (OSError, YamlError, ValueError):
+            return {}
+        absent = (workflow.get("publication_key") or {}).get("absent_portal_game_id") or "unassigned"
+        package = prior.get("package") or {}
+        key = pub.publication_key(prior.get("platform_id"), prior.get("title_id") or visit.title_id,
+                                  visit.manifest_hash, package.get("checksum"),
+                                  submission.get("portal_game_id"), absent=absent)
+        return {"publication_key": key, "publishing_workflow": str(workflow.get("version"))}
 
     # -- the step's result ------------------------------------------------------------------
 

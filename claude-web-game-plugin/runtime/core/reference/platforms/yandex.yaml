@@ -15,7 +15,14 @@
 
 id: yandex
 name: Yandex Games
-version: 1.2.0  # 1.2.0: the listing figures read from the draft form docs (2026-10-04),
+version: 1.3.0  # 1.3.0: re-read 2026-10-05 (docs/platform-targets-2026-10.md, "Yandex
+                #        re-read"): the horizontal video is required (16:9 MP4, <= 28 s,
+                #        <= 100 MB, height >= 400); "How to play" is required (100-1000); the
+                #        screenshot rules (16:9 or 9:16, long side 1280-2560, JPEG or 24-bit
+                #        PNG: no alpha); moderation 3-5 business days; the official top
+                #        rejection reasons. The short description stays required here although
+                #        the portal marks it optional - a Factory choice, never a weakening
+                # 1.2.0: the listing figures read from the draft form docs (2026-10-04),
                 #        screenshots_min 2 per platform, requirement-numbered rejections
                 # 1.1.0: the store_listing block (listing requirements, null = unknown)
 status: unverified
@@ -48,6 +55,9 @@ requirements:
   loading_api: required
   offline_start: false
   https_only: true
+  # Not a ban: an external host is declared on the draft's CSP tab with a reason, https/wss
+  # only, and "almost all game data" ships in the archive (console/add-new-game, read
+  # 2026-10-05). The Factory's builds make none, so restricted stays the binding value.
   external_requests: restricted
 
 ads:
@@ -63,8 +73,11 @@ ads:
     sound stops when the game loses focus). The portal shows a startup ad by itself with no
     callbacks; only game_api_pause / game_api_resume cover it. 4.4: ads only at logical
     pauses - in a real-time game with levels under 5 minutes, never during play. 4.5:
-    rewarded is optional for the player, the button names the reward, and the reward is a
-    bonus that never gates the core game.
+    rewarded is optional for the player, the button states that it shows an ad AND names the
+    reward (4.5.1), the reward is a bonus that never gates the core game (4.5.2), and it is
+    granted only in onRewarded (sdk-adv). At most 2 s from the triggering action to the ad
+    (requirements/4/4). Only sticky banners besides fullscreen and rewarded (4.6); no
+    imitation of ad units (1.16). Read again 2026-10-05: still no numeric interval.
 
 metadata_requirements:
   descriptions_locales: [ru]
@@ -76,7 +89,9 @@ metadata_requirements:
 
 review:
   process: manual
-  typical_days: [1, 5]
+  # "3-5 business days" for a full moderation, 1-2 for content-only changes, "temporarily
+  # extended" (concepts/moderation, read 2026-10-05).
+  typical_days: [3, 5]
   common_rejections:
     - Missing or machine-translated Russian localization.
     - Game does not report loading progress through the SDK.
@@ -88,27 +103,41 @@ review:
       (1.9, 1.2.2).
     - Ads during active play in a real-time game (4.4), or sound audible during an ad (4.7).
     - External links, store links or redirects (8.4); third-party ads (4.1).
+    # The official "Common reasons for rejection" list (concepts/moderation, read 2026-10-05).
+    - Context menu on right-click or long press (1.6.1.8, 1.6.2.7).
+    - Video played through the system player (1.6.1.6, 1.6.2.5).
+    - Game Ready (LoadingAPI.ready) not called, or called at the wrong moment (1.19.2).
+    - SDK missing, from an unofficial source, or failing to initialise (1.1).
+    - Game does not launch, JS errors, freezes or lags (1.14, 1.15).
+    - Gameplay does not match the declared category (2.3).
+    - Misleading title - "free", "top", "best" (8.2.2).
+    - Rewarded button that does not say it shows an ad and what it grants (4.5.1).
 
-# What the portal's listing takes, read from the draft form documentation on 2026-10-04
+# What the portal's listing takes, read from the draft form documentation on 2026-10-04 and
+# again on 2026-10-05 (1.3.0: how to play, the screenshot bounds, the horizontal video)
 # (https://yandex.com/dev/games/doc/en/console/add-new-game/draft) and the media rules of
 # https://yandex.com/dev/games/doc/en/concepts/requirements (5.x, 8.3). Still unverified: the
 # figures were read from the documentation, not from the console form itself. The locales
 # follow the binding requirement above: the listing texts are needed in ru.
 store_listing:
   status: unverified
-  source: https://yandex.com/dev/games/doc/en/console/add-new-game/draft (read 2026-10-04)
+  source: https://yandex.com/dev/games/doc/en/console/add-new-game/draft (read 2026-10-05)
   notes: >
-    Required fields (5.2): title, description, how to play, categories, icon, cover,
-    screenshots. "How to play" (100-1000 chars), the SEO description (50-160) and keywords
-    (100 chars) have no field in this block; the long description stands for the
-    description. Screenshots are 16:9 or 9:16 with a long side of 1280-2560 px, JPEG or
-    24-bit PNG - a PNG with an alpha channel may be refused. At least 70% of screenshots and
+    Required fields (5.2, draft form): title, description, how to play, categories, icon,
+    cover, horizontal video, screenshots. The short description is optional on the portal
+    (max 70) and required here (the Factory always writes one). The SEO description (50-160)
+    and keywords (100 chars) are optional and have no field in this block; the long
+    description stands for the description; "how to play" is the listing's controls text.
+    Screenshots: 16:9 or 9:16, long side 1280-2560 px, JPEG or 24-bit PNG (no alpha), at
+    least 2 per selected platform (Desktop: landscape only; Mobile: the game's
+    orientation); the maximum count is not stated. At least 70% of screenshots and
     video show real gameplay (5.1.1); no screenshot as icon or cover (5.6); no borders,
     rounded corners, system UI or portal badges in media (8.3.3, 8.3.4); the title is the
     same in every language (5.1.3). Age ratings: 0+, 6+, 12+, 16+, 18+ (2.7).
   title: {required: true, max_chars: 50}
   short_description: {required: true, max_chars: 70}
   long_description: {required: true, min_chars: 100, max_chars: 1000}
+  how_to_play: {required: true, min_chars: 100, max_chars: 1000}
   tags: {required: false, min: null, max: 20, allowed: null}
   categories: {required: true, min: 1, max: 2, allowed: null}
   locales: [ru]
@@ -117,8 +146,9 @@ store_listing:
   covers:
     - {id: cover, label: Cover image, required: true, sizes: [{width: 800, height: 470}], aspect: null, formats: [png], max_kb: null, source: thumbnail}
     - {id: hero, label: Hero image, required: false, sizes: [{width: 1560, height: 520}], aspect: "3:1", formats: [png, jpg], max_kb: null, source: promo}
-  screenshots: {required: true, min: 2, max: null, sizes: null, aspect: null, formats: [png, jpg], max_kb: null}
-  video: {required: false, formats: [mp4], min_seconds: null, max_seconds: 28, max_mb: 100, min_height: 400}
+  screenshots: {required: true, min: 2, max: null, sizes: null, aspect: null, aspects: ["16:9", "9:16"], min_long_side: 1280, max_long_side: 2560, transparent: false, formats: [png, jpg], max_kb: null}
+  # The horizontal video is required (the vertical one is optional and not modelled here).
+  video: {required: true, formats: [mp4], min_seconds: null, max_seconds: 28, max_mb: 100, min_height: 400, aspect: "16:9"}
 
 assertions:
   - id: yandex_bundle_size

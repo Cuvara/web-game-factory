@@ -23,7 +23,10 @@ from wgflib.yamllite import YamlError, load_file
 
 __all__ = ["load_profile", "requirements", "spec_status", "targets", "ProfileError", "block_hash"]
 
-TEXT_FIELDS = ("title", "subtitle", "short_description", "long_description", "promo")
+TEXT_FIELDS = ("title", "subtitle", "short_description", "long_description", "promo", "how_to_play")
+# A portal field the listing fills from another of its texts: the portal's "how to play" is
+# the listing's controls text (what the publish campaign enters there too).
+TEXT_SOURCE = {"how_to_play": "controls"}
 LIST_FIELDS = ("tags", "categories")
 
 
@@ -102,6 +105,7 @@ def locales_for(profile):
 def _text_limit(name, block, canonical):
     spec = block.get(name) if isinstance(block.get(name), dict) else {}
     return {"id": f"text:{name}", "kind": "text", "field": name,
+            "text_field": TEXT_SOURCE.get(name, name),
             "required": spec.get("required", name in ("title", "short_description") or None),
             "max_chars": spec.get("max_chars"), "min_chars": spec.get("min_chars"),
             "known": "max_chars" in spec and spec["max_chars"] is not None,
@@ -180,6 +184,9 @@ def requirements(profile, reference):
                               if isinstance(s, dict)] if isinstance(sizes, list) else None,
                     "aspect": shots.get("aspect"), "formats": shots.get("formats"),
                     "max_kb": shots.get("max_kb"), "orientation": shots.get("orientation"),
+                    "aspects": shots.get("aspects"), "min_long_side": shots.get("min_long_side"),
+                    "max_long_side": shots.get("max_long_side"),
+                    "transparent": shots.get("transparent"),
                     "known": shots.get("min") is not None or "screenshots_min" in meta})
         video = block.get("video") if isinstance(block.get("video"), dict) else {}
         out.append({"id": "video", "kind": "video", "required": video.get("required"),

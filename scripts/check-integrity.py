@@ -462,6 +462,64 @@ def check_publication_profiles(directory=os.path.join("core", "reference", "publ
     return checked
 
 
+def check_publishing_workflow(path=os.path.join("core", "reference", "publishing-workflow.yaml")):
+    """core/reference/publishing-workflow.yaml: valid against its schema, and every step,
+    gate, lifecycle state and pinned profile version it names is core's own
+    (wgflib.publication.publishing_workflow_problems). Returns its version, or None."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from wgflib import jsonschema_lite as js
+    from wgflib.machine import MACHINES, load_machine
+    from wgflib.publication import publishing_workflow_problems
+    from wgflib.workflow.definition import DefinitionError, load_definition
+    from wgflib.yamllite import YamlError, load_file
+
+    if not os.path.isfile(path):
+        ERRORS.append(f"{path}: missing")
+        return None
+    try:
+        doc = load_file(path)
+    except (OSError, YamlError, ValueError) as exc:
+        ERRORS.append(f"{path}: does not parse: {exc}")
+        return None
+    def json_file(name):
+        with open(name, encoding="utf-8") as handle:
+            return json.load(handle)
+
+    registry = js.Registry()
+    for schema_path in glob.glob("core/artifacts/shared/*.schema.json") + \
+            glob.glob("core/artifacts/*.schema.json"):
+        registry.add(json_file(schema_path))
+    schema = json_file("core/artifacts/shared/publishing-workflow.schema.json")
+    for error in js.Validator(schema, registry).iter_errors(doc):
+        ERRORS.append(f"{path}: {error}")
+    try:
+        steps = {step.id for step in load_definition("core/workflows/new-game.workflow.yaml").steps}
+    except (DefinitionError, YamlError) as exc:
+        ERRORS.append(f"{path}: the new-game workflow does not load: {exc}")
+        return None
+    lifecycle = {f"{name}:{state}" for name in MACHINES for state in load_machine(name).states}
+    procedures = {os.path.basename(p)[:-3] for p in glob.glob("core/lifecycle/stages/*.md")}
+    lifecycle |= {f"{name}:{proc}" for name in MACHINES for proc in procedures}
+    gates = set((load_file("core/lifecycle/gates.yaml").get("gates") or {}))
+    versions = {}
+    for kind in ("platform", "publication"):
+        folder = "platforms" if kind == "platform" else "publication"
+        versions[kind] = {}
+        for profile_path in glob.glob(os.path.join("core", "reference", folder, "*.yaml")):
+            try:
+                versions[kind][os.path.basename(profile_path)[:-5]] = str(load_file(profile_path).get("version"))
+            except (OSError, YamlError, ValueError):
+                continue
+    record = json_file("core/artifacts/platform-publication.schema.json")
+    outcomes = record["properties"]["outcome"]["enum"]
+    waiting = record["properties"]["waiting"]["properties"]["state"]["enum"]
+    for problem in publishing_workflow_problems(doc, steps=steps, gates=gates, lifecycle=lifecycle,
+                                                profile_versions=versions, outcomes=outcomes,
+                                                waiting=waiting):
+        ERRORS.append(f"{path}: {problem}")
+    return doc.get("version")
+
+
 def check_provider_independence():
     """core/ is AI-provider independent. This is the rule the whole adapter split exists to
     protect, and it degrades silently — one convenient mention of a specific runtime and the
@@ -554,6 +612,7 @@ def main():
     check_templates()
     platforms = check_platforms()
     publication = check_publication_profiles()
+    publishing = check_publishing_workflow()
     check_provider_independence()
     check_no_readme_only_dirs()
     check_plugin_version()
@@ -563,7 +622,7 @@ def main():
     print(f"artifacts   {len(artifacts)}")
     print(f"roles       {len(roles)}")
     print(f"platforms   {', '.join(sorted(platforms))}")
-    print(f"publication {len(publication)} profile(s)")
+    print(f"publication {len(publication)} profile(s); publishing-workflow {publishing or '-'}")
     print(f"machines    {len(glob.glob('core/lifecycle/*.machine.yaml'))}")
     print(f"stages      {len(glob.glob('core/lifecycle/stages/*.md'))}")
     print(f"workflows   {len(workflows)}")

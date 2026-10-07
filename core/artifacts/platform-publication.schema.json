@@ -8,7 +8,7 @@
     "id": "platform-publication",
     "kind": "artifact",
     "format": "json",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "producer": "release:validating",
     "updated_by": ["release:submitting"],
     "consumers": ["release:approved", "release:submitting", "release:partially-live", "title:live"],
@@ -102,6 +102,8 @@
         "submitted_at": { "type": "string", "format": "date-time" },
         "submitted_by": { "type": "string" },
         "package_filename": { "type": "string" },
+        "publication_key": { "type": "string", "pattern": "^wgf-pub-[a-z][a-z0-9-]*-[0-9a-f]{16}$", "description": "Since 1.4.0. core/reference/publishing-workflow.yaml `publication_key`: (platform, title, release-manifest hash, package checksum, portal game id or `unassigned`). The same artifact on the same portal game keys the same across runs, so a second upload of it is found, not repeated." },
+        "publishing_workflow": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "description": "Since 1.4.0. The core/reference/publishing-workflow.yaml version this record was made under." },
         "campaign_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash", "description": "Since 1.3.0. The content hash of the campaign this platform was filled from (wgf_publish.campaign: the platform's rendition texts and the bytes of every listing file, with the store-listing G6 pinned) - the same value the portal registry records as campaign_hash." },
         "checklist": {
           "type": "array",

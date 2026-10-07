@@ -287,6 +287,37 @@ Distribution") stays a person's choice at submission.
   person records it in `factory.publish.platforms.<id>.prerequisites_confirmed`.
   GameDistribution's `self-hosting` (written consent, one's own HTTPS host) is the first.
 
+### Yandex, re-read 2026-10-05
+
+The Yandex pages were read again on 2026-10-05, this time as the markdown the documentation
+publishes (`https://yandex.com/dev/games/doc/en/llms-full.txt`, every page also at
+`<url>.md`), so the figures below are quoted, not summarised. The requirements page says
+"Last updated: August 18, 2026". Class: **OFFICIAL** = an official page or term,
+**CONSOLE** = what the official docs say the console does (not seen by anyone here),
+**COMMUNITY** = third party, **FACTORY** = the Factory's own choice.
+
+| Item | Read | Class | Source | Factory |
+|---|---|---|---|---|
+| Horizontal video | marked required: 16:9, MP4, height from 400 px, up to 28 s, up to 100 MB | OFFICIAL | console/add-new-game/draft | yandex@1.3.0 `video.required: true`, `aspect: 16:9` (was optional) |
+| How to play | required, 100-1000 chars | OFFICIAL | draft | `store_listing.how_to_play` (new schema field), judged on the listing's controls text |
+| Description | required, 100-1000 | OFFICIAL | draft | `min_chars` was stated and never checked: listing validation now fails a text under a stated minimum |
+| Short description | not marked required, <= 70 | OFFICIAL | draft | kept required - FACTORY (the Factory always writes one); never a weakening |
+| Screenshots | 16:9 or 9:16, long side 1280-2560, "JPEG or 24-bit PNG", >= 2 per selected platform, >= 70% gameplay | OFFICIAL | draft, REQ 5.1.1.2 | new schema fields `aspects`, `min_long_side`, `max_long_side`, `transparent: false`; the renderer writes RGB PNGs, crops to the capture's own proportion, downscales above 2560; validation measures all four |
+| Interstitial interval | none documented; "controlled by Yandex Games"; 2 s max from action to ad | OFFICIAL | sdk/sdk-adv, requirements/4/4 | 60 s stays the FACTORY floor |
+| Rewarded button | must say it is an ad AND name the reward | OFFICIAL | REQ 4.5.1 | added to `ads.notes` and the common rejections |
+| External requests | not banned: declared on the draft's CSP tab, https/wss, almost all data in the archive | OFFICIAL | console/add-new-game | `external_requests: restricted` kept (the Factory makes none), commented |
+| Moderation | full 3-5 business days, content-only 1-2, "temporarily extended"; 2 new-game requests per account; cooldown 24 h doubling to 16 days; withdrawal within 2 h | OFFICIAL | concepts/moderation | `review.typical_days: [3, 5]` (was [1, 5]); publication restrictions |
+| Contract before moderation | ULM in the Console (Russian entities) or YAN; ~3 business days' review | OFFICIAL | concepts/moderation, console/manage-account | publication restriction; a person's (human checklist) |
+| Revenue | 50% of in-app purchase revenue; no fixed ad share; minimum payout 150 USD / 100 EUR | OFFICIAL | legal/licensegames/en (21.04.2026) | not modelled (a person's) |
+| Status refresh | "updated only after reloading the page" | CONSOLE | console/update-game | publication restriction; every `--track` visit is a fresh load |
+| Rejection statistics | 72% of rejection remarks are UI, SDK or technical; most first games rejected | COMMUNITY | app2top.ru, gamedevx.ru | not a rule; informs the preflight checks |
+| UNKNOWN | archive file count, a load-time limit, maximum screenshot count, image byte limits, title minimum, category list, tag vocabulary | - | - | stay null / under `unknowns` |
+
+Profiles: **yandex@1.3.0** (platform), **yandex@2.3.0** (publication). The platform profile
+schema gained `store_listing.how_to_play` and the screenshot fields; platform-publication
+1.4.0 records `submission.publication_key` and `submission.publishing_workflow`
+(core/reference/publishing-workflow.yaml, docs/publish-module.md "Yandex recipe").
+
 ---
 
 ## Part 2 - retargeting a finished title

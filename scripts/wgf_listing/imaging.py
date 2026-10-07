@@ -27,9 +27,10 @@ def read_png(path):
         return decode_png(handle.read())
 
 
-def write_png(path, image):
+def write_png(path, image, alpha=True):
+    """alpha=False: an RGB "24-bit PNG", for a portal that takes no alpha channel."""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    data = encode_png(image)
+    data = encode_png(image, alpha=alpha)
     with open(path, "wb") as handle:
         handle.write(data)
     return data

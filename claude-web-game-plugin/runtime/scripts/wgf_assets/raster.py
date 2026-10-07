@@ -247,14 +247,26 @@ def _chunk(kind, body):
             + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF))
 
 
-def encode_png(image):
-    """RGBA8 PNG bytes of `image`: filter 0 on every row, zlib level 9, no ancillary chunks."""
+def encode_png(image, alpha=True):
+    """RGBA8 PNG bytes of `image`: filter 0 on every row, zlib level 9, no ancillary chunks.
+    alpha=False writes RGB8 (a "24-bit PNG"), each pixel composited over black first."""
     stride = image.width * 4
     raw = bytearray()
     for y in range(image.height):
         raw.append(0)
-        raw += image.pixels[y * stride:(y + 1) * stride]
-    header = struct.pack(">IIBBBBB", image.width, image.height, 8, 6, 0, 0, 0)
+        row = image.pixels[y * stride:(y + 1) * stride]
+        if alpha:
+            raw += row
+            continue
+        rgb = bytearray(image.width * 3)
+        rgb[0::3], rgb[1::3], rgb[2::3] = row[0::4], row[1::4], row[2::4]
+        if bytes(row[3::4]) != b"\xff" * image.width:
+            for px in range(image.width):
+                a = row[px * 4 + 3]
+                for c in range(3):
+                    rgb[px * 3 + c] = (row[px * 4 + c] * a + 127) // 255
+        raw += rgb
+    header = struct.pack(">IIBBBBB", image.width, image.height, 8, 6 if alpha else 2, 0, 0, 0)
     return (PNG_SIGNATURE + _chunk(b"IHDR", header)
             + _chunk(b"IDAT", zlib.compress(bytes(raw), 9)) + _chunk(b"IEND", b""))
 

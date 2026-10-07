@@ -10,7 +10,12 @@
 # otherwise.
 
 id: yandex
-version: 2.2.0  # 2.2.0: the Yandex adapter's flow - Create draft at upload, the language tabs,
+version: 2.3.0  # 2.3.0: the draft form and moderation pages re-read 2026-10-05: field limits and
+                #        media sizes stated (title 50, description and how to play 100-1000,
+                #        short 70 and optional, SEO 50-160, horizontal video required), the
+                #        contract-before-moderation rule, the 2 h withdrawal window, the status
+                #        read only after a reload (docs/platform-targets-2026-10.md)
+                # 2.2.0: the Yandex adapter's flow - Create draft at upload, the language tabs,
                 #        media and save as hypotheses (docs/publish-module.md, Yandex)
 status: unverified
 docs: https://yandex.com/dev/games/doc/en/
@@ -23,14 +28,18 @@ sources:
   - {url: "https://yandex.com/dev/games/doc/en/concepts/requirements", read: "2026-10-04"}
   - {url: "https://yandex.com/dev/games/doc/en/concepts/quick-start", read: "2026-10-04"}
   - {url: "https://yandex.com/legal/yandexgames/en/", read: "2026-10-04"}
+  - {url: "https://yandex.com/dev/games/doc/en/console/add-new-game/draft", read: "2026-10-05", note: "field limits, media sizes, required marks (Short description unmarked, Horizontal video marked)"}
+  - {url: "https://yandex.com/dev/games/doc/en/concepts/moderation", read: "2026-10-05", note: "contract before moderation, cooldown, 2 h withdrawal, content moderation 1-2 days, the official rejection list"}
+  - {url: "https://yandex.com/dev/games/doc/en/console/manage-account", read: "2026-10-05", note: "profile, then contract (ULM or YAN); one developer account per Yandex ID"}
+  - {url: "https://yandex.com/legal/licensegames/en/", read: "2026-10-05", note: "Publishing License Agreement, published 21.04.2026"}
 
 unknowns:
   - Console labels beyond those the documentation quotes, and their Russian forms (the Russian names below are translations, not read on the console).
   - The age-rating and category lists.
   - The archive upload widget.
-  - Whether the horizontal video is required (a summarised page suggests it may be).
-  - The text limits of every per-language field except those the documentation states.
-  - Icon, cover, hero image and screenshot sizes.
+  - The title's minimum length, the category list and the tag vocabulary (REQ 5.3: "specified in the draft form").
+  - The maximum screenshot count and any image file-size limit (not stated).
+  - Whether the console refuses a PNG with an alpha channel ("JPEG or 24-bit PNG" is stated; a refusal is not).
   - The contract screens (licensing model or YAN with payout details).
   - Whether a CAPTCHA, a second factor or an anti-bot check protects Yandex ID for the console.
   - The session markers (logged in, login form, challenges) on the console page.
@@ -232,24 +241,32 @@ submission:
     resubmission_cooldown: "24 h, doubling to 2, 4, 8 and 16 days; reset once per 28 days"
 
   fields:
-    title: {required: true, max: null, locales: per-locale, listing: listing.text.<locale>.title, basis: documented}
-    seo_description: {required: null, max: null, locales: per-locale, basis: documented}
-    description: {required: true, max: null, locales: per-locale, listing: listing.text.<locale>.description, basis: documented}
-    short_description: {required: null, max: null, locales: per-locale, basis: documented}
-    how_to_play: {required: null, max: null, locales: per-locale, listing: listing.text.<locale>.how_to_play, basis: documented}
-    icon: {required: true, locales: per-locale, size: null, basis: documented}
-    maskable_icon: {required: null, locales: per-locale, size: null, basis: documented}
-    cover: {required: true, locales: per-locale, size: null, basis: documented}
-    hero_image: {required: null, locales: per-locale, size: null, basis: documented}
-    vertical_video: {required: null, locales: per-locale, size: null, basis: documented}
-    horizontal_video: {required: null, locales: per-locale, formats: [mp4], size: "16:9, up to 28 s, 100 MB", basis: documented, note: May be required; unconfirmed.}
-    screenshots: {required: true, locales: per-locale, size: null, basis: documented}
+    title: {required: true, max: 50, locales: per-locale, listing: listing.text.<locale>.title, basis: documented, note: "Capital first letter; no full caps; no \"free\", \"top\", \"best\" (8.2.2); the same in every material (5.1.3)."}
+    seo_description: {required: false, min: 50, max: 160, locales: per-locale, basis: documented}
+    description: {required: true, min: 100, max: 1000, locales: per-locale, listing: listing.text.<locale>.description, basis: documented}
+    short_description: {required: false, max: 70, locales: per-locale, basis: documented, note: "Optional on the portal; the Factory's platform profile requires it."}
+    how_to_play: {required: true, min: 100, max: 1000, locales: per-locale, listing: listing.text.<locale>.how_to_play, basis: documented}
+    icon: {required: true, locales: per-locale, formats: [png], size: "512x512", basis: documented}
+    maskable_icon: {required: false, locales: per-locale, size: null, basis: documented}
+    cover: {required: true, locales: per-locale, formats: [png], size: "800x470", basis: documented}
+    hero_image: {required: false, locales: per-locale, formats: [png, jpg], size: "1560x520", basis: documented}
+    vertical_video: {required: false, locales: per-locale, formats: [mp4], size: "9:16, height >= 400, up to 28 s, 100 MB", basis: documented}
+    horizontal_video: {required: true, locales: per-locale, formats: [mp4], size: "16:9, height >= 400, up to 28 s, 100 MB", basis: documented}
+    screenshots: {required: true, locales: per-locale, formats: [jpg, png], size: "16:9 or 9:16, long side 1280-2560, JPEG or 24-bit PNG, >= 2 per selected platform", basis: documented}
     categories: {required: true, max_count: 2, locales: shared, human: true, basis: documented}
     tags: {required: null, max_count: 20, locales: shared, human: true, basis: documented}
     keywords: {required: null, max: 100, locales: shared, basis: documented}
     developer_comment: {required: false, max: 2048, locales: shared, human: true, basis: documented}
 
   restrictions:
+    - rule: Moderation needs a signed contract first - the unified licensing contract in the Console (Russian legal entities and sole proprietors) or a Yandex Advertising Network agreement for everyone else; document review takes about 3 business days.
+      source: https://yandex.com/dev/games/doc/en/concepts/moderation
+    - rule: A submitted draft can be withdrawn within 2 hours; after that it waits for the moderators. Content-only changes take a 1-2 day content moderation.
+      source: https://yandex.com/dev/games/doc/en/concepts/moderation
+    - rule: The console shows a new game status only after the page is reloaded - a status read follows a reload.
+      source: https://yandex.com/dev/games/doc/en/console/update-game
+    - rule: A submission older than 100 days warns that the requirements may have changed - cancel, re-check, resubmit.
+      source: https://yandex.com/dev/games/doc/en/concepts/moderation
     - rule: Moderation takes 3-5 business days, one per game at a time, at most 2 new-game requests per account.
       source: https://yandex.com/dev/games/doc/en/concepts/moderation
     - rule: Interactive AI in games is prohibited; pre-generated AI material is allowed (REQ 1.23).

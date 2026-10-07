@@ -1,0 +1,211 @@
+# Publishing workflow: the stages a release goes through from "this portal is a target" to
+# "the portal shows it live", what each stage needs, who acts in it, and how far each portal
+# is along it. Validated against core/artifacts/shared/publishing-workflow.schema.json and
+# checked by scripts/check-integrity.py (wgflib.publication.publishing_workflow_problems):
+# every step, gate, lifecycle state and profile named here exists, and every pinned profile
+# version is the one in core. The publish step records the version it followed and the
+# publication key below on every platform-publication (docs/publish-module.md).
+#
+# Platform-neutral stages; a portal's own facts live in its platform profile
+# (core/reference/platforms/<id>.yaml) and publication profile
+# (core/reference/publication/<id>.yaml). The `platforms` section only says how far each
+# portal is along the stages, with the evidence for it - never a portal rule.
+#
+# Bump `version` whenever a stage, a state, the key or a platform's status changes: a
+# platform-publication names the version it was made under, so a later reader knows which
+# rules were in force.
+
+version: 1.0.0  # 1.0.0: the generic stages, the state vocabulary, the publication key, the
+                #        artifact lock; Yandex filled in from the 2026-10-05 re-read;
+                #        CrazyGames, Y8 and GamePix placeholders (UNVERIFIED)
+
+# -- who drives the portal ------------------------------------------------------------------
+# Playwright, from the publish step on a person's machine, never CI/CD: the window opens
+# headed, a person logs in there (CAPTCHA and second factor included), the profile's intents
+# run, and the session ends with the window. A portal's documented API or CLI, where one
+# exists, is the profile's `submission.method` - still behind the same G6 and submit decisions.
+executor:
+  portal: playwright
+  ci_publishes: false
+  note: "docs/portal-publishing-architecture.md: why publishing left CI"
+
+# -- the states a platform's publication is reported in -------------------------------------
+# One vocabulary across portals, for a person reading a run (`wgf runs --waiting`, the
+# report). Each maps to the publish step's outcome or waiting state, so a state is never
+# claimed that the step did not observe. Upload is not submit, and submit is not published.
+states:
+  - {id: NOT_STARTED, meaning: "nothing done for this platform in this release"}
+  - {id: RESEARCHING, meaning: "the profiles are being read against the portal's current documentation"}
+  - {id: BLOCKED, meaning: "a guard, a requirement or a refusal stops it before the portal; the reason names what", outcome: [BLOCKED, INVALID_BUILD, INVALID_METADATA]}
+  - {id: RELEASE_ARTIFACT_MISMATCH, meaning: "the package, build, manifest or listing is not the one G6 pinned and verify verified; nothing is uploaded", refusal: [package-missing, build-mismatch, wrong-platform, wrong-package, g6-stale, release-mismatch]}
+  - {id: READY, meaning: "platform-validate READY: every guard green, a person's G5/G6 still to come", readiness: READY}
+  - {id: WAITING_FOR_HUMAN_LOGIN, meaning: "the console window is open on a login page; a person logs in (and handles any CAPTCHA or second factor) there", waiting: WAITING_FOR_HUMAN_LOGIN}
+  - {id: DRY_RUN_PASS, meaning: "the flow ran up to the irreversible step without contacting it (factory.publish.mode dry-run)", outcome: [DRY_RUN]}
+  - {id: READY_FOR_UPLOAD, meaning: "G6 pins this release; mode live with WGF_PUBLISH_LIVE=1; the terms recorded"}
+  - {id: UPLOADING, meaning: "the adapter is in the console's upload and metadata phases", outcome: [SUBMITTING]}
+  - {id: UPLOADED, meaning: "the build is on the portal's draft and saved, read back from the console", outcome: [UPLOAD_COMPLETE]}
+  - {id: WAITING_FOR_HUMAN_APPROVAL, meaning: "a person decides: submit (request review once), hold, abandon - or a portal declaration only a person makes", waiting: WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION}
+  - {id: SUBMITTED, meaning: "the review request was made once and the console shows a submitted state", outcome: [SUBMITTED]}
+  - {id: UNDER_REVIEW, meaning: "the console shows a pending state (`status.pending_states`)", registry: PENDING_REVIEW}
+  - {id: PUBLISHED, meaning: "the console shows a live state (`status.live_states`)", registry: PUBLISHED}
+  - {id: FAILED, meaning: "the portal refused or errored; the record names the step and the reason", outcome: [REJECTED, PLATFORM_ERROR, RETRYABLE_FAILURE]}
+
+# -- the publication key ------------------------------------------------------------------
+# Identifies ONE exact artifact on ONE portal game, across runs: a second attempt to put the
+# same bytes on the same game finds the first instead of making a duplicate. The run-scoped
+# `idempotency_key` (run, manifest hash, platform) stays the draft lookup inside a run; this
+# key is what the portal registry and a person compare across runs.
+publication_key:
+  components: [platform, title, release_manifest_hash, artifact_hash, portal_game_id]
+  absent_portal_game_id: unassigned   # before the portal issued one (a new game)
+  format: "wgf-pub-<platform>-<first 16 hex of sha256(components joined by |)>"
+
+# -- the artifact lock --------------------------------------------------------------------
+# What must hold, in the publish step, before any upload; any miss is
+# RELEASE_ARTIFACT_MISMATCH. "Latest" is never "approved": a newer build is a new release
+# candidate with its own G5 and G6.
+artifact_lock:
+  - {check: release_manifest_pinned_by_g6, refusal: g6-stale}
+  - {check: store_listing_pinned_by_g6, refusal: g6-stale}
+  - {check: package_on_disk_matches_manifest_checksum, refusal: package-missing}
+  - {check: package_is_this_platforms_verified_bundle, refusal: build-mismatch}
+  - {check: package_platform_is_the_target, refusal: wrong-platform}
+  - {check: publication_record_is_this_release, refusal: release-mismatch}
+
+# -- the stages ---------------------------------------------------------------------------
+# kind: automated (the Factory does it), human (only a person), mixed (the Factory prepares
+# and stops for a person). `step` is the new-game workflow step that does it, or null where
+# a person or a command outside the run does. `irreversible` stages run once and only
+# behind the named human decision.
+stages:
+  - id: research
+    kind: human
+    step: null
+    produces: "the platform and publication profiles, versioned, every fact with its URL and read date (docs/platform-targets-2026-10.md)"
+    note: "OFFICIAL REQUIREMENT, OBSERVED PORTAL BEHAVIOR, COMMUNITY KNOWLEDGE and FACTORY INFERENCE kept apart; an observed workaround never becomes a rule"
+  - id: integration
+    kind: automated
+    step: sdk
+    lifecycle: "title:production"
+    produces: "the template's platform adapter wired; verify's platform.requirements:<id> green"
+  - id: monetization-review
+    kind: mixed
+    step: verify
+    lifecycle: "title:production"
+    produces: "every ad placement the build makes, against the profile's `ads` block; game changes owed to a game specialist"
+  - id: metadata-media
+    kind: automated
+    step: store-listing
+    lifecycle: "release:store-listing"
+    produces: "one rendition per platform under the profile's store_listing block"
+  - id: local-validation
+    kind: automated
+    step: listing-validation
+    lifecycle: "release:store-listing"
+    produces: "listing-validation-report: every stated requirement measured, a null one UNKNOWN"
+  - id: platform-validation
+    kind: automated
+    step: platform-validate
+    lifecycle: "release:validating"
+    produces: "platform-publication with readiness READY | BLOCKED | HUMAN_REQUIRED | UNKNOWN"
+  - id: release-approval
+    kind: human
+    step: release-review
+    gate: G5
+    lifecycle: "release:rc"
+  - id: publish-authorization
+    kind: human
+    step: publish-review
+    gate: G6
+    lifecycle: "release:approved"
+    produces: "a decision-record pinning release-manifest, store-listing and listing-validation-report"
+  - id: playwright-validation
+    kind: automated
+    step: null
+    command: "WGF_PUBLISH_BROWSER_TEST=1 python3 -m unittest scripts/tests/test_publish_portals.py"
+    produces: "FIXTURE_VALIDATED: the adapter's flow through the real executor against the fixture portal's flavor - never the portal"
+  - id: login
+    kind: human
+    step: submit
+    lifecycle: "release:submitting"
+    produces: "WAITING_FOR_HUMAN_LOGIN until a person has logged in, live, in the opened window; nothing of the session is kept"
+  - id: draft
+    kind: automated
+    step: submit
+    lifecycle: "release:submitting"
+    produces: "the portal game found (registry, config ids, key, exact title) or created; never a duplicate"
+  - id: upload
+    kind: automated
+    step: submit
+    lifecycle: "release:submitting"
+    produces: "UPLOAD_COMPLETE read back from the console: build, texts, media on the saved draft"
+  - id: submit-decision
+    kind: human
+    step: submit
+    decision: [submit, hold, abandon, done]
+    lifecycle: "release:submitting"
+  - id: request-review
+    kind: automated
+    step: submit
+    irreversible: true
+    after_decision: submit
+    lifecycle: "platform-publication:submitted"
+    produces: "one review request, its submitted state read back"
+  - id: status-verification
+    kind: automated
+    step: null
+    command: "bin/wgf publish --run <run-id> --track"
+    lifecycle: "platform-publication:in-review"
+    produces: "the console status, read only, mapped to the registry"
+  - id: publication
+    kind: human
+    step: null
+    irreversible: true
+    lifecycle: "platform-publication:live"
+    produces: "a portal that holds a passed review (Postpone publication) is published by a person's click; `wgf decide <run-id> done`"
+  - id: recovery
+    kind: mixed
+    step: submit
+    produces: "a crash, retry or new run finds its draft by the keys; a rejection records the portal's cooldown and is never re-requested automatically"
+
+# -- how far each portal is -----------------------------------------------------------------
+# status per stage: documented (the profiles state it from the portal's docs), implemented
+# (the Factory does it), fixture-validated (run against the fixture portal), unverified (not
+# exercised against the live console by a person), human (a person's act), not-started.
+platforms:
+  - id: yandex
+    platform_profile: yandex@1.3.0
+    publication_profile: yandex@2.3.0
+    status: unverified
+    researched: "2026-10-05"
+    recipe: docs/publish-module.md#yandex-recipe
+    stages:
+      research: documented
+      integration: implemented
+      monetization-review: implemented
+      metadata-media: implemented
+      local-validation: implemented
+      platform-validation: implemented
+      playwright-validation: fixture-validated
+      login: human
+      draft: unverified
+      upload: unverified
+      submit-decision: human
+      request-review: unverified
+      status-verification: unverified
+      publication: human
+  - id: crazygames
+    platform_profile: crazygames@1.2.0
+    publication_profile: crazygames@2.3.0
+    status: unverified
+    stages: {research: unverified, playwright-validation: fixture-validated}
+  - id: y8
+    platform_profile: y8@1.2.0
+    publication_profile: y8@2.2.0
+    status: unverified
+    stages: {research: unverified, playwright-validation: fixture-validated}
+  - id: gamepix
+    platform_profile: gamepix@1.0.0
+    publication_profile: gamepix@2.1.0
+    status: unverified
+    stages: {research: unverified, integration: not-started, playwright-validation: fixture-validated}

@@ -240,7 +240,7 @@ def render_platform(platform, requirements, *, canonical, copies, out_dir, run_d
         cut = json.loads(json.dumps(copy))
         for req in requirements:
             if req["kind"] == "text" and req.get("max_chars"):
-                field = req["field"]
+                field = req.get("text_field") or req["field"]
                 if isinstance(cut.get(field), str):
                     cut[field] = fit_text(cut[field], req["max_chars"])
                 elif isinstance(cut.get(field), list):  # promo variants
@@ -302,7 +302,8 @@ def render_platform(platform, requirements, *, canonical, copies, out_dir, run_d
             stem = f"{req['image_id']}-{w}x{h}"
             png_path = os.path.join(out_dir, f"{stem}.png")
             image = imaging.read_png(master["path"])
-            imaging.write_png(png_path, imaging.fit(image, w, h, "cover"))
+            imaging.write_png(png_path, imaging.fit(image, w, h, "cover"),
+                              alpha=req.get("transparent") is not False)
             if fmt == "png":
                 record = file_record(stem, png_path, run_dir, kind=_kind(req), source=master["id"],
                                      requirement=req["image_id"])
@@ -335,6 +336,7 @@ def render_platform(platform, requirements, *, canonical, copies, out_dir, run_d
                                           f"encoder here writes", subject="screenshots")
             fmt = "png"
         sizes = shots_req.get("sizes")
+        short_reported = False
         for index, shot in enumerate(shots, 1):
             image = imaging.read_png(shot["path"])
             w, h = image.width, image.height
@@ -355,9 +357,33 @@ def render_platform(platform, requirements, *, canonical, copies, out_dir, run_d
                 else:
                     h = int(round(w * b / a))
                 image = imaging.fit(image, w, h, "cover")
+            elif shots_req.get("aspects"):
+                # Several proportions (16:9 landscape, 9:16 portrait): the one of the capture's
+                # own orientation, cropped to it.
+                fitting = [a for a in shots_req["aspects"]
+                           if (int(a.split(":")[0]) >= int(a.split(":")[1])) == (w >= h)]
+                if fitting and not _aspect_matches(w, h, fitting[0]):
+                    a, b = (int(x) for x in fitting[0].split(":"))
+                    if w / h > a / b:
+                        w = int(round(h * a / b))
+                    else:
+                        h = int(round(w * b / a))
+                    image = imaging.fit(image, w, h, "cover")
+            long_side = max(w, h)
+            if shots_req.get("max_long_side") and long_side > shots_req["max_long_side"]:
+                scale = shots_req["max_long_side"] / long_side
+                w, h = max(1, int(round(w * scale))), max(1, int(round(h * scale)))
+                image = imaging.fit(image, w, h, "cover")
+            elif shots_req.get("min_long_side") and long_side < shots_req["min_long_side"] \
+                    and not short_reported:
+                short_reported = True
+                problem("size-below-minimum", f"{pid} asks for screenshots with a long side of at "
+                                              f"least {shots_req['min_long_side']} px; the captured "
+                                              f"frame is {w}x{h} and the package never upscales",
+                        subject="screenshots")
             stem = f"screenshot-{index:02d}"
             png_path = os.path.join(out_dir, f"{stem}.png")
-            imaging.write_png(png_path, image)
+            imaging.write_png(png_path, image, alpha=shots_req.get("transparent") is not False)
             if fmt == "png":
                 files.append(file_record(stem, png_path, run_dir, kind="screenshot", source=shot["id"],
                                          requirement="screenshots"))

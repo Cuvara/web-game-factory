@@ -29,6 +29,7 @@ from test_release_module import NOW, Context, Inputs, seal, step as release_step
 from wgf_publish import PlatformValidateStep, PublishStep, common, identity, outcomes  # noqa: E402
 from wgf_publish import registry as portal_registry  # noqa: E402
 from wgf_publish.adapters import Publication, PublicationAdapter  # noqa: E402
+from wgflib import publication as pub  # noqa: E402
 from wgflib.workflow import StepOutcome  # noqa: E402
 from wgflib.workflow.definition import StepDefinition  # noqa: E402
 
@@ -535,6 +536,13 @@ class CreateBeforeBuild(MultiCase):
         self.assertEqual(job.required_ids, [])
         self.assertEqual(self.records["y8"]["outcome"], "UPLOAD_COMPLETE")
         self.assertEqual(self.records["y8"]["submission"]["portal_game_id"], "y8-4711")
+        # The publishing workflow's key: this package on this portal game, across runs.
+        workflow = pub.load_publishing_workflow()
+        record = self.records["y8"]
+        self.assertEqual(record["submission"]["publishing_workflow"], workflow["version"])
+        self.assertEqual(record["submission"]["publication_key"], pub.publication_key(
+            "y8", record["title_id"], record["submission"]["authorized_by"]["release_manifest_hash"],
+            record["package"]["checksum"], "y8-4711"))
 
     def guard(self, pid):
         instance = PlatformValidateStep(StepDefinition(

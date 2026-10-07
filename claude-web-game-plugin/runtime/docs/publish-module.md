@@ -800,6 +800,118 @@ factory:
 A step's `with:` overrides any key, plus `repo_dir` for the checkout (the one precedence
 every step uses, `docs/checkouts.md`).
 
+## The publishing workflow
+
+`core/reference/publishing-workflow.yaml` (1.0.0, schema
+`core/artifacts/shared/publishing-workflow.schema.json`) is the platform-neutral recipe every
+portal follows, as data: the stages from research to a live listing, who acts in each
+(automated, human, mixed), the new-game step or command that carries it out, the gate or
+decision an irreversible stage waits for, and how far each portal is along them.
+
+- **Executor.** `executor: {portal: playwright, ci_publishes: false}`: a portal console is
+  driven by Playwright from the publish step, in a headed window a person logs in to; CI/CD
+  never uploads, submits or holds a session. `check-integrity.py` refuses `ci_publishes: true`.
+- **States.** One vocabulary a person reads a publication in - NOT_STARTED, RESEARCHING,
+  BLOCKED, RELEASE_ARTIFACT_MISMATCH, READY, WAITING_FOR_HUMAN_LOGIN, DRY_RUN_PASS,
+  READY_FOR_UPLOAD, UPLOADING, UPLOADED, WAITING_FOR_HUMAN_APPROVAL, SUBMITTED, UNDER_REVIEW,
+  PUBLISHED, FAILED - each mapped to the outcome, refusal code, waiting state or registry
+  status it is read from, so no state is claimed the step did not observe. Upload is not
+  submit; submit is not published.
+- **Publication key.** `wgf-pub-<platform>-<16 hex>` over (platform, title, release-manifest
+  hash, package checksum, portal game id or `unassigned`): one artifact on one portal game,
+  across runs. Every platform-publication the submit step writes carries it and the
+  workflow version (`submission.publication_key`, `submission.publishing_workflow`;
+  platform-publication 1.4.0). The run-scoped `idempotency_key` stays the in-run draft lookup.
+- **Artifact lock.** The refusals that make a mismatch RELEASE_ARTIFACT_MISMATCH before any
+  upload: G6 pins the manifest and the listing (`g6-stale`), the package on disk is the
+  manifest's checksum (`package-missing`), the package is this platform's verified bundle
+  (`build-mismatch`, `wrong-platform`, `wrong-package`), the record is this release
+  (`release-mismatch`). "Latest" is never "approved": a newer build is a new release
+  candidate with its own G5 and G6.
+- **Platforms.** Each portal pins its platform and publication profile versions (held equal
+  to core's by `check-integrity.py`) and a per-stage status: documented, implemented,
+  fixture-validated, unverified, human, not-started - `verified` only after a person ran the
+  stage on the live portal. Yandex is filled in; CrazyGames, Y8 and GamePix are placeholders.
+
+`python3 scripts/wgf-publish.py readiness --manifest FILE --platform ID` adds
+`platform_packaged`: a release that targets a platform without packaging its build is BLOCKED
+for it before any portal.
+
+## Yandex recipe
+
+Workflow 1.0.0; profiles yandex@1.3.0 (platform) and yandex@2.3.0 (publication), re-read
+2026-10-05 (docs/platform-targets-2026-10.md, "Yandex, re-read 2026-10-05"). Status:
+IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED on the live console.
+
+1. **Platform**: Yandex Games, console `https://games.yandex.com/console/`.
+2. **Workflow version**: publishing-workflow 1.0.0.
+3. **Official documentation**: `https://yandex.com/dev/games/doc/en/` - concepts/requirements
+   (numbered REQ, updated 2026-08-18), console/add-new-game/draft, concepts/moderation,
+   console/update-game, sdk/sdk-adv, sdk/sdk-game-events, sdk/sdk-events; the full docs as
+   one file at `.../doc/en/llms-full.txt`.
+4. **Prerequisites**: a Yandex ID with a Yandex mailbox; a developer profile (unlocks drafts);
+   a signed contract - the unified licensing contract in the Console (Russian legal entities
+   and sole proprietors) or a Yandex Advertising Network agreement (everyone else) - before
+   any moderation; 18+.
+5. **Account state**: profile created, contract active; `factory.publish.platforms.yandex.terms_confirmed`
+   recorded by a person (the profile says `automation_terms: unverified`).
+6. **Game state**: G4 passed, a release whose manifest PACKAGES `yandex.zip` (a target alone
+   is not a package), verify green for the yandex build, G5 and G6 decided by a person.
+7. **SDK**: `<script src="/sdk.js">`, `await YaGames.init()`, `LoadingAPI.ready()` when the
+   game is interactive (REQ 1.19.2), GameplayAPI start/stop if used (1.19.3),
+   `game_api_pause`/`game_api_resume` (the portal's own startup ad has no callbacks),
+   language from `environment.i18n.lang` at launch (2.14), sound off on any focus loss (1.3).
+   The template's `yandex` adapter does all of it.
+8. **Monetization**: fullscreen only at logical pauses (4.4; real-time levels under 5 min:
+   never in play), at most 2 s from the action to the ad, sound and play paused during ads
+   (4.7); rewarded only on the player's choice, the button says it is an ad and names the
+   reward (4.5.1), granted only in `onRewarded`, never gating the core game (4.5.2); the
+   frequency is the portal's (no interval documented; the Factory keeps a 60 s floor).
+   Template v1.2.0 never counts a rewarded video as shown on the real SDK (its `onClose`
+   carries no `wasShown`): fixed on template main (2f2c99d), not in the pinned release.
+9. **Metadata** (per language): title <= 50; description 100-1000; how to play 100-1000 (the
+   listing's controls text); short description <= 70 (optional on the portal, required by
+   the Factory); SEO 50-160 and keywords <= 100 optional; categories 1-2, tags <= 20, age
+   rating, orientation, platforms, languages - a person's choices in the draft.
+10. **Media**: icon 512x512 PNG; cover 800x470 PNG; horizontal video MP4 16:9, height >= 400,
+    <= 28 s, <= 100 MB (required); screenshots 16:9 or 9:16, long side 1280-2560, JPEG or
+    24-bit PNG, >= 2 per selected platform, >= 70% real gameplay.
+11. **Build**: one zip, `index.html` at the root, no spaces or Cyrillic in names, <= 100 MB
+    uncompressed; external hosts only declared on the CSP tab (the Factory makes none).
+12. **Playwright workflow**: the profile's intents - "Add app" (new) or "Create draft"
+    (update), Archive, one "Description and Promotion" tab per locale run language by
+    language, Icon, Cover, Screenshots, Save, then "Submit for moderation" only on a person's
+    `submit`. Locators are documented labels or hypotheses until `wgf-publish.py observe
+    yandex` records the real console.
+13. **Human interaction**: login (and any CAPTCHA or second factor) in the opened window;
+    contract and payout; age rating; categories and tags; Postpone publication; the
+    AI-descriptions switch; Developer's comment; `submit`; Publish on a Verified game.
+14. **Upload**: `bin/wgf publish --run <run-id> --platform yandex` after G6, with
+    `factory.publish.mode: live` and `WGF_PUBLISH_LIVE=1`; ends UPLOAD_COMPLETE ->
+    WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION.
+15. **Submit**: `bin/wgf decide <run-id> submit`: one "Submit for moderation" click, its
+    "Waiting for moderation" read back (SUBMITTED). Withdrawable for 2 hours, by a person.
+16. **Status verification**: `bin/wgf publish --run <run-id> --platform yandex --track`
+    (read only; the console shows a new status only after a reload - every track visit is a
+    fresh load). Verified = passed with Postpone publication: a person publishes.
+17. **Idempotency**: the game is found by registry id, config app id, the idempotency key or
+    the exact title before anything is created; one moderation per game; at most 2 new-game
+    requests per account; the publication key on every record.
+18. **Known failure modes**: the official rejection list (profile `review.common_rejections`):
+    context menu, system video player, sound during ads or after focus loss, Game Ready
+    missing or mistimed, no `i18n.lang` detection, SDK errors, progress not saved, launch
+    freezes or JS errors, genre mismatch, misleading title, rewarded button not naming the ad
+    and the reward.
+19. **Recovery**: a rejection records the cooldown (24 h doubling to 16 days, one reset per 28
+    days) and is never re-requested automatically; a crashed visit finds its draft by the
+    keys; a submission older than 100 days is re-checked and resubmitted by a person.
+20. **What the Factory automates**: the requirement checks before the portal (listing
+    validation: text minimums, how to play, screenshot proportions, long side and alpha, the
+    MP4 video; readiness `platform_packaged`), the RGB screenshots, the console flow up to
+    the saved draft, the status reads, the cooldown and request-limit refusals.
+21. **What a person still does**: everything in 13, plus terms_confirmed, the G5 and G6
+    decisions, and an MP4 encoder (ffmpeg on PATH) for the trailer at store-listing.
+
 ## Tests
 
 `scripts/tests/test_publish_module.py` (RELEASE category): redaction; every guard; adapter

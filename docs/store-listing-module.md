@@ -163,7 +163,12 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
    the browser's encoder during the capture; PNG from the Factory), a locale no writer
    produces, an age rating nobody stated (`factory.listing.age_rating`). The age rating
    is the platform's, not a locale's: the rendition carries it (`age_rating`) even when no
-   copy could be written in a required locale. A required locale with no copy leaves that
+   copy could be written in a required locale. Screenshots follow the block's `aspects`
+   (cropped to the proportion of the capture's own orientation), are downscaled to
+   `max_long_side` (a capture under `min_long_side` is a `size-below-minimum` problem, never
+   upscaled), and are written as RGB "24-bit" PNGs where `transparent: false`; so are images
+   whose requirement says `transparent: false`. A portal's own instructions field
+   (`how_to_play`) is filled from the copy's controls text. A required locale with no copy leaves that
    platform's texts and categories empty; validation names the locale as the cause and
    marks those checks `fix: configure`, so the run blocks for a person instead of routing
    back to `listing` until the loop limit.
@@ -172,7 +177,11 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
    sentence not an article; the screenshots present, in an allowed state, readable, distinct;
    the trailer a video within bounds (or an honestly reported fallback, which fails only
    where a platform requires a video); no unbacked claim in any text that reaches a platform;
-   every platform rendition against its requirement list. A requirement a profile leaves
+   every platform rendition against its requirement list - a text within its stated
+   `min_chars` and `max_chars` in every judged locale (how-to-play on the controls text),
+   screenshots against `aspects`, the long-side bounds and the alpha rule (a frame below the
+   long side is `fix: configure`: the capture size), images with an alpha channel where
+   `transparent: false`. A requirement a profile leaves
    `null` is **UNKNOWN**: listed per platform in `unknown`, never counted as passed. The
    copy is judged against the build at the run's tier (below): its counts, its controls,
    each required locale's full description, its subtitle and its writer.

@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/publishing-workflow.schema.json",
+  "title": "Publishing Workflow",
+  "description": "Validates core/reference/publishing-workflow.yaml: the platform-neutral stages a release goes through to reach a portal, the state vocabulary a publication is reported in, the publication key that keeps one artifact on one portal game from being uploaded twice, the artifact lock the publish step holds before any upload, and how far each portal is along the stages. Referential rules the schema cannot state (every step, gate, lifecycle state and profile version exists) are wgflib.publication.publishing_workflow_problems, run by scripts/check-integrity.py.",
+
+  "x-wgf": {
+    "id": "publishing-workflow",
+    "kind": "reference",
+    "format": "yaml",
+    "version": "1.0.0",
+    "instance_path": "core/reference/publishing-workflow.yaml",
+    "consumers": ["release:validating", "release:submitting"]
+  },
+
+  "type": "object",
+  "required": ["version", "executor", "states", "publication_key", "artifact_lock", "stages", "platforms"],
+  "properties": {
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "executor": {
+      "type": "object",
+      "required": ["portal", "ci_publishes"],
+      "properties": {
+        "portal": { "enum": ["playwright"], "description": "What drives a portal console: the profile's intents run by Playwright in a headed browser window the publish step opens, where a person logs in live." },
+        "ci_publishes": { "const": false, "description": "CI/CD never publishes a game: no pipeline uploads, submits or holds a portal session." },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "states": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "meaning"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+          "meaning": { "type": "string", "minLength": 1 },
+          "outcome": { "type": "array", "items": { "type": "string" }, "description": "The publish step outcomes reported as this state." },
+          "refusal": { "type": "array", "items": { "type": "string" }, "description": "The publish step refusal codes reported as this state." },
+          "waiting": { "type": "string", "description": "The waiting state of the run reported as this state." },
+          "readiness": { "enum": ["READY", "BLOCKED", "HUMAN_REQUIRED", "UNKNOWN"] },
+          "registry": { "type": "string", "description": "The portal registry status reported as this state." }
+        },
+        "additionalProperties": false
+      }
+    },
+    "publication_key": {
+      "type": "object",
+      "required": ["components", "absent_portal_game_id", "format"],
+      "properties": {
+        "components": {
+          "type": "array",
+          "items": { "enum": ["platform", "title", "release_manifest_hash", "artifact_hash", "portal_game_id"] },
+          "minItems": 5,
+          "uniqueItems": true
+        },
+        "absent_portal_game_id": { "type": "string", "minLength": 1 },
+        "format": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "artifact_lock": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["check", "refusal"],
+        "properties": {
+          "check": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "refusal": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "step"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "kind": { "enum": ["automated", "human", "mixed"] },
+          "step": { "type": ["string", "null"], "description": "The new-game workflow step that carries it out; null: a person, or a command outside the run." },
+          "command": { "type": "string" },
+          "gate": { "type": "string", "pattern": "^G[0-9]+$" },
+          "decision": { "type": "array", "items": { "type": "string" } },
+          "after_decision": { "type": "string" },
+          "irreversible": { "type": "boolean" },
+          "lifecycle": { "type": "string", "pattern": "^[a-z-]+:[a-z-]+$", "description": "machine:state or machine:stage-procedure." },
+          "produces": { "type": "string" },
+          "note": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "platforms": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "platform_profile", "publication_profile", "status", "stages"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "platform_profile": { "type": "string", "pattern": "^[a-z][a-z0-9-]*@[0-9]+\\.[0-9]+\\.[0-9]+$" },
+          "publication_profile": { "type": "string", "pattern": "^[a-z][a-z0-9-]*@[0-9]+\\.[0-9]+\\.[0-9]+$" },
+          "status": { "enum": ["verified", "unverified"], "description": "verified only once a person has run every stage against the live portal." },
+          "researched": { "type": "string", "format": "date" },
+          "recipe": { "type": "string", "description": "The docs section that is this portal's reusable recipe." },
+          "stages": {
+            "type": "object",
+            "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+            "additionalProperties": { "enum": ["documented", "implemented", "fixture-validated", "unverified", "human", "not-started", "verified"] }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

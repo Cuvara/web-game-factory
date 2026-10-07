@@ -188,6 +188,7 @@
         "short_description": { "$ref": "#/$defs/textLimit" },
         "long_description": { "$ref": "#/$defs/textLimit" },
         "promo": { "$ref": "#/$defs/textLimit" },
+        "how_to_play": { "$ref": "#/$defs/textLimit", "description": "The portal's own instructions field, when it has one. Filled from the listing's controls text (the inputs the build accepts and what they do), so it is judged on that text." },
         "tags": { "$ref": "#/$defs/listLimit" },
         "categories": { "$ref": "#/$defs/listLimit" },
         "locales": {
@@ -219,7 +220,11 @@
             "aspect": { "type": ["string", "null"], "pattern": "^[0-9]+:[0-9]+$" },
             "formats": { "type": ["array", "null"], "items": { "enum": ["png", "jpg", "webp", "gif"] } },
             "max_kb": { "type": ["integer", "null"], "minimum": 1 },
-            "orientation": { "type": ["array", "null"], "items": { "enum": ["landscape", "portrait"] } }
+            "orientation": { "type": ["array", "null"], "items": { "enum": ["landscape", "portrait"] } },
+            "aspects": { "type": ["array", "null"], "items": { "type": "string", "pattern": "^[0-9]+:[0-9]+$" }, "description": "Every proportion the portal takes, when it takes more than one (16:9 landscape and 9:16 portrait); a screenshot must match one. `aspect` still holds a single one." },
+            "min_long_side": { "type": ["integer", "null"], "minimum": 1, "description": "The long side's lower bound in pixels; null: not stated." },
+            "max_long_side": { "type": ["integer", "null"], "minimum": 1, "description": "The long side's upper bound in pixels; null: not stated. A larger capture is downscaled, never refused." },
+            "transparent": { "type": ["boolean", "null"], "description": "false: the portal takes no alpha channel (JPEG or 24-bit PNG), so screenshots are written without one and one with an alpha channel fails; null: not stated." }
           },
           "additionalProperties": false
         },

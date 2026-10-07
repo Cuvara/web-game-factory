@@ -426,20 +426,42 @@ class Contract(unittest.TestCase):
 
 
 class Layouts(unittest.TestCase):
-    def test_layouts_are_compared_by_path_and_value(self):
+    def test_geometry_is_the_declared_layouts_lists_by_value(self):
         rules = auditing.load_rules()
-        a = auditing.layout_of({"id": "x", "layout": {"grid": ["ab", "cd"], "speed": 1}}, rules)
-        b = auditing.layout_of({"id": "y", "layout": {"grid": ["ab", "cd"], "speed": 2}}, rules)
-        c = auditing.layout_of({"id": "z", "layout": {"grid": ["cd", "ab"], "speed": 1}}, rules)
-        self.assertEqual(set(a), {"layout.grid[0]", "layout.grid[1]", "layout.speed"})
-        # A tuning number is the same layout at another difficulty.
+        a = auditing.geometry({"id": "x", "layout": {"grid": ["ab", "cd"], "speed": 1}}, rules)
+        b = auditing.geometry({"id": "y", "layout": {"rows": ["ab", "cd"], "speed": 2}}, rules)
+        c = auditing.geometry({"id": "z", "layout": {"grid": ["cd", "ab"], "speed": 1}}, rules)
+        self.assertEqual(a, [('"ab"', '"cd"')])
+        # A tuning number is the same layout at another difficulty, and a container's name
+        # is no part of the layout.
         self.assertEqual(auditing.similarity(a, b), 1.0)
-        self.assertAlmostEqual(auditing.similarity(a, c), 0.2)
+        self.assertAlmostEqual(auditing.similarity(a, c), 0.5)
         # A number in a list is the layout itself.
-        d = auditing.layout_of({"cells": [[1, 0], [0, 1]]}, rules)
-        e = auditing.layout_of({"cells": [[0, 1], [1, 0]]}, rules)
+        d = auditing.geometry({"layout": {"cells": [[1, 0], [0, 1]]}}, rules)
+        e = auditing.geometry({"layout": {"cells": [[0, 0], [1, 1]]}}, rules)
         self.assertEqual(auditing.similarity(d, e), 0.0)
-        self.assertEqual(auditing.similarity({}, {}), 1.0)
+        self.assertEqual(auditing.similarity([], []), 1.0)
+        self.assertEqual(auditing.similarity(a, []), 0.0)
+        # 30.0 and 30 are one value.
+        self.assertEqual(auditing.geometry({"layout": [{"len": 30.0}]}, rules),
+                         auditing.geometry({"layout": [{"len": 30}]}, rules))
+
+    def test_only_a_declared_place_carries_geometry(self):
+        rules = auditing.load_rules()
+        for undeclared in ({"tags": ["u-01"]}, {"parameters": {"grid": ["ab", "cd"]}},
+                           {"layout": {"width": 8, "par_s": 20}}, {"layout": None}):
+            self.assertEqual(auditing.geometry(dict(undeclared, id="u-01"), rules), [],
+                             undeclared)
+        self.assertEqual(auditing.geometry({"id": "u-01"}, rules, {"segments": [1, 2]}),
+                         [("1", "2")])
+
+    def test_padding_a_copy_with_an_unrelated_list_keeps_it_a_copy(self):
+        rules = auditing.load_rules()
+        course = {"segments": [{"t": "line", "len": n} for n in range(10)]}
+        padded = dict(course, decor=[{"prop": "tree", "x": n * 7} for n in range(40)])
+        a = auditing.geometry({"layout": course}, rules)
+        b = auditing.geometry({"layout": padded}, rules)
+        self.assertEqual(auditing.similarity(a, b), 1.0)
 
 
 class Geometry(unittest.TestCase):
@@ -543,6 +565,74 @@ class Geometry(unittest.TestCase):
         self.assertEqual(structure["status"], "SKIPPED")
         self.assertEqual(structure["measured"]["build"]["undetermined"], [units[0]["id"]])
         self.assertEqual(structure["measured"]["build"]["repeated_ratio_at_most"], 0.125)
+
+    def test_a_list_outside_the_declared_layout_does_not_escape_unmeasured(self):
+        """`tags: [unit id]` beside tuning scalars made every unit "measured" and unique."""
+        units = varied_units()
+        build = self.scalar_build(units)
+        for entry in build["units"]:
+            entry["tags"] = [entry["id"]]
+            entry["parameters"]["route"] = [entry["id"], entry["index"]]
+        structure = status(auditing.audit(self.scalar_design(units), None, build,
+                                          survey_of(units)), "content.structure")
+        self.assertEqual(structure["status"], "SKIPPED", structure["summary"])
+        self.assertTrue(structure["summary"].startswith("UNMEASURED"), structure["summary"])
+        self.assertEqual(len(structure["measured"]["build"]["undetermined"]), len(units))
+
+    def clones(self, change):
+        """Three pairs of units ship one course each, the second of each pair changed by
+        `change(course)`."""
+        units = varied_units()
+        layouts = {u["id"]: self.course(u["index"]) for u in units}
+        for a, b in ((0, 4), (1, 5), (8, 12)):
+            layouts[units[b]["id"]] = change(copy.deepcopy(layouts[units[a]["id"]]))
+        return units, layouts
+
+    def assert_clones_fail(self, units, layouts):
+        for inline in (False, True):
+            if inline:
+                data = data_of(units, **{u["id"]: {"layout": layouts[u["id"]]} for u in units})
+                result = auditing.audit(self.scalar_design(units), None, data, survey_of(units))
+            else:
+                result = auditing.audit(self.scalar_design(units), None,
+                                        self.scalar_build(units), survey_of(units),
+                                        layouts=layouts)
+            structure = status(result, "content.structure")
+            self.assertEqual(structure["status"], "FAIL", structure["summary"])
+            self.assertEqual(sorted(structure["measured"]["build"]["repeated"]),
+                             sorted(units[i]["id"] for i in (0, 4, 1, 5, 8, 12)))
+
+    def test_a_clone_with_its_list_renamed_is_still_repeated(self):
+        def rename(course):
+            course["pieces"] = course.pop("segments")
+            return course
+        self.assert_clones_fail(*self.clones(rename))
+
+    def test_a_clone_padded_with_a_noise_list_is_still_repeated(self):
+        def pad(course):
+            course["decor"] = [{"prop": "rock", "x": n * 3.5, "seed": n * 13}
+                               for n in range(40)]
+            return course
+        self.assert_clones_fail(*self.clones(pad))
+
+    def test_real_courses_that_share_common_pieces_are_not_repeated(self):
+        """Different courses built from one kit of pieces share many segment records - a
+        straight of 30 m, a 45-degree turn - and are not the same course."""
+        kit = [{"t": "line", "len": 30}, {"t": "turn", "deg": 45, "r": 20},
+               {"t": "line", "len": 20}, {"t": "jump", "gap": 2},
+               {"t": "turn", "deg": -45, "r": 20}, {"t": "ramp", "rise": 2}]
+        units = varied_units()
+        layouts = {}
+        for unit in units:
+            n = unit["index"]
+            layouts[unit["id"]] = {"segments": [kit[(n * k + k * k) % len(kit)]
+                                                for k in range(1, 9)]
+                                   + [{"t": "line", "len": 10 + n}]}
+        structure = status(auditing.audit(self.scalar_design(units), None,
+                                          self.scalar_build(units), survey_of(units),
+                                          layouts=layouts), "content.structure")
+        self.assertEqual(structure["measured"]["build"]["repeated"], [], structure["summary"])
+        self.assertEqual(structure["status"], "PASS", structure["summary"])
 
     def test_the_layout_source_is_resolved_under_public_content_only(self):
         rules = auditing.load_rules()

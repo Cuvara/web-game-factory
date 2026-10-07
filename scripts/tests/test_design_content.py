@@ -1197,6 +1197,22 @@ class TheQualityTier(ContentCase):
         units(design)[0]["parameters"].update(ramps=3, gaps=2, bumpers=1)
         self.breaches(design, "content.tier_structure", "repeat another unit's layout")
 
+    def test_cloned_units_without_geometry_still_repeat(self):
+        """Never looser than the identity the design check always had: units with one
+        structure, one set of elements and the same scalar parameters (or none) are one unit,
+        though no geometry says so."""
+        for parameters in ({}, {"par_s": 30, "limit_s": 60}):
+            design = release_design()
+            clones = units(design)[:8]
+            for unit in clones:
+                for key in ("structure", "elements", "mechanics"):
+                    if key in clones[0]:
+                        unit[key] = copy.deepcopy(clones[0][key])
+                    else:
+                        unit.pop(key, None)
+                unit["parameters"] = dict(parameters)
+            self.breaches(design, "content.tier_structure", "8 of the 32 units")
+
     def test_a_unit_without_a_structure(self):
         design = release_design()
         del units(design)[5]["structure"]

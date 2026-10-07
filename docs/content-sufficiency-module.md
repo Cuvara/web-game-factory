@@ -98,8 +98,9 @@ The step measures every quantity twice, on two views of the same units:
 - **The build view:**
   - a unit's elements are its data mechanics plus the content kinds the probe showed in it.
     The kinds of the player and the interface are left out;
-  - its layout is its data beyond the descriptive keys, plus its entry in the layout source;
-    only the layout's geometry is compared (see near-identical units);
+  - its geometry is the lists in its own `layout` entry in the data file
+    (`layout.unit_key`) and in its entry in the layout source - nowhere else (see
+    near-identical units);
   - its structure, group, objective kind and art are the data file's values where it
     carries them, else the design's;
   - its difficulty is what the probe reported, else the data's.
@@ -147,32 +148,62 @@ quality gate's `floor.content_sufficient` holds the content dimension below its 
 gate fails with `QUALITY REGRESSION` ([quality-gate-module.md](quality-gate-module.md)).
 
 **Near-identical units.** Units are compared on their **geometry**
-(`scripts/wgf_design/layouts.py`): the leaves of their layout that sit inside a list - a
-grid's rows, a wave list, a track's segments, the cells of a board, a spawn table - compared
-by path and value. A scalar outside every list (a par time, a speed, a count, a width, a flag,
-a word) is tuning: the same layout at another difficulty, and a key the game may never read.
-Two units are the same unit with other numbers when either is true:
+(`scripts/wgf_design/layouts.py`), and geometry comes only from a **declared place**:
 
+- in the build, each unit's own `layout` entry in `public/content/units.json`
+  (`core/reference/content-sufficiency.yaml` `layout.unit_key`) - an object such as
+  `{"width": 8, "segments": [...]}`, or a list - and its entry in the layout source
+  (`public/content/layouts.json` `layouts`, keyed by unit id, or the file the data file names
+  in `layout_source`). A game may use either or both: a 3D course game ships each course as
+  its unit's `layout` and no layouts.json;
+- in the design, each unit's `parameters` (game-design `units[].parameters`).
+
+No other key of a unit counts: a `tags` list, a `parameters` block or any other list beside
+the layout is not geometry, so adding one cannot turn an unmeasured check into a measured one.
+
+Inside a declared layout, the geometry is its **sequences**: every outermost list - a track's
+segments, a grid's rows, a wave list, a board's cells, a spawn table - wherever it sits and
+whatever its container is called (`segments` renamed `pieces` is the same course). Items are
+compared by value: a record keeps its own field names, and 30.0 is 30. A scalar outside every
+list (a width, a par time, a speed, a flag, a word) is tuning: the same layout at another
+difficulty, and a key the game may never read.
+
+Similarity is how much of the smaller layout the larger one holds, in order: each sequence's
+items are matched to one sequence of the other (longest matching blocks, pairs one to one,
+the best first), over the item count of the smaller layout. A copy of another unit's course
+padded with an unrelated list (a 40-piece `decor`) is therefore still a copy. Two units are
+the same unit with other numbers when either is true:
+
+- one's geometry is wholly inside the other's (similarity 1.0: identical, renamed, padded),
+  whatever the units are called;
 - they share their structure kind, their element combination and their objective kind, and
-  their geometry is at least `layout.near_identical_similarity` (0.85) alike (Jaccard
-  similarity of the leaves);
-- their geometry is identical (and not empty).
+  their geometry is at least `layout.near_identical_similarity` (0.85) alike.
 
-A unit whose data are only tuning scalars has **no geometry**: it is *undetermined*, never
-repeated. Its scalar names are no evidence of identity: under content-sufficiency 1.2.0 a
-unit's "layout" was the set of its parameter names, so two different courses that both carried
-`par_s`, `limit_s`, `gems` were flagged near-identical, and naming a parameter nothing reads
-"fixed" it (content-sufficiency 1.3.0 measures geometry). Adding,
-renaming or removing a scalar key now changes no verdict. The repeated share is held to
-`content.structure.max_repeated_layout_ratio` on the units with geometry; while the
-undetermined units could carry it past the bar (each repeating a unit not yet repeated - the
-report's `repeated_ratio_at_most`, with the units in `undetermined`), the check is SKIPPED as
-`UNMEASURED`, never a pass: the quality gate holds a skipped content-sufficiency check at the
-release tier (`floor.sufficiency_measured`). The developer's fix is to ship each unit's
-geometry as data - in its own entry (e.g. `layout`) or in the layout source. Measured
-repetition over the bar still fails, routed by the design view as every by-design check. The
-design step's `content.tier_structure` applies the same rule to the design's
-`units[].parameters`, so a design gap is not closed by renaming parameters.
+A design unit is also repeated when another design unit has its structure, its elements and
+the same parameter values, whatever its geometry says - the identity the design check had
+before geometry, so the design side is never looser than it was.
+
+A build unit whose declared layout holds no list has **no geometry**: it is *undetermined*,
+never repeated. Its scalar names are no evidence of identity: under content-sufficiency 1.2.0
+a unit's "layout" was the set of its parameter names, so two different courses that both
+carried `par_s`, `limit_s`, `gems` were flagged near-identical, and naming a parameter nothing
+reads "fixed" it. Adding, renaming or removing a scalar key changes no verdict. The repeated
+share is held to `content.structure.max_repeated_layout_ratio` on the units with geometry;
+while the undetermined units could carry it past the bar (each repeating a unit not yet
+repeated - the report's `repeated_ratio_at_most`, with the units in `undetermined`), the check
+is SKIPPED as `UNMEASURED`, never a pass: the quality gate holds a skipped content-sufficiency
+check at the release tier (`floor.sufficiency_measured`). The developer's fix is to ship each
+unit's geometry as data in a declared place. Measured repetition over the bar still fails,
+routed by the design view as every by-design check. The design step's
+`content.tier_structure` applies the same rule to the design's `units[].parameters`, so a
+design gap is not closed by renaming parameters.
+
+**What this does not establish.** The judge reads the declared geometry; it does not verify
+that the game builds each unit from it. A `layout` the game never reads would be measured all
+the same. What holds that is the develop contract - the unit is built from its `layout` entry
+loaded at boot, and nothing in `src/` hard-codes a unit (the develop brief) - and the play
+probe's survey, which enters every unit through its unit link and records what it drew there.
+There is no runtime check that the drawn geometry matches the declared one.
 
 **Generated content** (`parametric`, `procedural`). The units listed are representative, so
 no unit list is counted, and every unit check is skipped with that reason. Entity kinds are

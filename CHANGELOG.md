@@ -9,6 +9,21 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**A measurement's validity no longer softens a failure** (visual-quality.yaml 1.2.0,
+specialist-routing.yaml 1.4.0, [docs/playability-module.md](docs/playability-module.md)).
+Three gaps a review of the validity rules found, closed without loosening a bar. A unit the
+traverse stopped inside that the bot played on in for the whole `sample.variety_extend_s` and
+that still showed too few new kinds is judged as seen whole - `content.variety` FAILs and its
+pair counts - instead of staying unmeasured however long it was played; only an extension
+itself cut short leaves it unmeasured. On a host degraded on every attempt, a check that read
+a failure or is required is BLOCKED at every tier (re-measure on a quiet host), never a
+WARNING the step could PASS over; a game that floods its own host can buy at most that
+BLOCKED, never a pass (the documented limit). The ramp recording now carries its host's health
+and is made again on a degraded host, and `depth.ramp` / `depth.stall` are judged under the
+same rule, so a host stall is never a `depth.stall` FAIL routed to gameplay; `depth.` is now
+routed to gameplay explicitly (`default_dimension` did it before). Existing reports are not
+invalidated; a re-run playability step re-measures.
+
 **`depth.ramp` is judged on several runs, and a stall is its own finding** (design-depth.yaml
 1.4.0, [docs/playability-module.md](docs/playability-module.md)). One endless run per
 viewport, cut the moment its first third held 10 inputs, flipped between PASS and FAIL across

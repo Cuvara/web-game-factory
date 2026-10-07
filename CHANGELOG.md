@@ -10,7 +10,7 @@ and `core/` is still the contract.
 ## [Unreleased]
 
 **A measurement's validity no longer softens a failure** (visual-quality.yaml 1.2.0,
-specialist-routing.yaml 1.4.0, [docs/playability-module.md](docs/playability-module.md)).
+specialist-routing.yaml 1.5.0, [docs/playability-module.md](docs/playability-module.md)).
 Three gaps a review of the validity rules found, closed without loosening a bar. A unit the
 traverse stopped inside that the bot played on in for the whole `sample.variety_extend_s` and
 that still showed too few new kinds is judged as seen whole - `content.variety` FAILs and its

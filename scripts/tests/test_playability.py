@@ -1184,7 +1184,7 @@ class AuthoredPuzzle(Judge):
         self.assertEqual(ramp["measured"]["stalled_samples"], [2])
         self.assertEqual(ramp["measured"]["pooled_inputs_per_third"], [20, 31, 42])
         self.assertIn("depth.stall", ramp["measured"]["unmeasured"])
-        # A stall routes to gameplay (specialist-routing.yaml 1.4.0 `depth.: gameplay`), the
+        # A stall routes to gameplay (specialist-routing.yaml 1.5.0 `depth.: gameplay`), the
         # owner of a game that stops being playable.
         from wgf_triage.routing import Routing
         routing = Routing.load()

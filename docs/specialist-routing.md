@@ -21,7 +21,7 @@ translation data.
 |---|---|---|
 | The finding contract | `core/artifacts/shared/quality-finding.schema.json` | `finding`: id, dimension, severity, source (producer, step, check, viewport, artifact), summary, measured, bar, evidence refs, owner, task (change, acceptance, design field), route, assets. `request`: what a person types at G4. |
 | The specialists | `core/roles/roles.yaml` 1.1.0, charter `core/roles/specialists.md` | Each specialist is an implementer with `focus`, `reads` (its craft playbooks in `core/craft/`) and `writes` (its writable scope in the game repository). |
-| Ownership and order | `core/reference/specialist-routing.yaml` 1.4.0 | The dimensions, the one owner of each, the visit order, the 2D/3D words, and each producer's table: check id, VQA category, score, state question or listing section, mapped to a dimension; `split` for a check whose failing items take different routes. |
+| Ownership and order | `core/reference/specialist-routing.yaml` 1.5.0 | The dimensions, the one owner of each, the visit order, the 2D/3D words, and each producer's table: check id, VQA category, score, state question or listing section, mapped to a dimension; `split` for a check whose failing items take different routes. |
 | The triage step | `scripts/wgf_triage/`, step `triage` in `new-game` | Normalizes, groups, routes. Writes a `triage-report` (`core/artifacts/triage-report.schema.json`). |
 | The specialist visit | `scripts/wgf_develop/specialist.py` | The develop visit routed as `triage.<role>`: the specialist's brief, scope and record. |
 

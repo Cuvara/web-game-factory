@@ -104,7 +104,7 @@
     "core/lifecycle/stages/strategy.md": "sha256:0f03968df3be3b427335fedd3603fdbcc598e2f2f78299388bc3062a06c7ae4e",
     "core/lifecycle/stages/tech-plan.md": "sha256:a69a1689b116ae42bab1191010f97a5b3e0fe0cba7e8bc7710cfc09cf7d36e81",
     "core/lifecycle/title.machine.yaml": "sha256:c79a05d36b45a2e2e62a98bc864c956559e0cdcdd7e8388262fba865cb4a3655",
-    "core/reference/art-style-families.yaml": "sha256:c231dce7cc57cc68498bf577537ab4ad0a45e75ac6d87d4bb89b3dfc6ee7e232",
+    "core/reference/art-style-families.yaml": "sha256:880ef82b11d31910f3e45305f325303b85a8732e2b134483e543766d4f338be6",
     "core/reference/asset-policy.yaml": "sha256:04a02e9dd181092294aa0b1bce5c39e9864c7f67cbca7ed06cb5bea9ef9b92bc",
     "core/reference/asset-quality.yaml": "sha256:d4ab4470548a0c5ae7250a834ca812ff425edc942c499b4e930bff356673235e",
     "core/reference/brief-commitments.yaml": "sha256:c87b5778a1c736e1bf592cf678ad7d1b3306d42d2884cbecae217dc33421429a",

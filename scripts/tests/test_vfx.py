@@ -98,6 +98,39 @@ class StyleFamilies(unittest.TestCase):
         self.assertEqual(style_families.style_problems(spec, neon), [])
 
 
+# The role each example is a model of, for the model checks.
+EXAMPLE_ROLES = {"craft": "player", "barrier": "threat", "ball": "player", "arch": "goal",
+                 "character": "player", "pickup": "collectible"}
+
+
+class StyleFamilyExamplesInBlender(unittest.TestCase):
+    """WGF_BLENDER_TEST=1: every family example builds with the pinned Blender and passes the
+    model checks for the role it is an example of - the worked example is never a model the
+    gate would refuse (the round ball's band shows on its surface)."""
+
+    @classmethod
+    def setUpClass(cls):
+        from test_models import _real_blender
+        cls.info, reason = _real_blender()
+        if cls.info is None:
+            raise unittest.SkipTest(reason)
+
+    def test_every_example_builds_and_passes_its_roles_checks(self):
+        from wgf_assets import blender, model_quality
+        for fid, entry in style_families.load()["families"].items():
+            for example in entry["examples"]:
+                with self.subTest(family=fid, example=example["id"]):
+                    data, report, _key = blender.build_model(self.info, example["spec"],
+                                                             example["id"])
+                    self.assertTrue(report["ok"])
+                    judged = model_quality.assess(
+                        data, role=EXAMPLE_ROLES[example["id"]], spec=example["spec"],
+                        name=example["id"], requirement={"description": example["object"]})
+                    self.assertEqual(judged["quality"]["verdict"], "pass",
+                                     [c for c in judged["quality"]["checks"]
+                                      if c["status"] == "fail"])
+
+
 def design(tier="release", vfx=None, roles=("player", "collectible", "threat"),
            mechanics=("steer", "collect"), win=True):
     spec = {"assets": [{"id": f"{r}-art", "role": r, "tier": "mvp"} for r in roles],

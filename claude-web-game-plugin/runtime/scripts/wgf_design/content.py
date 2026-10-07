@@ -1221,14 +1221,15 @@ def _tier_structure(d):
                             f"arena or a climax is a different unit to play, not a bigger one")
     if repeat_bar is not None and d.authored and units:
         # One rule with the content-sufficiency step (wgf_design/layouts.py): units are
-        # compared on the geometry their `parameters` carry (the leaves inside a list), never
-        # on the names or values of tuning scalars - a unit of scalars alone is undetermined,
-        # so renaming or adding a parameter can neither open nor close this.
+        # compared on the geometry their `parameters` carry (their outermost lists, container
+        # names dropped), never on the names of tuning scalars; and two units with one
+        # structure, one set of elements and the same parameter values are one unit whatever
+        # their geometry says - never looser than comparing them on that alone.
         view = [{"id": unit.get("id"), "structure": unit.get("structure"),
                  "combo": d.elements_of(unit), "objective_kind": d.objective_kind(unit),
-                 "geometry": geometry_of.geometry(
-                     {"parameters": unit.get("parameters")}
-                     if isinstance(unit.get("parameters"), dict) else {})}
+                 "geometry": geometry_of.design_geometry(unit.get("parameters")),
+                 "identity": geometry_of.design_identity(
+                     unit.get("structure"), d.elements_of(unit), unit.get("parameters"))}
                 for unit in units]
         found = geometry_of.repetition(view, _near_identical())
         repeated = [unit for unit in units if unit.get("id") in set(found["repeated"])]

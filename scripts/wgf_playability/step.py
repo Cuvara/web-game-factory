@@ -38,7 +38,7 @@ from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.quality import run_tier
 from wgflib.yamllite import YamlError, load_file
 
-from wgf_design import commitments, existing
+from wgf_design import commitments, existing, layouts
 from wgf_design.content import quality_tier
 from wgf_design.experience import load_rules as load_experience_rules
 
@@ -93,7 +93,9 @@ export default defineConfig({{
   testDir: "tests/wgf-play",
   outputDir: "test-results/wgf-play",
   workers: 1,
-  retries: 0,
+  // A recording made on a degraded host is made again (visual-quality.yaml `environment`);
+  // the bot skips any other retry, so a test that threw still records nothing.
+  retries: {retries},
   timeout: 420_000,
   reporter: [["line"]],
   use: {{ baseURL: "http://localhost:{port}", launchOptions: {{ args: gl }}, ...proxy }},
@@ -170,6 +172,10 @@ class PlayabilityStep(WorkflowStep):
             kinds_required = self._kinds_required(context, design)
             scope_tiers = self._scope_tiers(context, design)
             ramp_required = self._unmeasured_held(context, design, "depth.ramp")
+            # Why each timing-sensitive check is not passed when the host never let it be
+            # measured (or content.variety when the traverse cut its unit short), per check.
+            unmeasured_held = {cid: why for cid in analysis.EVIDENCE
+                               if (why := self._unmeasured_held(context, design, cid))}
             ramp_tiers = self._built_tiers(context, design, self.params)
         except (OSError, YamlError, ValueError) as exc:
             return StepResult.blocked(
@@ -205,6 +211,7 @@ class PlayabilityStep(WorkflowStep):
             content_settings, truncated, total_s = self._content_settings(design, qa, settings,
                                                                           ramp_tiers)
             settings.update(content_settings)
+            settings.update(self._validity_settings(rules, qa, content_settings))
             # An adopted checkout with no content data file: its floor is counted on this
             # play when it is the shipped build (wgf_design/existing.py), and the traverse
             # plays on past the bar's few units to reach what it ships.
@@ -233,7 +240,8 @@ class PlayabilityStep(WorkflowStep):
                                              kinds_required=kinds_required,
                                              scope_tiers=scope_tiers,
                                              ramp_required=ramp_required,
-                                             ramp_tiers=ramp_tiers)
+                                             ramp_tiers=ramp_tiers,
+                                             unmeasured_held=unmeasured_held)
                 frames += self._frames(frames_dir, project, context.run_dir)
             if not blocked and not any(p["ran"] for p in projects):
                 blocked = "the bot produced no records on any viewport; see " + os.path.join(logs, "bot.log")
@@ -338,9 +346,9 @@ class PlayabilityStep(WorkflowStep):
         subtracted; whatever is left is shared out between the traverse, persist and session
         windows in proportion to what they asked for, and every check judged from a window that
         was cut is marked `truncated`. A design whose time ramp is read on a mode it includes
-        (analysis.time_ramp) asks for that run's window too (design-depth.yaml
-        `playability.ramp.run_s`); the run the ramp is read on may be played on for up to
-        `ramp.extend_s` more while its first third holds too few oracle inputs to compare.
+        (analysis.time_ramp) asks for `ramp.samples` x `ramp.run_s` more: the ramp test plays
+        that many fresh runs of the endless play or mode, and may play whole further samples
+        within `ramp.extend_s` while the pooled counts are too few or inside the noise band.
         """
         spec = (design or {}).get("build_spec") or {}
         content, _mode, units = analysis.content_units(design)
@@ -355,6 +363,10 @@ class PlayabilityStep(WorkflowStep):
         content_applies = content is not None
         depth_applies = bool(depth.get("meta_loop") or depth.get("first_session"))
         on_mode = bool(depth_applies and ramp and ramp["run"] == "mode")
+        # The time ramp is read on `ramp.samples` fresh runs of its play, each `run_s` long -
+        # the session's endless play or the mode's - in the ramp test, never on the session.
+        sampled = bool(depth_applies and ramp)
+        planned = int(ramp_bars.get("samples") or 0) if sampled else 0
         asked = {
             "traverse": (budget.get("traverse_s") or 0) * 1000 if content_applies else 0,
             "persist": (budget.get("persist_s") or 0) * 1000 if depth_applies else 0,
@@ -365,7 +377,7 @@ class PlayabilityStep(WorkflowStep):
             "session": (min(target_s * (session_bars.get("max_multiplier") or 0),
                             target_s * (session_bars.get("min_share") or 0) + SESSION_MARGIN_S)
                         * 1000 if depth_applies else 0),
-            "ramp": (ramp_bars.get("run_s") or 0) * 1000 if on_mode else 0,
+            "ramp": planned * (ramp_bars.get("run_s") or 0) * 1000,
         }
         total_s = budget.get("bot_total_s") or 0
         spent = (settings["idle_ms"] + settings["win_ms"] + settings["lose_ms"]
@@ -396,12 +408,36 @@ class PlayabilityStep(WorkflowStep):
             # `ramp_mode` through the probe's play.mode and plays it for ramp_ms), else none.
             "ramp_run": (ramp or {}).get("run") if depth_applies else None,
             "ramp_mode": ramp["mode"] if on_mode else None,
-            "ramp_ms": int(asked["ramp"] * scale),
+            # Per sample: ramp_ms (the budget's share, split evenly between the planned
+            # samples), the pooled-count rule the bot extends on, and the stall bar.
+            "ramp_ms": int(asked["ramp"] * scale / planned) if planned else 0,
+            "ramp_samples": planned,
+            "ramp_noise_z": float(ramp_bars.get("noise_z") or 0) if sampled else 0,
             "ramp_min_inputs": int(ramp_bars.get("min_inputs_per_third") or 0)
-                               if depth_applies and ramp else 0,
-            "ramp_extend_ms": int((ramp_bars.get("extend_s") or 0) * 1000)
-                              if depth_applies and ramp else 0,
+                               if sampled else 0,
+            "ramp_extend_ms": int((ramp_bars.get("extend_s") or 0) * 1000) if sampled else 0,
+            "ramp_stall_ms": int((ramp_bars.get("stall_max_s") or 0) * 1000) if sampled else 0,
         }, truncated, total_s
+
+    @staticmethod
+    def _validity_settings(rules, qa, content_settings):
+        """The CFG that keeps a measurement honest (visual-quality.yaml `environment` and
+        `sample`): the bars a recording's host is judged degraded by, how many attempts a
+        recording read by a timing-sensitive check may take (analysis.RETRIED_RECORDS), and how
+        long the traverse plays on in a unit it stopped inside while that unit has shown fewer
+        new kinds than the family asks (only a family that asks for one, with authored units)."""
+        env = rules.get("environment") or {}
+        sample = rules.get("sample") or {}
+        want_new = int((qa.get("genre") or {}).get("min_new_kinds_per_unit") or 0)
+        return {
+            "environment": {key: env.get(key) for key in (
+                "tick_ms", "stall_ms", "max_stall_ms", "max_stalled_share",
+                "max_server_wait_ms", "max_attempts")},
+            "retry_records": list(analysis.RETRIED_RECORDS),
+            "min_new_kinds": want_new if content_settings.get("content_applies") else 0,
+            "variety_extend_ms": (int((sample.get("variety_extend_s") or 0) * 1000)
+                                  if want_new and content_settings.get("content_applies") else 0),
+        }
 
     @staticmethod
     def _survey_settings(design, params, path=None):
@@ -427,13 +463,30 @@ class PlayabilityStep(WorkflowStep):
         }
 
     @staticmethod
-    def _keep_content_data(repo, out):
-        """Copy the commit's content data file beside the records, when it ships one."""
+    def _keep_content_data(repo, out, path=None):
+        """Copy the commit's content data file beside the records, when it ships one, and the
+        layout source it measures unit geometry on (content-sufficiency.yaml `layout.source`,
+        or the data file's `layout_source`; only a file under public/content)."""
         source = os.path.join(repo, *CONTENT_DATA.split("/"))
-        if os.path.isfile(source):
-            target = os.path.join(out, CONTENT_COPY)
-            os.makedirs(os.path.dirname(target), exist_ok=True)
-            shutil.copyfile(source, target)
+        if not os.path.isfile(source):
+            return
+        target = os.path.join(out, CONTENT_COPY)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copyfile(source, target)
+        try:
+            with open(source, encoding="utf-8") as handle:
+                data = json.load(handle)
+            found = layouts.source_of(data, load_file(path or SUFFICIENCY_PATH))
+        except (OSError, ValueError, YamlError):
+            return
+        if not found:
+            return
+        relative = found[0]
+        origin = os.path.join(repo, *layouts.CONTENT_DIR.split("/"), *relative.split("/"))
+        if os.path.isfile(origin):
+            kept = os.path.join(os.path.dirname(target), *relative.split("/"))
+            os.makedirs(os.path.dirname(kept), exist_ok=True)
+            shutil.copyfile(origin, kept)
 
     # -- running ------------------------------------------------------------------------
 
@@ -471,7 +524,9 @@ class PlayabilityStep(WorkflowStep):
         os.makedirs(os.path.join(repo, "tests", "wgf-play"), exist_ok=True)
         shutil.copy(BOT_SPEC, os.path.join(repo, "tests", "wgf-play", "bot.spec.ts"))
         with open(os.path.join(repo, "playwright.wgf-play.config.ts"), "w", encoding="utf-8") as h:
-            h.write(CONFIG.format(port=port, proxy_var=BROWSER_PROXY_VAR, bypass=BROWSER_BYPASS))
+            retries = max(0, int((settings.get("environment") or {}).get("max_attempts") or 1) - 1)
+            h.write(CONFIG.format(port=port, proxy_var=BROWSER_PROXY_VAR, bypass=BROWSER_BYPASS,
+                                  retries=retries))
         config_path = os.path.join(out, "settings.json")
         os.makedirs(out, exist_ok=True)
         with open(config_path, "w", encoding="utf-8") as handle:
@@ -483,14 +538,19 @@ class PlayabilityStep(WorkflowStep):
         # The bot's own budget decides the timeout, not a fixed number: two viewports of
         # bot_total_s and of the showcase (its window, the start before it and the last state
         # it stages), plus the install-free start-up and the report - and the survey's window
-        # with a start per unit, on the projects it runs on. The ramp's run may be played on
-        # past its window (`extend_s`) on each viewport.
+        # with a start per unit, on the projects it runs on. The ramp may play further
+        # samples past its window (`extend_s`) on each viewport, and starts every sample on a
+        # fresh page.
         survey_units = len(settings.get("survey_units") or [])
+        ramp_ms = settings.get("ramp_ms") or 0
+        ramp_starts = ((settings.get("ramp_samples") or 0)
+                       + int((settings.get("ramp_extend_ms") or 0) // ramp_ms)) if ramp_ms else 0
         survey = (len(settings.get("survey_projects") or [])
                   * (survey_s + survey_units * (settings["start_timeout_ms"] / 1000.0 + 2) + 60)
                   if survey_units else 0)
         timeout = int(2 * (bot_total_s or 0) + 2 * (SHOWCASE_S + 45) + 120 + survey
-                      + 2 * (extend_s or 0))
+                      + 2 * (extend_s or 0) + 2 * self._again_s(settings)
+                      + 2 * ramp_starts * settings["start_timeout_ms"] / 1000.0)
         try:
             run = self._run(["pnpm", "exec", "playwright", "test", "-c",
                              "playwright.wgf-play.config.ts"], repo, timeout,
@@ -500,6 +560,24 @@ class PlayabilityStep(WorkflowStep):
         if not run.ok and any(marker in (run.output or "") for marker in _NO_BROWSER):
             return "no browser to play the build in here (playwright install chromium)"
         return None
+
+    @staticmethod
+    def _again_s(settings):
+        """Per viewport, the most the bot may spend making a recording again on a degraded host
+        (each retried recording's window and its start, once per further attempt - the ramp's
+        every sample, planned and extended, each on a fresh page) and playing on in a unit the
+        traverse cut short (on every attempt): nothing on a healthy host whose units show their
+        kinds, but the process timeout must allow it."""
+        attempts = int((settings.get("environment") or {}).get("max_attempts") or 1)
+        ramp_ms = settings.get("ramp_ms") or 0
+        ramp_samples = ((settings.get("ramp_samples") or 0)
+                        + int((settings.get("ramp_extend_ms") or 0) // ramp_ms)) if ramp_ms else 0
+        windows = (settings.get("idle_ms", 0) + settings.get("win_ms", 0)
+                   + settings.get("lose_ms", 0) + settings.get("traverse_ms", 0)
+                   + 4 * settings.get("start_timeout_ms", 0)
+                   + ramp_samples * (ramp_ms + settings.get("start_timeout_ms", 0)))
+        return ((attempts - 1) * windows
+                + attempts * settings.get("variety_extend_ms", 0)) / 1000.0
 
     @staticmethod
     def _records(directory):
@@ -544,6 +622,20 @@ class PlayabilityStep(WorkflowStep):
         for check in checks:
             if check["status"] == "SKIPPED" and check["id"] not in {s["id"] for s in skipped}:
                 skipped.append({"id": check["id"], "reason": check["summary"]})
+        # A required check the host never let be measured, or whose unit the traverse cut
+        # short, is not a defect of the build to send back to develop - and never a pass: the
+        # step is BLOCKED for a person (resume on a quieter host) unless a real failure
+        # already sends the build back.
+        unmeasured = sorted({f"{c['project']}:{c['id']}" for c in checks
+                             if c["required"] and c["status"] == "BLOCKED"
+                             and isinstance(c.get("measured"), dict)
+                             and c["measured"].get("unmeasured")
+                             in (analysis.ENVIRONMENT_DEGRADED, analysis.SAMPLE_CUT)})
+        if unmeasured and not blocked and not failed:
+            blocked = (f"{len(unmeasured)} required playability check(s) could not be measured "
+                       f"and are not passed: {', '.join(unmeasured[:8])} - "
+                       + "; ".join(sorted({c["summary"] for c in checks
+                                           if f"{c['project']}:{c['id']}" in unmeasured})[:3]))
         verdict = "BLOCKED" if blocked else ("FAIL" if failed else "PASS")
         now = self.clock()
         artifact_id = provenance.artifact_id("playability-report", title_id, now,

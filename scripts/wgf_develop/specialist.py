@@ -174,6 +174,39 @@ def _inline(value, limit=400):
     return text if len(text) <= limit else text[:limit] + " ..."
 
 
+def _gaming_rules(vocabulary):
+    """The brief's rules against meeting a bar by changing what the gate measures
+    (core/reference/gate-gaming.yaml), and the one way to declare a change that only looks
+    like it."""
+    field = (vocabulary.data.get("declaration") or {}).get("field") or "measurement_changes"
+    lines = ["### Change the game, not its measurement\n",
+             "Each finding closes when its gate measures the next build. Meet it by changing "
+             "what the player experiences; a pass the player cannot feel is not a fix. The "
+             "review reads every hunk of this visit's commit, classifies it player-facing or "
+             "measurement-facing, and sends a measurement-facing change back to this "
+             "discipline as a blocker.\n"]
+    lines.extend(f"- {rule}" for rule in vocabulary.rules)
+    lines.append("")
+    lines.append("The review flags, deterministically: a field added to content data that "
+                 "game source never reads; play-area, bounds or collider changes in a visit "
+                 "routed for reach, time or visibility; probe-, showcase- or bot-only code "
+                 "changed for findings about the game; a drawn size changed - a draw constant, "
+                 "a draw size scaled from a collider, an asset frame or an image file made "
+                 "larger - without a collider or physical size of the same entity. If such a "
+                 "change is what the player experiences - the design asks for a smaller "
+                 "arena, a field is read through an alias - "
+                 f"declare it in the report's `{field}`: "
+                 '`{"flag": "<pattern>", "where": "<file or file#key>", "evidence": '
+                 '[{"file": "src/...", "line": 12}], "player_effect": "<what the player '
+                 'sees or does differently>"}`. `where` names the flagged file (or file#key). '
+                 "Evidence counts only where this commit changed the game: a line of the "
+                 "flagged file inside the flagged change, or a line of game source this commit "
+                 "touched; for an unread field, a game-source line this commit touched that "
+                 "reads it clears the flag. A declaration without such evidence changes "
+                 "nothing.\n")
+    return lines
+
+
 def render(specialist):
     """The brief's specialist section, as markdown lines."""
     lines = [f"## This visit: {specialist['label']}\n",
@@ -190,6 +223,8 @@ def render(specialist):
     if specialist.get("pending"):
         lines.append("After you: " + ", ".join(f"`{p}`" for p in specialist["pending"])
                      + " - leave their findings to them.\n")
+    from wgf_review.gaming import Vocabulary  # the shared vocabulary, not a copy of it
+    vocabulary = Vocabulary.load()
     lines.append("### Your findings\n")
     for finding in specialist["findings"]:
         source = finding.get("source") or {}
@@ -209,7 +244,10 @@ def render(specialist):
         evidence = [f"`{ref}`" for ref in finding.get("evidence_refs") or []]
         if evidence:
             lines.append("  - Evidence: " + ", ".join(evidence))
+        for rule in vocabulary.rules_for(finding):
+            lines.append(f"  - Not a fix: {rule}")
     lines.append("")
+    lines.extend(_gaming_rules(vocabulary))
     lines.append("### Your craft playbooks\n")
     lines.append("Read these before you change anything - they are this discipline's bar. "
                  "They are outside this repository: open them by these absolute paths.\n")

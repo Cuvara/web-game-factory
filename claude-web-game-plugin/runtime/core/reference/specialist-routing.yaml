@@ -21,7 +21,10 @@
 
 # 1.1.0: content-sufficiency-report (workflow 10).
 # 1.3.0: `ledger` - which findings hold a build back until they are verified.
-version: 1.3.0
+# 1.4.0: a producer's `split` - a check whose failing items have different routes becomes
+#        one finding per route (production-quality's assets.runtime).
+# 1.5.0: playability `depth.` stated (gameplay), which only `default_dimension` routed before.
+version: 1.5.0
 
 # The quality dimensions, as the quality-finding schema enumerates them.
 dimensions: [content, level-design, difficulty, progression, gameplay, art-2d, environment-3d, lighting-material, ui, audio, feel, store-copy, platform]
@@ -96,6 +99,14 @@ by_engine_dimension:
 # How each producer's failures become findings. `checks` keys are a check id, or a prefix
 # ending in "." (the longest match wins); values are a dimension or a word above. `route`
 # is the finding's route when the producer does not state one per failure.
+#
+# `split` names checks whose failing items do not share an owner: each failing item of the
+# check is routed by the value its measurement names (`measured.<item>.<item>`, `item`
+# defaulting to `failed_at`) through `routes`, else `default`, and the check becomes one
+# finding per route, each naming only its items, id `<producer>:<check>/<route>[@project]`
+# (always suffixed, so the ledger tracks each part on its own). Without it one route would
+# carry every item: a route-`assets` finding that an assets pass drops as handled hides the
+# items only the game's code can fix. The check's own verdict and route are unchanged.
 producers:
   playability-report:
     step: playability
@@ -105,6 +116,9 @@ producers:
       difficulty.: difficulty
       idle.grace: difficulty
       progression.: progression
+      # depth.session_length, depth.ramp, depth.stall: play that stops, or does not ask for
+      # more as it goes, is the game loop's.
+      depth.: gameplay
       act.acknowledged: feel
       start.objective: ui
       restart.works: ui
@@ -126,6 +140,15 @@ producers:
       ui.: ui
       audio.: audio
     default: art
+    # The runtime chain per asset (exists -> referenced -> loaded -> rendered -> visible):
+    # an asset that does not exist is the assets step's to make; one that exists but is not
+    # referenced, loaded, drawn or seen is the game's code (scripts/wgf_production/checks.py
+    # `assets_runtime` routes the whole check `assets` when any asset fails at `exists`).
+    split:
+      assets.runtime:
+        item: failed_at
+        routes: {exists: assets}
+        default: develop
     acceptance: production-quality judges the next build and measures `{check}` PASS{bar_clause}.
 
   visual-qa-report:

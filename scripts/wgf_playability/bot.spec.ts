@@ -23,6 +23,9 @@
 // assets drawn too. It is never used to play or to judge play. When the design's time ramp is
 // promised by a mode it includes (an endless mode beside authored units), one test enters that
 // mode through the probe's optional play.mode and plays it, so the ramp is read on its run.
+// The recordings the timing-sensitive checks read carry their host's health, and one made on a
+// degraded host is made again (Health, finish; core/reference/visual-quality.yaml
+// `environment`).
 // Factory tooling: it contains no game, and is not part of one.
 
 import { test, type Page } from "@playwright/test";
@@ -78,15 +81,20 @@ const CFG = JSON.parse(fs.readFileSync(process.env.WGF_PLAY_CONFIG as string, "u
   session_target_ms: number;
   session_max_ms: number;
   window_ms: number;
-  // The time ramp (analysis.time_ramp): the run it is read on - `session`, or `mode`: a run
-  // of ramp_mode, entered through the probe's optional play.mode and played for ramp_ms -
-  // or null. While the longest run's first third holds fewer than ramp_min_inputs oracle
-  // inputs, that run is played on for up to ramp_extend_ms more.
+  // The time ramp (analysis.time_ramp): the play it is read on - `session` (the endless play
+  // itself), or `mode`: ramp_mode, entered through the probe's optional play.mode - or null.
+  // The ramp test plays ramp_samples fresh runs of it, ramp_ms each, and further whole
+  // samples within ramp_extend_ms while the pooled counts are undecided (fewer than
+  // ramp_min_inputs in the first thirds, or a difference within ramp_noise_z x sqrt(n)).
+  // ramp_stall_ms: the stall bar (depth.stall), past which a sample is decided as stalled.
   ramp_run?: string | null;
   ramp_mode?: string | null;
   ramp_ms?: number;
+  ramp_samples?: number;
+  ramp_noise_z?: number;
   ramp_min_inputs?: number;
   ramp_extend_ms?: number;
+  ramp_stall_ms?: number;
   axes: string[];
   advance_actions: string[];
   // The family says a unit can be restarted from inside it (genre-models qa.reset_in_unit).
@@ -103,6 +111,18 @@ const CFG = JSON.parse(fs.readFileSync(process.env.WGF_PLAY_CONFIG as string, "u
   survey_ms?: number;
   kind_roles?: string[];
   not_content_roles?: string[];
+  // Whether the host could measure anything (core/reference/visual-quality.yaml
+  // `environment`): the bars a recording's health is judged degraded by, and how many
+  // attempts the recordings in retry_records may take. The step's analysis re-judges every
+  // attempt from the numbers; the bot only decides whether to make a recording again.
+  environment?: { tick_ms: number; stall_ms: number; max_stall_ms: number; max_stalled_share: number;
+                  max_server_wait_ms: number; max_attempts: number };
+  retry_records?: string[];
+  // The traverse plays on in the unit it stops inside while that unit has shown fewer than
+  // min_new_kinds kinds no earlier unit showed, for at most variety_extend_ms
+  // (visual-quality.yaml `sample`). 0: never.
+  min_new_kinds?: number;
+  variety_extend_ms?: number;
 };
 const URL = "/?wgf-probe=1";
 
@@ -115,6 +135,219 @@ function dir(project: string): string {
 function write(project: string, name: string, data: unknown): void {
   fs.writeFileSync(path.join(dir(project), `${name}.json`), JSON.stringify(data, null, 1));
 }
+
+// -- the measurement's own validity ---------------------------------------------------------
+//
+// A recording is only as good as the host it was made on. Each attempt of a recording carries
+// its `health`, measured on what the game cannot cause: a timer in the bot's own process and
+// one in a worker thread inside the page, each expected every tick_ms (how late it fired, the
+// longest lag and the time lost to lags of stall_ms or more), and how long the local preview
+// server - a static file server - took to start answering the page's requests. Beside them,
+// as evidence only, the navigation breakdown (time to first byte, DOMContentLoaded, load, the
+// page's first frame, the first probe answer, play) and the page's requestAnimationFrame
+// gaps: those are the game's own, and a game that blocks its main thread is a defect the
+// checks fail, never a degraded host.
+
+type Beat = { max_lag_ms: number; stalled_ms: number; ticks: number; elapsed_ms: number };
+
+class Heartbeat {
+  private last = performance.now();
+  private readonly t0 = performance.now();
+  private max = 0;
+  private stalled = 0;
+  private ticks = 0;
+  private readonly timer: ReturnType<typeof setInterval>;
+
+  constructor(private readonly tick: number, private readonly stall: number) {
+    this.timer = setInterval(() => {
+      const now = performance.now();
+      const lag = now - this.last - this.tick;
+      if (lag > this.max) this.max = lag;
+      if (lag >= this.stall) this.stalled += lag;
+      this.ticks += 1;
+      this.last = now;
+    }, tick);
+  }
+
+  stop(): Beat {
+    clearInterval(this.timer);
+    return { max_lag_ms: Math.round(this.max), stalled_ms: Math.round(this.stalled), ticks: this.ticks,
+             elapsed_ms: Math.round(performance.now() - this.t0) };
+  }
+}
+
+// Installed before every navigation of the page (start() adds it once): the page's frame gaps,
+// its first frame, and the worker's timer.
+function installHealth(cfg: { tick: number; stall: number }): void {
+  const w = window as unknown as { __wgfHealth?: Record<string, unknown> };
+  if (w.__wgfHealth) return;
+  const h: Record<string, unknown> = { first_frame_ms: null, frames: 0, frame_gap_max_ms: 0, frame_stalls: 0 };
+  w.__wgfHealth = h;
+  let last: number | null = null;
+  const loop = (t: number): void => {
+    if (h.first_frame_ms === null) h.first_frame_ms = Math.round(t);
+    if (last !== null) {
+      const gap = t - last;
+      if (gap > (h.frame_gap_max_ms as number)) h.frame_gap_max_ms = Math.round(gap);
+      if (gap >= cfg.stall) h.frame_stalls = (h.frame_stalls as number) + 1;
+    }
+    last = t;
+    h.frames = (h.frames as number) + 1;
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+  try {
+    const source = `const t0=performance.now();let last=t0,max=0,stalled=0,ticks=0;
+setInterval(()=>{const now=performance.now();const lag=now-last-${cfg.tick};if(lag>max)max=lag;
+if(lag>=${cfg.stall})stalled+=lag;ticks++;last=now},${cfg.tick});
+onmessage=()=>postMessage({max_lag_ms:Math.round(max),stalled_ms:Math.round(stalled),ticks,
+elapsed_ms:Math.round(performance.now()-t0)})`;
+    h.worker = new Worker(globalThis.URL.createObjectURL(new Blob([source], { type: "text/javascript" })));
+  } catch (error) {
+    h.worker_error = String(error).slice(0, 200);
+  }
+}
+
+// What the page measured: the navigation breakdown, its frames, and the worker's timer (null
+// when the page does not answer within 5 s, or never had the script).
+async function pageHealth(page: Page): Promise<Record<string, unknown> | null> {
+  const read = page.evaluate(async () => {
+    const h = (window as unknown as { __wgfHealth?: Record<string, unknown> }).__wgfHealth;
+    if (!h) return null;
+    const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    const waits = (performance.getEntriesByType("resource") as PerformanceResourceTiming[])
+      .concat(nav ? [nav] : [])
+      .filter((e) => e.responseStart > 0 && e.requestStart > 0)
+      .map((e) => e.responseStart - e.requestStart);
+    const worker = h.worker as Worker | undefined;
+    const beat = worker ? await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), 2000);
+      worker.onmessage = (event) => { clearTimeout(timer); resolve(event.data); };
+      worker.postMessage(0);
+    }) : null;
+    return {
+      nav: nav ? { ttfb_ms: Math.round(nav.responseStart - nav.startTime),
+                   dom_content_loaded_ms: Math.round(nav.domContentLoadedEventEnd),
+                   load_ms: Math.round(nav.loadEventEnd), first_frame_ms: h.first_frame_ms,
+                   server_wait_max_ms: waits.length ? Math.round(Math.max(...waits)) : null,
+                   requests: waits.length } : null,
+      frames: { count: h.frames, gap_max_ms: h.frame_gap_max_ms, stalls: h.frame_stalls },
+      worker: beat, worker_error: h.worker_error ?? null,
+    };
+  });
+  return Promise.race([read.catch(() => null), new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))]);
+}
+
+// One attempt's health, and whether it is degraded against CFG.environment (the step's
+// analysis.environment_health judges the same numbers the same way, and decides).
+class Health {
+  private readonly beat: Heartbeat | null;
+
+  constructor() {
+    const env = CFG.environment;
+    this.beat = env ? new Heartbeat(env.tick_ms, env.stall_ms) : null;
+  }
+
+  // The pages a recording navigated away from (the ramp starts every sample on a fresh page,
+  // and each page has its own worker timer): read before they go, and folded into the
+  // attempt's health, so a stall on an earlier sample's page is not lost with the page.
+  private readonly earlier: Record<string, unknown>[] = [];
+
+  async keep(page: Page): Promise<void> {
+    const inPage = await pageHealth(page);
+    if (inPage) this.earlier.push(inPage);
+  }
+
+  async read(page: Page, started?: { firstSnapshotMs: number | null; playingMs: number | null }):
+    Promise<{ health: Record<string, unknown>; degraded: boolean; reasons: string[] }> {
+    const inPage = await pageHealth(page);
+    const bot = this.beat ? this.beat.stop() : null;
+    const pages = [...this.earlier, ...(inPage ? [inPage] : [])];
+    const beats = pages.map((p) => p.worker as Beat | null | undefined)
+      .filter((b): b is Beat => Boolean(b) && typeof (b as Beat).max_lag_ms === "number");
+    const sum = (key: keyof Beat): number => beats.reduce((total, b) => total + (b[key] ?? 0), 0);
+    const worker: Beat | null = beats.length
+      ? { max_lag_ms: Math.max(...beats.map((b) => b.max_lag_ms)), stalled_ms: sum("stalled_ms"),
+          ticks: sum("ticks"), elapsed_ms: sum("elapsed_ms") }
+      : null;
+    const navs = pages.map((p) => p.nav as Record<string, unknown> | null | undefined)
+      .filter((n): n is Record<string, unknown> => Boolean(n));
+    const waits = navs.map((n) => n.server_wait_max_ms).filter((w): w is number => typeof w === "number");
+    const last = navs.length ? navs[navs.length - 1] : null;
+    const nav = last ? { ...last, server_wait_max_ms: waits.length ? Math.max(...waits) : null,
+                         ...(pages.length > 1 ? { pages: pages.length } : {}) } : null;
+    const health: Record<string, unknown> = {
+      bot, worker, worker_error: inPage?.worker_error ?? null,
+      nav: nav ? { ...nav, first_probe_ms: started?.firstSnapshotMs ?? null, playing_ms: started?.playingMs ?? null } : null,
+      frames: inPage?.frames ?? null,
+    };
+    const env = CFG.environment;
+    const reasons: string[] = [];
+    if (env) {
+      for (const [name, beat] of [["bot", bot], ["worker", worker]] as [string, Beat | null | undefined][]) {
+        if (!beat) continue;
+        if (beat.max_lag_ms >= env.max_stall_ms) reasons.push(`the ${name} timer stalled ${beat.max_lag_ms} ms at once`);
+        if (beat.elapsed_ms > 0 && beat.stalled_ms / beat.elapsed_ms >= env.max_stalled_share) {
+          reasons.push(`the ${name} timer lost ${beat.stalled_ms} ms of ${beat.elapsed_ms} ms to stalls`);
+        }
+      }
+      const wait = nav?.server_wait_max_ms;
+      if (typeof wait === "number" && wait >= env.max_server_wait_ms) {
+        reasons.push(`the local server took ${wait} ms to start answering a request`);
+      }
+    }
+    return { health, degraded: reasons.length > 0, reasons };
+  }
+}
+
+// A recording the step's timing-sensitive checks read is made again, in a fresh browser (a
+// Playwright retry), while its host was degraded and attempts remain; the record finally
+// written is the last attempt's, with every attempt's health in `attempts`. A retry that was
+// not asked for here (a test that threw) is skipped: it records nothing, as before.
+function pending(project: string, name: string): string {
+  return path.join(dir(project), `.${name}.attempts.json`);
+}
+
+async function finish(page: Page, info: { project: { name: string }; retry: number }, name: string,
+                      data: Record<string, unknown>, health: Health): Promise<void> {
+  const project = info.project.name;
+  const started = data as { firstSnapshotMs?: number | null; playingMs?: number | null };
+  const now = await health.read(page, { firstSnapshotMs: started.firstSnapshotMs ?? null,
+                                        playingMs: started.playingMs ?? null });
+  const marker = pending(project, name);
+  const before = fs.existsSync(marker) ? JSON.parse(fs.readFileSync(marker, "utf8")) as unknown[] : [];
+  const attempts = [...before, { attempt: before.length + 1, degraded: now.degraded, reasons: now.reasons,
+                                 health: now.health }];
+  const allowed = CFG.environment?.max_attempts ?? 1;
+  // Written on every attempt: should the attempt made again never finish, the degraded one
+  // stands, and is judged as degraded.
+  write(project, name, { ...data, health: now.health, attempts });
+  if (now.degraded && attempts.length < allowed && (CFG.retry_records ?? []).includes(name)) {
+    fs.writeFileSync(marker, JSON.stringify(attempts));
+    throw new Error(`the host was degraded while the ${name} recording was made (${now.reasons.join("; ")}); ` +
+                    "it is made again");
+  }
+  if (fs.existsSync(marker)) fs.rmSync(marker);
+}
+
+// Every retry Playwright makes is one finish() asked for, or none at all.
+test.beforeEach(async ({ page }, info) => {
+  const name = RECORD_OF[info.title];
+  const asked = name !== undefined && fs.existsSync(pending(info.project.name, name));
+  test.skip(info.retry > 0 && !asked, "made again only when its host was degraded");
+  if (CFG.environment) {
+    await page.addInitScript(installHealth, { tick: CFG.environment.tick_ms, stall: CFG.environment.stall_ms });
+  }
+});
+
+// The recordings made again on a degraded host, by test title (CFG.retry_records).
+const RECORD_OF: Record<string, string> = {
+  "first session: objective, and no failure before the grace": "first-session",
+  "win: the oracle plays well": "win",
+  "lose and restart: the anti-oracle plays badly, then retries": "lose",
+  "traverse: the oracle plays unit after unit": "traverse",
+  "ramp: samples of the play that promises the time ramp": "ramp",
+};
 
 // The roles a glimpse is taken for, and how many a test takes.
 const GLIMPSE_ROLES = new Set(["player", "threat", "goal", "target", "projectile", "collectible", "hazard"]);
@@ -318,9 +551,13 @@ async function frame(page: Page, project: string, id: string, frames: string[]):
 // The DOM UI on screen now, measured as the browser computed it: every visible interactive
 // element (button, [role=button], a, input) and every visible text outside one, with its
 // bounds, font size and weight, foreground colour and the opaque background behind it (the
-// element's own and its ancestors' background colours composited; null when none is opaque or
-// an ancestor paints an image, i.e. the canvas or a picture shows through and only the frame
-// can tell), whether the element's computed style equals the user-agent default for its tag
+// element's own and its ancestors' background colours composited; null when none is opaque, or
+// one of them paints an image, a border-image, a mask or a painting pseudo-element, or another
+// element paints between the text and that background - the canvas, a picture or art shows
+// through and only the frame can tell; a control's colour, font and background are those of
+// the element drawing its text), the rectangle of its own text (`glyph_box`, where the
+// production gate reads the frame behind it), its text-shadow and stroke colours (`paint`)
+// and its text-decoration line, whether the element's computed style equals the user-agent default for its tag
 // (read from an element of the same tag in a blank frame no page stylesheet reaches), and the
 // overlaps between interactive elements and with the text.
 async function measureUI(page: Page): Promise<unknown> {
@@ -338,21 +575,108 @@ async function measureUI(page: Page): Promise<unknown> {
       const c = (i: number) => (top[i] * top[3] + under[i] * under[3] * (1 - top[3])) / a;
       return [c(0), c(1), c(2), a];
     };
-    const background = (el: Element): number[] | null => {
+    // Paint that is not a plain colour: a background image or gradient, a (nine-slice)
+    // border-image, a mask. Any of them can put art behind the text that the background
+    // colour does not describe (sky-marble a61a9d7: a card's border-image was the whole
+    // UI-kit sheet, its other screens' art drawn behind the text over a sand fill).
+    const imagePaint = (s: CSSStyleDeclaration): boolean => {
+      const mask = s.maskImage || s.getPropertyValue("-webkit-mask-image");
+      return [s.backgroundImage, s.borderImageSource, mask].some((v) => Boolean(v) && v !== "none");
+    };
+    // A ::before / ::after that is rendered and paints: an image, an image paint, or a fill.
+    const pseudoPaints = (n: Element): boolean => {
+      for (const which of ["::before", "::after"]) {
+        const p = getComputedStyle(n, which);
+        if (!p.content || p.content === "none" || p.content === "normal" || p.display === "none") continue;
+        if (/url\(|gradient\(/.test(p.content) || imagePaint(p)) return true;
+        const fill = parse(p.backgroundColor);
+        if (fill && fill[3] > 0) return true;
+      }
+      return false;
+    };
+    // An element that draws something of its own where it lies.
+    const PAINTED = new Set(["canvas", "img", "video", "svg", "picture", "iframe", "object", "embed"]);
+    const paints = (n: Element): boolean => {
+      if (PAINTED.has(n.tagName.toLowerCase())) return true;
+      const s = getComputedStyle(n);
+      const fill = parse(s.backgroundColor);
+      return Boolean(fill && fill[3] > 0) || imagePaint(s) || pseudoPaints(n);
+    };
+    // The opaque background behind the text: the background colours of the element and its
+    // ancestors composited, up to the first opaque one (the backdrop). Null - undetermined,
+    // for the frame to decide - when any of them up to the backdrop paints other than a plain
+    // colour, or when, at the text's centre, an element that is neither one of them nor inside
+    // the text paints between the text and the backdrop (a canvas, an image, a sibling tile
+    // laid under or over it).
+    const background = (el: Element, at: DOMRect | null): number[] | null => {
       const layers: RGBA[] = [];
+      const chain: Element[] = [];
+      let backdrop: Element | null = null;
       for (let n: Element | null = el; n; n = n.parentElement) {
         const style = getComputedStyle(n);
-        if (style.backgroundImage && style.backgroundImage !== "none") return null;
+        chain.push(n);
+        if (imagePaint(style) || pseudoPaints(n)) return null;
         const bg = parse(style.backgroundColor);
         if (bg && bg[3] > 0) {
           layers.push(bg);
-          if (bg[3] >= 1) break;
+          if (bg[3] >= 1) {
+            backdrop = n;
+            break;
+          }
         }
       }
-      if (!layers.length || layers[layers.length - 1][3] < 1) return null;
+      if (!backdrop || !layers.length) return null;
+      if (at && at.width > 0 && at.height > 0) {
+        const x = at.left + at.width / 2, y = at.top + at.height / 2;
+        if (x >= 0 && y >= 0 && x < innerWidth && y < innerHeight) {
+          for (const e of document.elementsFromPoint(x, y)) {
+            if (e === backdrop || e.contains(backdrop)) break;
+            if (chain.includes(e) || el.contains(e)) continue;
+            if (paints(e)) return null;
+          }
+        }
+      }
       let out = layers[layers.length - 1];
       for (let i = layers.length - 2; i >= 0; i--) out = over(layers[i], out);
       return out.slice(0, 3).map((v) => Math.round(v));
+    };
+    // The element that draws a control's text: the parent of its first visible text (a
+    // face <span> with its own colour and fill inside a transparent <button>), else the
+    // control itself. Its colour, fill and font are what the player reads.
+    const holder = (el: Element): Element => {
+      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+        const parent = t.parentElement;
+        if (parent && (t.textContent || "").trim() && visible(parent, parent.getBoundingClientRect())) return parent;
+      }
+      return el;
+    };
+    // The rectangle of the element's own text - its direct text nodes, not its children (an
+    // icon, a key hint) - which is what the frame is read on behind the text. Null when none.
+    const glyphs = (el: Element): DOMRect | null => {
+      let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+      for (const c of Array.from(el.childNodes)) {
+        if (c.nodeType !== Node.TEXT_NODE || !(c.textContent || "").trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(c);
+        const q = range.getBoundingClientRect();
+        if (q.width <= 0 || q.height <= 0) continue;
+        l = Math.min(l, q.left); t = Math.min(t, q.top);
+        r = Math.max(r, q.right); b = Math.max(b, q.bottom);
+      }
+      return l < r && t < b ? new DOMRect(l, t, r - l, b - t) : null;
+    };
+    // The text's own paints besides its colour: text-shadow and stroke colours, so an
+    // outline or a glow is not taken for art behind the text.
+    const paint = (el: Element): number[][] => {
+      const s = getComputedStyle(el);
+      const out = (s.textShadow.match(/rgba?\([^)]+\)/g) || []).map(parse)
+        .filter((c): c is RGBA => Boolean(c && c[3] > 0));
+      if (parseFloat(s.getPropertyValue("-webkit-text-stroke-width")) > 0) {
+        const stroke = parse(s.getPropertyValue("-webkit-text-stroke-color"));
+        if (stroke && stroke[3] > 0) out.push(stroke);
+      }
+      return out.slice(0, 4);
     };
     const visible = (el: Element, r: DOMRect): boolean => {
       if (r.width <= 0 || r.height <= 0) return false;
@@ -404,6 +728,9 @@ async function measureUI(page: Page): Promise<unknown> {
       if (!visible(el, r)) continue;
       const s = getComputedStyle(el);
       const differs = uaDiffers(el);
+      const face = holder(el);
+      const faceStyle = getComputedStyle(face);
+      const glyph = glyphs(face);
       interactive.push(el);
       elements.push({
         tag: el.tagName.toLowerCase(), role: el.getAttribute("role"),
@@ -411,9 +738,11 @@ async function measureUI(page: Page): Promise<unknown> {
         // Whether that text is drawn: an icon-only control is named by its aria-label, which is
         // read to the player but never painted, so it has no colour to measure.
         text_drawn: Boolean(((el as HTMLElement).innerText || (el as HTMLInputElement).value || "").trim()),
-        box: box(r), font_px: parseFloat(s.fontSize), font_weight: Number(s.fontWeight) || 400,
-        color: ink(el), background: background(el), ua_default: differs.length === 0,
-        ua_differs: differs,
+        box: box(r), font_px: parseFloat(faceStyle.fontSize),
+        font_weight: Number(faceStyle.fontWeight) || 400,
+        color: ink(face), background: background(face, glyph ?? r), ua_default: differs.length === 0,
+        ua_differs: differs, glyph_box: glyph ? box(glyph) : null, paint: paint(face),
+        decoration: faceStyle.textDecorationLine,
       });
     }
     // Text outside the interactive elements: the HUD, labels, result lines.
@@ -431,10 +760,13 @@ async function measureUI(page: Page): Promise<unknown> {
       const r = range.getBoundingClientRect();
       if (!visible(parent, r)) continue;
       const s = getComputedStyle(parent);
+      const glyph = glyphs(parent);
       textNodes.push(parent);
       texts.push({ text: (parent.innerText || "").trim().slice(0, 60), box: box(r),
                    font_px: parseFloat(s.fontSize), font_weight: Number(s.fontWeight) || 400,
-                   color: ink(parent), background: background(parent) });
+                   color: ink(parent), background: background(parent, glyph ?? r),
+                   glyph_box: glyph ? box(glyph) : null, paint: paint(parent),
+                   decoration: s.textDecorationLine });
     }
     blank.remove();
     const overlap = (a: number[], b: number[]): number => {
@@ -594,6 +926,7 @@ async function start(page: Page, touch: boolean, watch: Watch, screens = false, 
 }
 
 test("first session: objective, and no failure before the grace", async ({ page }, info) => {
+  const health = new Health();
   const project = info.project.name;
   const frames: string[] = [];
   const watch = new Watch(page, project, frames);
@@ -635,8 +968,8 @@ test("first session: objective, and no failure before the grace", async ({ page 
     }
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   }
-  write(project, "first-session", { ...started, texts: [...new Set(texts)], states, lostAtMs, ...watch.record(),
-                                    audio_unfocused: unfocused, frames });
+  await finish(page, info, "first-session", { ...started, texts: [...new Set(texts)], states, lostAtMs,
+                                             ...watch.record(), audio_unfocused: unfocused, frames }, health);
 });
 
 test("act: every action is acknowledged on screen", async ({ page }, info) => {
@@ -684,6 +1017,7 @@ test("act: every action is acknowledged on screen", async ({ page }, info) => {
 });
 
 test("win: the oracle plays well", async ({ page }, info) => {
+  const health = new Health();
   const project = info.project.name;
   const frames: string[] = [];
   const watch = new Watch(page, project, frames);
@@ -738,10 +1072,12 @@ test("win: the oracle plays well", async ({ page }, info) => {
       await watch.screen(reached);
     }
   }
-  write(project, "win", { ...started, reached, inputs, series: series.filter((_, i) => i % 5 === 0 || i === series.length - 1), sampled, ...watch.record(), frames });
+  await finish(page, info, "win", { ...started, reached, inputs, series: series.filter((_, i) => i % 5 === 0 || i === series.length - 1),
+                                   sampled, ...watch.record(), frames }, health);
 });
 
 test("lose and restart: the anti-oracle plays badly, then retries", async ({ page }, info) => {
+  const health = new Health();
   const project = info.project.name;
   const frames: string[] = [];
   const watch = new Watch(page, project, frames);
@@ -890,8 +1226,8 @@ test("lose and restart: the anti-oracle plays badly, then retries", async ({ pag
       }
     }
   }
-  write(project, "lose", { ...started, initial, initialContent, reached, endedAtMs, contentAtEnd,
-                           series, wrongPresses, resetInUnit, restart, ...watch.record(), frames });
+  await finish(page, info, "lose", { ...started, initial, initialContent, reached, endedAtMs, contentAtEnd,
+                                    series, wrongPresses, resetInUnit, restart, ...watch.record(), frames }, health);
 });
 
 // The pause screen, when the game offers one: the probe's pause input, else a visible pause
@@ -955,6 +1291,7 @@ interface UnitRecord {
 // a player would, and never jumps to a unit it has not finished. Only recorded: which unit was
 // in play, what it asked for, what was drawn in it, and the difficulty in force.
 test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
+  const health = new Health();
   const project = info.project.name;
   const frames: string[] = [];
   const watch = new Watch(page, project, frames);
@@ -967,23 +1304,82 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
   const snapshots: { ms: number; unit_id: string | null; unit_index: number; state: string;
                      progress: Progress | null; difficulty: Record<string, number>;
                      kinds: string[] }[] = [];
-  const transitions: { from: number; to: number; at_ms: number; how: string; since_end_ms: number | null }[] = [];
+  // Each transition carries the times that separate the game's latency from the bot's
+  // (content.units_reachable judges the game's only): every time is the bot's clock from the
+  // traverse start; a read's `_ms` is when that snapshot call began or returned, as noted.
+  //   since_end_ms   at_ms minus the LAST read that showed the unit ended (raw, bot included)
+  //   ended_ms       return of the FIRST read showing the unit ended: `won`, else its
+  //                  progress target (a target met before `won` is timed from `won`)
+  //   unoffered_ms   start of the last ended read on which no advance was offered yet
+  //   offered_ms     return of the first ended read on which an advance was offered
+  //   act_started_ms / acted_ms  the bot's first input after the end: began, was delivered
+  //   inputs         the inputs the bot sent between the end and the next unit
+  //   last_old_ms    start of the last read that still showed the finished unit
+  //   at_ms          return of the read that first showed the next unit
+  const transitions: { from: number; to: number; at_ms: number; how: string; since_end_ms: number | null;
+                       ended_ms: number | null; unoffered_ms: number | null; offered_ms: number | null;
+                       act_started_ms: number | null; acted_ms: number | null; inputs: number;
+                       last_old_ms: number | null }[] = [];
   const units: UnitRecord[] = [];
   // The largest unit count the build itself reported (content.unit_count): what it ships,
   // beyond the units this window reached (an adopted game's floor, wgf_design/existing.py).
   let unitCountReported = 0;
   let stopped = "window";
   let losses = 0;
+  // When the traverse stops (its window, its unit count) inside a unit that has not yet shown
+  // the new kinds the family asks of every unit, it plays on in that unit - never into the
+  // next - for up to CFG.variety_extend_ms: a kind that arrives later in the unit was
+  // otherwise never seen, and the cut, not the build, would decide content.variety.
+  let cutAt: number | null = null;
+  let cutIndex: number | null = null;
+  let extendedMs = 0;
   if (started.playingMs !== null) {
     const t0 = Date.now();
     let current: number | null = null;
     let ended: { ms: number; how: string } | null = null;
+    // The game-side timeline of the unit that ended (see `transitions`).
+    let end: { how: string; first: number; unoffered: number | null; offered: number | null; actStarted: number | null;
+               acted: number | null; inputs: number } | null = null;
+    let lastOld: number | null = null;
+    // An input sent from the ended unit; `retry` returns null when it found nothing to press.
+    const input = async (send: () => Promise<unknown>): Promise<void> => {
+      const began = Date.now() - t0;
+      const sent = await send();
+      if (end && sent !== null) {
+        end.inputs += 1;
+        if (end.acted === null) {
+          end.actStarted = began;
+          end.acted = Date.now() - t0;
+        }
+      }
+    };
     const shot = new Set<number>();
-    while (Date.now() - t0 < CFG.traverse_ms) {
+    const kindsShort = (): boolean => {
+      const unit = units.find((u) => u.index === current);
+      if (!CFG.min_new_kinds || !unit || unit.won || units.length < 2) return false;
+      const earlier = new Set(units.filter((u) => u.index < unit.index).flatMap((u) => u.kinds));
+      return unit.kinds.filter((k) => !earlier.has(k)).length < CFG.min_new_kinds;
+    };
+    for (;;) {
+      const elapsed = Date.now() - t0;
+      if (cutAt === null && elapsed >= CFG.traverse_ms) {
+        cutAt = elapsed;
+        cutIndex = current;
+      }
+      if (cutAt !== null) {
+        // Recorded before the stop: an extension that ran its whole length records at least
+        // variety_extend_ms, and the step judges the unit as seen whole (analysis).
+        if (!kindsShort()) break;
+        extendedMs = elapsed - cutAt;
+        if (extendedMs >= (CFG.variety_extend_ms ?? 0)) break;
+      }
+      const readMs = Date.now() - t0;
       const s = watch.saw(await snap(page));
       if (!s) break;
       const ms = Date.now() - t0;
       const index = s.content?.unit_index ?? 0;
+      // Only the unit the traverse stopped inside is played on: never one after it.
+      if (cutAt !== null && index > 0 && index !== cutIndex) break;
       unitCountReported = Math.max(unitCountReported, s.content?.unit_count ?? 0);
       const difficulty = difficultyOf(s);
       const kinds = kindsOf(s);
@@ -994,11 +1390,17 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
       if (index !== current) {
         if (current !== null && index > 0) {
           transitions.push({ from: current, to: index, at_ms: ms, how: ended?.how ?? "unknown",
-                             since_end_ms: ended ? ms - ended.ms : null });
+                             since_end_ms: ended ? ms - ended.ms : null,
+                             ended_ms: end?.first ?? null, unoffered_ms: end?.unoffered ?? null,
+                             offered_ms: end?.offered ?? null, act_started_ms: end?.actStarted ?? null,
+                             acted_ms: end?.acted ?? null, inputs: end?.inputs ?? 0,
+                             last_old_ms: lastOld });
         }
         current = index;
         ended = null;
+        end = null;
       }
+      lastOld = readMs;
       let unit = units.find((u) => u.index === index);
       if (index > 0 && !unit) {
         unit = { unit_id: s.content?.unit_id ?? null, index, objective: s.content?.objective ?? null,
@@ -1026,9 +1428,19 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
       if (s.state === "won" || progressDone(s)) {
         if (unit) unit.won = true;
         ended = { ms, how: s.state === "won" ? "won" : "progress" };
+        // Playing on past the cut: the unit is seen whole now, and the next is not entered.
+        if (cutAt !== null) break;
         const advance = advanceOf(s);
-        if (advance) await act(page, advance, touch);
-        else if (s.state === "won") await retry(page, s, touch);
+        // The end is timed from the first `won` read, else the first at its progress target: a
+        // unit whose progress met its target before the game declared it won ended at `won`.
+        if (!end || (end.how === "progress" && s.state === "won")) {
+          end = { how: ended.how, first: ms, unoffered: null, offered: null, actStarted: null,
+                  acted: null, inputs: 0 };
+        }
+        if (advance && end.offered === null) end.offered = ms;
+        else if (end.offered === null) end.unoffered = readMs;
+        if (advance) await input(() => act(page, advance, touch));
+        else if (s.state === "won") await input(() => retry(page, s, touch));
         await page.waitForTimeout(250);
         continue;
       }
@@ -1036,6 +1448,7 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
         if (unit) unit.lost = true;
         losses += 1;
         ended = { ms, how: "lost" };
+        end = null;
         if (losses >= 2) {
           stopped = "lost twice";
           break;
@@ -1044,9 +1457,11 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
         await page.waitForTimeout(250);
         continue;
       }
-      if (units.length >= CFG.max_units) {
+      if (cutAt === null && units.length >= CFG.max_units) {
         stopped = "max units";
-        break;
+        cutAt = ms;
+        cutIndex = current;
+        if (!kindsShort()) break;
       }
       if (s.oracle) {
         await act(page, s.oracle, touch);
@@ -1058,9 +1473,10 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
   } else {
     stopped = "play never began";
   }
-  write(project, "traverse", { ...started, applies: true, snapshots, transitions,
-                               per_unit: units, unit_count_reported: unitCountReported, losses,
-                               stopped, ...watch.record(), frames });
+  await finish(page, info, "traverse", { ...started, applies: true, snapshots, transitions,
+                                        per_unit: units, unit_count_reported: unitCountReported, losses,
+                                        stopped, ...(extendedMs ? { extended_ms: extendedMs } : {}),
+                                        ...watch.record(), frames }, health);
 });
 
 // What the game remembers. The oracle plays until something the design says persists has
@@ -1151,17 +1567,14 @@ function thirdsOf(inputs: number[], duration: number): number[] {
 type Run = { duration_ms: number; inputs: number; oracle_inputs_per_third: number[] };
 
 // The oracle plays and retries at once for `windowMs`, run after run. Recorded: each run with
-// the oracle's input rate per third of it (does the game ask more of the player as it goes?),
-// when the designed closing beat first arrived, and the difficulty in force in each window.
-// With `minInputs`, play goes on past the window - for up to `extendMs` - while the longest
-// run's first third holds fewer oracle inputs than that: too few to tell a ramp from noise.
-async function playRuns(page: Page, watch: Watch, touch: boolean, windowMs: number,
-                        minInputs: number, extendMs: number) {
+// the oracle's input rate per third of it, when the designed closing beat first arrived, and
+// the difficulty in force in each window. The time ramp is not read here: the ramp test
+// samples its own fresh runs (playSample).
+async function playRuns(page: Page, watch: Watch, touch: boolean, windowMs: number) {
   const runs: Run[] = [];
   const windows: { at_ms: number; difficulty: Record<string, number> }[] = [];
   let beatAtMs: number | null = null;
   let endedOn = "window";
-  let extendedMs = 0;
   const t0 = Date.now();
   const opening = watch.saw(await snap(page));
   let best = opening?.metrics?.best ?? null;
@@ -1176,25 +1589,8 @@ async function playRuns(page: Page, watch: Watch, touch: boolean, windowMs: numb
     inputs = [];
     runStart = Date.now();
   };
-  // Whether the longest run so far - the one still in play included - is enough to read.
-  const sampled = (): boolean => {
-    const open = Date.now() - runStart;
-    let longest: number[] = thirdsOf(inputs, open);
-    let longestMs = open;
-    for (const run of runs) {
-      if (run.duration_ms > longestMs) {
-        longestMs = run.duration_ms;
-        longest = run.oracle_inputs_per_third;
-      }
-    }
-    return (longest[0] ?? 0) >= minInputs;
-  };
   for (;;) {
-    const elapsed = Date.now() - t0;
-    if (elapsed >= windowMs) {
-      if (!minInputs || sampled() || elapsed >= windowMs + extendMs) break;
-      extendedMs = elapsed - windowMs;
-    }
+    if (Date.now() - t0 >= windowMs) break;
     const s = watch.saw(await snap(page));
     if (!s) break;
     const ms = Date.now() - t0;
@@ -1235,13 +1631,96 @@ async function playRuns(page: Page, watch: Watch, touch: boolean, windowMs: numb
   }
   if (Date.now() - runStart > 500) close();
   if (beatAtMs !== null && endedOn === "window") endedOn = "beat reached";
-  return { runs, windows, lengthMs: Date.now() - t0, beatAtMs, endedOn, extendedMs };
+  return { runs, windows, lengthMs: Date.now() - t0, beatAtMs, endedOn };
+}
+
+type Sample = Run & { input_ms: number[]; longest_idle_ms: number; idle_at_ms: number | null;
+                      ended: string };
+
+// What a run has achieved, as far as the probe says: the design's goal metric, the unit's
+// progress, the unit reached. A change in it is progress; the time it is read is not.
+function achieved(s: Snapshot): string {
+  return JSON.stringify([s.metrics?.[CFG.goal_metric] ?? null, s.content?.progress?.value ?? null,
+                         s.content?.unit_index ?? null]);
+}
+
+// One sample of the time ramp: the run in play now, played by the oracle for `windowMs` or
+// until the game ends it (no retry: a sample is one run). Recorded: the oracle's inputs per
+// third and their times, and the longest stretch in play (state `playing`) with no oracle
+// input and no progress (achieved) - a stall, depth.stall, when over ramp_stall_ms.
+async function playSample(page: Page, watch: Watch, touch: boolean, windowMs: number): Promise<Sample> {
+  const t0 = Date.now();
+  const inputs: number[] = [];
+  let active = t0;
+  let longestIdle = 0;
+  let idleAt: number | null = null;
+  let last: string | null = null;
+  let ended = "window";
+  const idle = (now: number): void => {
+    if (now - active > longestIdle) {
+      longestIdle = now - active;
+      idleAt = active - t0;
+    }
+  };
+  while (Date.now() - t0 < windowMs) {
+    const s = watch.saw(await snap(page));
+    const now = Date.now();
+    if (!s) {
+      ended = "no snapshot";
+      break;
+    }
+    if (s.state === "lost" || s.state === "won") {
+      ended = s.state;
+      break;
+    }
+    if (s.state !== "playing") {
+      // Paused, between waves, an interstitial: not play, so not idle play either.
+      active = now;
+      await page.waitForTimeout(40);
+      continue;
+    }
+    const mark = achieved(s);
+    if (mark !== last) {
+      last = mark;
+      active = now;
+    }
+    idle(now);
+    if (s.oracle) {
+      await act(page, s.oracle, touch);
+      inputs.push(Date.now() - t0);
+      active = Date.now();
+      await page.waitForTimeout(120);
+    } else {
+      await page.waitForTimeout(40);
+    }
+  }
+  const duration = Date.now() - t0;
+  if (ended === "window") idle(Date.now());
+  return { duration_ms: duration, inputs: inputs.length,
+           oracle_inputs_per_third: thirdsOf(inputs, duration), input_ms: inputs,
+           longest_idle_ms: longestIdle, idle_at_ms: idleAt, ended };
+}
+
+// Whether the samples so far decide the ramp (analysis.ramp_verdict, which judges; this only
+// says whether more samples could change the answer): a stall, a single sample's fall beyond
+// its own band, or - with enough inputs - a pooled difference beyond the pooled band.
+function rampDecided(samples: Sample[]): boolean {
+  const z = CFG.ramp_noise_z ?? 0;
+  const minimum = CFG.ramp_min_inputs ?? 0;
+  if (samples.some((s) => s.longest_idle_ms > (CFG.ramp_stall_ms ?? Infinity))) return true;
+  let first = 0;
+  let last = 0;
+  for (const s of samples) {
+    const [a = 0, , c = 0] = s.oracle_inputs_per_third;
+    if (a >= minimum && a - c > z * Math.sqrt(a + c)) return true;
+    first += a;
+    last += c;
+  }
+  return first >= minimum && Math.abs(last - first) > z * Math.sqrt(first + last);
 }
 
 // One first session, as the design designed it: the oracle plays and retries at once, and the
-// session is held open to the design's own first-session length (playRuns). When the play is
-// endless the session is the run the time ramp is read on, and it is played on while too
-// short to read.
+// session is held open to the design's own first-session length (playRuns).
 test("session: a first session's length and ramp", async ({ page }, info) => {
   const project = info.project.name;
   const frames: string[] = [];
@@ -1253,17 +1732,14 @@ test("session: a first session's length and ramp", async ({ page }, info) => {
   const touch = Boolean(info.project.use.hasTouch);
   const started = await start(page, touch, watch);
   let played = { runs: [] as Run[], windows: [] as { at_ms: number; difficulty: Record<string, number> }[],
-                 lengthMs: 0, beatAtMs: null as number | null, endedOn: "play never began", extendedMs: 0 };
+                 lengthMs: 0, beatAtMs: null as number | null, endedOn: "play never began" };
   if (started.playingMs !== null) {
-    const ramp = CFG.ramp_run === "session";
-    played = await playRuns(page, watch, touch, CFG.session_max_ms,
-                            ramp ? CFG.ramp_min_inputs ?? 0 : 0, ramp ? CFG.ramp_extend_ms ?? 0 : 0);
+    played = await playRuns(page, watch, touch, CFG.session_max_ms);
     await frame(page, project, "session-end", frames);
   }
   write(project, "session", { ...started, applies: true, length_ms: played.lengthMs,
                               beat_at_ms: played.beatAtMs, ended_on: played.endedOn,
                               runs: played.runs, windows: played.windows,
-                              extended_ms: played.extendedMs,
                               target_ms: CFG.session_target_ms, window_ms: CFG.window_ms,
                               ...watch.record(), frames });
 });
@@ -1298,41 +1774,71 @@ async function enterMode(page: Page, mode: string): Promise<{ offered: string[] 
   }, mode);
 }
 
-// The time ramp's own run, when the design's play is authored and its time ramp is promised
-// by a mode it includes (an endless mode): the bot enters that mode through the probe and
-// plays it as a player would - the oracle, instant retries - for ramp_ms, on while too short
-// to read. A design whose ramp is not read on a mode gets a record that says so.
-test("ramp: a run of the mode that promises the time ramp", async ({ page }, info) => {
+// The time ramp's samples (design-depth.yaml playability.ramp 1.4.0), when the design promises
+// one (analysis.time_ramp): ramp_samples fresh runs - a fresh page each, and for a ramp read
+// on a mode (an endless mode beside authored units) that mode entered through the probe's
+// play.mode - each played by the oracle for ramp_ms or until the game ends it. While the
+// samples do not decide the ramp (rampDecided), further whole samples are played within
+// ramp_extend_ms. One run was a coin toss: the verdict is read on all of them, pooled.
+test("ramp: samples of the play that promises the time ramp", async ({ page }, info) => {
+  const health = new Health();
   const project = info.project.name;
   const frames: string[] = [];
   const watch = new Watch(page, project, frames);
-  const mode = CFG.ramp_run === "mode" ? CFG.ramp_mode ?? null : null;
-  if (!mode) {
-    write(project, "ramp", { applies: false, reason: "the time ramp is not read on a mode run" });
+  const run = CFG.ramp_run ?? null;
+  const mode = run === "mode" ? CFG.ramp_mode ?? null : null;
+  const planned = CFG.ramp_samples ?? 0;
+  const windowMs = CFG.ramp_ms ?? 0;
+  if (!run || (run === "mode" && !mode) || planned < 1 || windowMs <= 0) {
+    write(project, "ramp", { applies: false, reason: "the design promises no time ramp" });
     return;
   }
+  const extendMs = CFG.ramp_extend_ms ?? 0;
+  const most = planned + Math.floor(extendMs / windowMs);
+  test.setTimeout(most * (windowMs + CFG.start_timeout_ms + 5000) + 60_000);
   const touch = Boolean(info.project.use.hasTouch);
-  const started = await start(page, touch, watch);
-  if (started.playingMs === null) {
-    write(project, "ramp", { ...started, applies: true, mode, entered: false,
-                             reason: "play never began", runs: [], ...watch.record(), frames });
-    return;
+  const samples: Sample[] = [];
+  let entry: { offered: string[] | null; entered: boolean; reason: string | null } | null = null;
+  let reason: string | null = null;
+  let extendedMs = 0;
+  let extendFrom = 0;
+  let firstStart: Record<string, unknown> | null = null;
+  while (samples.length < most) {
+    if (samples.length >= planned) {
+      if (rampDecided(samples)) break;
+      if (!extendFrom) extendFrom = Date.now();
+      if (Date.now() - extendFrom + windowMs > extendMs) break;
+    }
+    // The page a sample played on is left for a fresh one: its health is read first.
+    if (samples.length) await health.keep(page);
+    const started = await start(page, touch, watch);
+    if (firstStart === null) firstStart = started;
+    if (started.playingMs === null) {
+      reason = `sample ${samples.length + 1}: play never began`;
+      break;
+    }
+    if (mode) {
+      entry = await enterMode(page, mode);
+      if (!entry.entered) {
+        reason = `sample ${samples.length + 1}: ${entry.reason ?? "the mode was not entered"}`;
+        break;
+      }
+      await page.waitForTimeout(300);
+    }
+    if (!samples.length) await frame(page, project, `ramp-${mode ?? "session"}-start`, frames);
+    samples.push(await playSample(page, watch, touch, windowMs));
+    if (extendFrom) extendedMs = Date.now() - extendFrom;
   }
-  const entry = await enterMode(page, mode);
-  if (!entry.entered) {
-    write(project, "ramp", { ...started, applies: true, mode, ...entry, runs: [],
-                             ...watch.record(), frames });
-    return;
-  }
-  await page.waitForTimeout(300);
-  await frame(page, project, `ramp-${mode}-start`, frames);
-  const played = await playRuns(page, watch, touch, CFG.ramp_ms ?? 0,
-                                CFG.ramp_min_inputs ?? 0, CFG.ramp_extend_ms ?? 0);
-  await frame(page, project, `ramp-${mode}-end`, frames);
-  write(project, "ramp", { ...started, applies: true, mode, ...entry, runs: played.runs,
-                           windows: played.windows, length_ms: played.lengthMs,
-                           ended_on: played.endedOn, extended_ms: played.extendedMs,
-                           window_ms: CFG.ramp_ms, ...watch.record(), frames });
+  if (samples.length) await frame(page, project, `ramp-${mode ?? "session"}-end`, frames);
+  // `entered`: the mode was entered for the samples played (a session ramp enters none); a
+  // later entry that failed stops the sampling, with its `reason`.
+  const entered = mode ? samples.length > 0 : null;
+  // Made again on a degraded host like the other timing-sensitive recordings: a host stall
+  // is an idle stretch depth.stall would read as play that stopped.
+  await finish(page, info, "ramp", { ...(firstStart ?? {}), applies: true, run, mode,
+                                     offered: entry?.offered ?? null, entered, reason,
+                                     samples, planned_samples: planned, window_ms: windowMs,
+                                     extended_ms: extendedMs, ...watch.record(), frames }, health);
 });
 
 // -- the showcase ---------------------------------------------------------------------------

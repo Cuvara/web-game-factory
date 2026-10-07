@@ -14,6 +14,15 @@ A finding's id is `<producer>:<check>[@<project>]`, stable across measurements: 
 report of the same producer either fails the same id again or does not, which is how a
 specialist visit's findings are said to be resolved (triage's ledger).
 
+A check whose failing items have different owners - production-quality's `assets.runtime`
+fails one asset at `exists` (an asset to make again) and another at `visible` (the game's
+code) - is split by the producer table's `split` entry for it: one finding per route, each
+naming only its own items, id `<producer>:<check>/<route>[@<project>]`. A split check's
+findings always carry the route suffix, even when every failing item has one route, so an
+id means the same items' route on every measurement and the ledger closes the `assets` part
+when its assets are made while the `develop` part stays open until the game draws its own.
+The check's verdict and its whole-check route are the producer's and stay as reported.
+
 The quality scorecard (WS-7) emits findings in this shape directly; `normalize` accepts its
 `findings` list as the `quality-scorecard` producer. The quality gate's quality-report
 (scripts/wgf_quality) is read as the `quality-report` producer: its open findings in a
@@ -37,9 +46,11 @@ class NormalizeError(ValueError):
     """A report or a typed finding that cannot be normalized."""
 
 
-def finding_id(producer, check, project=None):
-    """`<producer>:<check>[@<project>]`, lower-cased into the schema's id alphabet."""
-    raw = f"{producer}:{check}" + (f"@{project}" if project else "")
+def finding_id(producer, check, project=None, part=None):
+    """`<producer>:<check>[/<part>][@<project>]`, lower-cased into the schema's id alphabet.
+    `part` is a split check's route (see the module docstring)."""
+    raw = f"{producer}:{check}" + (f"/{part}" if part else "") \
+        + (f"@{project}" if project else "")
     return _ID_SAFE.sub("-", raw.lower()).strip("-") or "finding"
 
 
@@ -104,10 +115,10 @@ class _Context:
         return template.replace("{check}", str(check)).replace("{bar_clause}", clause)
 
     def make(self, *, check, dimension, severity, summary, route, project=None,
-             measured=None, bar=None, evidence=(), change=None, assets=None):
+             measured=None, bar=None, evidence=(), change=None, assets=None, part=None):
         owner = self.routing.owner(dimension)
         finding = {
-            "id": finding_id(self.kind, check, project),
+            "id": finding_id(self.kind, check, project, part),
             "dimension": dimension,
             "severity": severity,
             "source": self.source(check, project),
@@ -142,12 +153,64 @@ def _playability(ctx):
         if not isinstance(check, dict) or not check.get("required") \
                 or check.get("status") != "FAIL":
             continue
-        cid, project = check.get("id") or "check", check.get("project")
+        out.extend(_check_findings(ctx, check, ctx.table.get("route") or "develop",
+                                   _frames(ctx.report, check.get("project"),
+                                           check.get("frames"))))
+    return out
+
+
+def _split_parts(ctx, check):
+    """[(route, [item, ...])] for a check the producer table splits (`split.<check id>`),
+    in route order; None for a check it does not split, or one with no failing item to
+    split. Each failing item's route is the rule's `routes` entry for the value its
+    measurement names (`measured.<item>.<item field>`, e.g. the chain link it failed at),
+    else the rule's `default`, else the check's own route."""
+    rule = (ctx.table.get("split") or {}).get(check.get("id"))
+    measured = check.get("measured")
+    if not isinstance(rule, dict) or not isinstance(measured, dict):
+        return None
+    field = rule.get("item") or "failed_at"
+    routes = rule.get("routes") or {}
+    default = rule.get("default") or check.get("route") or "develop"
+    names = check.get("assets") if isinstance(check.get("assets"), list) else sorted(measured)
+    parts = {}
+    for name in names:
+        entry = measured.get(name)
+        value = entry.get(field) if isinstance(entry, dict) else None
+        if value:
+            parts.setdefault(routes.get(value, default), []).append((str(name), value))
+    if not parts:
+        return None
+    order = list(ctx.routing.route_order)
+    return sorted(parts.items(), key=lambda kv: (
+        order.index(kv[0]) if kv[0] in order else len(order), kv[0]))
+
+
+def _check_findings(ctx, check, route, evidence, assets=None):
+    """The findings of one failed check: one, under the check's own id and route; or, for a
+    check the producer table splits, one per route its failing items take."""
+    cid, project = check.get("id") or "check", check.get("project")
+    parts = _split_parts(ctx, check)
+    if parts is None:
+        return [ctx.make(
+            check=cid, project=project, dimension=ctx.by_check(cid), severity="blocker",
+            summary=check.get("summary"), route=route,
+            measured=check.get("measured"), bar=check.get("expected"),
+            evidence=evidence, assets=assets)]
+    measured = check.get("measured")
+    out = []
+    for part_route, items in parts:
+        names = [name for name, _value in items]
+        summary = "; ".join(f"{name}: fails at {value}" for name, value in items[:12]) \
+            + (f" (+{len(items) - 12} more)" if len(items) > 12 else "")
         out.append(ctx.make(
             check=cid, project=project, dimension=ctx.by_check(cid), severity="blocker",
-            summary=check.get("summary"), route=ctx.table.get("route") or "develop",
-            measured=check.get("measured"), bar=check.get("expected"),
-            evidence=_frames(ctx.report, project, check.get("frames"))))
+            summary=f"{cid} ({part_route}): {summary}", route=part_route,
+            measured={name: measured.get(name) for name in names},
+            bar=check.get("expected"), evidence=evidence,
+            change=(f"Make `{cid}` pass for {', '.join(names)}: {summary}"),
+            assets=names if assets is not None or check.get("assets") else None,
+            part=part_route))
     return out
 
 
@@ -157,13 +220,10 @@ def _production(ctx, playability=None):
         if not isinstance(check, dict) or not check.get("required") \
                 or check.get("status") != "FAIL":
             continue
-        cid, project = check.get("id") or "check", check.get("project")
-        out.append(ctx.make(
-            check=cid, project=project, dimension=ctx.by_check(cid), severity="blocker",
-            summary=check.get("summary"), route=check.get("route") or "develop",
-            measured=check.get("measured"), bar=check.get("expected"),
-            evidence=_frames(playability, project, check.get("frames")),
-            assets=check.get("assets")))
+        out.extend(_check_findings(ctx, check, check.get("route") or "develop",
+                                   _frames(playability, check.get("project"),
+                                           check.get("frames")),
+                                   assets=check.get("assets")))
     return out
 
 
@@ -264,8 +324,10 @@ def _review(ctx):
         if blocker.get("file") and blocker.get("line"):
             where += f":{blocker['line']}"
         severity = blocker.get("severity")
+        # A blocker that names its dimension (review-report 1.2.0: a gate-gaming blocker
+        # carries the specialist visit's) goes back to that dimension's owner.
         out.append(ctx.make(
-            check=blocker.get("id") or "blocker", dimension=ctx.dimension(None),
+            check=blocker.get("id") or "blocker", dimension=ctx.dimension(blocker.get("dimension")),
             severity="blocker" if severity in ("blocker", "critical") else (
                 "minor" if severity == "minor" else "major"),
             summary=f"{where}: {blocker.get('summary')}", route=ctx.table.get("route"),

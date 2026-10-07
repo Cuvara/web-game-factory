@@ -19,7 +19,7 @@
 #   scripts/wgf_sufficiency/audit.py     every block
 #   scripts/wgf_playability/step.py      `survey` (the bot's survey test, bot.spec.ts)
 
-version: 1.2.0  # 1.1.0: content.regression against an adopted repository's existing-content floor; 1.2.0: the probe floor, and an unmeasured floor SKIPPED (never a pass)
+version: 1.4.0  # 1.1.0: content.regression against an adopted repository's existing-content floor; 1.2.0: the probe floor, and an unmeasured floor SKIPPED (never a pass); 1.3.0: layouts compared on geometry only (leaves inside a list), `layout.source`, a unit without geometry undetermined and repetition it leaves open UNMEASURED; 1.4.0: geometry only from a declared place (a unit's `layout` entry, `layout.unit_key`, and the layout source), compared as sequences by value with container names dropped, one layout wholly inside another the same layout
 
 survey:
   # The playability step's `survey` test (step `with: {survey: true}`): every unit the design
@@ -35,13 +35,18 @@ survey:
   total_s: 480
 
 layout:
-  # A unit's layout is what its content data says about it beyond these descriptive keys -
-  # its board, grid, wave list, track pieces, spawn table, tuning - wherever the data puts it
-  # (game-design `units[].parameters` is the design's place for it). Every other key of the
-  # unit, at any depth, is part of its layout signature. A number outside any list - a speed,
-  # a count, a width - counts only where it sits, never its value: two units that differ only
-  # in a tuning number have one layout. A number inside a list (a cell, a position) is the
-  # layout itself.
+  # Units are compared on their GEOMETRY, and geometry comes only from a declared place:
+  # in the build, each unit's own `unit_key` entry in units.json (its course, board, grid,
+  # wave list as data) and its entry in the layout source (`source` below); in the design,
+  # each unit's `parameters` (game-design `units[].parameters`). No other key of a unit
+  # counts - a `tags` list or a `parameters` block beside the layout is not geometry.
+  # Inside a declared layout the geometry is its sequences: every outermost list (a track's
+  # segments, a grid's rows, a wave list, a board's cells), compared item by item by value,
+  # whatever its container is called (`segments` renamed `pieces` is the same course). A
+  # scalar outside every list - a width, a par time, a flag - is tuning, the same layout at
+  # another difficulty. A unit whose declared layout holds no list is UNDETERMINED, never
+  # repeated (scripts/wgf_design/layouts.py). The descriptive keys below remain what a unit's
+  # data says ABOUT it (audit.layout_of); they are never geometry.
   descriptive_keys:
     - id
     - index
@@ -69,9 +74,26 @@ layout:
     - unlock
   # Two units are the same unit with other numbers - repeated - when they share their
   # structure kind, their combination of elements and their objective kind, and their
-  # layouts are at least this alike (Jaccard similarity of the layouts' leaf values by path).
-  # Identical layouts are always repeated.
+  # layouts are at least this alike: how much of the smaller layout the larger holds, in
+  # order (each sequence's items matched to one sequence of the other, over the smaller
+  # layout's item count), so a copy padded with an unrelated list is still a copy. One layout
+  # wholly inside another (similarity 1.0: identical, renamed, padded) is always repeated.
+  # A design unit is also repeated when another has its structure, its elements and the same
+  # parameter values, whatever its geometry - the design check is never looser than that.
   near_identical_similarity: 0.85
+  # The key of a unit's entry in units.json that holds its layout.
+  unit_key: layout
+  # Where a game keeps its geometry apart from units.json: a JSON file under public/content
+  # holding {unit id: layout} under `key` (or at its root when it has no such key). A unit's
+  # entry there is part of its geometry. The content data file may name another file the
+  # same way (units.json `layout_source`: {path, key} or a path; only under public/content).
+  # The playability step keeps the file beside units.json for the commit it played.
+  source: {path: public/content/layouts.json, key: layouts}
+  # Repetition is held to content.structure.max_repeated_layout_ratio on the units with
+  # geometry; while undetermined units could carry the share past that bar (each repeating a
+  # unit not yet repeated), it is unmeasured: content.structure is SKIPPED as UNMEASURED,
+  # never a pass (the quality gate holds a skipped check at the release tier,
+  # quality-floor.yaml floor.sufficiency_measured).
 
 probe:
   # Entities of these roles carry `kind` (play-probe entities[].kind) in a game with

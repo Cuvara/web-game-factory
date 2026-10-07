@@ -35,6 +35,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
 sys.path.insert(0, SCRIPTS)
 
+from wgf_design import layouts as geometry_of  # noqa: E402
 from wgf_sufficiency import audit as auditing  # noqa: E402
 from wgf_sufficiency.step import BENCHMARK, ContentSufficiencyStep  # noqa: E402
 from wgf_playability.step import PlayabilityStep  # noqa: E402
@@ -425,20 +426,222 @@ class Contract(unittest.TestCase):
 
 
 class Layouts(unittest.TestCase):
-    def test_layouts_are_compared_by_path_and_value(self):
+    def test_geometry_is_the_declared_layouts_lists_by_value(self):
         rules = auditing.load_rules()
-        a = auditing.layout_of({"id": "x", "layout": {"grid": ["ab", "cd"], "speed": 1}}, rules)
-        b = auditing.layout_of({"id": "y", "layout": {"grid": ["ab", "cd"], "speed": 2}}, rules)
-        c = auditing.layout_of({"id": "z", "layout": {"grid": ["cd", "ab"], "speed": 1}}, rules)
-        self.assertEqual(set(a), {"layout.grid[0]", "layout.grid[1]", "layout.speed"})
-        # A tuning number is the same layout at another difficulty.
+        a = auditing.geometry({"id": "x", "layout": {"grid": ["ab", "cd"], "speed": 1}}, rules)
+        b = auditing.geometry({"id": "y", "layout": {"rows": ["ab", "cd"], "speed": 2}}, rules)
+        c = auditing.geometry({"id": "z", "layout": {"grid": ["cd", "ab"], "speed": 1}}, rules)
+        self.assertEqual(a, [('"ab"', '"cd"')])
+        # A tuning number is the same layout at another difficulty, and a container's name
+        # is no part of the layout.
         self.assertEqual(auditing.similarity(a, b), 1.0)
-        self.assertAlmostEqual(auditing.similarity(a, c), 0.2)
+        self.assertAlmostEqual(auditing.similarity(a, c), 0.5)
         # A number in a list is the layout itself.
-        d = auditing.layout_of({"cells": [[1, 0], [0, 1]]}, rules)
-        e = auditing.layout_of({"cells": [[0, 1], [1, 0]]}, rules)
+        d = auditing.geometry({"layout": {"cells": [[1, 0], [0, 1]]}}, rules)
+        e = auditing.geometry({"layout": {"cells": [[0, 0], [1, 1]]}}, rules)
         self.assertEqual(auditing.similarity(d, e), 0.0)
-        self.assertEqual(auditing.similarity({}, {}), 1.0)
+        self.assertEqual(auditing.similarity([], []), 1.0)
+        self.assertEqual(auditing.similarity(a, []), 0.0)
+        # 30.0 and 30 are one value.
+        self.assertEqual(auditing.geometry({"layout": [{"len": 30.0}]}, rules),
+                         auditing.geometry({"layout": [{"len": 30}]}, rules))
+
+    def test_only_a_declared_place_carries_geometry(self):
+        rules = auditing.load_rules()
+        for undeclared in ({"tags": ["u-01"]}, {"parameters": {"grid": ["ab", "cd"]}},
+                           {"layout": {"width": 8, "par_s": 20}}, {"layout": None}):
+            self.assertEqual(auditing.geometry(dict(undeclared, id="u-01"), rules), [],
+                             undeclared)
+        self.assertEqual(auditing.geometry({"id": "u-01"}, rules, {"segments": [1, 2]}),
+                         [("1", "2")])
+
+    def test_padding_a_copy_with_an_unrelated_list_keeps_it_a_copy(self):
+        rules = auditing.load_rules()
+        course = {"segments": [{"t": "line", "len": n} for n in range(10)]}
+        padded = dict(course, decor=[{"prop": "tree", "x": n * 7} for n in range(40)])
+        a = auditing.geometry({"layout": course}, rules)
+        b = auditing.geometry({"layout": padded}, rules)
+        self.assertEqual(auditing.similarity(a, b), 1.0)
+
+
+class Geometry(unittest.TestCase):
+    """content.structure judges repetition on the geometry the game builds - a unit's list data
+    in units.json, or its entry in the layout source keyed by unit id (content-sufficiency.yaml
+    layout.source) - never on the names of its tuning scalars (a live 3D run: two units of
+    different courses flagged near-identical because both carried par_s, limit_s, gems...;
+    then "fixed" by naming parameters the game never reads)."""
+
+    @staticmethod
+    def scalar_build(units, extra=None):
+        """Every unit's data: the same tuning scalar names, nothing in a list."""
+        tuning = {u["id"]: {"layout": None, "parameters": {"par_s": 20 + u["index"],
+                                                           "limit_s": 60, "gems": 3}}
+                  for u in units}
+        for unit_id, more in (extra or {}).items():
+            tuning[unit_id]["parameters"].update(more)
+        return data_of(units, **tuning)
+
+    @staticmethod
+    def course(n):
+        return {"width": 14, "segments": [{"t": "line", "len": 4 + n},
+                                          {"t": "turn", "deg": 15 * n, "r": 10 + n},
+                                          {"t": "ramp", "rise": n % 4, "len": 3 * n}]}
+
+    def scalar_design(self, units):
+        for unit in units:
+            unit["parameters"] = {"par_s": 20 + unit["index"], "limit_s": 60, "gems": 3}
+        return design_of(units)
+
+    def test_identical_parameter_names_with_different_geometry_are_not_repeated(self):
+        units = varied_units()
+        layouts = {u["id"]: self.course(u["index"]) for u in units}
+        result = auditing.audit(self.scalar_design(units), None, self.scalar_build(units),
+                                survey_of(units), layouts=layouts)
+        structure = status(result, "content.structure")
+        self.assertEqual(structure["status"], "PASS", structure["summary"])
+        self.assertEqual(structure["measured"]["build"]["repeated"], [])
+
+    def test_an_unread_scalar_parameter_does_not_change_the_verdict(self):
+        units = varied_units()
+        layouts = {u["id"]: self.course(u["index"]) for u in units}
+        design = self.scalar_design(units)
+        before = status(auditing.audit(design, None, self.scalar_build(units), survey_of(units),
+                                       layouts=layouts), "content.structure")
+        extra = {units[-1]["id"]: {"ramps": 4, "gaps": 2, "bumpers": 3, "lifts": 1}}
+        after = status(auditing.audit(design, None, self.scalar_build(units, extra),
+                                      survey_of(units), layouts=layouts), "content.structure")
+        self.assertEqual((before["status"], before["measured"]), (after["status"],
+                                                                  after["measured"]))
+        # And without geometry the verdict is unmeasured both ways - never repeated, never PASS.
+        bare = [status(auditing.audit(design, None, self.scalar_build(units, more),
+                                      survey_of(units)), "content.structure")
+                for more in (None, extra)]
+        self.assertEqual([b["status"] for b in bare], ["SKIPPED", "SKIPPED"])
+        self.assertEqual(bare[0]["measured"], bare[1]["measured"])
+
+    def test_two_identical_layouts_are_still_flagged_and_a_share_over_the_bar_fails(self):
+        units = varied_units()
+        layouts = {u["id"]: self.course(u["index"]) for u in units}
+        # Three pairs of units ship one course each: 6 of 16 repeat (38% > 10%).
+        for a, b in ((0, 4), (1, 5), (8, 12)):
+            layouts[units[b]["id"]] = copy.deepcopy(layouts[units[a]["id"]])
+        result = auditing.audit(self.scalar_design(units), None, self.scalar_build(units),
+                                survey_of(units), layouts=layouts)
+        structure = status(result, "content.structure")
+        self.assertEqual(structure["status"], "FAIL")
+        self.assertEqual(structure["route"], "develop")
+        self.assertEqual(sorted(structure["measured"]["build"]["repeated"]),
+                         sorted(units[i]["id"] for i in (0, 4, 1, 5, 8, 12)))
+        # Geometry inside units.json counts the same way as the layout source.
+        inline = data_of(units, **{u["id"]: {"layout": layouts[u["id"]]} for u in units})
+        result = auditing.audit(self.scalar_design(units), None, inline, survey_of(units))
+        self.assertEqual(status(result, "content.structure")["status"], "FAIL")
+
+    def test_no_geometry_at_the_release_tier_is_unmeasured_not_a_pass(self):
+        units = varied_units()
+        result = auditing.audit(self.scalar_design(units), None, self.scalar_build(units),
+                                survey_of(units))
+        structure = status(result, "content.structure")
+        self.assertEqual(structure["status"], "SKIPPED")
+        self.assertTrue(structure["summary"].startswith("UNMEASURED"), structure["summary"])
+        self.assertIn("never a pass", structure["summary"])
+        self.assertEqual(len(structure["measured"]["build"]["undetermined"]), len(units))
+        self.assertNotIn("content.structure", [f["check"] for f in result["findings"]])
+        # The quality gate holds a skipped content-sufficiency check at the release tier.
+        floor = auditing.load_file(os.path.join(auditing.paths.REFERENCE,
+                                                "quality-floor.yaml"))
+        held = [c for c in floor["universal"] if c["id"] == "floor.sufficiency_measured"]
+        self.assertEqual(held[0]["evaluate"]["field"], "skipped_checks")
+        self.assertEqual(held[0]["maximum"], {"release": 0})
+        self.assertEqual(held[0]["severity"], {"release": "blocker"})
+
+    def test_undetermined_units_that_could_carry_the_share_past_the_bar_are_unmeasured(self):
+        units = varied_units()
+        layouts = {u["id"]: self.course(u["index"]) for u in units[1:]}
+        # One unit without geometry could repeat another: 2 of 16 (13%) > 10%.
+        structure = status(auditing.audit(self.scalar_design(units), None,
+                                          self.scalar_build(units), survey_of(units),
+                                          layouts=layouts), "content.structure")
+        self.assertEqual(structure["status"], "SKIPPED")
+        self.assertEqual(structure["measured"]["build"]["undetermined"], [units[0]["id"]])
+        self.assertEqual(structure["measured"]["build"]["repeated_ratio_at_most"], 0.125)
+
+    def test_a_list_outside_the_declared_layout_does_not_escape_unmeasured(self):
+        """`tags: [unit id]` beside tuning scalars made every unit "measured" and unique."""
+        units = varied_units()
+        build = self.scalar_build(units)
+        for entry in build["units"]:
+            entry["tags"] = [entry["id"]]
+            entry["parameters"]["route"] = [entry["id"], entry["index"]]
+        structure = status(auditing.audit(self.scalar_design(units), None, build,
+                                          survey_of(units)), "content.structure")
+        self.assertEqual(structure["status"], "SKIPPED", structure["summary"])
+        self.assertTrue(structure["summary"].startswith("UNMEASURED"), structure["summary"])
+        self.assertEqual(len(structure["measured"]["build"]["undetermined"]), len(units))
+
+    def clones(self, change):
+        """Three pairs of units ship one course each, the second of each pair changed by
+        `change(course)`."""
+        units = varied_units()
+        layouts = {u["id"]: self.course(u["index"]) for u in units}
+        for a, b in ((0, 4), (1, 5), (8, 12)):
+            layouts[units[b]["id"]] = change(copy.deepcopy(layouts[units[a]["id"]]))
+        return units, layouts
+
+    def assert_clones_fail(self, units, layouts):
+        for inline in (False, True):
+            if inline:
+                data = data_of(units, **{u["id"]: {"layout": layouts[u["id"]]} for u in units})
+                result = auditing.audit(self.scalar_design(units), None, data, survey_of(units))
+            else:
+                result = auditing.audit(self.scalar_design(units), None,
+                                        self.scalar_build(units), survey_of(units),
+                                        layouts=layouts)
+            structure = status(result, "content.structure")
+            self.assertEqual(structure["status"], "FAIL", structure["summary"])
+            self.assertEqual(sorted(structure["measured"]["build"]["repeated"]),
+                             sorted(units[i]["id"] for i in (0, 4, 1, 5, 8, 12)))
+
+    def test_a_clone_with_its_list_renamed_is_still_repeated(self):
+        def rename(course):
+            course["pieces"] = course.pop("segments")
+            return course
+        self.assert_clones_fail(*self.clones(rename))
+
+    def test_a_clone_padded_with_a_noise_list_is_still_repeated(self):
+        def pad(course):
+            course["decor"] = [{"prop": "rock", "x": n * 3.5, "seed": n * 13}
+                               for n in range(40)]
+            return course
+        self.assert_clones_fail(*self.clones(pad))
+
+    def test_real_courses_that_share_common_pieces_are_not_repeated(self):
+        """Different courses built from one kit of pieces share many segment records - a
+        straight of 30 m, a 45-degree turn - and are not the same course."""
+        kit = [{"t": "line", "len": 30}, {"t": "turn", "deg": 45, "r": 20},
+               {"t": "line", "len": 20}, {"t": "jump", "gap": 2},
+               {"t": "turn", "deg": -45, "r": 20}, {"t": "ramp", "rise": 2}]
+        units = varied_units()
+        layouts = {}
+        for unit in units:
+            n = unit["index"]
+            layouts[unit["id"]] = {"segments": [kit[(n * k + k * k) % len(kit)]
+                                                for k in range(1, 9)]
+                                   + [{"t": "line", "len": 10 + n}]}
+        structure = status(auditing.audit(self.scalar_design(units), None,
+                                          self.scalar_build(units), survey_of(units),
+                                          layouts=layouts), "content.structure")
+        self.assertEqual(structure["measured"]["build"]["repeated"], [], structure["summary"])
+        self.assertEqual(structure["status"], "PASS", structure["summary"])
+
+    def test_the_layout_source_is_resolved_under_public_content_only(self):
+        rules = auditing.load_rules()
+        self.assertEqual(geometry_of.source_of({}, rules), ("layouts.json", "layouts"))
+        self.assertEqual(geometry_of.source_of(
+            {"layout_source": "public/content/maps/all.json"}, rules), ("maps/all.json", None))
+        for outside in ("public/../secrets.json", "src/levels.json", "/etc/passwd.json",
+                        "public/content/../../x.json"):
+            self.assertIsNone(geometry_of.source_of({"layout_source": outside}, rules), outside)
 
 
 class Step(unittest.TestCase):
@@ -498,6 +701,33 @@ class Step(unittest.TestCase):
         result = self.run_step(self.docs(design_of(units), records_dir))
         self.assertEqual(result.outcome, StepOutcome.SUCCESS)
         self.assertEqual(result.artifacts[0].content["verdict"], "PASS")
+
+    def test_the_layout_source_playability_kept_is_read(self):
+        units = varied_units()
+        build = Geometry.scalar_build(units)
+        records_dir = self.write(survey_of(units), build)
+        design = Geometry().scalar_design(units)
+        result = self.run_step(self.docs(design, records_dir))
+        report = result.artifacts[0].content
+        self.assertIn("content.structure", [s["id"] for s in report["skipped_checks"]])
+        # The game's checkout ships its courses in public/content/layouts.json: playability
+        # keeps it beside units.json, and the step measures the geometry on it.
+        repo = os.path.join(self.base, "repo")
+        os.makedirs(os.path.join(repo, "public", "content"))
+        with open(os.path.join(repo, "public", "content", "units.json"), "w",
+                  encoding="utf-8") as handle:
+            json.dump(build, handle)
+        with open(os.path.join(repo, "public", "content", "layouts.json"), "w",
+                  encoding="utf-8") as handle:
+            json.dump({"schema": "x", "layouts": {u["id"]: Geometry.course(u["index"])
+                                                  for u in units}}, handle)
+        out = os.path.join(self.base, records_dir)
+        PlayabilityStep._keep_content_data(repo, out)
+        self.assertTrue(os.path.isfile(os.path.join(out, "content", "layouts.json")))
+        result = self.run_step(self.docs(design, records_dir))
+        report = result.artifacts[0].content
+        structure = next(c for c in report["checks"] if c["id"] == "content.structure")
+        self.assertEqual(structure["status"], "PASS", structure["summary"])
 
     def test_a_short_build_fails_to_develop_with_typed_findings(self):
         units = varied_units()

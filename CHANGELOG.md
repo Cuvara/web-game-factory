@@ -9,6 +9,34 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**A measurement's validity no longer softens a failure** (visual-quality.yaml 1.2.0,
+specialist-routing.yaml 1.5.0, [docs/playability-module.md](docs/playability-module.md)).
+Three gaps a review of the validity rules found, closed without loosening a bar. A unit the
+traverse stopped inside that the bot played on in for the whole `sample.variety_extend_s` and
+that still showed too few new kinds is judged as seen whole - `content.variety` FAILs and its
+pair counts - instead of staying unmeasured however long it was played; only an extension
+itself cut short leaves it unmeasured. On a host degraded on every attempt, a check that read
+a failure or is required is BLOCKED at every tier (re-measure on a quiet host), never a
+WARNING the step could PASS over; a game that floods its own host can buy at most that
+BLOCKED, never a pass (the documented limit). The ramp recording now carries its host's health
+and is made again on a degraded host, and `depth.ramp` / `depth.stall` are judged under the
+same rule, so a host stall is never a `depth.stall` FAIL routed to gameplay; `depth.` is now
+routed to gameplay explicitly (`default_dimension` did it before). Existing reports are not
+invalidated; a re-run playability step re-measures.
+
+**`depth.ramp` is judged on several runs, and a stall is its own finding** (design-depth.yaml
+1.4.0, [docs/playability-module.md](docs/playability-module.md)). One endless run per
+viewport, cut the moment its first third held 10 inputs, flipped between PASS and FAIL across
+commits with identical gameplay code. The ramp test now plays `ramp.samples` (3) fresh runs
+of the play that promises the time ramp - the endless play itself, which the session no
+longer stands in for, or the endless mode - and pools their thirds against a noise band of
+`ramp.noise_z` (2) x sqrt(n): a fall beyond it fails, a rise beyond it on every planned sample
+passes, and a difference inside it is extended (`extend_s`) and then unmeasured - never a
+pass, a FAIL at the release tier. A new check, `depth.stall` (routed to gameplay), fails a
+sample that went over `ramp.stall_max_s` (10 s) in play with no oracle input and no progress,
+and that sample is left out of the ramp. `relief_dip_s` was stated and never implemented: it
+is removed. Existing reports are not invalidated; a re-run playability step re-measures.
+
 **Publishing merged with the quality work.** Workflow `new-game` 13 carries both: the quality
 gate (11), store copy and listing triage (12), and the publication per platform (the submit
 step's per-platform visits, the `platform-ids` route back to `sdk` and its visit limit).

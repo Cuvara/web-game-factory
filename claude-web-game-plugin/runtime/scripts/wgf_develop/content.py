@@ -60,6 +60,13 @@ so a playtest changes a number rather than the code. Nothing here is the develop
 invent: where the design is silent, the gap goes in the development report's `design_gaps`
 and the unit is `partial` or `cut`.
 
+A unit's geometry - the grid, track segments, wave list or board the game builds it from - is
+data too, in a declared place only: the unit's own `layout` entry (content-sufficiency.yaml
+`layout.unit_key`) or the layout source keyed by unit id (`public/content/layouts.json`, or
+the file the data file names in `layout_source`). The content-sufficiency step compares units
+on the lists in it, never on their tuning scalars or any other key
+(scripts/wgf_design/layouts.py, core/reference/content-sufficiency.yaml `layout`).
+
 Findings are `<code>: <explanation>` strings, the code first so the step and the tests can
 name one:
 

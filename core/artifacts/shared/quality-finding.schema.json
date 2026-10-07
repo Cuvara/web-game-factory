@@ -73,7 +73,7 @@
       "type": "object",
       "required": ["id", "dimension", "severity", "source", "summary", "evidence_refs", "owner", "task", "route"],
       "properties": {
-        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:/@-]*$", "description": "<producer>:<check>[@<project>] - stable across measurements." },
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:/@-]*$", "description": "<producer>:<check>[@<project>] - stable across measurements. A check the routing data splits by route (core/reference/specialist-routing.yaml `split`) is one finding per route: <producer>:<check>/<route>[@<project>]." },
         "dimension": { "$ref": "#/$defs/dimension" },
         "severity": { "$ref": "#/$defs/severity" },
         "source": { "$ref": "#/$defs/source" },

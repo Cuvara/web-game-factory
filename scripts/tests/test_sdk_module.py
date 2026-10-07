@@ -236,7 +236,7 @@ class FailurePaths(Case):
 
     def test_a_moved_profile_pin_blocks(self):
         with open(os.path.join(self.repo, "game.config.yaml"), "w", encoding="utf-8") as handle:
-            handle.write(game_config([("yandex", "required")]).replace("yandex@1.2.0", "yandex@9.0.0"))
+            handle.write(game_config([("yandex", "required")]).replace("yandex@1.3.0", "yandex@9.0.0"))
         result = self.run_step()
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)
         self.assertIn("yandex@9.0.0", result.message or result.error)
@@ -246,7 +246,7 @@ class FailurePaths(Case):
         # pinned version (wgf_init.profiles.pin_identity).
         from wgf_init.profiles import vendor_profiles
         self.configure([("yandex", "required")])
-        vendor_profiles(self.repo, [{"id": "yandex", "profile": "yandex@1.2.0",
+        vendor_profiles(self.repo, [{"id": "yandex", "profile": "yandex@1.3.0",
                                      "role": "required"}])
         self.commit = commit_all(self.repo)
         result = self.run_step()
@@ -325,7 +325,7 @@ class ReleaseBoundary(unittest.TestCase):
 
 class Plan(unittest.TestCase):
     def test_required_features_follow_profile_and_game_config(self):
-        config = {"platforms": [{"id": "yandex", "profile": "yandex@1.2.0", "role": "required"},
+        config = {"platforms": [{"id": "yandex", "profile": "yandex@1.3.0", "role": "required"},
                                 {"id": "generic-web", "profile": "generic-web@1.1.0", "role": "optional"}],
                   "monetization": {"ad_kinds": ["rewarded"]}}
         yandex, generic = integration_plan(config)

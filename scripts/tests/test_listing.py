@@ -412,10 +412,13 @@ class ListingCase(unittest.TestCase):
     def context(self, **kw):
         return Context(self.run_dir, **kw)
 
-    def image_sizes_unstated(self):
+    def image_sizes_unstated(self, video=False):
         """The real profiles, with their image sizes and formats left unstated: this case's
         masters are fixture-small (reference-small.yaml), so a portal's real 512 px icon would
-        be above every master. For tests about locales, copy and age ratings, not images."""
+        be above every master. For tests about locales, copy and age ratings, not images.
+        Unless `video`, the video's container and minimum height are left unstated too (the
+        fake records a 160x90 WebM; yandex 1.3.0 requires a 400 px high MP4), in the platform
+        profile and in the publication profile's media fields."""
         real = platforms.load_profile
 
         def load(platform_id, directory=None):
@@ -426,9 +429,28 @@ class ListingCase(unittest.TestCase):
                     image.update(sizes=None, formats=None)
             if isinstance(block.get("screenshots"), dict):
                 block["screenshots"]["formats"] = None
+            if not video and isinstance(block.get("video"), dict):
+                block["video"].update(formats=None, min_height=None)
             return profile
 
         patcher = unittest.mock.patch.object(platforms, "load_profile", load)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        if video:
+            return
+        from wgf_listing import validation as validation_mod
+        real_publication = validation_mod.publication.load_publication_profile
+
+        def load_publication(platform_id, *args, **kwargs):
+            profile = copy.deepcopy(real_publication(platform_id, *args, **kwargs))
+            fields = ((profile or {}).get("submission") or {}).get("fields") or {}
+            for name in ("horizontal_video", "vertical_video", "trailer"):
+                if isinstance(fields.get(name), dict):
+                    fields[name]["formats"] = None
+            return profile
+
+        patcher = unittest.mock.patch.object(validation_mod.publication, "load_publication_profile",
+                                             load_publication)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -738,16 +760,16 @@ class Platforms(unittest.TestCase):
 
     def test_targets_come_from_the_scaffold_record(self):
         scaffold = {"game_config": {"platforms": [{"id": "poki", "profile": "poki@1.1.0", "role": "required"},
-                                                  {"id": "yandex", "profile": "yandex@1.2.0", "role": "optional"}]}}
-        self.assertEqual(platforms.targets(scaffold), [("poki", "required", "1.1.0"), ("yandex", "optional", "1.2.0")])
-        self.assertEqual(platforms.targets(scaffold, ["yandex"]), [("yandex", "optional", "1.2.0")])
+                                                  {"id": "yandex", "profile": "yandex@1.3.0", "role": "optional"}]}}
+        self.assertEqual(platforms.targets(scaffold), [("poki", "required", "1.1.0"), ("yandex", "optional", "1.3.0")])
+        self.assertEqual(platforms.targets(scaffold, ["yandex"]), [("yandex", "optional", "1.3.0")])
         # The verified build's targets win over a scaffold-record written before a retarget.
-        verified = [{"platform_id": "yandex", "profile": "yandex@1.2.0", "role": "required"},
-                    {"platform_id": "y8", "profile": "y8@1.2.0", "role": "optional"}]
+        verified = [{"platform_id": "yandex", "profile": "yandex@1.3.0", "role": "required"},
+                    {"platform_id": "y8", "profile": "y8@1.3.0", "role": "optional"}]
         self.assertEqual(platforms.targets(scaffold, verified=verified),
-                         [("yandex", "required", "1.2.0"), ("y8", "optional", "1.2.0")])
+                         [("yandex", "required", "1.3.0"), ("y8", "optional", "1.3.0")])
         self.assertEqual(platforms.targets(scaffold, ["y8"], verified=verified),
-                         [("y8", "optional", "1.2.0")])
+                         [("y8", "optional", "1.3.0")])
         self.assertEqual(platforms.targets(scaffold, verified=[]),
                          platforms.targets(scaffold))
         self.assertEqual(platforms.locales_for(platforms.load_profile("yandex")), ["ru"])
@@ -1029,7 +1051,7 @@ class TheStep(ListingCase):
 
     def test_a_platform_requiring_an_age_rating_gets_the_configured_one(self):
         self.image_sizes_unstated()
-        platforms_ = [{"id": "yandex", "profile": "yandex@1.2.0", "role": "required"}]
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.3.0", "role": "required"}]
         result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_))
         listing = self.listing_of(result)
         self.assertEqual(listing["status"], "incomplete")
@@ -1112,7 +1134,7 @@ class Validation(ListingCase):
         self.game = GameBuild(os.path.join(self.scratch, "own-keys"), strings={
             "en": {"game.title": "Fixture Game", "play.objective": "Tap on the beat to switch lanes and keep the combo alive."},
             "ru": {"game.title": "Fixture Game", "play.objective": "Нажимайте в такт, чтобы менять полосу."}})
-        platforms_ = [{"id": "yandex", "profile": "yandex@1.2.0", "role": "optional"}]
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.3.0", "role": "optional"}]
         result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_),
                                  context=self.context(config={"listing": {"age_rating": {"default": "12+"}}}))
         listing = self.listing_of(result)
@@ -1136,7 +1158,7 @@ class Validation(ListingCase):
         # listing until the loop limit.
         self.game = GameBuild(os.path.join(self.scratch, "en-only"), strings={
             "en": {"title.heading": "Fixture Game", "hud.objective": "Tap on the beat to switch lanes."}})
-        platforms_ = [{"id": "yandex", "profile": "yandex@1.2.0", "role": "required"}]
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.3.0", "role": "required"}]
         result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_),
                                  context=self.context(config={"listing": {"age_rating": {"default": "12+"}}}))
         listing = self.listing_of(result)
@@ -1203,7 +1225,7 @@ class Validation(ListingCase):
 
     def test_only_a_person_can_fix_it_blocks(self):
         self.image_sizes_unstated()
-        platforms_ = [{"id": "yandex", "profile": "yandex@1.2.0", "role": "required"}]
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.3.0", "role": "required"}]
         result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_))
         listing = self.listing_of(result)
         outcome, report = self.validate(listing)
@@ -1212,6 +1234,22 @@ class Validation(ListingCase):
         self.assertEqual(report["failed"], ["platforms.yandex.age_rating"])
         self.assertIn("age rating", report["blocked_reason"])
         self.assertEqual(report["platform_requirements"][0]["status"], "FAIL")
+
+    def test_yandex_requires_the_horizontal_mp4_video(self):
+        # yandex 1.3.0 (DRAFT, read 2026-10-07): the horizontal 16:9 MP4 video is required. The
+        # fake records only a 160x90 WebM and has no encoder: the package says so as an error,
+        # and validation fails the platform's video check for a person to configure.
+        self.image_sizes_unstated(video=True)
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.3.0", "role": "required"}]
+        result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_),
+                                 context=self.context(config={"listing": {"age_rating": {"yandex": "0+"}}}))
+        listing = self.listing_of(result)
+        unmet = [p for p in listing["platforms"][0]["unmet"] if p["subject"] == "video"]
+        self.assertEqual([(p["code"], p["severity"]) for p in unmet], [("video-format-unavailable", "error")])
+        outcome, report = self.validate(listing)
+        self.assertIn("platforms.yandex.video", report["failed"])
+        video = next(c for c in report["checks"] if c["id"] == "platforms.yandex.video")
+        self.assertEqual(video["fix"], "configure")
 
     def test_a_blocked_listing_blocks_validation(self):
         result, _ = self.capture(FakeCapture(plan=["blocked"]))

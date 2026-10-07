@@ -15,7 +15,12 @@
 
 id: yandex
 name: Yandex Games
-version: 1.2.0  # 1.2.0: the listing figures read from the draft form docs (2026-10-04),
+version: 1.3.0  # 1.3.0: re-read 2026-10-07 - the horizontal 16:9 MP4 video is required, screenshots
+                #        per platform and per mobile orientation (notes; the block counts a total),
+                #        Game Ready within 90 s (1.19.2, a blocking assertion), the docs'
+                #        recommended languages, the listing copy rules (5.x), rejections: context menu (1.6.1.8), Game Ready
+                #        timing, genre (2.3), ad orientation (4.3), core concept on update (1.24)
+                # 1.2.0: the listing figures read from the draft form docs (2026-10-04),
                 #        screenshots_min 2 per platform, requirement-numbered rejections
                 # 1.1.0: the store_listing block (listing requirements, null = unknown)
 status: unverified
@@ -40,11 +45,19 @@ requirements:
   # (https://yandex.com/dev/games/doc/en/requirements/2/14). ru stays required here because
   # the portal's primary audience reads it - a Factory choice, not a portal rule.
   locales_required: [ru]
-  locales_recommended: [en, tr]
+  # "Russian, Turkish, Chinese, Korean, Hindi, Vietnamese, English" are the recommended set
+  # (https://yandex.com/dev/games/doc/en/concepts/languages-and-domains, read 2026-10-07);
+  # ru is already required above. Recommended, never required.
+  locales_recommended: [en, tr, zh, ko, hi, vi]
   # 1.21: at most 100 MB uncompressed; 1.22: index.html at the archive root, no spaces or
   # Cyrillic in file names (https://yandex.com/dev/games/doc/en/concepts/requirements).
   max_bundle_mb: 100
   orientation: [landscape, portrait]
+  # 1.19.2: LoadingAPI.ready() within 90 s, at the moment play really becomes possible - not
+  # on a timer, not while a spinner or progress bar still shows; moderators check it with the
+  # portal's loading screen dismissed by hand and left to close by itself, over several
+  # reloads (https://yandex.com/dev/games/doc/en/requirements/1/19, read 2026-10-07). The
+  # assertion yandex_game_ready_within_90s checks the 90 s on the measured time to ready().
   loading_api: required
   offline_start: false
   https_only: true
@@ -64,22 +77,43 @@ ads:
     callbacks; only game_api_pause / game_api_resume cover it. 4.4: ads only at logical
     pauses - in a real-time game with levels under 5 minutes, never during play. 4.5:
     rewarded is optional for the player, the button names the reward, and the reward is a
-    bonus that never gates the core game.
+    bonus that never gates the core game. 4.3: every ad unit's orientation matches the
+    game's orientation. An ad called during active play risks an accidental click, which
+    the portal counts as ad fraud (https://yandex.com/dev/games/doc/en/sdk/sdk-adv, read
+    2026-10-07). Sticky banners are a console switch (Advertising tab), shown by default once
+    enabled; showBannerAdv/hideBannerAdv need "Use the API to display a sticky-banner" on.
 
 metadata_requirements:
   descriptions_locales: [ru]
   # "at least 2 screenshots for each selected platform"
-  # (https://yandex.com/dev/games/doc/en/console/add-new-game/draft).
+  # (https://yandex.com/dev/games/doc/en/console/add-new-game/draft); re-read 2026-10-07:
+  # mobile at least 2 PER ORIENTATION, desktop at least 2, 16:9 landscape only. 2 is the floor
+  # for a single platform in a single orientation; a game declared desktop + mobile in both
+  # orientations needs 6. This field counts a total, so it states the floor
+  # (docs/platform-targets-2026-10.md, Part 1c, gap Y-2).
   screenshots_min: 2
   icon_required: true
   age_rating_required: true
 
 review:
   process: manual
-  typical_days: [1, 5]
+  # Full moderation (a new game, or an update that changes game files) takes 3-5 working days
+  # and stops at the first violation; content moderation (icon and cover A/B tests,
+  # promo-only updates) 1-2 working days (https://yandex.com/dev/games/doc/en/concepts/moderation,
+  # read 2026-10-07).
+  typical_days: [3, 5]
   common_rejections:
     - Missing or machine-translated Russian localization.
-    - Game does not report loading progress through the SDK.
+    - A context menu on a mobile long tap or a desktop right-click, or a long tap that selects
+      text (1.6.1.8; named among the common causes on concepts/moderation).
+    - LoadingAPI.ready() missing, called on a timer or while a loader still shows, or later
+      than 90 s (1.19.2, https://yandex.com/dev/games/doc/en/requirements/1/19).
+    - SDK missing or initialised with errors, or not as "Connection and usage" describes
+      (1.1, 1.19.1).
+    - Gameplay that contradicts the declared genre or categories (2.3).
+    - An ad unit whose orientation does not match the game's (4.3).
+    - An update that swaps in an entirely different game instead of keeping the core concept
+      (1.24).
     - Ads shown before any gameplay.
     - External network requests to undeclared domains.
     - Language not detected through environment.i18n.lang (2.14), or a declared language
@@ -89,23 +123,35 @@ review:
     - Ads during active play in a real-time game (4.4), or sound audible during an ad (4.7).
     - External links, store links or redirects (8.4); third-party ads (4.1).
 
-# What the portal's listing takes, read from the draft form documentation on 2026-10-04
-# (https://yandex.com/dev/games/doc/en/console/add-new-game/draft) and the media rules of
+# What the portal's listing takes, read from the draft form documentation on 2026-10-04 and
+# re-read on 2026-10-07 - the English page and its Russian original
+# (https://yandex.com/dev/games/doc/en/console/add-new-game/draft,
+# https://yandex.ru/dev/games/doc/ru/console/add-new-game/draft) - and the media rules of
 # https://yandex.com/dev/games/doc/en/concepts/requirements (5.x, 8.3). Still unverified: the
 # figures were read from the documentation, not from the console form itself. The locales
 # follow the binding requirement above: the listing texts are needed in ru.
 store_listing:
   status: unverified
-  source: https://yandex.com/dev/games/doc/en/console/add-new-game/draft (read 2026-10-04)
+  source: https://yandex.com/dev/games/doc/en/console/add-new-game/draft and https://yandex.ru/dev/games/doc/ru/console/add-new-game/draft (read 2026-10-07)
   notes: >
-    Required fields (5.2): title, description, how to play, categories, icon, cover,
-    screenshots. "How to play" (100-1000 chars), the SEO description (50-160) and keywords
-    (100 chars) have no field in this block; the long description stands for the
-    description. Screenshots are 16:9 or 9:16 with a long side of 1280-2560 px, JPEG or
-    24-bit PNG - a PNG with an alpha channel may be refused. At least 70% of screenshots and
-    video show real gameplay (5.1.1); no screenshot as icon or cover (5.6); no borders,
-    rounded corners, system UI or portal badges in media (8.3.3, 8.3.4); the title is the
-    same in every language (5.1.3). Age ratings: 0+, 6+, 12+, 16+, 18+ (2.7).
+    Required fields (5.2): title, description, how to play, version, categories, icon,
+    cover, archive, platforms, orientation, screenshots - version, platforms and orientation
+    are a person's entries in the draft. "How to play" (100-1000 chars), the SEO description
+    (50-160, starting with a keyword and ending with punctuation) and keywords (at most 100
+    chars, lowercase, comma-separated) have no field in this block; the long description
+    stands for the description. Title: starts with a capital, no full caps, no "free" or
+    "best"; unique across the selected languages (5.12) and identical in the game and every
+    material of a language (5.1.3). Short description: starts with a capital, does not repeat
+    the game's name, no "free" or "in English". Repeated spaces or hyphens never pad a text to
+    its minimum (5.11). Screenshots: at least 2 for each selected platform - mobile at least 2
+    PER ORIENTATION, desktop at least 2 in 16:9 landscape only - 16:9 or 9:16 with a long side
+    of 1280-2560 px, JPEG or 24-bit PNG (a PNG with an alpha channel may be refused); `min`
+    below is the one-platform, one-orientation floor because the block counts a total. Video:
+    the horizontal one is required (16:9 MP4, height at least 400 px, at most 28 s and 100 MB);
+    a vertical 9:16 one with the same bounds and up to 20 advertising videos are optional.
+    Maskable icon optional. At least 70% of screenshots and video show real gameplay (5.1.1);
+    no screenshot as icon or cover (5.6); no borders, rounded corners, system UI or portal
+    badges in media (8.3.3, 8.3.4). Age ratings: 0+, 6+, 12+, 16+, 18+ (2.7).
   title: {required: true, max_chars: 50}
   short_description: {required: true, max_chars: 70}
   long_description: {required: true, min_chars: 100, max_chars: 1000}
@@ -118,7 +164,7 @@ store_listing:
     - {id: cover, label: Cover image, required: true, sizes: [{width: 800, height: 470}], aspect: null, formats: [png], max_kb: null, source: thumbnail}
     - {id: hero, label: Hero image, required: false, sizes: [{width: 1560, height: 520}], aspect: "3:1", formats: [png, jpg], max_kb: null, source: promo}
   screenshots: {required: true, min: 2, max: null, sizes: null, aspect: null, formats: [png, jpg], max_kb: null}
-  video: {required: false, formats: [mp4], min_seconds: null, max_seconds: 28, max_mb: 100, min_height: 400}
+  video: {required: true, formats: [mp4], min_seconds: null, max_seconds: 28, max_mb: 100, min_height: 400, aspect: "16:9", orientation: [landscape]}
 
 assertions:
   - id: yandex_bundle_size
@@ -133,6 +179,14 @@ assertions:
   - id: yandex_loading_api_called
     check: { left: package.calls_loading_api, op: eq, right: true }
     severity: blocking
+  - id: yandex_game_ready_within_90s
+    check: { left: package.perf.time_to_interactive_s, op: lte, right: 90 }
+    severity: blocking
+    rationale: >
+      REQ 1.19.2: LoadingAPI.ready() within 90 s (https://yandex.com/dev/games/doc/en/requirements/1/19,
+      read 2026-10-07). The template measures time_to_interactive_s right after the adapter's
+      signalReady() - the ready() call - on the served bundle; that it fires when play is
+      really possible, not on a timer, is a moderator's judgement.
   - id: yandex_https_only
     check: { left: package.insecure_requests, op: eq, right: 0 }
     severity: blocking

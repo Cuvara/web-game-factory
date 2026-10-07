@@ -42,7 +42,7 @@ GAME_CONFIG = textwrap.dedent("""\
       output: dist
     platforms:
       - { id: y8, profile: y8@1.2.0, role: required }
-      - { id: yandex, profile: yandex@1.2.0, role: required }
+      - { id: yandex, profile: yandex@1.3.0, role: required }
       - { id: crazygames, profile: crazygames@1.2.0, role: required }
     """)
 IDS = {"external_game_id": "y8-4711", "app_id": "app-0042"}
@@ -523,7 +523,7 @@ class CreateBeforeBuild(MultiCase):
         with open(self.game.path("game.config.yaml"), encoding="utf-8") as handle:
             text = handle.read()
         self.assertIn("game_id: y8-4711", text)
-        self.assertIn("{ id: yandex, profile: yandex@1.2.0, role: required }", text)
+        self.assertIn("{ id: yandex, profile: yandex@1.3.0, role: required }", text)
         self.assertEqual(identity.sync(self.game.root, "fixture-game", profiles, self.titles), [])
         self.game.commit("game.config.yaml", text, "sdk: portal ids")
         self.draft()

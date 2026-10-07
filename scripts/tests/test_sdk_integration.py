@@ -213,7 +213,7 @@ game:
 engine:
   type: pixijs
 platforms:
-  - { id: yandex, profile: yandex@1.2.0, role: required }
+  - { id: yandex, profile: yandex@1.3.0, role: required }
   - { id: crazygames, profile: crazygames@1.2.0, role: optional }
   - { id: poki, profile: poki@1.1.0, role: optional }
   - { id: gamevui, profile: gamevui@1.1.0, role: optional }
@@ -1093,7 +1093,7 @@ class Commits(SdkCase):
         base = self.head()
         with open(os.path.join(self.repo, "game.config.yaml"), encoding="utf-8") as handle:
             before = handle.read()
-        plan = self.tech_plan({"id": "yandex", "profile": "yandex@1.2.0", "role": "required"},
+        plan = self.tech_plan({"id": "yandex", "profile": "yandex@1.3.0", "role": "required"},
                               {"id": "crazygames", "profile": "crazygames@1.2.0",
                                "role": "optional"})
         result = self.execute(prototype_report=prototype_at(base), tech_plan=plan)
@@ -1106,7 +1106,7 @@ class Commits(SdkCase):
                          ["yandex", "crazygames"])
         with open(os.path.join(self.repo, "game.config.yaml"), encoding="utf-8") as handle:
             after = handle.read()
-        self.assertIn("  - { id: yandex, profile: yandex@1.2.0, role: required }\n", after)
+        self.assertIn("  - { id: yandex, profile: yandex@1.3.0, role: required }\n", after)
         self.assertIn("  - { id: crazygames, profile: crazygames@1.2.0, role: optional }\n",
                       after)
         self.assertNotIn("poki", after)
@@ -1136,7 +1136,7 @@ class Commits(SdkCase):
             app_id="app-0042", association="created-by-factory")
         make_repo(self.repo)
         base = self.head()
-        plan = self.tech_plan({"id": "yandex", "profile": "yandex@1.2.0", "role": "required"},
+        plan = self.tech_plan({"id": "yandex", "profile": "yandex@1.3.0", "role": "required"},
                               {"id": "y8", "profile": "y8@1.2.0", "role": "optional"})
         result = self.execute(prototype_report=prototype_at(base), tech_plan=plan)
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
@@ -1144,7 +1144,7 @@ class Commits(SdkCase):
             after = handle.read()
         self.assertIn("  - { id: y8, profile: y8@1.2.0, role: optional, game_id: y8-4711, "
                       "app_id: app-0042 }\n", after)
-        self.assertIn("  - { id: yandex, profile: yandex@1.2.0, role: required }\n", after)
+        self.assertIn("  - { id: yandex, profile: yandex@1.3.0, role: required }\n", after)
         self.assertIn("game.config.yaml",
                       git(self.repo, "diff", "--name-only", base, "HEAD").stdout.split())
         self.assertEqual(git(self.repo, "status", "--porcelain").stdout, "")
@@ -1158,7 +1158,7 @@ class Commits(SdkCase):
         make_repo(self.repo)
         base = self.head()
         plan = self.tech_plan(*[{"id": i, "profile": p, "role": r} for i, p, r in (
-            ("yandex", "yandex@1.2.0", "required"), ("crazygames", "crazygames@1.2.0", "optional"),
+            ("yandex", "yandex@1.3.0", "required"), ("crazygames", "crazygames@1.2.0", "optional"),
             ("poki", "poki@1.1.0", "optional"), ("gamevui", "gamevui@1.1.0", "optional"))])
         result = self.execute(prototype_report=prototype_at(base), tech_plan=plan)
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)

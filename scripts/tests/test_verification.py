@@ -1026,10 +1026,10 @@ class PlatformAndPolicy(VerificationCase):
         # yandex_screenshots counts store screenshots, which do not exist until store-listing
         # runs after verify. The required policy.assertions:yandex was a WARNING, so
         # UNVERIFIED, and release refused the draft: "evidence-too-weak".
-        self.add_platform("- { id: yandex, profile: yandex@1.2.0, role: optional }")
+        self.add_platform("- { id: yandex, profile: yandex@1.3.0, role: optional }")
         sdk = fixture("inputs/sdk-report.json")
         sdk["platforms"].append(dict(sdk["platforms"][0], platform_id="yandex",
-                                     profile_version="1.2.0"))
+                                     profile_version="1.3.0"))
         results = {"generic-web": fixture("assertions-generic-web.json"),
                    "yandex": [
                        {"criterion_id": "yandex_sdk_present", "measured": "yandex",
@@ -1068,7 +1068,7 @@ class PlatformAndPolicy(VerificationCase):
     def test_every_targeted_platform_is_required(self):
         # Each target gets a bundle of its own, so each is shippable or the build is not:
         # an optional platform that is not ready fails the verdict like a required one.
-        self.add_platform("- { id: yandex, profile: yandex@1.2.0, role: optional }")
+        self.add_platform("- { id: yandex, profile: yandex@1.3.0, role: optional }")
         results = {"generic-web": fixture("assertions-generic-web.json"),
                    "yandex": [{"criterion_id": "yandex_sdk_present", "measured": "none",
                                "breached": True, "evaluated_at": NOW, "severity": "blocking"}]}

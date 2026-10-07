@@ -750,7 +750,7 @@ def make_git_template(root, bootstrap=True):
 
 class GameConfigRewrite(unittest.TestCase):
     PLAN = {"engine": {"type": "threejs"},
-            "platforms": [{"id": "yandex", "profile": "yandex@1.2.0", "role": "required"},
+            "platforms": [{"id": "yandex", "profile": "yandex@1.3.0", "role": "required"},
                           {"id": "poki", "profile": "poki@1.1.0", "role": "optional"}],
             "monetization": {"ad_kinds": ["rewarded"], "iap": True}}
 

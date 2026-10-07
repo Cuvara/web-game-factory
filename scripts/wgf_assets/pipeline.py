@@ -284,6 +284,7 @@ class PipelineResult:
         self.runtime_manifest = None  # {path, bytes, content_hash}
         self.removed = []           # stale pipeline-owned files pruned
         self.rebuilt = []           # requirement ids a re-entry made again, by an author
+        self.blocked = []           # quality findings of models no craft review passed
 
 
 class _Item:
@@ -445,6 +446,15 @@ class AssetPipeline:
     def run(self, requirements):
         result = PipelineResult()
         built = []
+        # The player's model as the game ships it: what the model author's in-context render
+        # stands every other model beside (render.py `context`).
+        self._player_glb = None
+        player = next((r for r in requirements if r.role == "player"
+                       and r.dimension == "3d" and r.policy is not None), None)
+        if player is not None and getattr(self.store, "root", None):
+            path = os.path.join(self.store.root, *self._directory(player, "glb").split("/"),
+                                f"{player.id}.glb")
+            self._player_glb = path if os.path.isfile(path) else None
         try:
             for req in requirements:
                 built.append(self._process(req))
@@ -488,6 +498,8 @@ class AssetPipeline:
             result.items.append(item.finish())
             if item.rebuilt:
                 result.rebuilt.append(item.req.id)
+            if getattr(item, "craft_finding", None):
+                result.blocked.append(item.craft_finding)
         if self.runtime_manifest:
             document = runtime.build(entries, packed, self.title_id)
             self.store.write(runtime.RUNTIME_PATH, document)
@@ -1493,6 +1505,8 @@ class AssetPipeline:
         context = {"run_dir": os.path.join(self.work_dir or tempfile.gettempdir(),
                                            "model-author"),
                    "config": config, "policy": self.policy, "design": dict(self.design)}
+        if getattr(self, "_player_glb", None):
+            context["player_glb"] = self._player_glb
         if environ is not None:
             context["environ"] = environ
         return context
@@ -1511,10 +1525,23 @@ class AssetPipeline:
                                      (self.settings or {}).get("model_author") or {},
                                      self._model_context())
         except Exception as exc:  # ModelAuthorError, or a bug: never breaks the pipeline
+            if getattr(exc, "blocked", False):
+                self._craft_blocked(item, exc)
+                return True
             item.issue("generation-failed", "warning",
                        f"{req.id}: model author: {self._model_error(exc)}")
             return False
         return self._accept_model(req, item, made)
+
+    @staticmethod
+    def _craft_blocked(item, exc):
+        """A model no spec of which passed its checks, the craft lint and the model judge:
+        nothing ships for it - no placeholder stands in either, the step stops BLOCKED and
+        the finding goes to the 3D art owner (model_author.craft_finding)."""
+        item.issue("model-craft-blocked", "error", str(exc))
+        item.craft_finding = getattr(exc, "finding", None) or {"assets": [item.req.id]}
+        item.data["notes"] = " ".join(filter(None, [
+            item.data.get("notes"), "Blocked by the model craft review: no file ships."]))
 
     def _author_model_set(self, items):
         """Every deferred 3D requirement through wgf_assets.model_author.produce_models, in
@@ -1544,6 +1571,9 @@ class AssetPipeline:
                 if self._accept_model(item.req, item, result):
                     continue
             elif item.req.id in errors:
+                if getattr(errors[item.req.id], "blocked", False):
+                    self._craft_blocked(item, errors[item.req.id])
+                    continue
                 item.issue("generation-failed", "warning",
                            f"{item.req.id}: model author (set): "
                            f"{self._model_error(errors[item.req.id])}")

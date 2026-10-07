@@ -1,0 +1,173 @@
+# Model review rubric: what one 3D model is held to before it ships - by a craft lint that
+# measures, and by a judge that looks.
+#
+# The model author (scripts/wgf_assets/model_author.py) writes a model spec, the pinned
+# Blender builds it, model_quality measures it (parts, normals, palette, silhouette,
+# contrast) and Blender renders it. Until 1.0.0 the author then graded its own renders - an
+# unchanged spec meant "it reads" - and the last spec that passed the measured checks
+# shipped, even when the author itself had diagnosed it as bad. A live 3D run shipped a
+# marble whose swirl band was sunk inside its shell, a needle for a gem, a disc-stack bumper
+# that vanished on the track, a goal gate with lanterns hanging in the air beside it, and a
+# checkpoint whose flag floated off its pole (docs/blender-pipeline.md, "Craft review").
+#
+# Two layers, both blocking:
+#
+#   lint     deterministic, from the built GLB and its spec (scripts/wgf_assets/model_lint.py):
+#            the `model.lint` check of model_quality.assess, for every GLB the assets step
+#            judges, whoever made it. An `error` finding fails the check; a `warning` is
+#            reported and handed to the judge.
+#   judge    an independent reader of the renders (scripts/wgf_assets/model_judge.py),
+#            configured outside core like visual QA's: a command judge (an agent able to read
+#            images, read-only, with nothing but its brief and copies of the images) or the
+#            deterministic `baseline` judge (each render against approved renders of the same
+#            model - golden runs and tests). It never writes a spec; the author never judges.
+#            It sees each model's contact sheet, its in-context sheet - the model standing on
+#            the play surface beside the player, under the game's light rig, from the game's
+#            camera - and the role's reference images, and scores the dimensions below.
+#
+# The step, not the judge, decides: a model fails on any dimension scored below `pass_bar`,
+# a mean below `mean_pass_bar`, `reads_as: false`, or a `blocker` finding. A failing verdict
+# goes back to the author with the judge's notes and the renders, for at most
+# `factory.assets.model_author.judge.rounds` craft rounds. When they are spent and the model
+# still fails - or the author revised a model it judged unreadable and the revision fails its
+# checks - the model is BLOCKED: no file ships, never "the last spec that passed", and the
+# finding goes to the 3D art owner (core/reference/specialist-routing.yaml, environment-3d).
+#
+# The anchors describe 0, 3 and 5; 1, 2 and 4 lie between them. Recalibrate as verdicts
+# accumulate - never to make one model pass.
+
+version: 1.0.0
+
+pass_bar: 3
+mean_pass_bar: 3.5
+
+dimensions:
+  silhouette_at_size:
+    question: At the size a player sees it (the gameplay tile of the sheet, and the in-context sheet), is its outline distinct - the parts a player recognises it by standing out of the main body?
+    anchors:
+      "0": A blob or a brick at gameplay size; nothing of its outline says what it is.
+      "3": The outline is recognisable once you know what it is; a feature or two merges into the body.
+      "5": Recognisable instantly from the outline alone, at gameplay size, from the game's camera.
+  proportion:
+    question: Are its proportions those of the thing it names, exaggerated for play rather than stretched or squashed into another shape?
+    anchors:
+      "0": Stretched or squashed into something else - a gem that is a needle, a ball that is a drum.
+      "3": Plausible proportions, a little off (a part too thin, a body too long).
+      "5": Proportions that read as the thing at once, with the stylisation the identity asks for.
+  attachment:
+    question: Is every part attached to what carries it - nothing floating, nothing sunk out of sight, no faces fighting on one plane?
+    anchors:
+      "0": Parts hang in the air or are buried inside others; the model reads as loose pieces.
+      "3": Solid as a whole; one small detail sits slightly off its support.
+      "5": Every part is seated, overlapped into its support, and visible where it is meant to be.
+  bevel_faceting:
+    question: Are bevels and faceting consistent across the model and with the identity - one edge treatment, one level of detail, shading that suits the segment count?
+    anchors:
+      "0": Mixed treatments - bevelled and raw parts side by side, blotchy smooth shading on coarse shapes.
+      "3": Mostly consistent; a part or two from another level of detail.
+      "5": One deliberate edge and facet language throughout, matching the identity (crisp, soft, faceted).
+  material_restraint:
+    question: Are materials and emissive used with restraint for the identity - a lit identity lit by its base colours with glow for small accents, a neon one glowing where it should?
+    anchors:
+      "0": Large surfaces glowing in a lit identity, or a dull model in a neon one; colours outside the palette.
+      "3": Palette colours, one surface glowing more than it should or one colour fighting another.
+      "5": The palette's roles kept (player accent, danger, environment), emissive exactly where the identity puts light.
+  in_identity:
+    question: Does it belong to this game's visual identity - its concept, shape language and palette - and beside the other models of the set?
+    anchors:
+      "0": From another game - another style, another palette, another level of detail.
+      "3": Fits the identity, with a generic element (a stock primitive, a default colour).
+      "5": Unmistakably this game's, consistent with the set.
+  reads_as_label:
+    question: Does it read as its requirement's `readability` line - what a first-time player must recognise in it?
+    anchors:
+      "0": It reads as something else (a marble as a ringed planet, a bumper as a stack of discs).
+      "3": It reads as the label after a second look.
+      "5": It reads as the label instantly, including the feature the line names.
+  camera_view:
+    question: From the game's camera, on the play surface beside the player (the in-context sheet), does it stand out from what is behind it and read at its real size?
+    anchors:
+      "0": Lost against the surface or the sky behind it; too small or hidden by the player.
+      "3": Visible and identifiable, but low in contrast or small.
+      "5": Stands off the surface behind it and reads at a glance at its real size.
+
+# Findings the judge must raise as `severity: blocker` whatever the scores.
+blockers:
+  - id: unreadable
+    rule: The model does not read as its requirement's readability line at gameplay size from the game's camera.
+  - id: detached-part
+    rule: A part visibly floats, is buried where the requirement needs it seen, or is separated from what carries it.
+  - id: vanishes-in-context
+    rule: In the in-context sheet the model cannot be told from the play surface or the sky behind it.
+  - id: off-identity
+    rule: The model is from another game - its materials, glow or shape language contradict the visual identity.
+
+# The craft lint (model_lint.py). Calibrated 2026-10-05 against two sets, both kept as
+# evidence: the 3D reference game's library (the pinned golden ports' neon-drift-arena
+# library: craft, wall, arena-track, arena-skyline - hand-iterated models a person approved),
+# which raises no finding at its own roles, and the 3D validation run of 2026-10-03 (its
+# model-author rounds), whose shipped models raise the findings below.
+lint:
+  # Two parts touch when the gap between their bounding boxes is at most `min_gap` of the
+  # smaller one's largest side; a part (or group) not joined to the main body floats.
+  # Reference: the craft's nose cone sits 0.017 m (4% of its 0.40 m) off its keel - seated.
+  # Validation: the goal gate's lanterns 0.06-0.13 m off (12-26% of 0.5 m), its emblem back
+  # 7% and glow ring 1.03 m, the gem's lower half 8% - floating. Kits, backgrounds and
+  # effects are composed of separate pieces by design.
+  floating:
+    min_gap: 0.05
+    severity: error
+    exempt_roles: [environment, background, vfx]
+  # A part that is the nearest surface nowhere - from the front, back, sides, top or bottom,
+  # looked at on the whole model's silhouette grid and again on a grid over its own
+  # footprint - is inside another. Validation: the shipped marble's swirl band and seam
+  # (sunk inside the shell), the bumper's dome and ink gap disc. Reference: none (the
+  # track's 8 mm grid lines and 14 mm dashes are seen from above).
+  hidden:
+    min_shown: 0.0
+    severity: error
+  # Faces of two parts in different materials on one plane (within `plane_tolerance` of the
+  # model's size), facing the same way and overlapping by more than `min_overlap` of it,
+  # flicker in the game. Undersides (normal below -`down_facing` on +Y) are not judged: no
+  # game camera above the play sees them. Validation: the island kit's spike top flush with
+  # its strata, the cloud band's end flush with a puff. Reference: none.
+  coplanar:
+    plane_tolerance: 0.0001
+    min_overlap: 0.0001
+    down_facing: 0.7
+    severity: error
+  # Emissive restraint per identity: `neon` when the identity's own words (concept, shape
+  # language, texture, motion - never its `avoid` list) name one of `neon_words`, else `lit`.
+  # `max_share` of the visible surface (by area) may glow; `max_strength` is the largest
+  # emissive strength. Validation (a lit cut-paper identity): the goal gate 40% glowing at
+  # 2.2, the gem 100%. Reference (neon): craft and wall within the neon limits; the skyline is
+  # a background (exempt: a sky is a light source).
+  emissive:
+    severity: error
+    exempt_roles: [background, vfx]
+    lit:
+      max_share: 0.25
+      max_strength: 2.0
+    neon:
+      max_share: 0.7
+      max_strength: 10.0
+    neon_words: [neon, glow, synthwave, cyber, laser, luminous, tron]
+  # Longest over middle dimension of the model, per role: a compact role stretched along one
+  # axis reads as a line. A coin (two long sides, one short) is not elongated. Validation:
+  # the shipped gem 3.25 to 1 (a needle). Roles not listed are not judged.
+  aspect:
+    severity: error
+    max_elongation:
+      collectible: 2.0
+  # A chunky box or cylinder - its smallest side at least `min_size` of the model's largest -
+  # with no bevel. Not judged when the identity's words ask for crisp, hard or sharp edges.
+  # Reported to the judge (warning), never blocking on its own.
+  bevel:
+    severity: warning
+    shapes: [box, cylinder]
+    min_size: 0.1
+    crisp_words: [crisp edge, hard edge, sharp edge, razor]
+  # Smooth shading across fewer than `min_segments` segments smears into blotches (warning).
+  smooth:
+    severity: warning
+    min_segments: 8

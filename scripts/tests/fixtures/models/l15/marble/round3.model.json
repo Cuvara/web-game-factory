@@ -1,0 +1,176 @@
+{
+ "budget": {
+  "max_triangles": 1200
+ },
+ "fit": {
+  "axis": "y",
+  "size": 1.0
+ },
+ "materials": [
+  {
+   "color": "#E4572E",
+   "id": "coral-glass",
+   "roughness": 0.15
+  },
+  {
+   "color": "#F7F1E3",
+   "id": "cream-swirl",
+   "roughness": 0.2
+  },
+  {
+   "color": "#B8401F",
+   "id": "coral-deep",
+   "roughness": 0.2
+  }
+ ],
+ "parts": [
+  {
+   "id": "core",
+   "material": "coral-deep",
+   "position": [
+    0,
+    0.5,
+    0
+   ],
+   "segments": 12,
+   "shape": "sphere",
+   "size": [
+    0.7,
+    0.7,
+    0.7
+   ]
+  },
+  {
+   "id": "cap-top",
+   "material": "coral-glass",
+   "parent": "core",
+   "position": [
+    -0.0975,
+    0.139,
+    0
+   ],
+   "profile": [
+    [
+     0.94,
+     0
+    ],
+    [
+     0.8,
+     0.39
+    ],
+    [
+     0.6,
+     0.7
+    ],
+    [
+     0.39,
+     0.88
+    ],
+    [
+     0.0,
+     1
+    ]
+   ],
+   "rotation": [
+    0,
+    0,
+    35
+   ],
+   "segments": 12,
+   "shape": "lathe",
+   "size": [
+    0.5,
+    0.33,
+    0.5
+   ]
+  },
+  {
+   "id": "swirl-band",
+   "material": "cream-swirl",
+   "parent": "core",
+   "position": [
+    0.0975,
+    -0.139,
+    0
+   ],
+   "profile": [
+    [
+     0.6,
+     0
+    ],
+    [
+     0.94,
+     0
+    ],
+    [
+     1,
+     0.5
+    ],
+    [
+     0.94,
+     1
+    ],
+    [
+     0.6,
+     1
+    ]
+   ],
+   "rotation": [
+    0,
+    0,
+    35
+   ],
+   "segments": 12,
+   "shape": "lathe",
+   "size": [
+    0.5,
+    0.34,
+    0.5
+   ]
+  },
+  {
+   "id": "cap-bottom",
+   "material": "coral-deep",
+   "parent": "core",
+   "position": [
+    0.2868,
+    -0.4096,
+    0
+   ],
+   "profile": [
+    [
+     0.0,
+     0
+    ],
+    [
+     0.39,
+     0.12
+    ],
+    [
+     0.6,
+     0.3
+    ],
+    [
+     0.8,
+     0.61
+    ],
+    [
+     0.94,
+     1
+    ]
+   ],
+   "rotation": [
+    0,
+    0,
+    35
+   ],
+   "segments": 12,
+   "shape": "lathe",
+   "size": [
+    0.5,
+    0.33,
+    0.5
+   ]
+  }
+ ]
+}

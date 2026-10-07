@@ -15,6 +15,13 @@ as a ship; this module gives an agent author the same pictures. For each model:
 and, for a set, `<dir>/set.png`: every model side by side at its real size, from the
 three-quarter view and the game's camera, so a set keeps one scale, palette and detail level.
 
+With a `context` ({surface, backdrop, player}: the play surface's and the backdrop's colours,
+and the player's GLB), each model is also rendered in context, `<dir>/<id>.context.png`: on a
+ground plane of the surface's colour, beside the player at its real size, under the same rig,
+from the game's camera (the three-quarter view when the design states none), over the
+backdrop - what the model judge reads for `camera_view` (core/reference/
+model-review-rubric.yaml).
+
 Lighting follows the 3D craft guide's rig (core/craft/production-art-3d.md, "Lighting rig"):
 a hemisphere ambient, a white key high front-right, a rim in the palette's accent from behind;
 the background is the palette's darkest colour, the sky tint its lightest. So a model is seen
@@ -22,7 +29,8 @@ in the colours and the light the game will show it in, not in a grey studio.
 
     report = render(info, [{"id", "glb", "role", "readability"}], out_dir=D,
                     identity=visual_identity, camera=design_camera_text, lineup=True)
-    report = {"engine", "models": {id: {"sheet", "views": {name: {path, coverage, fill}}}},
+    report = {"engine", "models": {id: {"sheet", "views": {name: {path, coverage, fill}},
+                                        "context": {path, beside} or absent}},
               "set": {"path", "order"} or absent}
 
 Blender runs headless through wgflib.procs (blender.build_environment: no user preferences,
@@ -42,7 +50,7 @@ from wgflib import procs
 
 from . import blender
 
-__all__ = ["RenderError", "render", "job", "rig", "views", "game_direction",
+__all__ = ["RenderError", "render", "job", "context_job", "rig", "views", "game_direction",
            "gameplay_pixels", "SCRIPT", "DEFAULTS", "VIEW_ORDER"]
 
 SCRIPT = os.path.join(blender.HERE, "blender_scripts", "render_models.py")
@@ -168,7 +176,26 @@ def views(role=None, readability=None, camera=None):
     return out
 
 
-def job(models, out_dir, *, identity=None, camera=None, lineup=True, settings=None):
+def context_job(context, camera, identity=None):
+    """The job's `context` block from {surface, backdrop, player, player_id}, or None when
+    there is no surface to stand the model on."""
+    if not isinstance(context, dict) or not context.get("surface"):
+        return None
+    background, _light = rig(identity)
+    game = game_direction(camera, None)
+    view = ({"name": "context", "direction": game[0], "up": game[1], "fov": 38} if game else
+            {"name": "context", "direction": [1.0, 0.75, 1.25], "fov": 30})
+    out = {"surface": _rgb(context["surface"]),
+           "backdrop": _rgb(context["backdrop"]) if context.get("backdrop") else background,
+           "view": view}
+    if context.get("player") and os.path.isfile(context["player"]):
+        out["player"] = os.path.abspath(context["player"])
+        out["player_id"] = context.get("player_id") or "player"
+    return out
+
+
+def job(models, out_dir, *, identity=None, camera=None, lineup=True, settings=None,
+        context=None):
     """The job render_models.py reads."""
     settings = dict(DEFAULTS, **(settings or {}))
     background, light = rig(identity)
@@ -183,6 +210,9 @@ def job(models, out_dir, *, identity=None, camera=None, lineup=True, settings=No
     document = {"format": 1, "engines": list(settings["engines"]),
                 "samples": int(settings["samples"]), "tile": int(settings["tile"]),
                 "background": background, "rig": light, "models": entries}
+    in_context = context_job(context, camera, identity)
+    if in_context:
+        document["context"] = in_context
     if lineup and len(models) > 1:
         # A long lens: models side by side keep their relative size wherever they stand.
         set_views = [{"name": "three-quarter", "direction": [1.0, 0.75, 1.25], "fov": 12}]
@@ -205,7 +235,7 @@ def command(executable, job_path, report_path, version=None, script=SCRIPT):
 
 
 def render(info, models, *, out_dir, identity=None, camera=None, lineup=True, settings=None,
-           runner=None, on_event=None):
+           runner=None, on_event=None, context=None):
     """Render `models` ([{id, glb, role, readability}]) into `out_dir`; the report.
     Raises RenderError. Eevee first; when it cannot render here (no GPU context), Cycles on
     the CPU."""
@@ -221,7 +251,7 @@ def render(info, models, *, out_dir, identity=None, camera=None, lineup=True, se
     problem = None
     for attempt in attempts:
         document = job(models, out_dir, identity=identity, camera=camera, lineup=lineup,
-                       settings=dict(settings, engines=attempt))
+                       settings=dict(settings, engines=attempt), context=context)
         scratch = tempfile.mkdtemp(prefix="wgf-render-")
         try:
             job_path = os.path.join(scratch, "job.json")

@@ -116,6 +116,34 @@ def node_names(data):
             if isinstance(node, dict) and isinstance(node.get("name"), str) and node["name"]]
 
 
+def material_names(data):
+    """The names of a glTF's materials, in document order (unnamed skipped); [] when the bytes
+    are not a glTF this module reads."""
+    try:
+        document, _binary = load(data)
+    except GltfError:
+        return []
+    return [m["name"] for m in document.get("materials") or []
+            if isinstance(m, dict) and isinstance(m.get("name"), str) and m["name"]]
+
+
+def contract_missing(data, nodes=(), materials=()):
+    """What of a model's contract (core/artifacts/shared/model-spec.schema.json `contract`)
+    the GLB lacks, as phrases: a node name, a family (`gap-chunk-*`: some node starting with
+    `gap-chunk-`) or a material name. [] when it holds everything."""
+    have = set(node_names(data))
+    mats = set(material_names(data))
+    missing = []
+    for want in nodes or ():
+        if want.endswith("*"):
+            if not any(n.startswith(want[:-1]) for n in have):
+                missing.append(f"no node of the family {want!r}")
+        elif want not in have:
+            missing.append(f"no node {want!r}")
+    missing += [f"no material {m!r}" for m in materials or () if m not in mats]
+    return missing
+
+
 # -- small matrix helpers (column-major 4x4, as glTF stores them) -----------------------------
 
 IDENTITY = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
@@ -783,4 +811,10 @@ def check_expectations(summary, expect, data=None, *, name="model"):
     max_bytes = expect.get("max_bytes")
     if max_bytes and data is not None and len(data) > max_bytes:
         add(("too-large", "error", f"{name}: {len(data)} bytes; the spec's budget is {max_bytes}"))
+    if data is not None and (expect.get("nodes") or expect.get("materials")):
+        add_missing = contract_missing(data, expect.get("nodes"), expect.get("materials"))
+        if add_missing:
+            add(("model-nodes-missing", "error",
+                 f"{name}: the model's contract names " + "; ".join(add_missing)
+                 + " - game code looks these up by name; name the parts (or materials) so"))
     return findings

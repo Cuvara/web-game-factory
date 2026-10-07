@@ -110,12 +110,13 @@ class PrimitiveDetection(unittest.TestCase):
         self.assertEqual(quality["verdict"], "fail")
 
     def test_a_composite_is_not_primitive_only(self):
+        # Every part seated on the one that carries it (model_lint: nothing floats).
         keeper = synth(piece("box", (0.5, 0.6, 0.3), (0, 1.0, 0)),
-                       piece("sphere", (0.26, 0.3, 0.26), (0, 1.5, 0)),
-                       piece("capsule", (0.13, 0.55, 0.13), (0.35, 1.0, 0)),
-                       piece("capsule", (0.13, 0.55, 0.13), (-0.35, 1.0, 0)),
-                       piece("sphere", (0.18, 0.18, 0.12), (0.4, 0.7, 0), material="grey"),
-                       piece("capsule", (0.16, 0.6, 0.16), (0.12, 0.3, 0)))
+                       piece("sphere", (0.26, 0.3, 0.26), (0, 1.42, 0)),
+                       piece("capsule", (0.13, 0.55, 0.13), (0.3, 1.0, 0)),
+                       piece("capsule", (0.13, 0.55, 0.13), (-0.3, 1.0, 0)),
+                       piece("sphere", (0.18, 0.18, 0.12), (0.3, 0.7, 0), material="grey"),
+                       piece("capsule", (0.16, 0.6, 0.16), (0.12, 0.42, 0)))
         quality = model_quality.assess(keeper, role="player", visual_identity=LOOK)["quality"]
         self.assertFalse(quality["primitive_only"])
         self.assertEqual(quality["parts"], 6)

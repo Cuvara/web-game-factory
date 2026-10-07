@@ -1,0 +1,107 @@
+{
+ "art_direction": "Paper-diorama sky: the world reads as layered cut paper lit from one low sun - sage-topped islands with cut-paper cliffs and hard shadows down-right, floating over banded cloud layers against a dusk-blue gradient sky. Identity kit 'paper-diorama'. Everything is flat-shaded low-poly with vertex colours and no textures; the coral marble is the one saturated, glossy thing on the course so it is never lost, gems and the goal gate are marigold, bumpers are teal, checkpoints light sky-blue. UI is cut-paper tabs and cards with irregular edges, marigold buttons and a fibre overlay.",
+ "asset": {
+  "description": "A teal bumper post that bounces the marble away",
+  "id": "bumper",
+  "kind": "model",
+  "readability": "A teal mushroom-like post with a cream ring on top, the only teal on the course, readable at 48 px wide and squashing visibly when hit so players learn it pushes them",
+  "role": "threat",
+  "spec": "Low-poly GLB squat cylinder with a cream ring cap, 1.2 m wide, 0.8 m high, a squash-and-return animation clip",
+  "tier": "mvp"
+ },
+ "camera": "Third-person chase camera about 6 m behind and 3.5 m above the marble, looking 4 m ahead; its yaw follows the direction of travel with damping so drag input never flips; no player camera control. In portrait the field of view widens to keep the next ramp or gap in frame.",
+ "palette": [
+  {
+   "hex": "#2B3A55",
+   "role": "Background layer: the top of the dusk sky, the dimmer behind cards",
+   "token": "backdrop"
+  },
+  {
+   "hex": "#F7F1E3",
+   "role": "Panels, cards, the swirl band of the marble, the goal gate pillars",
+   "token": "paper"
+  },
+  {
+   "hex": "#26211C",
+   "role": "Text, outlines, hazard stripes",
+   "token": "ink"
+  },
+  {
+   "hex": "#F2A900",
+   "role": "Primary accent: gems, stars, goal gate banner, primary buttons",
+   "token": "marigold"
+  },
+  {
+   "hex": "#E4572E",
+   "role": "The marble (the player); the clock once the run is over par",
+   "token": "coral"
+  },
+  {
+   "hex": "#7FB685",
+   "role": "Island tops (the safe path); positive feedback and new best",
+   "token": "sage"
+  },
+  {
+   "hex": "#A0826A",
+   "role": "Cut-paper island cliffs and undersides",
+   "token": "rock"
+  },
+  {
+   "hex": "#8EC5E8",
+   "role": "Mid sky and cloud layers; a lit checkpoint flag",
+   "token": "sky-blue"
+  },
+  {
+   "hex": "#F6D9B0",
+   "role": "Warm horizon band and the low sun; fog colour",
+   "token": "horizon"
+  },
+  {
+   "hex": "#1F8A8A",
+   "role": "Bumpers, the only teal in the scene",
+   "token": "bumper-teal"
+  },
+  {
+   "hex": "#D8CDB8",
+   "role": "Low walls and the moving platform slab",
+   "token": "stone"
+  }
+ ],
+ "source": "new-game-20261003-082542-0de9b5 assets/5-1/model-author/bumper (3D validation run, 2026-10-03)",
+ "visual_identity": {
+  "avoid": [
+   "Photographic textures",
+   "Neon glow",
+   "System or default UI fonts (Arial, Roboto, Inter, the browser default)",
+   "Purple-to-blue gradients on white",
+   "Rounded white cards with drop shadows as the default container",
+   "Emoji as iconography",
+   "Realistic PBR materials"
+  ],
+  "concept": "Layered cut paper lit from one side: soft depth, crisp edges, handmade warmth. Here a diorama of floating sky islands at dusk, with a glass marble as the one bright thing that moves.",
+  "motion": "Layers slide in with slight parallax; rewards pop up like a pop-up book (scale from a hinge); stars stamp in one by one. In play the marble is smooth 60 fps physics; the camera lags the heading by about 0.3 s.",
+  "shape_language": "Irregular cut-paper edges on panels and island cliffs, each layer casting a short hard shadow down-right; islands are flat-shaded facets with crisp edges, ramps are clean wedges, the marble is the only smooth round form.",
+  "texture": "Paper fibre overlay on every paper surface of the UI; none on the 3D meshes, which are flat-shaded vertex colours.",
+  "typography": {
+   "body": "Commissioner (500)",
+   "display": "Playfair Display (800)",
+   "numeric": "Commissioner (700), tabular",
+   "source": "Google Fonts, SIL Open Font License; cyrillic in scope (en, ru): Playfair Display for Fraunces, which cover it"
+  },
+  "ui": {
+   "button": {
+    "fill": "marigold",
+    "radius_px": 6,
+    "style": "Cut-paper tab with an irregular edge and a short hard shadow down-right; pressed flattens the shadow",
+    "text": "ink"
+   },
+   "font_px": {
+    "body": 16,
+    "heading": 32,
+    "hud": 20
+   },
+   "min_target_px": 48,
+   "surface": "paper"
+  }
+ }
+}

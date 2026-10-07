@@ -47,7 +47,10 @@ step's `with:` block:
                    evidence). Default: none - a manifest with issues is the honest output.
     strict         shorthand for failing on every error-severity issue.
 
-Outcomes: SUCCESS with the manifest; WAITING_FOR_INPUT without a game-design; FAILED, not
+Outcomes: SUCCESS with the manifest; BLOCKED, carrying the manifest and the quality findings
+(`data.findings`, owner the 3D art specialist), when the model author's craft review blocked a
+model (model-review-rubric.yaml: no spec passed its checks, the craft lint and the model
+judge, so nothing ships for it); WAITING_FOR_INPUT without a game-design; FAILED, not
 retryable, for a design whose asset requirements are malformed or a game-design of a major
 schema version this step cannot read; FAILED, not retryable, carrying the manifest, when an
 issue named in fail_on (or any error, when strict) is present.
@@ -359,6 +362,18 @@ class AssetsStep(WorkflowStep):
         }
         artifact = ArtifactOutput("asset-manifest", manifest, metadata=metadata)
 
+        if result.blocked:
+            # A model no spec of which passed the craft review ships nothing - not the last
+            # spec that passed its checks, not a placeholder: a person decides
+            # (core/reference/model-review-rubric.yaml). The manifest is the evidence.
+            ids = sorted({a for f in result.blocked for a in f.get("assets") or []})
+            return StepResult("BLOCKED", artifacts=[artifact],
+                              message=f"the model craft review blocked {', '.join(ids)}: no "
+                                      f"spec passed its checks, the craft lint and the model "
+                                      f"judge within the author's rounds. The 3D art owner "
+                                      f"decides - fix the spec or the design, and resume "
+                                      f"(see the manifest's model-craft-blocked issues)",
+                              data={"findings": result.blocked})
         if plan.reentry:
             refused = self._reentry_refusal(plan, requirements, pipeline, result, context,
                                             artifact)

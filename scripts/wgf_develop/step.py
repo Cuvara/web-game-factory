@@ -457,7 +457,9 @@ class DevelopStep(WorkflowStep):
         if content_floor.adopted(design) and not committed:
             # A design that replaces the adopted game's units instead of extending them is
             # refused before any developer session is paid for (floor.replacement).
-            refused = content_floor.replacement(design, git, phase)
+            refused = content_floor.replacement(design, git, phase,
+                                                run_id=getattr(context, "run_id", None),
+                                                config=getattr(context, "config", None))
             if refused:
                 context.logger.error("develop refuses a replacement of the adopted game",
                                      reason=refused)

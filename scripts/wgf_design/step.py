@@ -231,8 +231,10 @@ class DesignStep(WorkflowStep):
         if gaps and adoption and self._previous_design(context) is not None:
             context.logger.warning(
                 "design adopts the checkout's content: the design gaps found in the last "
-                "design are not repaired - it planned other units than the checkout ships",
-                gaps=len(gaps), missing_unit_ids=adoption["missing"][:20])
+                "design are not repaired - it planned other units than the checkout ships "
+                "(missing ids, or the same ids as other units)",
+                gaps=len(gaps), missing_unit_ids=adoption["missing"][:20],
+                rewritten_unit_ids=adoption["rewritten"][:20])
             gaps = []
         if gaps:
             previous = self._previous_design(context)
@@ -535,15 +537,17 @@ class DesignStep(WorkflowStep):
             run_id=getattr(context, "run_id", None))
         if floor is not None or "adopt" not in note:
             context.logger.info("existing-content floor", floor=note)
-        chosen = existing.reconcile(kept, floor)
-        if chosen is kept and kept is not None:
+        if kept is not None and not existing.measured(kept):
             # Recorded unmeasured (the checkout ships no content data file): the shipped
             # build has been played since, and its probe floor is the run's - never the
-            # content data file the run's own build may have gained.
+            # content data file the run's own build may have gained, and never lost to an
+            # unmeasured floor at another commit (existing.reconcile).
             probed = existing.run_probe_floor(getattr(context, "run_dir", None), kept)
             if probed is not None:
                 context.logger.info("existing-content floor", floor=probed.get("reason"))
-                return probed, []
+                kept = probed
+        chosen = existing.reconcile(kept, floor)
+        self._floor_moved = existing.moved(kept, chosen)
         if isinstance(chosen, dict) and chosen.get("supersedes"):
             gone = chosen["supersedes"]
             context.logger.warning(
@@ -552,23 +556,28 @@ class DesignStep(WorkflowStep):
                 was=str(gone.get("commit") or "")[:12], was_units=gone.get("unit_ids")[:20],
                 now=str((chosen.get("source") or {}).get("commit") or "")[:12],
                 now_units=(chosen.get("unit_ids") or [])[:20])
-        # The shipped units describe the floor chosen when it ships the same units.
-        same = (floor is not None and chosen is not None
+        # The shipped units describe the floor chosen when it is the floor read now.
+        same = (floor is not None and chosen is not None and existing.measured(floor)
                 and existing.shipped_ids(chosen) == existing.shipped_ids(floor))
         return chosen, (units if same else [])
 
     def _adoption(self, context, floor, units):
         """brief['adoption'] when the adopted checkout ships units the run's last design does
-        not plan (or there is no last design): the shipped units, in the design's unit shape,
-        are the starting units. None otherwise."""
+        not plan (or there is no last design), or - the floor moved to another commit (a
+        person changed the shipped content) - units the last design plans under the same ids
+        but as other units (existing.rewritten): the shipped units, in the design's unit
+        shape, are the starting units. None otherwise."""
         shipped = existing.shipped_ids(floor)
         if not shipped or not units:
             return None
         previous = self._previous_design(context)
-        planned = {str(u.get("id")) for u in commitments.planned_units(previous)} \
-            if previous else set()
+        planned_units = commitments.planned_units(previous) if previous else []
+        planned = {str(u.get("id")) for u in planned_units}
         missing = sorted(shipped - planned)
-        if previous is not None and not missing:
+        changed = []
+        if previous is not None and getattr(self, "_floor_moved", False):
+            changed, _kept = existing.rewritten(units, planned_units)
+        if previous is not None and not missing and not changed:
             return None
         source = (floor or {}).get("source") or {}
         return {"commit": source.get("commit"), "path": source.get("path"),
@@ -576,6 +585,7 @@ class DesignStep(WorkflowStep):
                 "units": existing.adoption_units(units),
                 "shipped_units": units,
                 "missing": missing,
+                "rewritten": changed,
                 "supersedes": floor.get("supersedes")}
 
     @staticmethod

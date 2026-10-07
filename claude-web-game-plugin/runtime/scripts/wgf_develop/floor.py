@@ -133,53 +133,49 @@ def shipped_units(checkout, design):
             if isinstance(u, dict) and u.get("id")]
 
 
-def _head_unit_ids(git, floor):
-    """The unit ids of the content data file at the checkout's HEAD commit, or None."""
-    path = (floor.get("source") or {}).get("path") or "public/content/units.json"
-    head = git.head()
-    text = git.file_at(head, path) if head else None
-    if text is None:
-        return None
-    try:
-        data = json.loads(text)
-    except ValueError:
-        return None
-    if not isinstance(data, dict):
-        return None
-    return [str(u.get("id")) for u in data.get("units") or []
-            if isinstance(u, dict) and u.get("id")]
-
-
-def replacement(design, git, phase=None):
-    """A reason (str) the visit is refused before any developer starts, or None. The design
-    of an adopted run drops units the checkout ships - its floor's, and in greybox the ones
-    the content data lists at HEAD - while it lists units the checkout does not ship: briefed,
-    a developer would replace the shipped game with another one."""
+def replacement(design, git, phase=None, run_id=None, config=None):
+    """A reason (str) the visit is refused before any developer starts, or None. Read against
+    what the checkout ships - its content data at the shipped commit (HEAD less this run's
+    own commits: never the run's greybox or develop build) - and the design's floor, the
+    design of an adopted run either drops shipped units while listing units the checkout
+    does not ship, or keeps the shipped ids for other units (existing.is_rewrite): briefed,
+    a developer would replace the shipped game with another one. `phase` is reported only."""
     floor = (design or {}).get("existing_content")
     if not isinstance(floor, dict):
         return None
-    planned = [str(u.get("id")) for u in commitments.planned_units(design) if u.get("id")]
+    planned_units = commitments.planned_units(design)
+    planned = [str(u.get("id")) for u in planned_units if u.get("id")]
     shipped = list(existing.shipped_ids(floor) and floor.get("unit_ids") or [])
     at = str((floor.get("source") or {}).get("commit") or "")[:12]
     where = f"the floor at {at}"
-    # What the checkout holds: HEAD's content data in greybox (the design's floor may be
-    # stale - counted before a person moved the checkout), else the floor.
     holds = shipped
-    if phase == "greybox" and git is not None:
-        head = _head_unit_ids(git, floor)
-        if head:
-            holds = head
-            shipped = list(dict.fromkeys(shipped + head))
-            where = f"the floor at {at} and HEAD's content data"
+    units, commit = (existing.shipped_units_at(git, floor, run_id, config)
+                     if git is not None else ([], None))
+    if units:
+        # The design's floor may be stale - counted before a person moved the checkout.
+        holds = [str(u.get("id")) for u in units if u.get("id")]
+        shipped = list(dict.fromkeys(shipped + holds))
+        where = f"the floor at {at} and the content data shipped at {str(commit)[:12]}"
     if not shipped:
         return None
+    rerun = (" No developer is started on a rewrite of the shipped game. Run the design "
+             "again on this checkout (`wgf resume <run> --from design`): it measures what the "
+             "checkout ships now and starts from those units.")
     dropped = [u for u in shipped if u not in set(planned)]
     added = [u for u in planned if u not in set(holds)]
-    if not dropped or not added:
-        return None
-    return (f"the game-design replaces the adopted game's content instead of extending it: it "
-            f"drops {len(dropped)} unit(s) the checkout ships ({where}: {_listed(dropped)}) "
-            f"and lists {len(added)} the checkout does not ({_listed(added)}). No developer is "
-            f"started on a rewrite of the shipped game. Run the design again on this checkout "
-            f"(`wgf resume <run> --from design`): it measures what the checkout ships now and "
-            f"starts from those units.")
+    if dropped and added:
+        return (f"the game-design replaces the adopted game's content instead of extending "
+                f"it: it drops {len(dropped)} unit(s) the checkout ships ({where}: "
+                f"{_listed(dropped)}) and lists {len(added)} the checkout does not "
+                f"({_listed(added)})." + rerun)
+    rewrite, changed, kept = existing.is_rewrite(units, planned_units)
+    if rewrite:
+        sample = changed[0]
+        fields = existing.unit_changes(
+            next(u for u in units if str(u.get("id")) == sample),
+            next(u for u in planned_units if str(u.get("id")) == sample))
+        return (f"the game-design rewrites the adopted game's content under its own ids: "
+                f"{len(changed)} of the {len(kept)} shipped unit(s) it keeps are other units "
+                f"now (the content data shipped at {str(commit)[:12]}: {_listed(changed)}; "
+                f"{sample} changes its {', '.join(fields)})." + rerun)
+    return None

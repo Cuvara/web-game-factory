@@ -25,6 +25,14 @@ that already shipped 32 units in 4 worlds with 4 bosses.
                                 with `supersedes` when its content differs (a person moved
                                 the checkout)
     adoption_units(units)       shipped units in the design's unit shape (the starting units)
+    units_digest(units)         the content of the shipped units, by hash: a person's rewrite
+                                under the same ids moves the floor (`supersedes`) too
+    unit_changes(shipped, planned)
+                                the fields a planned unit changes materially from the shipped
+                                unit under its id (fingerprint fields both carry)
+    rewritten(shipped_units, planned_units)
+                                the shipped unit ids a design rewrites materially: a
+                                replacement under the same ids when it is most of them
     floor_view(design)          {"floor": ..., "short": [...]}: rule existing_content_floor_kept
     regression(floor, data)     what a build's content data file drops below the floor
 
@@ -67,6 +75,7 @@ earlier count, never re-floored on its own file.
 
 import copy
 import glob
+import hashlib
 import json
 import os
 import re
@@ -79,7 +88,8 @@ from . import commitments
 __all__ = ["measure", "read_floor", "read_adoption", "floor_view", "regression", "QUANTITIES",
            "UNMEASURED", "PROBE", "measured", "method", "probe_count", "probe_floor",
            "effective", "content_modules", "regression_counts", "run_probe_floor",
-           "shipped_commit", "run_commit", "reconcile", "adoption_units", "shipped_ids"]
+           "shipped_commit", "run_commit", "reconcile", "adoption_units", "shipped_ids", "moved",
+           "units_digest", "unit_changes", "rewritten", "is_rewrite", "shipped_units_at"]
 
 # The quantities a floor holds, in report order, with their design-side reading.
 QUANTITIES = ("units", "groups", "climax_units", "elements")
@@ -190,11 +200,14 @@ def run_commit(message, run_id):
     return False
 
 
-def shipped_commit(reader, head, run_id, config=None):
+def shipped_commit(reader, head, run_id, config=None, depth=200):
     """(commit, how): the commit whose content is the floor. factory.init.accepted_baseline
-    when set (a ref the checkout must hold); else HEAD less the run's own commits on top of it
-    - the newest first-parent ancestor of HEAD this run did not make. A reader that cannot
-    list commits (or a history of only the run's commits) gives HEAD."""
+    when set (a ref the checkout must hold: a tag or a sha - a branch moves with the run);
+    else HEAD less the run's own commits on top of it - the newest first-parent ancestor of
+    HEAD this run did not make. A reader that cannot list commits gives HEAD. (None, why) when
+    the whole history is this run's (it created the repository: nothing shipped before it).
+    ValueError when the `depth` commits listed are all this run's and the history goes on:
+    the shipped commit is not found, and HEAD - the run's own build - is never taken for it."""
     accepted = _section(config, "init").get("accepted_baseline")
     if accepted is not None:
         resolve = getattr(reader, "resolve", None)
@@ -207,11 +220,21 @@ def shipped_commit(reader, head, run_id, config=None):
     if not run_id or listing is None:
         return head, "HEAD"
     skipped = 0
-    for sha, message in listing(head) or []:
+    listed = listing(head, depth) or []
+    for sha, message in listed:
         if not run_commit(message, run_id):
             return sha, ("HEAD" if not skipped else
                          f"HEAD less {skipped} commit(s) this run made on top of it")
         skipped += 1
+    if listed and len(listed) >= depth:
+        raise ValueError(
+            f"the last {len(listed)} commits of the adopted checkout were all made by this run "
+            f"({run_id}): the commit it shipped before the run is not among them, and the "
+            "run's own build is never its floor. Name it in factory.init.accepted_baseline "
+            "(a tag or a sha) and resume")
+    if listed:
+        return None, (f"every commit of the adopted checkout was made by this run ({run_id}): "
+                      "nothing was shipped before it")
     return head, "HEAD"
 
 
@@ -250,6 +273,8 @@ def read_adoption(config, title_id, git=None, data=None, environ=None, run_id=No
     if not head:
         return None, f"{root} has no commit: nothing shipped to floor", []
     commit, how = shipped_commit(reader, head, run_id, config)
+    if commit is None:
+        return None, f"{root}: {how}", []
     text = reader.file_at(commit, path)
     if text is None:
         # Its content lives somewhere else (source code that predates the content contract):
@@ -279,6 +304,7 @@ def read_adoption(config, title_id, git=None, data=None, environ=None, run_id=No
         floor["source"]["baseline"] = how
     floor.update({k: counted[k] for k in QUANTITIES if counted.get(k) is not None})
     floor["unit_ids"] = counted["unit_ids"]
+    floor["units_digest"] = units_digest(units)
     floor["measured_by"] = counted["measured_by"]
     return floor, (f"the adopted checkout ships {counted['units']} unit(s) at "
                    f"{commit[:12]} ({how}): the design's floor"), units
@@ -295,7 +321,11 @@ def reconcile(previous, current):
     be read. The previous floor stands while the checkout ships the same commit - the run's
     own build never re-floors it - and when nothing could be read now. Otherwise the floor is
     the one measured now, and when its units or numbers differ from the previous one it
-    records that floor in `supersedes`: a person moved the checkout."""
+    records that floor in `supersedes`: a person moved the checkout - to other units, or to
+    other content under the same ids (`units_digest`; a floor recorded without one is taken
+    to differ). A measured floor is never lost: when
+    the checkout read now ships no content data file (an unmeasured floor), the previous
+    floor - its probe count included, which the caller resolves first - stands."""
     if not isinstance(previous, dict):
         return current
     if not isinstance(current, dict):
@@ -304,9 +334,16 @@ def reconcile(previous, current):
     now = (current.get("source") or {}).get("commit")
     if _same_commit(was, now):
         return previous
-    same = (measured(previous) == measured(current)
+    if not measured(current):
+        # Nothing counts the content at the new commit: the count the run holds (a content
+        # data floor, or the probe floor of the shipped build) stands; two unmeasured floors
+        # keep the run's.
+        return previous
+    digests = (previous.get("units_digest"), current.get("units_digest"))
+    same = (measured(previous)
             and list(previous.get("unit_ids") or []) == list(current.get("unit_ids") or [])
-            and all(previous.get(q) == current.get(q) for q in QUANTITIES))
+            and all(previous.get(q) == current.get(q) for q in QUANTITIES)
+            and None not in digests and digests[0] == digests[1])
     if same:
         return current
     out = copy.deepcopy(current)
@@ -314,9 +351,103 @@ def reconcile(previous, current):
             "unit_ids": list(previous.get("unit_ids") or [])}
     if was:
         gone["commit"] = str(was)
+    if previous.get("units_digest"):
+        gone["units_digest"] = previous["units_digest"]
     gone.update({q: previous[q] for q in QUANTITIES if isinstance(previous.get(q), int)})
     out["supersedes"] = gone
     return out
+
+
+def moved(previous, chosen):
+    """Whether the floor chosen this visit is counted at another commit than `previous`."""
+    if not isinstance(previous, dict) or not isinstance(chosen, dict):
+        return False
+    return not _same_commit((previous.get("source") or {}).get("commit"),
+                            (chosen.get("source") or {}).get("commit"))
+
+
+def units_digest(units):
+    """sha256 of the shipped units, canonical JSON: what they are, not only their ids."""
+    text = json.dumps([u for u in units or [] if isinstance(u, dict)], sort_keys=True,
+                      separators=(",", ":"), ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+# -- a rewrite under the same ids -----------------------------------------------------------
+# Observed (2026-10-07, the 2D run): a person restored the accepted 32 levels w1-l1..w4-l8;
+# the run's design held the same 32 ids with every level a different one ("break all 10
+# bricks" against the shipped "Break all 16 bricks - catch the capsule"). Ids alone call that
+# the same content. A unit is fingerprinted on the fields that make it the unit it is, and a
+# change is counted only on a field both sides carry; it is material at MATERIAL_FIELDS
+# changed fields, and a design is a rewrite when most of the shipped units it keeps are.
+FINGERPRINT = ("objective", "objective_kind", "structure", "elements", "mechanics",
+               "difficulty", "parameters", "layout")
+# A difficulty axis moved further than this between the shipped unit and the design's.
+AXIS_TOLERANCE = 0.1
+# Changed fingerprint fields that make a unit another unit.
+MATERIAL_FIELDS = 2
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+def _objective_changed(a, b):
+    a, b = str(a).lower(), str(b).lower()
+    if a == b:
+        return False
+    if set(_NUMBER.findall(a)) != set(_NUMBER.findall(b)):
+        return True
+    wa, wb = set(_WORD.findall(a)), set(_WORD.findall(b))
+    return bool(wa | wb) and len(wa & wb) / len(wa | wb) < 0.5
+
+
+def unit_changes(shipped, planned):
+    """The fingerprint fields `planned` (a design unit) changes from `shipped` (the content
+    data's unit under the same id). Conservative: only fields both carry are compared, a list
+    the design extends (keeping every shipped entry) is no change, a difficulty axis moved by
+    AXIS_TOLERANCE or less is none, and an objective reworded with the same numbers and most
+    of its words is none."""
+    changed = []
+    for field in FINGERPRINT:
+        if field not in shipped or field not in planned:
+            continue
+        a, b = shipped[field], planned[field]
+        if field == "objective":
+            differs = _objective_changed(a, b)
+        elif field in ("elements", "mechanics"):
+            differs = not {str(x) for x in a or []} <= {str(x) for x in b or []}
+        elif field == "difficulty" and isinstance(a, dict) and isinstance(b, dict):
+            differs = any(isinstance(a.get(k), (int, float)) and
+                          isinstance(b.get(k), (int, float)) and
+                          abs(float(a[k]) - float(b[k])) > AXIS_TOLERANCE for k in a)
+        elif field == "parameters" and isinstance(a, dict) and isinstance(b, dict):
+            differs = any(k in b and b[k] != a[k] for k in a)
+        else:
+            differs = a != b
+        if differs:
+            changed.append(field)
+    return changed
+
+
+def rewritten(shipped_units, planned_units):
+    """(rewritten, kept): the ids of shipped units the design keeps under their id but
+    changes materially (MATERIAL_FIELDS fingerprint fields or more), and of all it keeps."""
+    planned = {str(u.get("id")): u for u in planned_units or [] if isinstance(u, dict)}
+    kept, out = [], []
+    for unit in shipped_units or []:
+        if not isinstance(unit, dict) or str(unit.get("id")) not in planned:
+            continue
+        uid = str(unit["id"])
+        kept.append(uid)
+        if len(unit_changes(unit, planned[uid])) >= MATERIAL_FIELDS:
+            out.append(uid)
+    return out, kept
+
+
+def is_rewrite(shipped_units, planned_units):
+    """(bool, rewritten ids, kept ids): most of the shipped units the design keeps under their
+    ids - more than half, and at least two - are other units now."""
+    out, kept = rewritten(shipped_units, planned_units)
+    return (len(out) >= 2 and len(out) * 2 > len(kept)), out, kept
 
 
 # The fields of a shipped unit the design's unit shape holds (game-design
@@ -607,3 +738,24 @@ def run_probe_floor(run_dir, floor):
         if measured(carried) and _same_commit((carried.get("source") or {}).get("commit"), at):
             found.append((int(stem) if stem.isdigit() else 10 ** 9, carried))
     return min(found, key=lambda item: item[0])[1] if found else None
+
+
+def shipped_units_at(reader, floor, run_id, config=None):
+    """(units, commit) of the content data file at the commit the checkout ships
+    (shipped_commit) - never HEAD while this run's own commits sit on it - or ([], None)."""
+    path = ((floor or {}).get("source") or {}).get("path") or "public/content/units.json"
+    head = reader.head() if reader is not None else None
+    if not head:
+        return [], None
+    try:
+        commit, _how = shipped_commit(reader, head, run_id, config)
+    except ValueError:
+        return [], None
+    text = reader.file_at(commit, path) if commit else None
+    if text is None:
+        return [], commit
+    try:
+        content = json.loads(text)
+    except ValueError:
+        return [], commit
+    return (_units(content) if isinstance(content, dict) else []), commit

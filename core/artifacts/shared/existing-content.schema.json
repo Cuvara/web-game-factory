@@ -32,6 +32,7 @@
         "climax_units": { "type": "integer", "minimum": 0 },
         "elements": { "type": "integer", "minimum": 0 },
         "unit_ids": { "type": "array", "items": { "type": "string" }, "description": "The units shipped (`probe`: reached), so a regression names the ones a build dropped." },
+        "units_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$", "description": "`content-data`: sha256 of the shipped units (canonical JSON), so a person's rewrite under the same ids moves the floor too. Added in game-design 1.15.0." },
         "measured_by": { "type": "object", "additionalProperties": { "type": "string" }, "description": "How each quantity was counted (a field of the units, a unit id prefix, a climax term in their text, the probe's own unit count)." },
         "supersedes": {
           "type": "object",
@@ -41,6 +42,7 @@
             "commit": { "type": "string", "pattern": "^[0-9a-f]{7,64}$" },
             "status": { "enum": ["measured", "unmeasured"] },
             "unit_ids": { "type": "array", "items": { "type": "string" } },
+            "units_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
             "units": { "type": "integer", "minimum": 0 },
             "groups": { "type": "integer", "minimum": 0 },
             "climax_units": { "type": "integer", "minimum": 0 },

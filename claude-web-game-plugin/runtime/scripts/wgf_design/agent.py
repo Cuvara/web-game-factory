@@ -291,8 +291,10 @@ PROMPT_ADOPTION = (
     " `adoption`; every shipped unit in full, layout included, is in {units}). EXTEND and"
     " improve them: keep every shipped unit under its own id ({ids}), complete what each"
     " lacks, and add units beside them where the brief, the strategy or the tier asks for"
-    " more. Never replace a shipped unit with a new one, rename it, or plan a different set"
-    " of units: the design fails when a shipped unit id is missing from it."
+    " more. Never replace a shipped unit with a new one, rename it, plan a different set"
+    " of units, or reuse a shipped id for another unit (another objective, structure,"
+    " elements, mechanics or difficulty): the design fails when a shipped unit id is missing"
+    " from it, and develop refuses a design that rewrites the shipped units under their ids."
 )
 # Appended when the step asks again: the previous draft and exactly what made it invalid.
 PROMPT_REPAIR = (
@@ -584,6 +586,7 @@ class AgentAuthor(DesignAuthor):
             request["adoption"] = {
                 "commit": adoption.get("commit"), "path": adoption.get("path"),
                 "unit_ids": adoption.get("unit_ids"), "units_file": adopted_path,
+                "rewritten": adoption.get("rewritten") or [],
                 "supersedes": adoption.get("supersedes"),
                 "rule": "Every unit id the repository ships stays in the design under its "
                         "own id; extend and improve the shipped units, never replace them."}

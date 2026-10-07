@@ -127,16 +127,41 @@ from 32 units to 12. An adopted game is improved, never rebuilt:
   less the commits the run itself made on top of it (their `Wgf-<Step>-Key` trailers name
   the run; `factory.init.accepted_baseline: <ref>`, when set, names the commit instead): the
   run's own build never moves it, a person's commit does, and a moved floor records the one
-  it replaces (`existing_content.supersedes`). When the checkout ships units the run's last
-  design does not plan, the visit is an adoption: the agent author starts from the shipped
-  units (the request's `adoption`, the units in full in `<visit>-<attempt>.adopted-units.json`)
-  and extends them, the last design's gaps are not repaired, and a design missing a shipped
-  unit id breaches `existing_content_floor_kept`.
-- **A replacement is refused before a developer starts.** A design that drops units the
-  checkout ships (its floor's, and in greybox the ones HEAD's content data lists) while it
-  lists units the checkout does not is BLOCKED (`floor.replacement`), naming both: run the
-  design again. The brief of a design that keeps them names the shipped units to EXTEND,
-  each under its own id.
+  it replaces (`existing_content.supersedes`) - other units, or other content under the
+  same ids (`units_digest`). A measured floor is never lost: when the commit read now ships
+  no content data file, the run's count (the content data floor, or the probe floor the
+  run measured on the shipped build) stands. When the checkout ships units the run's last
+  design does not plan - or the floor moved and the last design plans the shipped ids as
+  other units - the visit is an adoption: the agent author starts from the shipped units
+  (the request's `adoption`, with `rewritten`; the units in full in
+  `<visit>-<attempt>.adopted-units.json`) and extends them, the last design's gaps are not
+  repaired, and a design missing a shipped unit id breaches `existing_content_floor_kept`.
+- **`accepted_baseline` is a tag or a sha.** A branch name resolves to its tip, which moves
+  with the run's own commits. When every commit the listing reaches (200) was made by the
+  run, the floor is refused rather than taken at HEAD - name the shipped commit in
+  `accepted_baseline`. A checkout whose whole history is the run's (the run created it)
+  shipped nothing before it: no floor. A run commit a person accepts by cherry-picking or
+  amending keeps its `Wgf-<Step>-Key` trailer and is still the run's: to make it the floor,
+  tag it and name the tag in `accepted_baseline`.
+- **A replacement is refused before a developer starts** (`floor.replacement`, BLOCKED,
+  every phase). It reads the content data at the shipped commit - never HEAD, which holds
+  the run's own greybox and develop commits - and the design's floor, and refuses a design
+  that drops shipped units while listing units the checkout does not, or that rewrites the
+  shipped units under their own ids. A unit is rewritten when two or more of its
+  fingerprint fields both sides carry change (`existing.unit_changes`: objective - other
+  numbers or under half its words kept; objective_kind, structure, parameters, layout; a
+  shipped mechanic or element dropped; a difficulty axis moved by more than 0.1), and the
+  design is a rewrite when most of the shipped units it keeps (more than half, at least two)
+  are. Rewording, completing missing fields, adding mechanics and units, and tuning an axis
+  by 0.1 or less are an extension. Run the design again. The brief of a design that keeps
+  the shipped units names them to EXTEND, each under its own id.
+- **Moving the content on purpose (renamed or rewritten units).** A person who wants the
+  game to carry other units commits that content to the checkout (no run trailer) and
+  resumes from design: the floor moves to the commit, records the old one in
+  `supersedes`, and the design adopts the new units. To hold the run to a particular
+  accepted commit instead - one before later edits, or a run commit a person accepted - tag
+  it and set `factory.init.accepted_baseline` to the tag. Renaming units inside a run, by
+  the design alone, is a replacement and is refused.
 
 ## The brief
 

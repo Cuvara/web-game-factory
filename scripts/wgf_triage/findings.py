@@ -324,8 +324,10 @@ def _review(ctx):
         if blocker.get("file") and blocker.get("line"):
             where += f":{blocker['line']}"
         severity = blocker.get("severity")
+        # A blocker that names its dimension (review-report 1.2.0: a gate-gaming blocker
+        # carries the specialist visit's) goes back to that dimension's owner.
         out.append(ctx.make(
-            check=blocker.get("id") or "blocker", dimension=ctx.dimension(None),
+            check=blocker.get("id") or "blocker", dimension=ctx.dimension(blocker.get("dimension")),
             severity="blocker" if severity in ("blocker", "critical") else (
                 "minor" if severity == "minor" else "major"),
             summary=f"{where}: {blocker.get('summary')}", route=ctx.table.get("route"),

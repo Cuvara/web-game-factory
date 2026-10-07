@@ -307,6 +307,13 @@ REPORT_CONTRACT = {
                      "severity": "blocking | minor"}],
     "scope_deltas": [{"item": "...", "direction": "added | cut | deferred", "reason": "..."}],
     "known_issues": ["..."],
+    # Only for a change the review's gate-gaming pre-check would flag that the player does
+    # experience (docs/review-module.md#gate-gaming-pre-check); omit otherwise.
+    "measurement_changes": [{"flag": "unread-content-field | play-area-change | "
+                                     "probe-path-change | sprite-size-without-collider",
+                             "where": "<file, or file#key>",
+                             "evidence": [{"file": "<repository path>", "line": 1}],
+                             "player_effect": "<what the player sees or does differently>"}],
     "how_to_play": "One or two sentences a reviewer reads before opening the build.",
 }
 

@@ -248,20 +248,43 @@ class Health {
     this.beat = env ? new Heartbeat(env.tick_ms, env.stall_ms) : null;
   }
 
+  // The pages a recording navigated away from (the ramp starts every sample on a fresh page,
+  // and each page has its own worker timer): read before they go, and folded into the
+  // attempt's health, so a stall on an earlier sample's page is not lost with the page.
+  private readonly earlier: Record<string, unknown>[] = [];
+
+  async keep(page: Page): Promise<void> {
+    const inPage = await pageHealth(page);
+    if (inPage) this.earlier.push(inPage);
+  }
+
   async read(page: Page, started?: { firstSnapshotMs: number | null; playingMs: number | null }):
     Promise<{ health: Record<string, unknown>; degraded: boolean; reasons: string[] }> {
     const inPage = await pageHealth(page);
     const bot = this.beat ? this.beat.stop() : null;
-    const nav = (inPage?.nav ?? null) as Record<string, unknown> | null;
+    const pages = [...this.earlier, ...(inPage ? [inPage] : [])];
+    const beats = pages.map((p) => p.worker as Beat | null | undefined)
+      .filter((b): b is Beat => Boolean(b) && typeof (b as Beat).max_lag_ms === "number");
+    const sum = (key: keyof Beat): number => beats.reduce((total, b) => total + (b[key] ?? 0), 0);
+    const worker: Beat | null = beats.length
+      ? { max_lag_ms: Math.max(...beats.map((b) => b.max_lag_ms)), stalled_ms: sum("stalled_ms"),
+          ticks: sum("ticks"), elapsed_ms: sum("elapsed_ms") }
+      : null;
+    const navs = pages.map((p) => p.nav as Record<string, unknown> | null | undefined)
+      .filter((n): n is Record<string, unknown> => Boolean(n));
+    const waits = navs.map((n) => n.server_wait_max_ms).filter((w): w is number => typeof w === "number");
+    const last = navs.length ? navs[navs.length - 1] : null;
+    const nav = last ? { ...last, server_wait_max_ms: waits.length ? Math.max(...waits) : null,
+                         ...(pages.length > 1 ? { pages: pages.length } : {}) } : null;
     const health: Record<string, unknown> = {
-      bot, worker: inPage?.worker ?? null, worker_error: inPage?.worker_error ?? null,
+      bot, worker, worker_error: inPage?.worker_error ?? null,
       nav: nav ? { ...nav, first_probe_ms: started?.firstSnapshotMs ?? null, playing_ms: started?.playingMs ?? null } : null,
       frames: inPage?.frames ?? null,
     };
     const env = CFG.environment;
     const reasons: string[] = [];
     if (env) {
-      for (const [name, beat] of [["bot", bot], ["worker", inPage?.worker]] as [string, Beat | null | undefined][]) {
+      for (const [name, beat] of [["bot", bot], ["worker", worker]] as [string, Beat | null | undefined][]) {
         if (!beat) continue;
         if (beat.max_lag_ms >= env.max_stall_ms) reasons.push(`the ${name} timer stalled ${beat.max_lag_ms} ms at once`);
         if (beat.elapsed_ms > 0 && beat.stalled_ms / beat.elapsed_ms >= env.max_stalled_share) {
@@ -323,6 +346,7 @@ const RECORD_OF: Record<string, string> = {
   "win: the oracle plays well": "win",
   "lose and restart: the anti-oracle plays badly, then retries": "lose",
   "traverse: the oracle plays unit after unit": "traverse",
+  "ramp: samples of the play that promises the time ramp": "ramp",
 };
 
 // The roles a glimpse is taken for, and how many a test takes.
@@ -1244,8 +1268,11 @@ test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
         cutIndex = current;
       }
       if (cutAt !== null) {
-        if (!kindsShort() || elapsed - cutAt >= (CFG.variety_extend_ms ?? 0)) break;
+        // Recorded before the stop: an extension that ran its whole length records at least
+        // variety_extend_ms, and the step judges the unit as seen whole (analysis).
+        if (!kindsShort()) break;
         extendedMs = elapsed - cutAt;
+        if (extendedMs >= (CFG.variety_extend_ms ?? 0)) break;
       }
       const readMs = Date.now() - t0;
       const s = watch.saw(await snap(page));
@@ -1655,6 +1682,7 @@ async function enterMode(page: Page, mode: string): Promise<{ offered: string[] 
 // samples do not decide the ramp (rampDecided), further whole samples are played within
 // ramp_extend_ms. One run was a coin toss: the verdict is read on all of them, pooled.
 test("ramp: samples of the play that promises the time ramp", async ({ page }, info) => {
+  const health = new Health();
   const project = info.project.name;
   const frames: string[] = [];
   const watch = new Watch(page, project, frames);
@@ -1682,6 +1710,8 @@ test("ramp: samples of the play that promises the time ramp", async ({ page }, i
       if (!extendFrom) extendFrom = Date.now();
       if (Date.now() - extendFrom + windowMs > extendMs) break;
     }
+    // The page a sample played on is left for a fresh one: its health is read first.
+    if (samples.length) await health.keep(page);
     const started = await start(page, touch, watch);
     if (firstStart === null) firstStart = started;
     if (started.playingMs === null) {
@@ -1704,10 +1734,12 @@ test("ramp: samples of the play that promises the time ramp", async ({ page }, i
   // `entered`: the mode was entered for the samples played (a session ramp enters none); a
   // later entry that failed stops the sampling, with its `reason`.
   const entered = mode ? samples.length > 0 : null;
-  write(project, "ramp", { ...(firstStart ?? {}), applies: true, run, mode,
-                           offered: entry?.offered ?? null, entered, reason,
-                           samples, planned_samples: planned, window_ms: windowMs,
-                           extended_ms: extendedMs, ...watch.record(), frames });
+  // Made again on a degraded host like the other timing-sensitive recordings: a host stall
+  // is an idle stretch depth.stall would read as play that stopped.
+  await finish(page, info, "ramp", { ...(firstStart ?? {}), applies: true, run, mode,
+                                     offered: entry?.offered ?? null, entered, reason,
+                                     samples, planned_samples: planned, window_ms: windowMs,
+                                     extended_ms: extendedMs, ...watch.record(), frames }, health);
 });
 
 // -- the showcase ---------------------------------------------------------------------------

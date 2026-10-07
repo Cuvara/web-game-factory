@@ -547,13 +547,18 @@ class PlayabilityStep(WorkflowStep):
     @staticmethod
     def _again_s(settings):
         """Per viewport, the most the bot may spend making a recording again on a degraded host
-        (each retried recording's window and its start, once per further attempt) and playing
-        on in a unit the traverse cut short (on every attempt): nothing on a healthy host whose
-        units show their kinds, but the process timeout must allow it."""
+        (each retried recording's window and its start, once per further attempt - the ramp's
+        every sample, planned and extended, each on a fresh page) and playing on in a unit the
+        traverse cut short (on every attempt): nothing on a healthy host whose units show their
+        kinds, but the process timeout must allow it."""
         attempts = int((settings.get("environment") or {}).get("max_attempts") or 1)
+        ramp_ms = settings.get("ramp_ms") or 0
+        ramp_samples = ((settings.get("ramp_samples") or 0)
+                        + int((settings.get("ramp_extend_ms") or 0) // ramp_ms)) if ramp_ms else 0
         windows = (settings.get("idle_ms", 0) + settings.get("win_ms", 0)
                    + settings.get("lose_ms", 0) + settings.get("traverse_ms", 0)
-                   + 4 * settings.get("start_timeout_ms", 0))
+                   + 4 * settings.get("start_timeout_ms", 0)
+                   + ramp_samples * (ramp_ms + settings.get("start_timeout_ms", 0)))
         return ((attempts - 1) * windows
                 + attempts * settings.get("variety_extend_ms", 0)) / 1000.0
 

@@ -12,7 +12,10 @@
 # 1.1.0: `environment` (a recording made on a degraded host is played again, and judged only
 # on a healthy attempt) and `sample` (a negative read on a unit the traverse cut short is
 # played on, never decided by where the cut fell).
-version: 1.1.0
+# 1.2.0: the ramp recording is health-recorded and made again too (depth.ramp, depth.stall); a
+# check that read a failure or is required is BLOCKED on a degraded host at every tier, never a
+# warning; a cut unit played on for the whole variety_extend_s is judged as seen whole.
+version: 1.2.0
 
 frames:
   # What is lit: the share of a frame's pixels at or above `lit_luminance` (relative
@@ -101,7 +104,10 @@ environment:
   # A recording judged degraded is made again, in a fresh browser, at most this many
   # attempts in all; if every attempt is degraded, the checks read from it are unmeasured
   # (`environment-degraded`) - never passed. Only the recordings the timing-sensitive checks
-  # read are made again: first-session, win, lose and traverse (analysis.EVIDENCE).
+  # read are made again: first-session, win, lose, traverse and ramp (analysis.EVIDENCE). A
+  # check that read a failure, or is required, is then BLOCKED at every tier - a person
+  # re-measures on a quiet host - and a WARNING only when it is neither: a degraded host never
+  # softens a failure into a warning the step passes over.
   max_attempts: 2
 
 sample:
@@ -112,6 +118,7 @@ sample:
   # kind first arrived 3.0-19.6 s after the unit began in each of the 21 traversals of that
   # run that saw it arrive (val-2d, new-game-20261005-002926). So the bot plays on in that
   # unit - never into the next - while it has shown fewer new kinds than the family asks,
-  # for at most this long (19.6 s and a margin); a unit still short then is unmeasured,
-  # never a failure or a pass.
+  # for at most this long (19.6 s and a margin). A unit still short after playing on this
+  # whole length was seen whole - it fails, and its pair counts; only an extension itself cut
+  # short (the page went, the unit was lost) leaves it unmeasured, never a failure or a pass.
   variety_extend_s: 30

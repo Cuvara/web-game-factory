@@ -1184,12 +1184,57 @@ class AuthoredPuzzle(Judge):
         self.assertEqual(ramp["measured"]["stalled_samples"], [2])
         self.assertEqual(ramp["measured"]["pooled_inputs_per_third"], [20, 31, 42])
         self.assertIn("depth.stall", ramp["measured"]["unmeasured"])
-        # A stall routes to gameplay (specialist-routing.yaml default_dimension: no `depth.`
-        # entry), the owner of a game that stops being playable.
+        # A stall routes to gameplay (specialist-routing.yaml 1.4.0 `depth.: gameplay`), the
+        # owner of a game that stops being playable.
         from wgf_triage.routing import Routing
         routing = Routing.load()
-        self.assertNotIn("depth.", routing.producer("playability-report")["checks"])
-        self.assertEqual(routing.default_dimension, "gameplay")
+        self.assertEqual(routing.producer("playability-report")["checks"]["depth."], "gameplay")
+
+    # A host stall is not a stall of the game (visual-quality.yaml 1.2.0): the ramp recording
+    # carries its host's health like the other timing-sensitive recordings.
+    def test_a_stall_made_again_on_a_healthy_host_still_fails(self):
+        self.ramp_samples([10, 14, 23], self.sample([10, 29, 9], idle_ms=14000),
+                          [10, 17, 19], **attempts(DEGRADED, health()))
+        stall = self.judge(self.endless_design())["depth.stall"]
+        self.assertEqual(stall["status"], "FAIL", stall["summary"])
+        self.assertEqual([a["degraded"] for a in stall["measured"]["environment"]["ramp"]],
+                         [True, False])
+
+    def test_a_stall_on_a_host_degraded_on_every_attempt_is_blocked_never_a_finding(self):
+        self.ramp_samples([10, 14, 23], self.sample([10, 29, 9], idle_ms=14000),
+                          [10, 17, 19], **attempts(DEGRADED, DEGRADED))
+        checks = self.judge(self.endless_design())
+        stall = checks["depth.stall"]
+        self.assertEqual(stall["status"], "BLOCKED", stall["summary"])
+        self.assertTrue(stall["required"])
+        self.assertEqual(stall["measured"]["unmeasured"], analysis.ENVIRONMENT_DEGRADED)
+        self.assertEqual(stall["measured"]["judged_as"], "FAIL")
+        self.assertIn("re-measure on a quiet host", stall["summary"])
+        # The ramp beside it read an unmeasured warning (the stalled sample left out), not a
+        # failure, at a tier that holds none: it stays a warning, unmeasured, never a pass.
+        ramp = checks["depth.ramp"]
+        self.assertEqual(ramp["status"], "WARNING", ramp["summary"])
+        self.assertEqual(ramp["measured"]["judged_as"], "WARNING")
+        self.assertEqual(ramp["measured"]["unmeasured"], analysis.ENVIRONMENT_DEGRADED)
+
+    def test_a_rising_ramp_on_a_degraded_host_is_never_passed(self):
+        self.ramp_run([12, 14, 19])
+        self.records["ramp"].update(attempts(DEGRADED, DEGRADED))
+        checks = self.judge(self.endless_design())
+        for cid in ("depth.ramp", "depth.stall"):
+            self.assertEqual(checks[cid]["status"], "BLOCKED", cid)
+            self.assertEqual(checks[cid]["measured"]["judged_as"], "PASS", cid)
+
+    def test_bad_play_on_a_degraded_host_leaves_an_unheld_ramp_a_warning(self):
+        # No time ramp is promised (an authored level): depth.ramp is not required, read no
+        # failure, and rests on the lose recording, which the host degraded every time.
+        design = copy.deepcopy(PUZZLE_DESIGN)
+        design["genre"]["family"] = "arcade"
+        self.records["lose"].update(attempts(DEGRADED, DEGRADED))
+        check = self.judge(design)["depth.ramp"]
+        self.assertEqual(check["status"], "WARNING", check["summary"])
+        self.assertFalse(check["required"])
+        self.assertEqual(check["measured"]["unmeasured"], analysis.ENVIRONMENT_DEGRADED)
 
     def test_a_stall_on_its_bar_is_not_one(self):
         from wgflib import genre_models
@@ -1720,7 +1765,7 @@ class TheReport(unittest.TestCase):
         self.assertEqual(ArtifactContracts()("playability-report", captured), [])
 
 
-# -- the measurement's own validity (visual-quality.yaml 1.1.0 `environment`, `sample`) ------
+# -- the measurement's own validity (visual-quality.yaml 1.2.0 `environment`, `sample`) ------
 
 def health(bot_lag=1, worker_lag=0, stalled=0, elapsed=60000, wait=4, frame_gap=17):
     """One attempt's health as bot.spec.ts records it. The defaults are a healthy host."""
@@ -1784,13 +1829,14 @@ class TheHost(Judge):
         self.assertIn("environment", check["measured"])
 
     def test_every_attempt_degraded_is_unmeasured_never_passed(self):
-        # The win the degraded attempt reached is not passed either: not measured is not passed.
+        # The win the degraded attempt reached is not passed either: not measured is not
+        # passed, and a required check not measured blocks at every tier (1.2.0).
         self.records["win"].update(attempts(DEGRADED, DEGRADED))
         checks = self.judge()
         for cid in ("win.reachable", "entities.visible", "entities.projectile"):
             check = checks[cid]
-            self.assertEqual(check["status"], "WARNING", cid)
-            self.assertFalse(check["required"])
+            self.assertEqual(check["status"], "BLOCKED", cid)
+            self.assertTrue(check["required"])
             self.assertEqual(check["measured"]["unmeasured"], analysis.ENVIRONMENT_DEGRADED)
             self.assertEqual(check["measured"]["judged_as"], "PASS")
             self.assertIn("not judged: the host was degraded on every attempt", check["summary"])
@@ -1811,6 +1857,59 @@ class TheHost(Judge):
             "value": 10339, "unmeasured": analysis.ENVIRONMENT_DEGRADED, "judged_as": "FAIL",
             "environment": check["measured"]["environment"]})
         self.assertIn("quality tier release", check["summary"])
+
+    def test_a_failure_on_a_degraded_host_is_blocked_below_release_never_a_warning(self):
+        # No tier holds an unmeasured check here (no `unmeasured_held`): what the host could
+        # not measure, and read as a failure, still never becomes a warning the step passes.
+        self.records["first-session"].update(attempts(DEGRADED, DEGRADED), playingMs=10339)
+        self.records["win"].update(attempts(DEGRADED, DEGRADED), reached="lost", inputs=3)
+        checks = self.judge()
+        for cid in ("start.playable", "win.reachable"):
+            self.assertEqual(checks[cid]["status"], "BLOCKED", cid)
+            self.assertTrue(checks[cid]["required"])
+            self.assertEqual(checks[cid]["measured"]["judged_as"], "FAIL")
+            self.assertIn("re-measure on a quiet host", checks[cid]["summary"])
+        result = TheReport.finish(list(checks.values()))
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertEqual(result.artifacts[0].content["verdict"], "BLOCKED")
+
+    def test_a_non_required_reading_on_a_degraded_host_is_a_warning_never_a_pass(self):
+        checks = [{"id": "content.variety", "project": "desktop", "required": False,
+                   "status": "PASS", "summary": "kinds vary"}]
+        traverse_record = {"per_unit": [], **attempts(DEGRADED, DEGRADED)}
+        out = analysis._environment(checks, {"traverse": traverse_record},
+                                    self.rules["environment"], None)
+        self.assertEqual(out[0]["status"], "WARNING")
+        self.assertFalse(out[0]["required"])
+        self.assertEqual(out[0]["measured"]["judged_as"], "PASS")
+
+    def test_a_game_that_floods_its_host_cannot_pass_its_own_failures(self):
+        # A game that saturates the machine itself - busy workers, a storm of requests to the
+        # local server - stalls the page's worker timer and the server's answers on every
+        # attempt, which is all the bot can see of a degraded host: it cannot tell that load
+        # from another process's (docs/playability-module.md, "The limit"). What the rule
+        # bounds is what that buys the game: its failures are BLOCKED for a person to
+        # re-measure, never passed and never a warning, at a tier that holds nothing.
+        flood = health(worker_lag=4800, wait=6000)
+        self.assertTrue(analysis.environment_health(flood, self.rules["environment"])[0])
+        for name in ("first-session", "win", "lose"):
+            self.records[name].update(attempts(flood, flood))
+        self.records["first-session"]["playingMs"] = 12000
+        self.records["win"].update(reached="lost", inputs=2)
+        self.records["lose"].update(reached="playing")
+        checks = self.judge()
+        judged = {cid: c for cid, c in checks.items() if cid in analysis.EVIDENCE
+                  and c["status"] != "SKIPPED"}
+        self.assertTrue(judged)
+        for cid, check in judged.items():
+            self.assertNotEqual(check["status"], "PASS", cid)
+            if check["measured"]["judged_as"] == "FAIL":
+                self.assertEqual(check["status"], "BLOCKED", cid)
+        for cid in ("start.playable", "win.reachable", "lose.reachable"):
+            self.assertEqual(checks[cid]["measured"]["judged_as"], "FAIL", cid)
+        result = TheReport.finish(list(checks.values()))
+        self.assertNotEqual(result.outcome, StepOutcome.SUCCESS)
+        self.assertEqual(result.artifacts[0].content["verdict"], "BLOCKED")
 
     def test_a_healthy_slow_start_still_fails(self):
         self.records["first-session"].update(attempts(health()), playingMs=10339)
@@ -1850,7 +1949,7 @@ class TheHost(Judge):
                   "required": True, "summary": "play-2s: mean luminance 6.84"}
         result = TheReport.finish([unmeasured, failed])
         self.assertEqual(result.outcome, StepOutcome.FAILED)
-        # Below the tier that holds it, unmeasured is a warning: neither blocked nor passed.
+        # A non-required check that read no failure is a warning: neither blocked nor passed.
         warned = dict(unmeasured, status="WARNING", required=False)
         result = TheReport.finish([warned])
         self.assertEqual(result.outcome, StepOutcome.SUCCESS)
@@ -1890,6 +1989,48 @@ class TheCutUnit(Content):
         self.assertEqual(check["status"], "BLOCKED")
         self.assertTrue(check["required"])
         self.assertEqual(check["measured"]["unmeasured"], analysis.SAMPLE_CUT)
+
+    def test_a_unit_played_on_for_the_whole_extension_without_a_new_kind_fails(self):
+        # The bot played on in unit 3 for all of `sample.variety_extend_s` and no new kind
+        # came: the cut decides nothing any more, the unit was seen whole, and it falls short.
+        extend_ms = int(self.rules["sample"]["variety_extend_s"] * 1000)
+        self.cut(extended=extend_ms)
+        check = self.judge()["content.variety"]
+        self.assertEqual(check["status"], "FAIL", check["summary"])
+        self.assertTrue(check["required"])
+        self.assertNotIn("unmeasured", check["measured"])
+        self.assertEqual(len(check["measured"]["new_kinds_short"]), 1)
+        self.assertIn("unit 3: 0 new kind(s) (played on", check["measured"]["new_kinds_short"][0])
+        self.assertEqual(check["measured"]["seen_whole_after_extension"],
+                         {"unit": 3, "extended_ms": extend_ms, "variety_extend_ms": extend_ms})
+        self.assertIn("content.variety", self.failed())
+        # Held where an unmeasured check is not passed, it fails there too - never BLOCKED.
+        self.kinds_required = "at quality tier release a check that measured nothing is not passed"
+        self.assertEqual(self.judge()["content.variety"]["status"], "FAIL")
+
+    def test_the_pair_into_a_unit_seen_whole_counts(self):
+        # Unit 3 repeats unit 2 exactly (no kind, no mechanic changed). Cut short, the pair is
+        # left out of the share; played on for the whole extension, it counts.
+        units = ((1, "w-01", 0.3, ("rusher",)), (2, "w-02", 0.25, ("rusher", "shield")),
+                 (3, "w-03", 0.6, ("rusher", "shield")))
+        self.cut(units=units, extended=5000)
+        open_check = self.judge()["content.variety"]
+        self.assertEqual(open_check["measured"]["changed_pairs_share"], 1.0)
+        self.assertEqual(open_check["measured"]["unmeasured_pairs"], ["2->3"])
+        self.cut(units=units, extended=int(self.rules["sample"]["variety_extend_s"] * 1000))
+        whole = self.judge()["content.variety"]
+        self.assertEqual(whole["measured"]["changed_pairs_share"], 0.5)
+        self.assertNotIn("unmeasured_pairs", whole["measured"])
+        self.assertEqual(whole["status"], "FAIL")
+
+    def test_an_extension_itself_cut_short_stays_unmeasured(self):
+        # The page went 12 s into the 30 s extension: the unit was not seen whole.
+        self.cut(extended=12000)
+        check = self.judge()["content.variety"]
+        self.assertEqual(check["status"], "WARNING", check["summary"])
+        self.assertEqual(check["measured"]["unmeasured"], analysis.SAMPLE_CUT)
+        self.assertEqual(check["measured"]["extended_ms"], 12000)
+        self.assertNotIn("seen_whole_after_extension", check["measured"])
 
     def test_a_kind_the_cut_unit_did_show_counts(self):
         # Played on past the cut (bot.spec.ts), the unit showed its new kind.
@@ -1946,6 +2087,21 @@ class TheBotsValidity(unittest.TestCase):
         self.assertIn("if (cutAt !== null && index > 0 && index !== cutIndex) break;", self.source)
         self.assertIn("if (cutAt !== null) break;", self.source)
 
+    def test_an_extension_that_ran_out_records_its_whole_length(self):
+        # extended_ms is taken before the stop, so one that ran its whole length records at
+        # least variety_extend_ms - which is how the step tells it from one cut short.
+        self.assertIn("extendedMs = elapsed - cutAt;\n"
+                      "        if (extendedMs >= (CFG.variety_extend_ms ?? 0)) break;",
+                      self.source.replace("\r\n", "\n"))
+
+    def test_the_ramp_reads_every_samples_page_health(self):
+        self.assertIn('"ramp: samples of the play that promises the time ramp": "ramp"',
+                      self.source)
+        self.assertIn("if (samples.length) await health.keep(page);", self.source)
+        self.assertIn("ramp", analysis.RETRIED_RECORDS)
+        self.assertEqual(analysis.EVIDENCE["depth.stall"], ("ramp",))
+        self.assertEqual(analysis.EVIDENCE["depth.ramp"], ("ramp", "lose"))
+
     def test_the_settings_carry_the_bars_and_only_a_family_asking_for_kinds_extends(self):
         rules = load_rules()
         on = PlayabilityStep._validity_settings(
@@ -1962,6 +2118,9 @@ class TheBotsValidity(unittest.TestCase):
                     "lose_ms": 90000, "traverse_ms": 120000, "start_timeout_ms": 30000,
                     "variety_extend_ms": 30000}
         self.assertEqual(PlayabilityStep._again_s(settings), 520.0 + 60.0)
+        # The ramp made again: every sample, planned and extended, with its fresh page's start.
+        ramp = dict(settings, ramp_ms=60000, ramp_samples=3, ramp_extend_ms=120000)
+        self.assertEqual(PlayabilityStep._again_s(ramp), 520.0 + 60.0 + 5 * 90.0)
         settings["environment"]["max_attempts"] = 1
         settings["variety_extend_ms"] = 0
         self.assertEqual(PlayabilityStep._again_s(settings), 0.0)

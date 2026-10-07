@@ -18,14 +18,16 @@ Each hunk of a specialist commit is classified `player-facing`, `measurement-fac
     play-area-change              bounds, walls or colliders changed in a visit routed for
                                   reach, time or visibility
     probe-path-change             probe-, showcase- or bot-only code changed in a visit whose
-                                  findings are about the game
+                                  findings are about the game (code only added is a note)
     sprite-size-without-collider  a drawn size changed and the same entity's physical size
-                                  did not
+                                  did not: a draw constant, a draw size scaled from a
+                                  collider, an asset frame or an image file made larger
 
 A flag is a review blocker routed back to the visit's owner. The documented way out is a
-declaration in the visit's docs/development/report.json `measurement_changes` with evidence
-the commit holds (docs/review-module.md): it clears an unread field the evidence shows is
-read, and turns any other flag into a declared change the reviewer judges. The reader is a
+declaration in the visit's docs/development/report.json `measurement_changes` naming the
+flag, with evidence where the flagged change touched (docs/review-module.md): it clears an
+unread field the evidence shows is read, and turns any other flag into a declared change the
+reviewer judges. The reader is a
 git object reader (GitReader over wgflib.isolation.Git), so the same check runs on a live
 checkout and replays on any repository's history.
 """
@@ -33,12 +35,16 @@ checkout and replays on any repository's history.
 import json
 import os
 import re
+import shutil
+import struct
+import tarfile
+import tempfile
 
 from wgflib import paths
 from wgflib.yamllite import load_file
 
 __all__ = ["Vocabulary", "GitReader", "precheck", "precheck_range", "blockers", "words",
-           "PATH", "FLAG_PREFIX", "PATTERNS"]
+           "recorded_visit", "image_size", "PATH", "FLAG_PREFIX", "PATTERNS"]
 
 PATH = os.path.join(paths.REFERENCE, "gate-gaming.yaml")
 # Blocker ids of the pre-check, and the prefix a reviewer's own gate-gaming blockers use:
@@ -58,13 +64,78 @@ _NUMBER = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?")
 _ASSIGN = re.compile(
     r"^\s*(?:export\s+)?(?:(?:const|let|var|readonly|static|private|public|protected)\s+)*"
     r"([A-Za-z_$][\w$.]*)\s*\??\s*(?::\s*[\w$<>\[\]|. ]+?\s*)?[:=]\s*(.+)$")
+_GIT_HEADER = re.compile(r"^diff --git a/(.+) b/(.+)$")
 _HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@ ?(.*)$")
+# A JavaScript built-in that names a play-area word without being one: Math.floor.
+_BUILTIN = re.compile(r"\bMath\s*\.\s*[A-Za-z_$][\w$]*")
+_DECLARED = re.compile(
+    r"(?:\b(?:const|let|var|class|interface|type|enum|function)\s+([A-Za-z_$][\w$]*))"
+    r"|(?:^\s*(?:(?:export|readonly|static|private|public|protected)\s+)*"
+    r"([A-Za-z_$][\w$.]*)\s*\??\s*[:=]\s*[{(\[])")
+_IDENT_CHAIN = re.compile(r"[A-Za-z_$][\w$]*(?:\s*\??\.\s*[A-Za-z_$][\w$]*)*")
 
 
 def words(text):
     """The lower-cased words of identifiers in `text`: snake_case, camelCase, kebab-case and
     dotted names split. `BALL_DRAW` -> ball, draw; `gridTop` -> grid, top."""
     return [w.lower() for w in _WORD.findall(text or "")]
+
+
+def _code_words(text):
+    """The identifier words of a source line's code: comment and built-ins (Math.floor) out."""
+    return set(words(_BUILTIN.sub(" ", _code(text))))
+
+
+def _stem(word):
+    """A word without its plural: `units` and `unit` name one thing."""
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 3 and word.endswith("es") and word[-3] in "sxz":
+        return word[:-2]
+    if len(word) > 2 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
+def _related(these, those):
+    return bool({_stem(w) for w in these} & {_stem(w) for w in those})
+
+
+def image_size(data):
+    """(width, height) of a PNG, GIF, WebP or JPEG file's bytes, or None."""
+    if not data:
+        return None
+    try:
+        if data[:8] == b"\x89PNG\r\n\x1a\n" and data[12:16] == b"IHDR":
+            return struct.unpack(">II", data[16:24])
+        if data[:6] in (b"GIF87a", b"GIF89a"):
+            return struct.unpack("<HH", data[6:10])
+        if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            chunk = data[12:16]
+            if chunk == b"VP8X":
+                return (1 + int.from_bytes(data[24:27], "little"),
+                        1 + int.from_bytes(data[27:30], "little"))
+            if chunk == b"VP8 ":
+                w, h = struct.unpack("<HH", data[26:30])
+                return w & 0x3FFF, h & 0x3FFF
+            if chunk == b"VP8L":
+                bits = int.from_bytes(data[21:25], "little")
+                return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+            return None
+        if data[:2] == b"\xff\xd8":
+            at = 2
+            while at + 9 < len(data):
+                if data[at] != 0xFF:
+                    at += 1
+                    continue
+                marker = data[at + 1]
+                if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                    h, w = struct.unpack(">HH", data[at + 5:at + 9])
+                    return w, h
+                at += 2 + struct.unpack(">H", data[at + 2:at + 4])[0]
+    except struct.error:
+        return None
+    return None
 
 
 def _indent(line):
@@ -135,6 +206,17 @@ class Vocabulary:
     def is_size_data(self, path):
         return self._under(path, "size_data") and path.endswith(".json")
 
+    def is_asset_data(self, path):
+        return self._under(path, "asset_data")
+
+    def is_image(self, path):
+        return (os.path.splitext(path)[1].lower() in (self.paths.get("image_extensions") or [])
+                and not self.is_test(path) and not self.is_bookkeeping(path))
+
+    def w(self, name):
+        """A word list of the vocabulary, as a set."""
+        return self.words.get(name) or set()
+
     def is_render(self, path):
         segments = set()
         for part in path.split("/"):
@@ -147,11 +229,15 @@ class Vocabulary:
         """The categories a routed finding matches, by the words of its check, dimension and
         summary."""
         source = finding.get("source") or {}
+        check = set(words(str(source.get("check") or finding.get("id") or "")))
         said = set(words(" ".join(str(x) for x in (
             source.get("check"), finding.get("id"), finding.get("dimension"),
             finding.get("summary")) if x)))
+        # `except_checks`: a check whose id names one of these is never of the category (a
+        # `ui` check's text size or contrast is not an entity's size on screen).
         return [cid for cid, spec in self.categories.items()
-                if said & set((spec or {}).get("words") or [])]
+                if said & set((spec or {}).get("words") or [])
+                and not check & set((spec or {}).get("except_checks") or [])]
 
     def rules_for(self, finding):
         out = []
@@ -191,6 +277,27 @@ class GitReader:
         result = self.git.run("show", f"{rev}:{path}", check=False, raw=True)
         return result.stdout if result.ok else None
 
+    def blob(self, rev, path):
+        """The bytes of `path` at `rev`, or None. Through `git archive` into a scratch
+        directory: the object reader decodes what git prints as text, which an image is not."""
+        scratch = tempfile.mkdtemp(prefix="wgf-gaming-blob-")
+        try:
+            out = os.path.join(scratch, "blob.tar")
+            result = self.git.run("archive", "--format=tar", "-o", out, rev, "--", path,
+                                  check=False, raw=True)
+            if not result.ok or not os.path.isfile(out):
+                return None
+            with tarfile.open(out) as tar:
+                for member in tar.getmembers():
+                    if member.isfile() and member.name == path:
+                        handle = tar.extractfile(member)
+                        return handle.read() if handle else None
+            return None
+        except (OSError, tarfile.TarError):
+            return None
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+
     def parent(self, rev):
         result = self.git.run("rev-parse", "--verify", "--quiet", f"{rev}^", check=False,
                               raw=True)
@@ -226,7 +333,10 @@ def parse_diff(text):
     old_no = new_no = 0
     for line in (text or "").splitlines():
         if line.startswith("diff --git "):
-            current = {"path": None, "old_path": None, "hunks": []}
+            # The header names the file even when no ---/+++ lines follow (a binary file).
+            header = _GIT_HEADER.match(line)
+            current = {"path": None, "old_path": None, "hunks": [],
+                       "header_path": header.group(2) if header else None}
             files.append(current)
             hunk = None
             continue
@@ -261,7 +371,8 @@ def parse_diff(text):
             old_no += 1
             new_no += 1
     for entry in files:
-        entry["path"] = entry["path"] or entry["old_path"]
+        entry["path"] = entry["path"] or entry["old_path"] or entry.pop("header_path", None)
+        entry.pop("header_path", None)
     return files
 
 
@@ -306,7 +417,8 @@ def _dotted(path):
 
 
 def _assignments(lines, op):
-    """{name: (numbers, line number, text)} of the hunk lines with `op` that assign a number."""
+    """{name: (numbers, line number, text, right-hand side)} of the hunk lines with `op` that
+    assign a value."""
     out = {}
     for kind, text, old, new in lines:
         if kind != op:
@@ -315,10 +427,19 @@ def _assignments(lines, op):
         match = _ASSIGN.match(code)
         if not match:
             continue
-        numbers = _NUMBER.findall(match.group(2))
-        if numbers:
-            out[match.group(1)] = (numbers, new if op == "+" else old, code.strip())
+        out[match.group(1)] = (_NUMBER.findall(match.group(2)), new if op == "+" else old,
+                               code.strip(), " ".join(match.group(2).split()))
     return out
+
+
+def _declared_words(scope):
+    """The words of the identifier the enclosing declaration of a line declares: `BALL` of
+    `export const BALL = {` above `radius: 12,`. Never its comment."""
+    for line in scope[:1]:
+        match = _DECLARED.search(_code(line))
+        if match:
+            return set(words(match.group(1) or match.group(2)))
+    return set()
 
 
 # -- the check -----------------------------------------------------------------------------
@@ -329,6 +450,7 @@ class _Commit:
     def __init__(self, reader, vocabulary, commit, base):
         self.reader, self.vocab, self.commit, self.base = reader, vocabulary, commit, base
         self.files = parse_diff(reader.diff(base, commit))
+        self.by_path = {entry["path"]: entry for entry in self.files if entry["path"]}
         self._grep, self._text = {}, {}
 
     def grep(self, word):
@@ -346,6 +468,22 @@ class _Commit:
 
     def json_pair(self, path):
         return _json(self.reader.show(self.base, path)), _json(self.reader.show(self.commit, path))
+
+    def blob_pair(self, path):
+        blob = getattr(self.reader, "blob", None)
+        if blob is None:
+            return None, None
+        return blob(self.base, path), blob(self.commit, path)
+
+    def touched(self, path, starts=None):
+        """The new-file line numbers inside the commit's hunks of `path` (those starting at
+        `starts`, when given): the lines the change touched and the context it was shown in."""
+        out = set()
+        for hunk in (self.by_path.get(path) or {}).get("hunks") or []:
+            if starts and hunk["new_start"] not in starts:
+                continue
+            out.update(new for _, _, _, new in hunk["lines"] if new)
+        return out
 
     def scope(self, path, op, old, new):
         """The lines that say what a changed line belongs to: its enclosing declaration (the
@@ -368,23 +506,33 @@ class _Commit:
         return out
 
 
-def _read_by_source(change, key, parents):
+def _read_by_source(change, key, owners, content_file):
     """(file, line text) where game source reads `key`, or None. Read means: the key as a
-    quoted string, `<parent>.key` for a parent object the key was added under (any `.key`
-    when it sits in an array element or at the top), or the key destructured on one line.
-    `parents` is [(parent key or None, in an array element)]."""
+    quoted string; or `.key` / `{ key } =` on a line that reads the path it was added at - the
+    identifier before the dot, or a word of the line, names what the key was added under (its
+    parent key, `owners`; plural or singular), or, for a key at the top of the file, the
+    reading file names the content file. A `.count` on any other object is not a read."""
     quoted = re.compile(r"""(["'`])""" + re.escape(key) + r"\1")
-    loose = any(parent is None or in_array for parent, in_array in parents)
-    owners = sorted({parent for parent, in_array in parents if parent and not in_array})
-    dotted = re.compile(
-        (r"\." if loose or not owners else
-         r"\b(?:" + "|".join(re.escape(o) for o in owners) + r")\s*\??\.")
-        + r"\s*" + re.escape(key) + r"\b")
-    destructured = re.compile(r"\{[^{}]*\b" + re.escape(key) + r"\b[^{}]*\}\s*=")
+    dotted = re.compile(r"\??\.\s*" + re.escape(key) + r"(?![\w$])")
+    destructured = re.compile(r"\{[^{}]*(?<![\w$])" + re.escape(key)
+                              + r"(?![\w$])[^{}]*\}\s*=")
+    before = re.compile(r"([A-Za-z_$][\w$]*)\s*$")
+    top = any(not owner for owner in owners)
+    owner_words = set().union(*owners)
+    name = os.path.basename(content_file)
     for path, text in change.grep(key):
         code = _code(text)
-        if quoted.search(code) or dotted.search(code) or destructured.search(code):
+        if quoted.search(code):
             return path, text.strip()
+        accessed = [before.search(code[:m.start()]) for m in dotted.finditer(code)]
+        if not accessed and not destructured.search(code):
+            continue
+        if any(m and _related(words(m.group(1)), owner_words) for m in accessed):
+            return path, text.strip()  # `<what it was added under>.key`
+        if _related(set(words(code)) - set(words(key)), owner_words):
+            return path, text.strip()  # the line reads that path: `data.units[i].key`
+        if top and any(name in line for line in change.lines(change.commit, path)):
+            return path, text.strip()  # a top-level key, in a file that loads this file
     return None
 
 
@@ -423,13 +571,11 @@ def _unread_fields(change):
             if re.match(r"^[A-Za-z_$][\w$]*$", key_path[-1]):
                 by_key.setdefault(key_path[-1], []).append(key_path)
         for key, where in sorted(by_key.items()):
-            parents = set()
+            owners = []
             for key_path in where:
-                shape = _shape(key_path)
-                named = [k for k in shape[:-1] if k != "[]"]
-                parents.add((named[-1] if named else None,
-                             len(shape) >= 2 and shape[-2] == "[]"))
-            if _read_by_source(change, key, sorted(parents, key=str)):
+                named = [k for k in _shape(key_path)[:-1] if k != "[]"]
+                owners.append(frozenset(words(named[-1])) if named else frozenset())
+            if _read_by_source(change, key, sorted(set(owners), key=sorted), path):
                 continue
             shown = sorted({_dotted(_shape(p)) for p in where})[:MAX_WHERE]
             flags.append({"pattern": "unread-content-field", "file": path, "key": key,
@@ -438,41 +584,65 @@ def _unread_fields(change):
                           "where": f"{path}#{key}",
                           "detail": f"`{key}` (added at {', '.join(shown)}; {len(where)} "
                                     f"place(s)) is read nowhere in game source - not as a "
-                                    f"quoted key, a property of the object it was added "
-                                    f"to, or a destructured name"})
+                                    f"quoted key, nor as a property or a destructured name "
+                                    f"of what it was added under"})
     return flags
 
 
 def _play_area(change):
+    """Play area, bounds or colliders changed. A word of `play_area` names it on its own; a
+    word of `play_area_context` (floor, margin, top, width, ...) only as what a play-area
+    object's value is: a simulation source line that assigns it (`board.margin = 40`, or
+    `width: 600` inside `const BOARD = {`), or a content value's key path (a unit's
+    `layout.top` is its play space, whatever the key is named). Reading `BOARD.width` to
+    place something is not changing it."""
     vocab, flags = change.vocab, []
-    terms = vocab.words.get("play_area") or set()
+    terms, context = vocab.w("play_area"), vocab.w("play_area_context")
+    objects = vocab.w("play_area_objects")
+    data_objects = objects | vocab.w("play_area_data_objects")
+
+    def source_hit(text, render, scope):
+        if _code_words(text) & terms:
+            return True
+        match = None if render else _ASSIGN.match(_BUILTIN.sub(" ", _code(text)))
+        if not match:
+            return False
+        named = set(words(match.group(1)))
+        return bool(named & context) and bool((named | _declared_words(scope())) & objects)
+
     for entry in change.files:
         path = entry["path"]
         if not path or vocab.is_test(path) or vocab.is_bookkeeping(path):
             continue
-        hits, first = [], None
+        hits, first, starts = [], None, []
         if vocab.is_size_data(path):
             before, after = change.json_pair(path)
             old, new = _leaves(before), _leaves(after)
+            by_value = not vocab.is_asset_data(path)
             for leaf in sorted(set(old) | set(new)):
-                if old.get(leaf) != new.get(leaf) and set(words(" ".join(leaf))) & terms:
+                if old.get(leaf) == new.get(leaf):
+                    continue
+                keys = [k for k in leaf if not k.startswith("[")]
+                said = set(words(" ".join(keys)))
+                last = set(words(keys[-1])) if keys else set()
+                if said & terms or (by_value and last & context and said & data_objects):
                     hits.append(f"`{_dotted(leaf)}` {old.get(leaf)!r} -> {new.get(leaf)!r}")
         elif vocab.is_source(path):
+            render = vocab.is_render(path)
             for hunk in entry["hunks"]:
                 for op, text, old, new in hunk["lines"]:
-                    if op == " ":
-                        continue
-                    found = set(words(_code(text))) & terms
-                    if found:
+                    if op != " " and source_hit(text, render, lambda op=op, old=old, new=new:
+                                                change.scope(path, op, old, new)):
                         hits.append(f"{op}{new or old}: `{text.strip()[:100]}`")
                         first = first or (new if op == "+" else None)
+                        if hunk["new_start"] not in starts:
+                            starts.append(hunk["new_start"])
         if hits:
             if first is None:
                 first = next((_added_line(entry, w) for w in sorted(terms)
                               if _added_line(entry, w)), None)
             flags.append({"pattern": "play-area-change", "file": path, "line": first,
-                          "hunks": _hunks_with(entry, lambda s: bool(
-                              set(words(_code(s))) & terms)),
+                          "hunks": starts,
                           "where": path, "detail": "; ".join(hits[:MAX_WHERE])
                           + (f"; and {len(hits) - MAX_WHERE} more" if len(hits) > MAX_WHERE
                              else "")})
@@ -484,7 +654,7 @@ def _probe_hunks(change):
     showcase- or bot-only: the line itself, the declaration it sits in or that
     declaration's comment names the probe (or the file's path does)."""
     vocab, out = change.vocab, []
-    terms = vocab.words.get("probe") or set()
+    terms = vocab.w("probe")
     for entry in change.files:
         path = entry["path"]
         if not path or not vocab.is_source(path):
@@ -503,24 +673,90 @@ def _probe_hunks(change):
 
 
 def _probe_paths(change):
+    """A probe hunk that alters code the probe already had (a removed code line) is a flag:
+    what it reported of an existing entity changed. One that only adds code - a new entity
+    reported, a new showcase state - is a note for the reviewer when the vocabulary says so
+    (`additions: note`)."""
+    note_additions = (change.vocab.patterns.get("probe-path-change") or {}).get(
+        "additions") == "note"
     flags, by_file = [], {}
     for path, hunk, found in _probe_hunks(change):
+        alters = any(op == "-" and _code(text).strip() for op, text, _, _ in hunk["lines"])
         line = next((n for op, _, _, n in hunk["lines"] if op == "+"), None)
-        by_file.setdefault(path, []).append((hunk, found, line))
-    for path, hunks in by_file.items():
+        by_file.setdefault((path, alters or not note_additions), []).append((hunk, found, line))
+    for (path, alters), hunks in by_file.items():
         detail = "; ".join(f"hunk at {h['new_start']} ({', '.join(f)})" for h, f, _ in
                            hunks[:MAX_WHERE])
-        flags.append({"pattern": "probe-path-change", "file": path, "line": hunks[0][2],
-                      "hunks": [h["new_start"] for h, _, _ in hunks],
-                      "where": path, "detail": detail})
+        flag = {"pattern": "probe-path-change", "file": path, "line": hunks[0][2],
+                "hunks": [h["new_start"] for h, _, _ in hunks], "where": path,
+                "detail": detail + ("" if alters else
+                                    " - code added only, nothing the probe already "
+                                    "reported was changed")}
+        if not alters:
+            flag["note"] = True
+        flags.append(flag)
     return flags
+
+
+def _entity(names, vocab, *extra):
+    """The words of `names` that say which entity: size, draw, collider and generic words
+    out (and any `extra` word set)."""
+    drop = (vocab.w("size") | vocab.w("draw") | vocab.w("collider") | vocab.w("physical_size")
+            | vocab.w("generic"))
+    for more in extra:
+        drop |= more
+    return frozenset(w for w in names if w not in drop and not w.isdigit())
+
+
+def _collider_refs(expression, vocab):
+    """The entities whose collider or radius an expression reads: `ball.radius * 5` ->
+    {ball}. A width or height is not one (it may be the drawing's own)."""
+    physical = vocab.w("collider") | {"radius", "diameter", "rad"}
+    out = set()
+    for match in _IDENT_CHAIN.finditer(expression or ""):
+        said = set(words(match.group(0)))
+        if said & physical and not said & vocab.w("draw"):
+            entity = _entity(said, vocab)
+            if entity:
+                out.add(entity)
+    return out
+
+
+def _sized_objects(value, vocab, prefix=(), names=()):
+    """{key path: (display width, display height, entity words)} of every object of an asset
+    manifest or atlas descriptor with a width/height (or w/h): pixels over its `scale`."""
+    out = {}
+    if isinstance(value, dict):
+        dims = []
+        for keys in (("width", "w"), ("height", "h")):
+            found = next((value[k] for k in keys if isinstance(value.get(k), (int, float))
+                          and not isinstance(value.get(k), bool)), None)
+            dims.append(found)
+        scale = value.get("scale")
+        scale = scale if isinstance(scale, (int, float)) and scale > 0 else 1
+        if all(d is not None for d in dims):
+            said = set(words(" ".join(list(prefix) + list(names))))
+            out[prefix] = (dims[0] / scale, dims[1] / scale,
+                           _entity(said, vocab, vocab.w("asset_structure")))
+        for key, child in value.items():
+            out.update(_sized_objects(child, vocab, prefix + (str(key),), names))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            named = names
+            if isinstance(child, dict):
+                named = names + tuple(str(child[k]) for k in ("id", "name", "filename")
+                                      if isinstance(child.get(k), str))
+            out.update(_sized_objects(child, vocab, prefix + (f"[{index}]",), named))
+    return out
 
 
 def _sprite_sizes(change):
     vocab = change.vocab
-    size, draw = vocab.words.get("size") or set(), vocab.words.get("draw") or set()
-    collider, generic = vocab.words.get("collider") or set(), vocab.words.get("generic") or set()
-    drawn, physical = [], []  # drawn: (path, name, stem, line, before, after); physical: words
+    size, draw = vocab.w("size"), vocab.w("draw")
+    collider, physical_size = vocab.w("collider"), vocab.w("physical_size")
+    # drawn: (path, name, stem, line, before, after, hunk, body known);
+    # physical: the entities whose collider or physical size changed.
+    drawn, physical = [], []
     for entry in change.files:
         path = entry["path"]
         if not path or vocab.is_test(path) or vocab.is_bookkeeping(path):
@@ -529,20 +765,48 @@ def _sprite_sizes(change):
             render = vocab.is_render(path)
             for hunk in entry["hunks"]:
                 old, new = _assignments(hunk["lines"], "-"), _assignments(hunk["lines"], "+")
-                for name in set(old) & set(new):
-                    if old[name][0] == new[name][0]:
+                for name in sorted(set(old) & set(new)):
+                    o, n = old[name], new[name]
+                    numbers_changed = bool(o[0] and n[0] and o[0] != n[0])
+                    if not numbers_changed and o[3] == n[3]:
                         continue
                     named = set(words(name))
-                    context = (named | set(words(new[name][2])) | set(words(hunk["header"]))
-                               | set(words(" ".join(change.scope(path, "+", None,
-                                                                  new[name][1])))))
-                    if named & collider or (named & size and not render and not named & draw):
-                        physical.append(context)
+                    declared = _declared_words(change.scope(path, "+", None, n[1]))
+                    if named & (collider | physical_size) and not render and not named & draw:
+                        entity = _entity(named, vocab) or _entity(declared, vocab)
+                        if entity:
+                            physical.append(entity)
                     elif (named & size and (render or named & draw)) or (named & draw
                                                                           and render):
-                        stem = named - size - draw - collider - generic
-                        drawn.append((path, name, stem, new[name][1], old[name][2],
-                                      new[name][2], hunk["new_start"]))
+                        scaled = _collider_refs(n[3], vocab) if o[3] != n[3] else set()
+                        for entity in scaled:
+                            # Drawn from a collider: a changed factor is a drawing that is no
+                            # longer the body's size.
+                            drawn.append((path, name, entity, n[1], o[2], n[2],
+                                          hunk["new_start"], True))
+                        if numbers_changed and not scaled:
+                            stem = _entity(named, vocab) or _entity(declared, vocab)
+                            drawn.append((path, name, stem, n[1], o[2], n[2],
+                                          hunk["new_start"], False))
+        elif vocab.is_asset_data(path) and path.endswith(".json"):
+            before, after = change.json_pair(path)
+            old = _sized_objects(before, vocab)
+            for key, (width, height, stem) in _sized_objects(after, vocab).items():
+                if key not in old:
+                    continue
+                was_w, was_h, _ = old[key]
+                if width > was_w or height > was_h:
+                    drawn.append((path, _dotted(key), stem, None,
+                                  f"{_dotted(key)} {was_w:g}x{was_h:g}",
+                                  f"{width:g}x{height:g}", None, False))
+        elif vocab.is_image(path):
+            before, after = (image_size(b) for b in change.blob_pair(path))
+            if before and after and (after[0] > before[0] or after[1] > before[1]):
+                stem = _entity(set(words(os.path.splitext(os.path.basename(path))[0])), vocab,
+                               vocab.w("asset_structure"))
+                drawn.append((path, path, stem, None, f"{path} {before[0]}x{before[1]}",
+                              f"{after[0]}x{after[1]} (a larger file; a higher-resolution "
+                              f"drawing shown at the same size is declared)", None, False))
         elif vocab.is_size_data(path):
             before, after = change.json_pair(path)
             old, new = _leaves(before), _leaves(after)
@@ -550,20 +814,24 @@ def _sprite_sizes(change):
                 if old[leaf] == new[leaf] or not isinstance(new[leaf], (int, float)):
                     continue
                 named = set(words(" ".join(leaf)))
-                if named & collider or (named & size and vocab.is_content(path)
-                                        and not named & draw):
-                    physical.append(named)
+                last = set(words(leaf[-1]))
+                if (last & collider or (last & physical_size and vocab.is_content(path))) \
+                        and not named & draw:
+                    keys = [k for k in leaf if not k.startswith("[")]
+                    entity = _entity(last, vocab) or _entity(
+                        set(words(keys[-2])) if len(keys) > 1 else set(), vocab)
+                    if entity:
+                        physical.append(entity)
                 elif named & size and (named & draw or leaf[-1] == "scale"):
-                    stem = named - size - draw - collider - generic
-                    drawn.append((path, _dotted(leaf), stem, None, old[leaf], new[leaf],
-                                  None))
+                    drawn.append((path, _dotted(leaf), _entity(named, vocab), None,
+                                  old[leaf], new[leaf], None, False))
     flags = {}
-    for path, name, stem, line, before, after, at in drawn:
+    for path, name, stem, line, before, after, at, body in drawn:
         if not stem:
             continue  # no entity to hold the collider to
-        if any(stem & context for context in physical):
-            continue  # the entity's physical size changed with it
-        if not _has_body(change, stem, size | collider, draw):
+        if any(entity and entity <= stem for entity in physical):
+            continue  # a collider or physical size of the same entity changed with it
+        if not body and not _has_body(change, stem, size | collider, draw):
             continue  # nothing physical to be consistent with (an effect, a backdrop)
         flag = flags.setdefault(path, {"pattern": "sprite-size-without-collider",
                                        "file": path, "line": line, "where": path,
@@ -571,7 +839,9 @@ def _sprite_sizes(change):
         flag["stems"].update(stem)
         if at is not None and at not in flag["hunks"]:
             flag["hunks"].append(at)
-        flag["detail"].append(f"`{before}` -> `{after}`")
+        said = f"`{before}` -> `{after}`"
+        if said not in flag["detail"]:
+            flag["detail"].append(said)
     out = []
     for flag in flags.values():
         flag["detail"] = ("; ".join(flag["detail"][:MAX_WHERE])
@@ -626,7 +896,9 @@ def _classify(change, flags):
 
 
 def _declarations(reader, commit, vocab, change):
-    """The visit's `measurement_changes` entries whose evidence exists at the commit."""
+    """The visit's `measurement_changes` entries with a `where`, a `player_effect` and
+    evidence lines that exist at the commit. Whether the evidence counts for a flag is
+    `_declared`'s: it must be where the flagged change touched."""
     field = (vocab.data.get("declaration") or {}).get("field") or "measurement_changes"
     report = _json(reader.show(commit, REPORT)) or {}
     entries = report.get(field) if isinstance(report, dict) else None
@@ -634,6 +906,9 @@ def _declarations(reader, commit, vocab, change):
     for entry in entries if isinstance(entries, list) else []:
         if not isinstance(entry, dict) or entry.get("flag") not in PATTERNS:
             continue
+        where = entry.get("where")
+        if not isinstance(where, str) or not where.strip():
+            continue  # a declaration names what it declares; an empty one declares nothing
         evidence = []
         for ref in entry.get("evidence") or []:
             if not isinstance(ref, dict) or not isinstance(ref.get("file"), str):
@@ -647,23 +922,41 @@ def _declarations(reader, commit, vocab, change):
                              "text": text.splitlines()[line - 1].strip()[:200]})
         player_effect = entry.get("player_effect")
         if evidence and isinstance(player_effect, str) and player_effect.strip():
-            out.append({"flag": entry["flag"], "where": str(entry.get("where") or ""),
+            out.append({"flag": entry["flag"], "where": where.strip(),
                         "evidence": evidence, "player_effect": player_effect.strip()})
     return out
 
 
-def _declared(flag, declarations, vocab):
+def _counts(ref, flag, change):
+    """Whether one evidence line is where the flagged change touched: a line of the flagged
+    file inside a flagged hunk (anywhere the commit changed it, for a flag that names no
+    hunk), or a line of game source inside a hunk of the same commit."""
+    vocab = change.vocab
+    if ref["file"] == flag["file"] and ref["line"] in change.touched(
+            flag["file"], set(flag.get("hunks") or []) or None):
+        return True
+    return vocab.is_source(ref["file"]) and ref["line"] in change.touched(ref["file"])
+
+
+def _declared(flag, declarations, change):
+    vocab = change.vocab
     for entry in declarations:
         if entry["flag"] != flag["pattern"]:
             continue
         where = entry["where"]
-        if where and not (where == flag["where"] or flag["where"].startswith(where + "#")
-                          or where == flag["file"]):
+        if not (where == flag["where"] or where == flag["file"]
+                or flag["where"].startswith(where + "#")):
             continue
+        evidence = [ref for ref in entry["evidence"] if _counts(ref, flag, change)]
+        if not evidence:
+            continue
+        entry = dict(entry, evidence=evidence)
         if flag["pattern"] == "unread-content-field":
-            # Cleared only by the line that reads it: game source naming the key.
-            if any(vocab.is_source(e["file"]) and flag["key"] in e["text"]
-                   for e in entry["evidence"]):
+            # Cleared only by the line that reads it: game source the commit touched, naming
+            # the key in code.
+            name = re.compile(r"(?<![\w$])" + re.escape(flag["key"]) + r"(?![\w$])")
+            if any(vocab.is_source(ref["file"]) and name.search(_code(ref["text"]))
+                   for ref in evidence):
                 return "cleared", entry
             continue
         return "declared", entry
@@ -697,7 +990,10 @@ def precheck(reader, commit, specialist, base=None, vocabulary=None):
         flags.extend(checks[pattern](change))
     declarations = _declarations(reader, commit, vocab, change) if flags else []
     for flag in flags:
-        status, entry = _declared(flag, declarations, vocab)
+        if flag.pop("note", False):
+            flag["status"] = "noted"  # the reviewer judges it; never a blocker by itself
+            continue
+        status, entry = _declared(flag, declarations, change)
         flag["status"] = status or "flagged"
         if entry:
             flag["declaration"] = entry
@@ -706,24 +1002,61 @@ def precheck(reader, commit, specialist, base=None, vocabulary=None):
     return result
 
 
-def precheck_range(reader, base, head, vocabulary=None):
-    """Every specialist commit in base..head: {vocabulary, commits: [precheck results]}. A
-    commit is a specialist's when it changes the develop brief and that brief names one."""
+def recorded_visit(develop_brief, prototype):
+    """The specialist visit the develop step recorded for the build under review, as
+    precheck_range's `recorded`: {base, head, specialist}, or None. `prototype` is the
+    prototype-report (its `specialist` and `build_ref.commit_sha`), `develop_brief` the
+    visit's docs/development/brief.json (its `baseline_commit`, and its `specialist` block
+    when it names the same role - the routed findings in full)."""
+    record = (prototype or {}).get("specialist")
+    if not isinstance(record, dict) or not record.get("role"):
+        return None
+    head = ((prototype or {}).get("build_ref") or {}).get("commit_sha")
+    base = (develop_brief or {}).get("baseline_commit")
+    if not head or not base or base == head:
+        return None
+    spec = (develop_brief or {}).get("specialist")
+    if not (isinstance(spec, dict) and spec.get("role") == record["role"]):
+        spec = {"role": record["role"],
+                "findings": [{"id": f} for f in record.get("findings") or []
+                             if isinstance(f, str)]}
+    return {"base": base, "head": head, "specialist": spec}
+
+
+def precheck_range(reader, base, head, vocabulary=None, recorded=None):
+    """Every specialist commit in base..head: {vocabulary, commits: [precheck results],
+    truncated, commits_in_range}. A commit is a specialist's when it changes the develop
+    brief and that brief names one, or when it is inside the range the develop step recorded
+    for a specialist visit (`recorded`, from recorded_visit): a visit whose brief is
+    byte-identical to the one before it is still that visit."""
     vocab = vocabulary or Vocabulary.load()
     out = {"vocabulary": vocab.ref, "base": base, "head": head, "commits": [],
            "truncated": False}
     commits = reader.commits(base, head)
+    out["commits_in_range"] = len(commits)
     if len(commits) > MAX_COMMITS:
         out["truncated"] = True
         commits = commits[-MAX_COMMITS:]
+    in_record = set()
+    if recorded and isinstance(recorded.get("specialist"), dict):
+        try:
+            in_record = set(reader.commits(recorded["base"], recorded["head"]))
+        except Exception as exc:  # noqa: BLE001 - a record git cannot read reads nothing
+            out["recorded_unreadable"] = (f"{str(recorded.get('base'))[:12]}.."
+                                          f"{str(recorded.get('head'))[:12]}: {exc}")[:300]
     for commit in commits:
-        if BRIEF not in reader.touched(commit):
-            continue
-        brief = _json(reader.show(commit, BRIEF)) or {}
-        specialist = brief.get("specialist") if isinstance(brief, dict) else None
+        specialist, by_record = None, False
+        if BRIEF in reader.touched(commit):
+            brief = _json(reader.show(commit, BRIEF)) or {}
+            specialist = brief.get("specialist") if isinstance(brief, dict) else None
+        if commit in in_record:
+            specialist, by_record = recorded["specialist"], True
         if not isinstance(specialist, dict):
             continue
-        out["commits"].append(precheck(reader, commit, specialist, vocabulary=vocab))
+        visit = precheck(reader, commit, specialist, vocabulary=vocab)
+        if by_record:
+            visit["recorded"] = True
+        out["commits"].append(visit)
     return out
 
 

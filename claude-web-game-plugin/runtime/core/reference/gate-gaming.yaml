@@ -29,8 +29,21 @@
 # met with larger drawings and an unchanged collision size (render constants), and a
 # similarity finding met with four count fields the parser never reads - are flagged; the
 # legitimate changes in the module's tests are not.
+#
+# 1.1.0 (a review of 1.0.0 found loopholes and false positives; each is a test case now):
+# play-area words no longer include `floor`, `border`, `margin`, `inset` or `extent` on their
+# own - `Math.floor` and a text's `borderColor` are not a play area - those count only beside
+# a play-area object (`play_area_context` with `play_area_objects`), and a changed top,
+# bottom, left, right, width or height inside a board, layout or arena object in content data
+# is a play-area change by what the value is, whatever it is named. The visibility category is
+# about the size of an entity on screen, not text: `contrast`, `screen`, `size` and `small`
+# are gone and a `ui` check never matches it. A drawn size is exempt only by a collider or a
+# physical size (`physical_size`) of the same entity; a drawn size scaled from a collider
+# variable, an asset manifest or atlas frame grown and an image file enlarged are drawn sizes
+# too (`asset_data`, `image_extensions`, `asset_structure`). A probe change that only adds
+# code is a note for the reviewer; one that alters existing probe code stays a flag.
 
-version: 1.0.0
+version: 1.1.0
 
 # What is game source and what is content data, as repository paths. `/`-ended entries are
 # directories; a test path is never game source (it is not what the player runs).
@@ -45,6 +58,10 @@ paths:
   # The Factory's own bookkeeping in a game repository: written by the develop step, never
   # what a gate measures.
   bookkeeping: [docs/development/, docs/GDD.md]
+  # Where the runtime asset manifest, atlas descriptors and image files live: a frame or an
+  # image made larger is a drawn size of the entity it is named after.
+  asset_data: [public/assets/]
+  image_extensions: [.png, .gif, .jpg, .jpeg, .webp]
   # Directories (any path segment) whose code draws rather than simulates.
   render_segments: [render, rendering, renderer, renderers, view, views, sprites, graphics, draw, drawing, visual, visuals, hud]
 
@@ -52,16 +69,30 @@ paths:
 words:
   # Code that exists for the play probe, its showcase, its oracle or a bot - not the player.
   probe: [probe, probes, showcase, oracle, autopilot, bot, bots, wgf]
-  # The space play happens in and what bounds it.
-  play_area: [ceiling, floor, wall, walls, bound, bounds, boundary, boundaries, arena, playfield, playarea, border, borders, inset, insets, margin, margins, extent, extents, killzone, collider, colliders, hitbox, hitboxes]
+  # The space play happens in and what bounds it: any of these names it on its own.
+  play_area: [ceiling, ceilings, wall, walls, bound, bounds, boundary, boundaries, arena, playfield, playarea, killzone, collider, colliders, hitbox, hitboxes]
+  # Words that name the play area only beside a play-area object (`play_area_objects`): in one
+  # source line of simulation code, or in the key path of a content value. `floor` alone is
+  # Math.floor, `border` alone is a text box's.
+  play_area_context: [floor, floors, border, borders, margin, margins, inset, insets, extent, extents, top, bottom, left, right, width, height, w, h, size, rows, cols, columns]
+  # The objects a play area is: a source line or a content key path naming one of these.
+  play_area_objects: [board, arena, court, field, playfield, playarea, pitch, world]
+  # Content data only (never a source line, where it is mostly the interface's): a unit's
+  # layout is its play space.
+  play_area_data_objects: [layout]
   # What the simulation collides with.
   collider: [collider, colliders, collision, collisions, hitbox, hitboxes, hit, body, bodies, physics, catch, overlap, shape, shapes]
   # A size.
   size: [w, h, width, height, size, sizes, scale, radius, diameter, len, length, px]
+  # The physical extent of a body: with a collider word, what may exempt a drawn size of the
+  # same entity. `length` is not one (a trail's length is no body).
+  physical_size: [radius, r, rad, diameter, w, h, width, height, size, sizes]
   # Drawing rather than simulating.
   draw: [draw, drawn, drawing, sprite, sprites, display, visual, render, art, texture, icon]
   # Words that say nothing about which entity a constant belongs to.
-  generic: [const, let, var, readonly, export, static, default, base, min, max, the, of, new, old, x, y, z]
+  generic: [const, let, var, readonly, export, static, default, base, min, max, the, of, new, old, x, y, z, this, self]
+  # The structure of an asset manifest or atlas descriptor, never an entity's name.
+  asset_structure: [assets, asset, atlases, atlas, frames, frame, source, sourcesize, sprite, sprites, spritesheet, sheet, texture, textures, image, images, url, meta, data, files, file, png, gif, jpg, jpeg, webp, json, public, placeholder, trimmed, rotated, size, sizes, scale, format, type, role, id, variant, variants]
 
 # Which routed findings each pattern watches. A finding matches a category when one of the
 # category's words is a word of its check id, its dimension or its summary.
@@ -74,7 +105,10 @@ categories:
         in that space - the pacing, the obstacles, the rules - and let the time follow.
       - Never make the bot's or the probe's route easier than the player's.
   visibility-size:
-    words: [visible, visibility, readable, legible, size, area, onscreen, screen, rendered, contrast, small]
+    # The size of an entity on screen (entities.visible, an asset's `visible` link), not text:
+    # a `ui` check (text size, contrast, targets) never matches.
+    words: [visible, visibility, onscreen, area, readable]
+    except_checks: [ui]
     rules:
       - When a bar is met by changing a size, keep visual and physical size consistent - a
         sprite drawn larger collides larger, or its collider is changed with it and the
@@ -110,9 +144,12 @@ patterns:
     summary: the play area, its bounds or a collider changed in a visit routed for reach, time or visibility
     watch: [reach-time, visibility-size]
   probe-path-change:
-    summary: probe-, showcase- or bot-only code changed in a visit whose findings are about the game
+    summary: probe-, showcase- or bot-only code an earlier build had was altered in a visit whose findings are about the game
     watch: []
     except_checks: [probe, showcase, oracle]
+    # A probe hunk that only adds code (a new entity reported, a new showcase state) is a note
+    # the reviewer judges, not a blocker: only a change to what the probe already reported is.
+    additions: note
   sprite-size-without-collider:
     summary: a drawn size changed and no collider or physical size of the same entity changed with it
     watch: []
@@ -120,9 +157,12 @@ patterns:
 # The documented false-positive path: an entry in the visit's own
 # docs/development/report.json `measurement_changes`, naming the flag and the place, with
 # `evidence` - repository `file` + `line` references that must exist at the commit - and
-# `player_effect`, what the player experiences differently. An `unread-content-field` entry
-# whose evidence line is in game source and names the field clears the flag (it is read);
-# any other entry with valid evidence turns the flag into a declared change the reviewer
-# judges. A declaration without evidence changes nothing.
+# `player_effect`, what the player experiences differently. `where` must name the flag (its
+# file, or file#key); an empty one declares nothing. Evidence counts only where the flagged
+# change touched: a line of the flagged file inside a flagged hunk, or a line of game source
+# inside a hunk of the same commit. An `unread-content-field` entry whose evidence line is in
+# game source the commit touched and names the field clears the flag (it is read); any other
+# entry with valid evidence turns the flag into a declared change the reviewer judges. A
+# declaration without such evidence changes nothing.
 declaration:
   field: measurement_changes

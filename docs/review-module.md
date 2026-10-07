@@ -388,7 +388,7 @@ runs did exactly that three times, and no review caught it:
 | Commit | Routed for | What it changed | Flagged as |
 |---|---|---|---|
 | 2D `cbac64e` (level designer) | `content.units_reachable` (the bot reached 2 of 3 units in its window) | lowered `ceiling_y` on the opening units: a smaller play area, so a rebound comes back sooner | `play-area-change` |
-| 2D `68a12b7` (2D artist) | `assets.runtime` (ball and bolt not visible enough) | drew the ball 44 -> 60 and the bolt 12x54 -> 30x130, collision sizes unchanged; staged hovering capsules and bolts for the probe showcase | `sprite-size-without-collider`, `probe-path-change` |
+| 2D `68a12b7` (2D artist) | `assets.runtime` (ball and bolt not visible enough) | drew the ball 44 -> 60 and the bolt 12x54 -> 30x130, collision sizes unchanged; staged hovering capsules and bolts for the probe showcase | `sprite-size-without-collider`; the showcase staging, code only added, is a `probe-path-change` note (1.1.0) |
 | 3D `1c6b099` (level designer) | `content.structure` (two units near-identical) | added `ramps`, `gaps`, `bumpers`, `lifts` to one unit's `parameters`; the parser reads none of them | `unread-content-field` |
 
 The replay ran `wgf_review.gaming.precheck_range` on each commit's parent..commit in clones
@@ -398,11 +398,16 @@ otherwise, and reported as skipped).
 
 **What runs.** Before the reviewer starts, with `subject: prototype-report` and a baseline,
 the step reads every commit of `baseline..HEAD` that changes `docs/development/brief.json`
-and whose brief names a `specialist` - every link of a specialist chain - and checks each
+and whose brief names a `specialist` - every link of a specialist chain - and every commit
+inside the range the develop step recorded for the build's specialist visit (the
+prototype-report's `specialist`, from the brief's `baseline_commit` to the report's commit),
+so a visit whose brief is byte-identical to the one before it is still read; and checks each
 against its parent (`scripts/wgf_review/gaming.py`, vocabulary
 `core/reference/gate-gaming.yaml`). It is deterministic: git objects and words, no model.
 The result is kept beside the run as `review/<step>-<visit>-<attempt>.gaming.json`, and the
-review-report records a `gate_gaming` summary (review-report 1.2.0).
+review-report records a `gate_gaming` summary (review-report 1.2.0; `noted` and `truncated`
+since 1.3.0). At most the newest 30 commits of the change are read; when it holds more,
+the summary says `truncated` and the reviewer's brief says how many were not read.
 
 Every hunk is classified `player-facing`, `measurement-facing`, `test` (never what the
 player runs) or `bookkeeping` (`docs/development/`, the Factory's own). Four patterns are
@@ -410,10 +415,10 @@ flagged:
 
 | Pattern | Applies to | Flags |
 |---|---|---|
-| `unread-content-field` | every specialist visit | a key added to an object in `public/content/*.json` that game source (`src/`, tests excluded) never reads: not as a quoted string (`"ramps"`, a parser's `numberOf(p, "ramps")`), not as `<parent>.ramps` on the object it was added under (any `.ramps` when it sits in an array element), not destructured on one line. A `.ramps` on another object - a course's ramps - is not a read |
-| `play-area-change` | visits whose findings are about reach, time or visibility (`categories` in the vocabulary, matched on each finding's check, dimension and summary) | a changed value in `public/**/*.json`, or a changed source line, whose key or identifiers name the play area, its bounds or a collider (`ceiling`, `wall`, `bounds`, `arena`, `hitbox`, ...) |
-| `probe-path-change` | every specialist visit, unless a routed finding's check is about the probe itself (`probe`, `showcase`, `oracle`) | a changed source line that is probe-, showcase- or bot-only: the line, the declaration it sits in or that declaration's comment names the probe, or the file's path does |
-| `sprite-size-without-collider` | every specialist visit | a numeric drawn size changed - a size or draw constant in drawing code (a `render`/`view`/`sprites`... path segment), or a draw size in `public/**/*.json` - for an entity the simulation gives a physical size (a non-drawing source line names it beside a size or collider word), and no collider or physical size of that entity changed in the commit |
+| `unread-content-field` | every specialist visit | a key added to an object in `public/content/*.json` that game source (`src/`, tests excluded) never reads: not as a quoted string (`"ramps"`, a parser's `numberOf(p, "ramps")`), not as `.ramps` or `{ ramps } =` where the identifier before the dot, or the line, names what it was added under (`parameters.ramps`; `unit.ramps` for a key of `units[]`, plural or singular; for a top-level key, a file that names the content file). A `.ramps` on another object - a course's ramps - is not a read |
+| `play-area-change` | visits whose findings are about reach, time or visibility (`categories` in the vocabulary, matched on each finding's check, dimension and summary) | a changed value in `public/**/*.json`, or a changed source line, whose key or identifiers name the play area, its bounds or a collider (`ceiling`, `wall`, `bounds`, `arena`, `hitbox`, ...); a changed top, bottom, left, right, width, height, floor, margin... of a board, layout or arena object in content data (`layout.top`); a simulation line assigning one to a board, arena or field (`board.margin = 40`, `height: 900` in `const BOARD = {`). `Math.floor`, a text's `borderColor` and a read of `BOARD.width` are not |
+| `probe-path-change` | every specialist visit, unless a routed finding's check is about the probe itself (`probe`, `showcase`, `oracle`) | a changed source line that is probe-, showcase- or bot-only: the line, the declaration it sits in or that declaration's comment names the probe, or the file's path does. A hunk that only adds code is a note, not a flag (below) |
+| `sprite-size-without-collider` | every specialist visit | a numeric drawn size changed - a size or draw constant in drawing code (a `render`/`view`/`sprites`... path segment), a draw size in `public/**/*.json`, an asset manifest or atlas frame displayed larger in `public/assets/**.json`, an image file made larger - for an entity the simulation gives a physical size (a non-drawing source line names it beside a size or collider word); or a draw size scaled from an entity's collider or radius whose expression changed (`sprite.width = ball.radius * 5`) - and no collider or physical size (`radius`, `width`, `hitbox`...) of that same entity changed in the commit: `BALL_TRAIL_LENGTH` does not exempt `BALL_DRAW` |
 
 **What a flag does.** Each flag (one blocker per visit, pattern and file) is a review
 blocker with id `gate-gaming-<pattern>-<n>`, severity `blocker`, the commit, the routed
@@ -442,13 +447,41 @@ arena the design asks to shrink. The developer declares such a change in the vis
 ]
 ```
 
-`where` is the flagged file, or `file#key`, or empty for every flag of that pattern. An
-entry counts only with `player_effect` and at least one `evidence` reference that exists at
-the commit (the file, and a line within it). For `unread-content-field`, an evidence line in
-game source that holds the key **clears** the flag - the field is read. For any other
-pattern a valid entry makes the flag **declared**: it is no longer a blocker by itself, and
-the reviewer judges it against the cited lines; unless they show the player experiences the
-change, the reviewer requests changes. A declaration without evidence changes nothing.
+`where` must name the flag: its file, or `file#key`; an empty `where` declares nothing. An
+entry counts only with `player_effect` and at least one `evidence` reference where the
+flagged change touched (gate-gaming 1.1.0): a line of the flagged file inside a flagged
+hunk (anywhere the commit changed that file, for a flag on a JSON value), or a line of game
+source inside a hunk of the same commit. A line of the brief, of another file, or of game
+source the commit did not touch is not evidence. For `unread-content-field`, an evidence
+line in game source the commit touched whose code names the key **clears** the flag - the
+field is read. For any other pattern a valid entry makes the flag **declared**: it is no
+longer a blocker by itself, and the reviewer judges it against the cited lines; unless they
+show the player experiences the change, the reviewer requests changes. A declaration without
+such evidence changes nothing.
+
+**Notes.** A `probe-path-change` hunk that only adds code - a new entity the probe reports, a
+new showcase state - alters nothing the probe already reported. It is `noted` (the pattern's
+`additions: note` in the vocabulary): shown to the reviewer under "Noted - not blockers",
+counted in `gate_gaming.noted`, never a blocker by itself. A hunk that removes or rewrites
+existing probe code stays a flag.
+
+**1.1.0 of the vocabulary** closed what a review of 1.0.0 found, each a case in
+`scripts/tests/test_review_gaming.py` `ReviewFindings`: a junk declaration (any line of any
+file, an empty `where`) disarmed any flag; a draw size scaled from a collider
+(`sprite.width = ball.radius * 5`), an atlas frame or manifest size grown in
+`public/assets/**.json` (display size: pixels over `scale`) and an image file made larger
+were invisible; any size change sharing an entity word (`BALL_TRAIL_LENGTH`) exempted a
+drawing - now only a collider or a physical size (`physical_size`: radius, width, height...)
+whose entity words are within the drawing's exempts it; a play area renamed (`layout.top`)
+escaped - now a changed top, bottom, left, right, width or height under a board, layout or
+arena key in content data is a play-area change by what it is, and a source line assigning
+such a value to a board, arena or field is one too (reading `BOARD.width` is not); an added
+field was "read" by any `.count` anywhere - now the identifier before the dot or the line
+must name what the field was added under (or, at the top of a file, the reading file must
+name the content file). On the other side, a UI fix was blocked: `Math.floor` and a text's
+`borderColor` no longer name a play area (`floor`, `border`, `margin` count only beside a
+play-area object), and the visibility category is the size of an entity on screen -
+`contrast`, `screen`, `size` and `small` are gone and a `ui` check never matches it.
 
 Not covered: `sdk-review` (the sdk step's commit is no specialist's); a review with
 `reviewer.kind: none`, which is skipped before any checkout is read; renamed files are read

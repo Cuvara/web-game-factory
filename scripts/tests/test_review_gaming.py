@@ -16,6 +16,7 @@ Standard library only. Run from the repository root:
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -131,6 +132,10 @@ class Repo:
         for path, content in files.items():
             full = os.path.join(self.root, *path.split("/"))
             os.makedirs(os.path.dirname(full), exist_ok=True)
+            if isinstance(content, bytes):
+                with open(full, "wb") as handle:
+                    handle.write(content)
+                continue
             with open(full, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(content if isinstance(content, str)
                              else json.dumps(content, indent=2) + "\n")
@@ -402,7 +407,7 @@ class Declarations(unittest.TestCase):
 class ReviewOutcome(unittest.TestCase):
     """A flag makes the review request changes, routed back to the visit's owner."""
 
-    PRECHECK = {"vocabulary": "gate-gaming@1.0.0", "commits": [{
+    PRECHECK = {"vocabulary": "gate-gaming@1.1.0", "commits": [{
         "commit": "c" * 40, "owner": "level-designer", "dimension": "level-design",
         "findings": [SIMILAR["id"]], "hunks": [], "skipped": {},
         "flags": [{"pattern": "unread-content-field", "file": "public/content/units.json",
@@ -583,6 +588,311 @@ class DevelopBrief(unittest.TestCase):
         self.assertEqual(sorted(entry), ["evidence", "flag", "player_effect", "where"])
         for pattern in gaming.PATTERNS:
             self.assertIn(pattern, entry["flag"])
+
+
+def png(width, height):
+    """The first bytes of a PNG file: what its size is read from."""
+    return (b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + struct.pack(">II", width, height)
+            + b"\x08\x06\x00\x00\x00" + b"\x00" * 16)
+
+
+UI_TEXT = finding("ui.text", dimension="ui", producer="production-quality-report",
+                  summary="label contrast 2.1:1 below 4.5:1; text too small on screen")
+ASSETS = {"format": "wgf-runtime-assets", "version": 1, "assets": {
+    "ball": {"type": "sprite", "atlas": "hud", "frame": "ball", "width": 24, "height": 24},
+    "spark": {"type": "sprite", "atlas": "hud", "frame": "spark", "width": 16, "height": 16}},
+    "atlases": {"hud": {"url": "atlases/hud.png", "width": 64, "height": 32, "scale": 1}}}
+
+
+def assets_with(**sizes):
+    data = json.loads(json.dumps(ASSETS))
+    for asset, values in sizes.items():
+        data["assets"][asset].update(values)
+    return data
+
+
+class ReviewFindings(unittest.TestCase):
+    """The defects a review of the 1.0.0 pre-check found, each a case: loopholes a gamed
+    commit passed through, and legitimate fixes it blocked."""
+
+    def setUp(self):
+        self.repo = Repo(self)
+
+    def prepare(self, files=None, edits=()):
+        """A commit before the visit (what the game already had); the new baseline."""
+        self.repo.write(files or {})
+        for path, old, new in edits:
+            self.repo.edit(path, old, new)
+        return self.repo.commit("before the visit")
+
+    def declare(self, entry):
+        return {"known_issues": [], "measurement_changes": [entry]}
+
+    def gamed_sprite(self, entry):
+        repo = Repo(self)
+        repo.visit([VISIBLE], role="artist-2d", edits=[
+            ("src/rendering/board.ts", "const BALL_DRAW = 44;", "const BALL_DRAW = 60;")],
+            report=self.declare(entry))
+        return repo.precheck()
+
+    # -- 1. a declaration must cite what the flagged change touched ------------------------
+
+    def test_a_junk_declaration_disarms_nothing(self):
+        board = ("sprite-size-without-collider", "src/rendering/board.ts")
+        for name, entry in (
+                ("bookkeeping evidence, empty where",
+                 {"flag": "sprite-size-without-collider", "where": "",
+                  "evidence": [{"file": BRIEF, "line": 1}], "player_effect": "bigger"}),
+                ("bookkeeping evidence, matching where",
+                 {"flag": "sprite-size-without-collider", "where": "src/rendering/board.ts",
+                  "evidence": [{"file": BRIEF, "line": 1}], "player_effect": "bigger"}),
+                ("game source the change did not touch",
+                 {"flag": "sprite-size-without-collider", "where": "src/rendering/board.ts",
+                  "evidence": [{"file": "src/game/sim.ts", "line": 1}],
+                  "player_effect": "bigger"}),
+                ("a line of the flagged file outside its hunk",
+                 {"flag": "sprite-size-without-collider", "where": "src/rendering/board.ts",
+                  "evidence": [{"file": "src/rendering/board.ts", "line": 7}],
+                  "player_effect": "bigger"}),
+                ("touched evidence, empty where",
+                 {"flag": "sprite-size-without-collider", "where": "",
+                  "evidence": [{"file": "src/rendering/board.ts", "line": 2}],
+                  "player_effect": "bigger"}),
+                ("touched evidence, another file's where",
+                 {"flag": "sprite-size-without-collider", "where": "src/game/sim.ts",
+                  "evidence": [{"file": "src/rendering/board.ts", "line": 2}],
+                  "player_effect": "bigger"})):
+            with self.subTest(name):
+                result = self.gamed_sprite(entry)
+                self.assertEqual(flags(result), [board])
+                self.assertEqual(len(gaming.blockers(result)), 1)
+
+    def test_an_unread_field_is_cleared_only_by_source_the_change_touched(self):
+        # course.ts names `ramps` on line 2, untouched by the visit: not the read it claims.
+        self.repo.visit([SIMILAR], files={
+            "public/content/units.json": units_with(parameters={"ramps": 2})},
+            report=self.declare({"flag": "unread-content-field",
+                                 "where": "public/content/units.json#ramps",
+                                 "evidence": [{"file": "src/game/course.ts", "line": 2}],
+                                 "player_effect": "ramps are built"}))
+        self.assertEqual(flags(self.repo.precheck()),
+                         [("unread-content-field", "public/content/units.json")])
+
+    # -- 2. drawn sizes the 1.0.0 pre-check could not see ----------------------------------
+
+    def test_a_draw_size_scaled_from_a_collider_is_flagged(self):
+        base = self.prepare({"src/rendering/ball-view.ts":
+                             "export function size(sprite: S, ball: B) {\n"
+                             "  sprite.width = ball.radius * 2;\n}\n"})
+        self.repo.visit([VISIBLE], role="artist-2d", edits=[
+            ("src/rendering/ball-view.ts", "ball.radius * 2;", "ball.radius * 5;")])
+        result = self.repo.precheck(base=base)
+        self.assertEqual(flags(result),
+                         [("sprite-size-without-collider", "src/rendering/ball-view.ts")])
+        self.assertIn("ball.radius * 5", result["commits"][0]["flags"][0]["detail"])
+
+    def test_a_draw_size_scaled_with_its_collider_is_not(self):
+        base = self.prepare({"src/rendering/ball-view.ts":
+                             "export function size(sprite: S, ball: B) {\n"
+                             "  sprite.width = ball.radius * 2;\n}\n"})
+        self.repo.visit([VISIBLE], role="artist-2d", edits=[
+            ("src/rendering/ball-view.ts", "ball.radius * 2;", "ball.radius * 2.5;"),
+            ("src/game/tuning.ts", "  radius: 12,", "  radius: 16,")])
+        self.assertEqual(flags(self.repo.precheck(base=base)), [])
+
+    def test_an_atlas_frame_made_larger_is_flagged(self):
+        base = self.prepare({"public/assets/assets.json": ASSETS})
+        self.repo.visit([VISIBLE], role="artist-2d", files={
+            "public/assets/assets.json": assets_with(ball={"width": 48, "height": 48})})
+        result = self.repo.precheck(base=base)
+        self.assertEqual(flags(result),
+                         [("sprite-size-without-collider", "public/assets/assets.json")])
+        self.assertIn("48x48", result["commits"][0]["flags"][0]["detail"])
+
+    def test_a_frame_of_no_body_a_finer_scale_or_a_grown_collider_is_not(self):
+        for name, sizes, edits in (
+                ("an effect", {"spark": {"width": 32, "height": 32}}, ()),
+                ("more pixels at a finer scale",
+                 {"ball": {"width": 48, "height": 48, "scale": 2}}, ()),
+                ("the collider grown with it", {"ball": {"width": 48, "height": 48}},
+                 (("src/game/tuning.ts", "  radius: 12,", "  radius: 24,"),))):
+            with self.subTest(name):
+                repo = Repo(self)
+                repo.write({"public/assets/assets.json": ASSETS})
+                base = repo.commit("assets")
+                repo.visit([VISIBLE], role="artist-2d",
+                           files={"public/assets/assets.json": assets_with(**sizes)},
+                           edits=edits)
+                self.assertEqual(flags(repo.precheck(base=base)), [])
+
+    def test_an_image_file_enlarged_is_flagged(self):
+        sprite = "public/assets/sprites/ball.png"
+        base = self.prepare({sprite: png(24, 24),
+                             "public/assets/sprites/backdrop.png": png(320, 180)})
+        self.repo.visit([VISIBLE], role="artist-2d", files={
+            sprite: png(48, 48), "public/assets/sprites/backdrop.png": png(640, 360)})
+        result = self.repo.precheck(base=base)
+        self.assertEqual(flags(result), [("sprite-size-without-collider", sprite)])
+        self.assertIn("24x24", result["commits"][0]["flags"][0]["detail"])
+
+    def test_image_sizes(self):
+        self.assertEqual(gaming.image_size(png(300, 200)), (300, 200))
+        self.assertEqual(gaming.image_size(b"GIF89a" + struct.pack("<HH", 7, 9) + b"\0"),
+                         (7, 9))
+        jpeg = (b"\xff\xd8" + b"\xff\xe0" + struct.pack(">H", 4) + b"\0\0"
+                + b"\xff\xc0" + struct.pack(">HBHH", 11, 8, 130, 260) + b"\0" * 8)
+        self.assertEqual(gaming.image_size(jpeg), (260, 130))
+        self.assertIsNone(gaming.image_size(b"not an image"))
+
+    # -- 3. only a collider of the same entity exempts a drawn size -------------------------
+
+    def test_an_unrelated_size_sharing_the_entity_word_does_not_exempt(self):
+        for name, path, line in (
+                ("a trail length in simulation", "src/game/sim.ts", "BALL_TRAIL_LENGTH"),
+                ("a trail length in drawing", "src/rendering/board.ts", "BALL_TRAIL_LENGTH"),
+                ("a trail width in simulation", "src/game/sim.ts", "BALL_TRAIL_WIDTH")):
+            with self.subTest(name):
+                repo = Repo(self)
+                text = repo.read(path)
+                repo.write({path: f"export const {line} = 6;\n" + text})
+                base = repo.commit("a trail")
+                repo.visit([VISIBLE], role="artist-2d", edits=[
+                    ("src/rendering/board.ts", "const BALL_DRAW = 44;",
+                     "const BALL_DRAW = 88;"),
+                    (path, f"export const {line} = 6;", f"export const {line} = 7;")])
+                self.assertIn(("sprite-size-without-collider", "src/rendering/board.ts"),
+                              flags(repo.precheck(base=base)))
+
+    # -- 4. a play area renamed, a field read on another object -----------------------------
+
+    def test_a_play_area_value_in_a_layout_is_flagged_whatever_its_name(self):
+        self.repo.visit([REACH], files={
+            "public/content/units.json": units_with(layout={"top": 400})})
+        result = self.repo.precheck()
+        self.assertEqual(flags(result), [("play-area-change", "public/content/units.json")])
+        self.assertIn("layout.top", result["commits"][0]["flags"][0]["detail"])
+
+    def test_a_field_read_only_on_another_object_is_unread(self):
+        # `.count` and `.rows` exist in game source, on objects that are not the content.
+        base = self.prepare(edits=[("src/game/sim.ts", "this.t += dt;",
+                                    "this.t += dt;\n    this.count = this.grid.rows;")])
+        data = units_with(layout={"rows": 4})
+        data["count"] = 2
+        self.repo.visit([SIMILAR], files={"public/content/units.json": data})
+        found = [f["key"] for v in self.repo.precheck(base=base)["commits"]
+                 for f in v["flags"] if f["pattern"] == "unread-content-field"]
+        self.assertEqual(sorted(found), ["count", "rows"])
+
+    def test_a_field_read_on_its_own_object_is_read(self):
+        self.repo.edit("src/game/content.ts", "return layout.top ?? 0;",
+                       "return (layout.top ?? 0) + (layout.rows ?? 0);")
+        self.repo.write({"src/game/levels.ts":
+                         'import data from "../../public/content/units.json";\n'
+                         "export const total = data.count;\n"})
+        data = units_with(layout={"rows": 4})
+        data["count"] = 2
+        self.repo.visit([SIMILAR], files={"public/content/units.json": data})
+        self.assertEqual(flags(self.repo.precheck()), [])
+
+    # -- 5. truncation said, a recorded visit read ------------------------------------------
+
+    def test_a_truncated_range_is_shown_to_the_reviewer(self):
+        from unittest import mock
+        for iteration in (2, 3, 4):
+            self.repo.visit([REACH], iteration=iteration, files={
+                "public/content/units.json": units_with(parameters={"speed": iteration})})
+        with mock.patch.object(gaming, "MAX_COMMITS", 2), \
+                mock.patch.object(report, "MAX_COMMITS", 2):
+            result = self.repo.precheck()
+            text = "\n".join(report._gaming_lines(result))
+        self.assertTrue(result["truncated"])
+        self.assertEqual((result["commits_in_range"], len(result["commits"])), (3, 2))
+        self.assertIn("Not every commit was read", text)
+        self.assertIn("holds 3 commits", text)
+        self.assertTrue(ReviewStep._gaming_summary(result)["truncated"])
+
+    def test_a_recorded_visit_with_an_unchanged_brief_is_read(self):
+        self.repo.visit([VISIBLE], role="artist-2d", files={
+            "public/content/units.json": units_with(parameters={"speed": 3})})
+        # The next visit of the same specialist: the same brief, byte for byte.
+        self.repo.edit("src/rendering/board.ts", "const BALL_DRAW = 44;",
+                       "const BALL_DRAW = 60;")
+        head = self.repo.commit("visit 2, brief unchanged")
+        self.assertEqual(flags(self.repo.precheck()), [])
+        brief = json.loads(self.repo.read(BRIEF))
+        recorded = gaming.recorded_visit(brief, {
+            "build_ref": {"commit_sha": head},
+            "specialist": {"role": "artist-2d", "findings": [VISIBLE["id"]]}})
+        reader = gaming.GitReader(isolation.Git(self.repo.root))
+        result = gaming.precheck_range(reader, self.repo.base, head, recorded=recorded)
+        self.assertEqual(flags(result),
+                         [("sprite-size-without-collider", "src/rendering/board.ts")])
+        self.assertTrue(result["commits"][-1]["recorded"])
+        self.assertIn("develop step recorded", "\n".join(report._gaming_lines(result)))
+
+    def test_no_record_or_an_unreadable_one_reads_only_brief_changes(self):
+        self.assertIsNone(gaming.recorded_visit({"baseline_commit": "a" * 40},
+                                                {"build_ref": {"commit_sha": "b" * 40}}))
+        self.repo.visit([REACH], files={
+            "public/content/units.json": units_with(parameters={"speed": 3})})
+        reader = gaming.GitReader(isolation.Git(self.repo.root))
+        head = git(self.repo.root, "rev-parse", "HEAD")
+        result = gaming.precheck_range(reader, self.repo.base, head, recorded={
+            "base": "f" * 40, "head": head, "specialist": {"role": "r", "findings": []}})
+        self.assertEqual(len(result["commits"]), 1)
+        self.assertIn("recorded_unreadable", result)
+
+    # -- 6. legitimate UI work is not a play-area change -----------------------------------
+
+    def test_a_ui_text_fix_is_not_a_play_area_change(self):
+        self.repo.visit([UI_TEXT], role="ui", files={"src/ui/hud.ts":
+            "export function style(label: L, x: number) {\n"
+            "  label.x = Math.floor(x);\n  label.borderColor = 0x101010;\n"
+            "  label.size = 18;\n}\n"})
+        result = self.repo.precheck()
+        self.assertEqual(flags(result), [])
+        self.assertIn("play-area-change", result["commits"][0]["skipped"])
+        self.assertEqual(gaming.Vocabulary.load().categories_of(UI_TEXT), [])
+
+    def test_floor_border_and_margin_alone_are_not_a_play_area(self):
+        self.repo.visit([VISIBLE], role="artist-2d", edits=[(
+            "src/game/sim.ts", "this.t += dt;",
+            "this.t += dt;\n    const cell = Math.floor(this.t / 8);\n"
+            "    this.label.borderColor = 0xffffff;\n    this.text.margin = cell;")])
+        self.assertEqual(flags(self.repo.precheck()), [])
+
+    def test_a_board_margin_in_simulation_is_a_play_area(self):
+        self.repo.visit([REACH], edits=[("src/game/sim.ts", "this.t += dt;",
+                                         "this.t += dt;\n    this.board.margin = 40;")])
+        self.assertEqual(flags(self.repo.precheck()), [("play-area-change", "src/game/sim.ts")])
+
+    def test_a_board_size_set_is_a_play_area_and_one_read_is_not(self):
+        base = self.prepare({"src/game/board.ts":
+                             "export const BOARD = {\n  width: 720,\n  height: 1280,\n};\n"})
+        self.repo.visit([REACH], edits=[("src/game/board.ts", "  height: 1280,",
+                                         "  height: 900,")])
+        self.assertEqual(flags(self.repo.precheck(base=base)),
+                         [("play-area-change", "src/game/board.ts")])
+        repo = Repo(self)
+        repo.visit([REACH], edits=[("src/game/sim.ts", "this.t += dt;",
+                                    "this.t += dt;\n    this.x = BOARD.width / 2 + 120;")])
+        self.assertEqual(flags(repo.precheck()), [])
+
+    # -- 7. probe code added for a new entity is a note -------------------------------------
+
+    def test_probe_code_only_added_is_a_note_not_a_blocker(self):
+        self.repo.visit([VISIBLE], role="artist-2d", edits=[
+            ("src/game/sim.ts", "this.capsules.push({ x: 100, y: 200 });",
+             "this.capsules.push({ x: 100, y: 200 });\n"
+             "    this.gems.push({ x: 140, y: 200 });")])
+        result = self.repo.precheck()
+        self.assertEqual(flags(result), [])
+        self.assertEqual(flags(result, "noted"), [("probe-path-change", "src/game/sim.ts")])
+        self.assertEqual(gaming.blockers(result), [])
+        self.assertEqual(ReviewStep._gaming_summary(result)["noted"], 1)
+        self.assertIn("Noted - not blockers", "\n".join(report._gaming_lines(result)))
+        hunks = [h for h in result["commits"][0]["hunks"] if h["file"] == "src/game/sim.ts"]
+        self.assertEqual({h["class"] for h in hunks}, {"measurement-facing"})
 
 
 class Vocabulary(unittest.TestCase):

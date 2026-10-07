@@ -206,7 +206,9 @@ class ReviewStep(WorkflowStep):
         precheck = None
         if subject_type == "prototype-report" and baseline and baseline != head:
             try:
-                precheck = gaming.precheck_range(gaming.GitReader(git), baseline, head)
+                precheck = gaming.precheck_range(
+                    gaming.GitReader(git), baseline, head,
+                    recorded=gaming.recorded_visit(develop_brief, prototype))
             except gaming.VocabularyError as exc:
                 return StepResult.failed(f"gate-gaming vocabulary: {exc}", retryable=False)
             except (isolation.GitError, OSError) as exc:
@@ -375,7 +377,9 @@ class ReviewStep(WorkflowStep):
                 "specialist_commits": [v["commit"] for v in precheck.get("commits") or []],
                 "flagged": sum(1 for f in flags if f.get("status") == "flagged"),
                 "declared": sum(1 for f in flags if f.get("status") == "declared"),
-                "cleared": sum(1 for f in flags if f.get("status") == "cleared")}
+                "cleared": sum(1 for f in flags if f.get("status") == "cleared"),
+                "noted": sum(1 for f in flags if f.get("status") == "noted"),
+                "truncated": bool(precheck.get("truncated"))}
 
     @staticmethod
     def _process_failure(result, settings):

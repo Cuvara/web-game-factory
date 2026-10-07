@@ -4,6 +4,7 @@ import json
 
 from wgflib import provenance
 
+from .gaming import MAX_COMMITS
 from .verdict import CONTRACT
 
 __all__ = ["build_report", "render_brief", "verify_failure", "PROMPT", "PROMPT_STDOUT",
@@ -284,8 +285,22 @@ def _gaming_lines(gaming):
            "data that no code reads, a probe-, showcase- or bot-only path. The player feels "
            "none of it. The Factory's deterministic pre-check (`"
            + str(gaming.get("vocabulary")) + "`) read these commits first.\n"]
+    if gaming.get("truncated"):
+        out.append(f"**Not every commit was read.** The change holds "
+                   f"{gaming.get('commits_in_range') or 'more than ' + str(MAX_COMMITS)} "
+                   f"commits; the pre-check read only the newest {MAX_COMMITS}. A specialist "
+                   f"commit older than those was not checked: read the whole change "
+                   f"({str(gaming.get('base'))[:12]}..{str(gaming.get('head'))[:12]}) for "
+                   f"what it would have flagged.\n")
+    if gaming.get("recorded_unreadable"):
+        out.append("The develop step's record of the last specialist visit could not be "
+                   f"read ({gaming['recorded_unreadable']}); only commits that change the "
+                   f"brief were taken as specialist visits.\n")
     for visit in visits:
         out.append(f"### {visit['commit'][:12]}: a `{visit.get('owner')}` visit\n")
+        if visit.get("recorded"):
+            out.append("A visit the develop step recorded for this build; its brief may not "
+                       "have changed.\n")
         out.append("Routed for: " + (", ".join(f"`{f}`" for f in visit.get("findings") or [])
                                      or "(no findings recorded)") + ".\n")
         shown = [h for h in visit.get("hunks") or [] if h["class"] != "bookkeeping"]
@@ -317,6 +332,14 @@ def _gaming_lines(gaming):
                 out.append(f"  - Player effect, as declared: {entry.get('player_effect')}")
                 for ref in entry.get("evidence") or []:
                     out.append(f"  - Evidence `{ref['file']}:{ref['line']}`: `{ref['text']}`")
+            out.append("")
+        noted = [f for f in visit.get("flags") or [] if f.get("status") == "noted"]
+        if noted:
+            out.append("Noted - not blockers by themselves. Judge each: a branch only the "
+                       "probe, its showcase or the bot takes, or a value reported that the "
+                       "player does not see, is a blocker (id starting `gate-gaming-`):\n")
+            for flag in noted:
+                out.append(f"- `{flag['pattern']}` `{flag['file']}`: {flag['detail']}")
             out.append("")
         skipped = visit.get("skipped") or {}
         if skipped:

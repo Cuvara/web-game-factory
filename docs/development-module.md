@@ -318,7 +318,8 @@ specialist's label (`wgf_develop/specialist.py`):
   visit (fix the player-facing cause; never hide or undraw a collider; never special-case
   the bot or probe, or alter what a measurement reads without changing what the player
   experiences), what the review flags deterministically, and the one way to declare a
-  change that only looks like gaming: the report's `measurement_changes`, with evidence
+  change that only looks like gaming: the report's `measurement_changes`, naming the flag,
+  with evidence where the commit changed the game
   ([review-module.md](review-module.md#gate-gaming-pre-check)). A flagged commit comes back
   to the same specialist as a review finding.
 - **The writable scope is the specialist's.** `factory.develop.writable_paths` is cut to the

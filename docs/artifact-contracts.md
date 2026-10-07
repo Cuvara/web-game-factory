@@ -315,6 +315,11 @@ carry the specialist visit's dimension, so triage routes them back to the same o
 (`core/reference/gate-gaming.yaml`, [review-module.md](review-module.md#gate-gaming-pre-check)).
 Additive; 1.1.0 artifacts remain valid.
 
+**`review-report` 1.3.0** adds two optional fields to `gate_gaming`: `noted`, the flags shown
+to the reviewer as notes and never blockers by themselves (a probe change that only adds
+code), and `truncated`, whether the change held more commits than the pre-check reads.
+Additive; 1.2.0 artifacts remain valid.
+
 ---
 
 ## Shared primitives

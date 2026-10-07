@@ -8,7 +8,7 @@
     "id": "review-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "producer": "title:prototype",
     "consumers": ["title:prototype", "title:prototype-review", "release:draft"],
     "repo_path": "workspace/titles/<title-id>/review-report.json",
@@ -42,14 +42,16 @@
     "notes": { "type": "string" },
     "gate_gaming": {
       "type": "object",
-      "description": "The deterministic gate-gaming pre-check over the specialist commits of the change (1.2.0): the vocabulary it read, the commits it checked, and how many flags became blockers (`flagged`), were declared with evidence for the reviewer to judge (`declared`) or were shown to be false positives by evidence (`cleared`). Absent when the change held no specialist commit to read.",
+      "description": "The deterministic gate-gaming pre-check over the specialist commits of the change (1.2.0): the vocabulary it read, the commits it checked, and how many flags became blockers (`flagged`), were declared with evidence for the reviewer to judge (`declared`) or were shown to be false positives by evidence (`cleared`). Since 1.3.0 also how many were notes for the reviewer (`noted`) and whether the change held more commits than were read (`truncated`). Absent when the change held no specialist commit to read.",
       "required": ["vocabulary", "specialist_commits", "flagged", "declared", "cleared"],
       "properties": {
         "vocabulary": { "type": "string", "minLength": 1 },
         "specialist_commits": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{40}$" } },
         "flagged": { "type": "integer", "minimum": 0 },
         "declared": { "type": "integer", "minimum": 0 },
-        "cleared": { "type": "integer", "minimum": 0 }
+        "cleared": { "type": "integer", "minimum": 0 },
+        "noted": { "type": "integer", "minimum": 0, "description": "Since 1.3.0. Flags shown to the reviewer as notes, never blockers by themselves: a probe change that only adds code." },
+        "truncated": { "type": "boolean", "description": "Since 1.3.0. The change held more commits than the pre-check reads; the oldest were not checked, and the reviewer was told so." }
       },
       "additionalProperties": false
     },

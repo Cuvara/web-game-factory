@@ -190,15 +190,20 @@ def _gaming_rules(vocabulary):
     lines.append("The review flags, deterministically: a field added to content data that "
                  "game source never reads; play-area, bounds or collider changes in a visit "
                  "routed for reach, time or visibility; probe-, showcase- or bot-only code "
-                 "changed for findings about the game; a drawn size changed without the same "
-                 "entity's physical size. If such a change is what the player experiences - "
-                 "the design asks for a smaller arena, a field is read through an alias - "
+                 "changed for findings about the game; a drawn size changed - a draw constant, "
+                 "a draw size scaled from a collider, an asset frame or an image file made "
+                 "larger - without a collider or physical size of the same entity. If such a "
+                 "change is what the player experiences - the design asks for a smaller "
+                 "arena, a field is read through an alias - "
                  f"declare it in the report's `{field}`: "
                  '`{"flag": "<pattern>", "where": "<file or file#key>", "evidence": '
                  '[{"file": "src/...", "line": 12}], "player_effect": "<what the player '
-                 'sees or does differently>"}`. Evidence lines must exist in this commit; for an '
-                 "unread field, a game-source line that reads it clears the flag. A "
-                 "declaration without evidence changes nothing.\n")
+                 'sees or does differently>"}`. `where` names the flagged file (or file#key). '
+                 "Evidence counts only where this commit changed the game: a line of the "
+                 "flagged file inside the flagged change, or a line of game source this commit "
+                 "touched; for an unread field, a game-source line this commit touched that "
+                 "reads it clears the flag. A declaration without such evidence changes "
+                 "nothing.\n")
     return lines
 
 

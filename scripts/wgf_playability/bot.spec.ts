@@ -318,9 +318,13 @@ async function frame(page: Page, project: string, id: string, frames: string[]):
 // The DOM UI on screen now, measured as the browser computed it: every visible interactive
 // element (button, [role=button], a, input) and every visible text outside one, with its
 // bounds, font size and weight, foreground colour and the opaque background behind it (the
-// element's own and its ancestors' background colours composited; null when none is opaque or
-// an ancestor paints an image, i.e. the canvas or a picture shows through and only the frame
-// can tell), whether the element's computed style equals the user-agent default for its tag
+// element's own and its ancestors' background colours composited; null when none is opaque, or
+// one of them paints an image, a border-image, a mask or a painting pseudo-element, or another
+// element paints between the text and that background - the canvas, a picture or art shows
+// through and only the frame can tell; a control's colour, font and background are those of
+// the element drawing its text), the rectangle of its own text (`glyph_box`, where the
+// production gate reads the frame behind it), its text-shadow and stroke colours (`paint`)
+// and its text-decoration line, whether the element's computed style equals the user-agent default for its tag
 // (read from an element of the same tag in a blank frame no page stylesheet reaches), and the
 // overlaps between interactive elements and with the text.
 async function measureUI(page: Page): Promise<unknown> {
@@ -338,21 +342,108 @@ async function measureUI(page: Page): Promise<unknown> {
       const c = (i: number) => (top[i] * top[3] + under[i] * under[3] * (1 - top[3])) / a;
       return [c(0), c(1), c(2), a];
     };
-    const background = (el: Element): number[] | null => {
+    // Paint that is not a plain colour: a background image or gradient, a (nine-slice)
+    // border-image, a mask. Any of them can put art behind the text that the background
+    // colour does not describe (sky-marble a61a9d7: a card's border-image was the whole
+    // UI-kit sheet, its other screens' art drawn behind the text over a sand fill).
+    const imagePaint = (s: CSSStyleDeclaration): boolean => {
+      const mask = s.maskImage || s.getPropertyValue("-webkit-mask-image");
+      return [s.backgroundImage, s.borderImageSource, mask].some((v) => Boolean(v) && v !== "none");
+    };
+    // A ::before / ::after that is rendered and paints: an image, an image paint, or a fill.
+    const pseudoPaints = (n: Element): boolean => {
+      for (const which of ["::before", "::after"]) {
+        const p = getComputedStyle(n, which);
+        if (!p.content || p.content === "none" || p.content === "normal" || p.display === "none") continue;
+        if (/url\(|gradient\(/.test(p.content) || imagePaint(p)) return true;
+        const fill = parse(p.backgroundColor);
+        if (fill && fill[3] > 0) return true;
+      }
+      return false;
+    };
+    // An element that draws something of its own where it lies.
+    const PAINTED = new Set(["canvas", "img", "video", "svg", "picture", "iframe", "object", "embed"]);
+    const paints = (n: Element): boolean => {
+      if (PAINTED.has(n.tagName.toLowerCase())) return true;
+      const s = getComputedStyle(n);
+      const fill = parse(s.backgroundColor);
+      return Boolean(fill && fill[3] > 0) || imagePaint(s) || pseudoPaints(n);
+    };
+    // The opaque background behind the text: the background colours of the element and its
+    // ancestors composited, up to the first opaque one (the backdrop). Null - undetermined,
+    // for the frame to decide - when any of them up to the backdrop paints other than a plain
+    // colour, or when, at the text's centre, an element that is neither one of them nor inside
+    // the text paints between the text and the backdrop (a canvas, an image, a sibling tile
+    // laid under or over it).
+    const background = (el: Element, at: DOMRect | null): number[] | null => {
       const layers: RGBA[] = [];
+      const chain: Element[] = [];
+      let backdrop: Element | null = null;
       for (let n: Element | null = el; n; n = n.parentElement) {
         const style = getComputedStyle(n);
-        if (style.backgroundImage && style.backgroundImage !== "none") return null;
+        chain.push(n);
+        if (imagePaint(style) || pseudoPaints(n)) return null;
         const bg = parse(style.backgroundColor);
         if (bg && bg[3] > 0) {
           layers.push(bg);
-          if (bg[3] >= 1) break;
+          if (bg[3] >= 1) {
+            backdrop = n;
+            break;
+          }
         }
       }
-      if (!layers.length || layers[layers.length - 1][3] < 1) return null;
+      if (!backdrop || !layers.length) return null;
+      if (at && at.width > 0 && at.height > 0) {
+        const x = at.left + at.width / 2, y = at.top + at.height / 2;
+        if (x >= 0 && y >= 0 && x < innerWidth && y < innerHeight) {
+          for (const e of document.elementsFromPoint(x, y)) {
+            if (e === backdrop || e.contains(backdrop)) break;
+            if (chain.includes(e) || el.contains(e)) continue;
+            if (paints(e)) return null;
+          }
+        }
+      }
       let out = layers[layers.length - 1];
       for (let i = layers.length - 2; i >= 0; i--) out = over(layers[i], out);
       return out.slice(0, 3).map((v) => Math.round(v));
+    };
+    // The element that draws a control's text: the parent of its first visible text (a
+    // face <span> with its own colour and fill inside a transparent <button>), else the
+    // control itself. Its colour, fill and font are what the player reads.
+    const holder = (el: Element): Element => {
+      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+        const parent = t.parentElement;
+        if (parent && (t.textContent || "").trim() && visible(parent, parent.getBoundingClientRect())) return parent;
+      }
+      return el;
+    };
+    // The rectangle of the element's own text - its direct text nodes, not its children (an
+    // icon, a key hint) - which is what the frame is read on behind the text. Null when none.
+    const glyphs = (el: Element): DOMRect | null => {
+      let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+      for (const c of Array.from(el.childNodes)) {
+        if (c.nodeType !== Node.TEXT_NODE || !(c.textContent || "").trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(c);
+        const q = range.getBoundingClientRect();
+        if (q.width <= 0 || q.height <= 0) continue;
+        l = Math.min(l, q.left); t = Math.min(t, q.top);
+        r = Math.max(r, q.right); b = Math.max(b, q.bottom);
+      }
+      return l < r && t < b ? new DOMRect(l, t, r - l, b - t) : null;
+    };
+    // The text's own paints besides its colour: text-shadow and stroke colours, so an
+    // outline or a glow is not taken for art behind the text.
+    const paint = (el: Element): number[][] => {
+      const s = getComputedStyle(el);
+      const out = (s.textShadow.match(/rgba?\([^)]+\)/g) || []).map(parse)
+        .filter((c): c is RGBA => Boolean(c && c[3] > 0));
+      if (parseFloat(s.getPropertyValue("-webkit-text-stroke-width")) > 0) {
+        const stroke = parse(s.getPropertyValue("-webkit-text-stroke-color"));
+        if (stroke && stroke[3] > 0) out.push(stroke);
+      }
+      return out.slice(0, 4);
     };
     const visible = (el: Element, r: DOMRect): boolean => {
       if (r.width <= 0 || r.height <= 0) return false;
@@ -404,6 +495,9 @@ async function measureUI(page: Page): Promise<unknown> {
       if (!visible(el, r)) continue;
       const s = getComputedStyle(el);
       const differs = uaDiffers(el);
+      const face = holder(el);
+      const faceStyle = getComputedStyle(face);
+      const glyph = glyphs(face);
       interactive.push(el);
       elements.push({
         tag: el.tagName.toLowerCase(), role: el.getAttribute("role"),
@@ -411,9 +505,11 @@ async function measureUI(page: Page): Promise<unknown> {
         // Whether that text is drawn: an icon-only control is named by its aria-label, which is
         // read to the player but never painted, so it has no colour to measure.
         text_drawn: Boolean(((el as HTMLElement).innerText || (el as HTMLInputElement).value || "").trim()),
-        box: box(r), font_px: parseFloat(s.fontSize), font_weight: Number(s.fontWeight) || 400,
-        color: ink(el), background: background(el), ua_default: differs.length === 0,
-        ua_differs: differs,
+        box: box(r), font_px: parseFloat(faceStyle.fontSize),
+        font_weight: Number(faceStyle.fontWeight) || 400,
+        color: ink(face), background: background(face, glyph ?? r), ua_default: differs.length === 0,
+        ua_differs: differs, glyph_box: glyph ? box(glyph) : null, paint: paint(face),
+        decoration: faceStyle.textDecorationLine,
       });
     }
     // Text outside the interactive elements: the HUD, labels, result lines.
@@ -431,10 +527,13 @@ async function measureUI(page: Page): Promise<unknown> {
       const r = range.getBoundingClientRect();
       if (!visible(parent, r)) continue;
       const s = getComputedStyle(parent);
+      const glyph = glyphs(parent);
       textNodes.push(parent);
       texts.push({ text: (parent.innerText || "").trim().slice(0, 60), box: box(r),
                    font_px: parseFloat(s.fontSize), font_weight: Number(s.fontWeight) || 400,
-                   color: ink(parent), background: background(parent) });
+                   color: ink(parent), background: background(parent, glyph ?? r),
+                   glyph_box: glyph ? box(glyph) : null, paint: paint(parent),
+                   decoration: s.textDecorationLine });
     }
     blank.remove();
     const overlap = (a: number[], b: number[]): number => {

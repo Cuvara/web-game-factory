@@ -360,8 +360,9 @@ class World:
         broken = project == "mobile" and "broken-mobile-layout" in build["defects"]
 
         def button(text, box):
+            glyph = [box[0] + box[2] / 4, box[1] + box[3] / 4, box[2] / 2, box[3] / 2]
             return {"tag": "button", "role": None, "text": text, "box": box, "font_px": 20,
-                    "font_weight": 700, "color": WHITE, "background": NAVY,
+                    "font_weight": 700, "color": WHITE, "background": NAVY, "glyph_box": glyph,
                     "ua_default": False, "ua_differs": ["background-color", "color"]}
 
         w, h = viewport
@@ -552,6 +553,12 @@ class World:
             # A third of the play area cut off by a band the renderer never drew into.
             fill([0, vh * 0.55, vw, vh * 0.45], (0, 0, 0))
             fill([vw * 0.05, vh * 0.6, vw * 0.9, vh * 0.05], MAGENTA)
+        if kind.startswith("state-"):
+            # A state frame shows the UI the bot measured on it: every text on the navy
+            # plate the DOM says is behind it (production-quality reads the frame there).
+            ui = self.screens(build, project).get(kind[len("state-"):]) or {}
+            for item in (ui.get("elements") or []) + (ui.get("texts") or []):
+                fill(item["box"], NAVY)
         with open(path, "wb") as handle:
             handle.write(encode_png(Image(w, h, bytes(pixels))))
 

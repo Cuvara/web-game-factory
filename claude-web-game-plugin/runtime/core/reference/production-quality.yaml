@@ -9,7 +9,7 @@
 # through the play probe's measured output level (`audio`) and the files the page fetched.
 # See docs/production-architecture.md and docs/production-quality-module.md.
 
-version: 1.2.0
+version: 1.3.0
 
 entities:
   # Roles a player must recognise (play probe `entities[].role`). In production each is
@@ -77,6 +77,37 @@ ui:
   # Two rectangles overlap when they share at least this many CSS px of area: a shared
   # hairline border is not an overlap.
   min_overlap_px: 16
+  # Busy backdrop (ui.text, read from the state frame, whatever the DOM says the text's
+  # background is): a computed background-color is not what is drawn when a nine-slice
+  # border-image, a mask, a pseudo-element or another element paints art behind or over the
+  # text (sky-marble a61a9d7, 2026-10-05: the card's border-image was the whole UI-kit sheet,
+  # and other screens' PLAY/GO and NEXT art overprinted its text while the DOM measured ink
+  # on sand at 13:1). Inside a text's glyph box, a pixel is explained when it is within
+  # `backdrop_delta` (0-255, per channel) of the background (the box's dominant colour), the
+  # text's colour, one of its own text-shadow or stroke colours, or a blend of two of them.
+  # A text fails when more than `max_backdrop_clutter` of its pixels are unexplained, or a
+  # horizontal line of its own colour longer than `max_ink_run_em` em runs through it (a
+  # tile's or panel's edge in the ink colour; a glyph stroke is about an em at most; an
+  # underlined text is exempt). Calibrated on real frames (docs/production-quality-module.md):
+  # every a61a9d7 card fails on both viewports - clutter 0.48-0.64, ink lines 2.3-4.9 em -
+  # while the fixed commit 3f394e2's texts measure clutter 0.00 and lines of at most 1.1 em
+  # (a T's bar), and the 2D brick-breaker-worlds run's at most 0.04 and 0.5 em.
+  backdrop_delta: 40
+  max_backdrop_clutter: 0.3
+  max_ink_run_em: 2.0
+  # Where the DOM cannot tell what is behind a text (the canvas, art, an image), its contrast
+  # is read against the worst region of the frame behind it, not the box's commonest colour:
+  # the areas of the box that are neither the text's colour, its own paints, nor next to its
+  # ink, grouped by colour; every group holding at least `contrast_region` of them is a
+  # region (the largest one when none does). The 3D golden port's cyan SCORE label over its
+  # pink sun (2026-10-07) measures 2.27:1 there, while most of its box is night sky; a
+  # numeral bigger than the sky between its strokes is read against the sky, not itself.
+  contrast_region: 0.2
+  # A solid square of the text's own colour half an em wide inside its box is a field of that
+  # colour behind it (white text over a white cloud), never glyphs: no stroke is that thick.
+  # More than `max_ink_field` of the box in such squares, or a box with nothing but the
+  # text's colour to read it against, fails: the text cannot be seen.
+  max_ink_field: 0.05
   # The screens a player must have seen: the loss and the screen after a retry always, the
   # win when the design's experience contract has one.
   required_states: [lost, retry]

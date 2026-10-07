@@ -231,6 +231,28 @@ difficulty over every unit of the release. A generated design is held on element
 kinds, objective kinds, groups and designed play. A design short of its tier fails, with a
 finding that names what is short. 1.11.0 artifacts remain valid.
 
+**`game-design` 1.15.0** adds the design a release is held to beyond its counts, all
+optional: `references` (`status` `grounded` or `unknown` with a `reason`; `teardowns[]`, the
+research's teardown-depth competitors the design rests on; `dimensions[]`, per core verbs,
+signature moments, set pieces per group, content duration and meta systems, what the
+references do (`observed`) beside the design line that answers it (`design`, `departs`)),
+each unit's `beat` (`claim` and its `test`, the `decision` and how often it recurs
+`every_s`, its `signature_moment`, an optional `risk_reward` line and payoff, and for a climax
+the `climax.change` - phase, state, rule, arena or objective), `build_spec.content.
+signature_moments[]` (`end-of-unit-payoff`, `combo-escalation`, `rare-spectacle`, each with its
+trigger), `build_spec.content.meta_systems[]` (each system included for its player value or
+declined) and a secondary goal's `par` calibration (`human-playtest`, or `bot-scaled` with
+`ratio_to_bot`). At the tier `core/reference/quality-benchmark.yaml` `design` states bars for
+(`release`, 1.7.0) the design step holds them, blocking (the twelve `design.*` rules,
+`scripts/wgf_design/beats.py`): references grounded in at least three teardowns, one
+mechanic introduced per unit in a teach, breather or twist, a teach unit no harder than the
+breather before it, every unit's beat, a twist and a closing climax per group, a climax that
+changes state, a harder line per group, a decision every few seconds, the three signature
+moments built into units, meta systems decided, a finite game's market designed play (1800 s,
+a hypothesis) and par at least 1.25 times the bot's time. Below that tier they are advice on
+the result. Too few teardowns in the research is not the author's to repair: the design says
+`unknown` and the step is BLOCKED with route `research`. 1.14.0 artifacts remain valid.
+
 **`tech-plan` 1.1.0** adds `dev_plan.build_scope` (`quality_tier`, `design_tiers`,
 `plan_phases`, `where`: what the run's quality tier builds before G4, from
 `core/reference/quality-benchmark.yaml` `tiers[].builds` - at `release` every post-mvp feature

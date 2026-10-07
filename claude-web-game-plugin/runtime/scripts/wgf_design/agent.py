@@ -61,6 +61,7 @@ import os
 
 from wgflib import agentenv, genre_models, paths, permpath, procs, quality_bar
 
+from . import beats as beat_rules
 from . import commitments as brief_commitments
 from . import content as content_rules
 from . import features as feature_check
@@ -171,6 +172,30 @@ PROMPT_CONTENT = (
       " `art`), and score secondary goals in"
       " build_spec.content.secondary_goals. A design short of its tier fails; it is never"
       " passed at a lower tier than the strategy committed to."
+)
+# Appended always: what a design at its quality tier states beyond its counts (beats.py,
+# quality-benchmark `design`), so the beat chart and the references are written against the
+# rules that judge them. The bars are in the request's `design_rules`.
+PROMPT_BEATS = (
+    " At the quality tier these rules also hold the design (the request's `design_rules`, its"
+    " bars and the craft guides it names): " + ", ".join(rule_id for rule_id, _ in beat_rules.RULES)
+    + ". Rest the design on the teardown records of the genre's leaders that the strategy's"
+      " research carries at teardown depth (research.competitors, depth `teardown`): fill"
+      " `references` with those games and, for every dimension the bars name, what they do"
+      " and the design line that answers it. Never name a game the research did not tear"
+      " down; when it carries too few, write `references.status` `unknown` with the reason -"
+      " the run then goes back to research for the records, which is not a failure of the"
+      " design. Give every unit a `beat`: a claim a playtest could falsify, the observation"
+      " that would (`test`), the decision the player makes most often there and how often in"
+      " seconds, the signature moment it is built around, a harder line for a payoff where it"
+      " offers one, and for a climax the state, phase, rule, arena or objective it changes -"
+      " a new drawing alone is not a climax. A unit introduces one mechanic at most (the first"
+      " may add the core verb), in a teach, breather or twist unit, and a teach unit is no"
+      " harder than the breather before it; every group has a twist and ends in a climax."
+      " Declare build_spec.content.signature_moments (an end-of-unit payoff, a combo"
+      " escalation, a rare spectacle) and build_spec.content.meta_systems (each included for"
+      " what the player gets from it, or declined with why), give a timed secondary goal its"
+      " `par` calibration, and carry the designed play a finite game of the genre carries."
 )
 # Put FIRST when a report named gaps in the design: what this visit must act on. The gaps are
 # also in their own small file and are the request's first key, so an agent that pages a large
@@ -315,6 +340,30 @@ def _tier_request(design, strategy):
     return {"quality_tier": tier, "where": where, "budget": budget or None,
             "benchmark": bars,
             "rules": list(content_rules.TIER_RULES)}
+
+
+def _design_request(design, strategy):
+    """What beats.py holds the design to at the run's quality tier: the rules, the benchmark's
+    `design` bars at the tier (the release's, as advice, below it), and the teardown records
+    the strategy's research carries - the only games `references` may name."""
+    tier, _where = content_rules.quality_tier(design, strategy)
+    benchmark = content_rules.load_benchmark()
+    stated = beat_rules.design_bars(benchmark, tier) if tier else {}
+    bars = {}
+    for (section, key), value in sorted(
+            (stated or beat_rules.design_bars(benchmark, "release")).items()):
+        bars.setdefault(section, {})[key] = value
+    research = (strategy or {}).get("research") or {}
+    teardowns = [{"game": c.get("game"), "name": c.get("name"), "role": c.get("role"),
+                  "fixture": bool(c.get("fixture"))}
+                 for c in research.get("competitors") or []
+                 if isinstance(c, dict) and c.get("depth") == "teardown"]
+    return {"rules": [{"id": rule_id, "meaning": meaning}
+                      for rule_id, meaning in beat_rules.RULES],
+            "quality_tier": tier, "binding": bool(stated), "bars": bars,
+            "teardowns": teardowns,
+            "teardown_craft": os.path.join(paths.CORE, "craft", "competitive-teardown.md"),
+            "loop_craft": os.path.join(paths.CORE, "craft", "core-loop-and-difficulty.md")}
 
 
 def _feature_candidates(strategy, family, platforms):
@@ -541,6 +590,10 @@ class AgentAuthor(DesignAuthor):
                        },
                        "content_craft": os.path.join(paths.CORE, "craft",
                                                      "content-and-level-design.md"),
+                       # What the design states beyond its counts at its quality tier
+                       # (beats.py): the rules, the benchmark's `design` bars at the tier, and
+                       # the teardowns the strategy's research carries to rest on.
+                       "design_rules": _design_request(starting, brief.get("strategy")),
                        # The features the design must evaluate (features.py), with what the
                        # catalogue and the required platforms say of each.
                        "feature_catalogue": feature_check.CATALOGUE_PATH,
@@ -602,7 +655,7 @@ class AgentAuthor(DesignAuthor):
         values["prompt"] += PROMPT_CONCEPT + PROMPT_SCHEMA + PROMPT_ART
         if not revision and not gaps:
             values["prompt"] += PROMPT_ART_KIT
-        values["prompt"] += (PROMPT_DEPTH + PROMPT_CONTENT + PROMPT_FEATURES
+        values["prompt"] += (PROMPT_DEPTH + PROMPT_CONTENT + PROMPT_BEATS + PROMPT_FEATURES
                              + PROMPT_COMMITMENTS)
         if repair:
             values["prompt"] += PROMPT_REPAIR

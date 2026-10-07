@@ -86,6 +86,7 @@ run at anything but its own checkout.
 | `WGF_GOLDEN_TEMPLATE_REF` | `scripts/golden/harness.py` | Older spelling of `WGF_TEMPLATE_COMMIT` for the golden runs; used only when that is unset. | unset |
 | `WGF_AJV` | `test_assets`, `test_discovery`, `test_init_module`, `test_verification`, `test_release_module`, `test_core_agents`, `test_develop_module`, `test_techplan_module` | `1` also validates emitted artifacts with ajv through `npx` (may download ajv-cli once). | off |
 | `WGF_BLENDER_TEST` | `test_models` | `1` runs the real Blender builds (`RealBlender`): every shape and track, LODs and a convex proxy, determinism, the step building then reusing, and a byte-for-byte rebuild of `fixtures/models/hover-car.glb`. Needs the pinned series through `WGF_BLENDER` or PATH; skips with the reason otherwise. | off |
+| `WGF_REPLAY_DESIGNS` | `test_design_beats` | A directory holding validation runs (`val-*/project/.factory/workflows/new-game-*/artifacts/game-design/v*.json`): their release-tier designs are replayed against the `design.*` rules (`scripts/wgf_design/beats.py`). Skipped when no design is found. | `/mnt/c/Users/duycu/wgf-runs` |
 | `WGF_SKIP_AJV` | `test_core_contracts` (`=1`), `test_strategy` (any value) | Skip the ajv differential / ajv validation even when `npx` is available. | off: ajv runs when `npx` works |
 | `WGF_TEMPLATE_RELEASE_TEST` | `test_core_release` | `1` runs the pinned template's real `release:package` / `release:manifest` on a copy of it. | off |
 

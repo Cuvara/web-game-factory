@@ -23,6 +23,7 @@ sys.path.insert(0, HERE)
 import test_design_module as design_tests  # noqa: E402
 from wgf_design import AgentAuthor, AgentRunFailed  # noqa: E402
 from wgf_design import content as content_rules  # noqa: E402
+from wgf_design import beats as beat_rules  # noqa: E402
 from wgf_design.agent import BUILD_SPEC_KEYS, REQUIRED_KEYS, check_shape  # noqa: E402
 from wgf_design.platforms import load_platforms  # noqa: E402
 from wgflib import genre_models  # noqa: E402
@@ -362,6 +363,22 @@ class TheModuleStillJudges(AgentCase):
         self.assertEqual(tier["benchmark"]["elements"]["min_distinct"],
                          bars["elements"]["min_distinct"]["release"])
         self.assertEqual(tier["rules"], list(content_rules.TIER_RULES))
+        # Beyond the counts (beats.py): the design rules, their bars, the teardowns.
+        design = self.request_of()["design_rules"]
+        self.assertEqual([r["id"] for r in design["rules"]],
+                         [rule_id for rule_id, _ in beat_rules.RULES])
+        self.assertTrue(design["binding"])
+        self.assertEqual(design["bars"]["beats"]["max_mechanics_introduced_per_unit"], 1)
+        self.assertEqual(design["bars"]["references"]["min_teardowns"], 3)
+        self.assertEqual(design["teardowns"], [])
+        self.assertTrue(os.path.isfile(design["teardown_craft"]))
+
+    def test_the_prompt_names_the_design_rules(self):
+        from wgf_design.agent import PROMPT_BEATS
+        for rule_id, _meaning in beat_rules.RULES:
+            self.assertIn(rule_id, PROMPT_BEATS)
+        self.assertIn("unknown", PROMPT_BEATS)
+        self.assertIn("design_rules", PROMPT_BEATS)
 
     def test_the_prompt_names_the_content_rules(self):
         from wgf_design.agent import PROMPT_CONTENT

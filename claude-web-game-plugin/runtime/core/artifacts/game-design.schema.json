@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/game-design.schema.json",
   "title": "Game Design",
-  "description": "One artifact covering scope, session, retention, monetization, progression and economy.\n\nThese are NOT separate stages and not separate documents. Scope depends on monetization, which depends on session, which depends on scope — sequencing them invents an order that does not exist, and splitting them into four files guarantees they drift apart. One artifact with a recorded consistency result is atomic; four files cannot be.\n\nThe `consistency` block is what makes 'these were co-designed' checkable rather than asserted. It is produced by evaluating core/reference/design-consistency-rules.yaml and is the exit guard on title:design.\n\nThe human-readable GDD is a RENDERING of this artifact (see core/templates/gdd.md), not a separate source of truth.\n\nSchema 1.1.0 adds three optional blocks — `engine`, `features` and `build_spec` — which carry the design down to what an implementation agent needs to build the MVP without guessing. They are optional so 1.0.0 artifacts stay valid; the design module always emits them. Schema 1.7.0 adds `build_spec.depth`: the meta loop, goal ladder, content schedule, first-session length and return hooks, each tiered. Schema 1.9.0 adds the content contract: `genre` (the family of core/reference/genre-models.yaml the design is held to), `build_spec.content` (every unit of content the player meets - level, wave, track, encounter, scenario, round - with its objective, mechanics, difficulty, success, failure and acceptance), `build_spec.difficulty.axes` (the axes those difficulty values are on) and `build_spec.mastery` (what getting better means here, and the signals that show it). All optional, so 1.8.0 artifacts stay valid; a design that names a `finite` ending must state its win. Schema 1.10.0 adds feature evaluation: `features[].source`, `features[].catalogue` and `features[].evaluation` (core/reference/feature-catalogue.yaml) - every feature the brief or strategy names, and every catalogue feature the genre family expects, is included, deferred or cut with a reason - and the retention hook `daily_challenge`. All optional, so 1.9.0 artifacts stay valid. Schema 1.11.0 adds `build_spec.content.units[].art`: the drawings particular to a unit, so climax units can be held to distinct art. Optional, so 1.10.0 artifacts stay valid. Schema 1.12.0 adds the quality tier to the content contract, all optional: `build_spec.content.quality_tier` (the tier the design is built to, the strategy's by default), `build_spec.content.elements` (the declared elements a unit is made of beyond its mechanics), `build_spec.content.groups` and `build_spec.content.secondary_goals`, and on each unit `group`, `structure`, `elements` and `objective_kind`, so that what a release-tier design carries is counted, not interpreted (core/reference/quality-benchmark.yaml). Optional, so 1.11.0 artifacts stay valid. Schema 1.13.0 adds `existing_content`: the floor an adopted repository's shipped content sets for the design and the build. Optional, so 1.12.x artifacts stay valid. Schema 1.14.0 moves it to shared/existing-content.schema.json and adds the probe floor: `status` (`unmeasured` when the adopted checkout ships no content data file), `source.method` (`content-data` or `probe`), `source.report`, `source.step` and `reason`; `source.path` is required only of a content-data floor. Additive, so 1.13.0 artifacts stay valid.",
+  "description": "One artifact covering scope, session, retention, monetization, progression and economy.\n\nThese are NOT separate stages and not separate documents. Scope depends on monetization, which depends on session, which depends on scope — sequencing them invents an order that does not exist, and splitting them into four files guarantees they drift apart. One artifact with a recorded consistency result is atomic; four files cannot be.\n\nThe `consistency` block is what makes 'these were co-designed' checkable rather than asserted. It is produced by evaluating core/reference/design-consistency-rules.yaml and is the exit guard on title:design.\n\nThe human-readable GDD is a RENDERING of this artifact (see core/templates/gdd.md), not a separate source of truth.\n\nSchema 1.1.0 adds three optional blocks — `engine`, `features` and `build_spec` — which carry the design down to what an implementation agent needs to build the MVP without guessing. They are optional so 1.0.0 artifacts stay valid; the design module always emits them. Schema 1.7.0 adds `build_spec.depth`: the meta loop, goal ladder, content schedule, first-session length and return hooks, each tiered. Schema 1.9.0 adds the content contract: `genre` (the family of core/reference/genre-models.yaml the design is held to), `build_spec.content` (every unit of content the player meets - level, wave, track, encounter, scenario, round - with its objective, mechanics, difficulty, success, failure and acceptance), `build_spec.difficulty.axes` (the axes those difficulty values are on) and `build_spec.mastery` (what getting better means here, and the signals that show it). All optional, so 1.8.0 artifacts stay valid; a design that names a `finite` ending must state its win. Schema 1.10.0 adds feature evaluation: `features[].source`, `features[].catalogue` and `features[].evaluation` (core/reference/feature-catalogue.yaml) - every feature the brief or strategy names, and every catalogue feature the genre family expects, is included, deferred or cut with a reason - and the retention hook `daily_challenge`. All optional, so 1.9.0 artifacts stay valid. Schema 1.11.0 adds `build_spec.content.units[].art`: the drawings particular to a unit, so climax units can be held to distinct art. Optional, so 1.10.0 artifacts stay valid. Schema 1.12.0 adds the quality tier to the content contract, all optional: `build_spec.content.quality_tier` (the tier the design is built to, the strategy's by default), `build_spec.content.elements` (the declared elements a unit is made of beyond its mechanics), `build_spec.content.groups` and `build_spec.content.secondary_goals`, and on each unit `group`, `structure`, `elements` and `objective_kind`, so that what a release-tier design carries is counted, not interpreted (core/reference/quality-benchmark.yaml). Optional, so 1.11.0 artifacts stay valid. Schema 1.13.0 adds `existing_content`: the floor an adopted repository's shipped content sets for the design and the build. Optional, so 1.12.x artifacts stay valid. Schema 1.14.0 moves it to shared/existing-content.schema.json and adds the probe floor: `status` (`unmeasured` when the adopted checkout ships no content data file), `source.method` (`content-data` or `probe`), `source.report`, `source.step` and `reason`; `source.path` is required only of a content-data floor. Additive, so 1.13.0 artifacts stay valid. Schema 1.15.0 adds the design contract a release is held to (core/reference/quality-benchmark.yaml `design`, scripts/wgf_design/beats.py): `references` (the teardown records of the genre's leaders the design rests on, compared per dimension with the matching design line, or `unknown` when the research corpus has none), each unit's `beat` (a falsifiable claim and its test, the most frequent decision and how often it recurs, its signature moment, an optional harder line for a payoff, and for a climax the state or phase it changes), `build_spec.content.signature_moments`, `build_spec.content.meta_systems` and secondary goals' `par` calibration. Optional, so 1.14.0 artifacts stay valid.",
 
   "x-wgf": {
     "id": "game-design",
     "kind": "artifact",
     "format": "json",
-    "version": "1.14.0",
+    "version": "1.15.0",
     "template": "templates/gdd.md",
     "producer": "title:design",
     "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "release:qa", "title:scaffolding", "release:store-listing", "release:draft"],
@@ -25,6 +25,43 @@
     "research": {
       "$ref": "./shared/research-opportunity.schema.json#/$defs/handoff",
       "description": "Research V2 (added in 1.8.0): the research this design was derived from, carried from the strategy, and `applied`: which design decisions (archetype, fantasy, identity kit, timing targets) came from research and which fell back to a default. Absent when the strategy carries no research."
+    },
+    "references": {
+      "type": "object",
+      "description": "The genre leaders this design is measured against: teardown records of the research corpus (core/artifacts/shared/game-record.schema.json) the strategy's research carries at teardown depth, and per dimension what they do beside the design line that answers it. A design never names a game the research did not tear down: when the corpus holds too few, `status` is `unknown` with the reason, and the design step routes the run to research (core/reference/quality-benchmark.yaml `design.references`). Added in 1.15.0.",
+      "required": ["status", "teardowns", "dimensions"],
+      "properties": {
+        "status": { "enum": ["grounded", "unknown"], "description": "`grounded`: every dimension is compared with teardown records. `unknown`: the corpus has too few teardowns of the genre's leaders to compare with, and `reason` says so." },
+        "reason": { "type": "string", "minLength": 8 },
+        "teardowns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["game", "name"],
+            "properties": {
+              "game": { "type": "string", "pattern": "^game-[a-z0-9][a-z0-9-]*$", "description": "The game record id: a research.competitors entry of depth `teardown`." },
+              "name": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["dimension", "games", "observed", "design"],
+            "properties": {
+              "dimension": { "enum": ["core_verbs", "signature_moments", "set_pieces_per_group", "content_duration", "meta_systems"] },
+              "games": { "type": "array", "items": { "type": "string", "pattern": "^game-[a-z0-9][a-z0-9-]*$" }, "description": "The teardowns this line reads." },
+              "observed": { "type": "string", "minLength": 12, "description": "What the references do on this dimension, as their records code it." },
+              "design": { "type": "string", "minLength": 12, "description": "The design line that answers it: what this game does, and where in the design (a field or unit id)." },
+              "departs": { "type": "boolean", "description": "True when the design deliberately differs from the references here; `design` says why." }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "title_id": { "type": "string" },
     "brief": { "type": "string", "minLength": 1, "maxLength": 500, "description": "The game idea a person started the run with (`wgf new-game \"...\"`), verbatim in its canonical form: NFC, trimmed, whitespace runs as one space. Absent when the run was a blank market scan. Copied from the title-strategy. An agent author designs the game it describes; the built-in author fits the buildable concept research selected, and records in open_questions a dimension the brief names that the design does not use. Added in 1.4.0." },
@@ -441,7 +478,46 @@
                 "properties": {
                   "id": { "$ref": "#/$defs/localId" },
                   "kind": { "$ref": "#/$defs/localId" },
-                  "description": { "type": "string", "minLength": 8 }
+                  "description": { "type": "string", "minLength": 8 },
+                  "par": {
+                    "type": "object",
+                    "description": "How a timed goal's threshold (a par time, a star time) is calibrated: on a person's playtest, or from the bot's time scaled by `ratio_to_bot` - at least core/reference/quality-benchmark.yaml `design.par_calibration.min_human_to_bot_ratio` until a person calibrates it. Added in 1.15.0.",
+                    "required": ["basis"],
+                    "properties": {
+                      "basis": { "enum": ["human-playtest", "bot-scaled"] },
+                      "ratio_to_bot": { "type": "number", "minimum": 1 }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "signature_moments": {
+              "type": "array",
+              "description": "The moments a player retells: what ends a unit well (`end-of-unit-payoff`), what escalates while it lasts (`combo-escalation`) and what is rare enough to remember (`rare-spectacle`), each with what triggers it. A unit names the one it is built around in `beat.signature_moment`. Added in 1.15.0.",
+              "items": {
+                "type": "object",
+                "required": ["id", "kind", "description", "trigger"],
+                "properties": {
+                  "id": { "$ref": "#/$defs/localId" },
+                  "kind": { "enum": ["end-of-unit-payoff", "combo-escalation", "rare-spectacle"] },
+                  "description": { "type": "string", "minLength": 12, "description": "What the player sees, hears and feels." },
+                  "trigger": { "type": "string", "minLength": 8, "description": "What in play causes it, and how often." }
+                },
+                "additionalProperties": false
+              }
+            },
+            "meta_systems": {
+              "type": "array",
+              "description": "The systems above the units - currency, upgrades, cosmetics, achievements, missions, collections, unlocks, leaderboards, streaks, daily challenges - each included for the value a player gets from it, or declined with the reason. A meta loop entry the design persists is an included system. Added in 1.15.0.",
+              "items": {
+                "type": "object",
+                "required": ["system", "decision", "why"],
+                "properties": {
+                  "system": { "enum": ["best-score", "stage-progress", "unlocks", "currency", "upgrades", "cosmetics", "achievements", "missions", "streak", "collection", "leaderboard", "daily-challenge"] },
+                  "decision": { "enum": ["include", "decline"] },
+                  "why": { "type": "string", "minLength": 12, "description": "Included: what the player gets from it. Declined: why this game is better without it." }
                 },
                 "additionalProperties": false
               }
@@ -523,6 +599,45 @@
                     "type": "array",
                     "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
                     "description": "The build_spec.assets ids that draw what is particular to this unit - its antagonist, boss or set piece - one drawing each: an asset id, or a variant id (`boss-2`, the second drawing of an asset with `count` 4). A climax unit names its own: two climax units drawn with one drawing, or with a tint of it, fail core/reference/quality-benchmark.yaml `presentation.assets.distinct_climax_art` (the assets step checks it). Added in 1.11.0."
+                  },
+                  "beat": {
+                    "type": "object",
+                    "description": "The unit's beat in the chart, its `purpose` being the beat kind: a claim a playtest can falsify and the observation that would, the decision the player makes most often here and how often, the signature moment it is built around, an optional harder line for a payoff, and - for a climax - the state, phase, rule, arena or objective it changes (art alone is not a climax). Held at the release tier by core/reference/quality-benchmark.yaml `design.beats`. Added in 1.15.0.",
+                    "required": ["claim", "test", "decision"],
+                    "properties": {
+                      "claim": { "type": "string", "minLength": 12, "description": "What the unit does to the player, falsifiably: 'a first-time player clears it without losing a life'." },
+                      "test": { "type": "string", "minLength": 12, "description": "The observation that would prove the claim false, and who makes it (bot, probe, playtest)." },
+                      "decision": {
+                        "type": "object",
+                        "required": ["choice", "every_s"],
+                        "properties": {
+                          "choice": { "type": "string", "minLength": 8, "description": "The most frequent choice the player makes here, as a choice ('cut the corner or take the safe line'), not an input." },
+                          "every_s": { "type": "number", "exclusiveMinimum": 0, "description": "How often, in seconds, the choice recurs." }
+                        },
+                        "additionalProperties": false
+                      },
+                      "signature_moment": { "$ref": "#/$defs/localId", "description": "The build_spec.content.signature_moments id this unit is built around." },
+                      "risk_reward": {
+                        "type": "object",
+                        "required": ["line", "payoff"],
+                        "properties": {
+                          "line": { "type": "string", "minLength": 8, "description": "The harder, riskier option." },
+                          "payoff": { "type": "string", "minLength": 8, "description": "What taking it pays." }
+                        },
+                        "additionalProperties": false
+                      },
+                      "climax": {
+                        "type": "object",
+                        "required": ["change", "description"],
+                        "properties": {
+                          "change": { "enum": ["phase-change", "state-change", "rule-change", "arena-change", "objective-change"] },
+                          "phases": { "type": "integer", "minimum": 2 },
+                          "description": { "type": "string", "minLength": 12, "description": "What changes mid-unit and what the player must do differently after it." }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false
                   },
                   "variation_from_previous": {
                     "type": "array",

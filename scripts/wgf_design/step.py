@@ -31,6 +31,16 @@ Outcomes, per docs/workflow-module-contract.md §7:
     the content is not stated (no units, a     FAILED, not retryable, nothing persisted
     unit kind, curve or ending the genre       (content.py, core/reference/genre-models.yaml;
     family refuses, mastery unstated)          checked only when no blocking rule breached)
+    no beat chart, signature moments, meta     FAILED, not retryable, nothing persisted
+    systems or references at the quality       (beats.py, core/reference/quality-benchmark.yaml
+    tier (a teach unit introducing two         `design` as the run pinned it; advisory below
+    mechanics, a climax that changes only      the tier that states the bars)
+    its art, a group with no twist)
+    the research carries too few teardowns     BLOCKED, route `research`, nothing persisted:
+    for the tier's references (the design      the design says UNKNOWN; a person (or an agent
+    says `references.status: unknown`)        that plays them) records the teardowns
+                                               (core/craft/competitive-teardown.md) and the run
+                                               resumes from research
     the adopted repository's content data      FAILED, not retryable (existing.py: shipped at
     cannot be counted                          its HEAD commit but not a JSON object)
     a blocking consistency rule breached       FAILED, route `descope`, not retryable, with the
@@ -60,9 +70,11 @@ import re
 
 from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+from wgflib.workflow import references as pinned_references
 from wgflib.workflow.contracts import ArtifactContracts
+from wgflib.yamllite import YamlError, load as load_yaml
 
-from . import consistency, content, depth, existing, experience, presentation
+from . import beats, consistency, content, depth, existing, experience, presentation
 from . import features as feature_check
 from .authors import AUTHORS, AuthorError, resolve_author
 from .compose import buildability, finalize
@@ -147,6 +159,9 @@ class DesignStep(WorkflowStep):
     depth_rules = None
     content_models = None
     feature_catalogue = None
+    # core/reference/quality-benchmark.yaml; None: the run's pinned copy (the live file for a
+    # run that pinned none).
+    benchmark = None
     # Builds the git reader of the adopted checkout (existing.read_floor); None: the hardened
     # git of the develop module.
     floor_git = None
@@ -180,6 +195,15 @@ class DesignStep(WorkflowStep):
         except ValueError as exc:
             return StepResult.failed(f"the adopted repository's content cannot be counted: "
                                      f"{exc}", retryable=False)
+
+        # The design bars (beats.py) as the run pinned them when it started: an edit to the
+        # benchmark applies to the next run, never to a design re-entered in this one.
+        try:
+            self._benchmark = self.benchmark if self.benchmark is not None \
+                else self._run_benchmark(context)
+        except (pinned_references.PinError, YamlError) as exc:
+            return StepResult.blocked(f"the run's pinned quality benchmark cannot be read: "
+                                      f"{exc}")
 
         author_name = (self.params.get("author")
                        or ((context.config or {}).get("design") or {}).get("author")
@@ -318,6 +342,13 @@ class DesignStep(WorkflowStep):
                         f"the design does not state why a player comes back{after} "
                         f"({len(problems)} problem(s)): " + "; ".join(problems[:6]),
                         retryable=False)
+                if outcome["beats"] and not outcome["content"]:
+                    context.logger.error("the design does not state its beats and references",
+                                         problems=problems, repair_rounds=repair_round)
+                    return StepResult.failed(
+                        f"the design does not state its beat chart, signature moments, meta "
+                        f"systems and references{after} ({len(problems)} problem(s)): "
+                        + "; ".join(problems[:6]), retryable=False)
                 if outcome["content"]:
                     context.logger.error("the design does not specify its content",
                                          problems=problems, repair_rounds=repair_round)
@@ -348,6 +379,15 @@ class DesignStep(WorkflowStep):
         context.logger.info("design composed", engine=engine, mvp_features=mvp,
                             consistency=block["status"], breached=blocking or None, warnings=warnings or None)
 
+        if outcome.get("research_gap") and not blocking:
+            # Not the author's to repair: a designer cannot write a teardown it did not play.
+            # The design said UNKNOWN; the run goes back to research for the records.
+            context.logger.error("the design has no teardowns to rest on",
+                                 research_gap=outcome["research_gap"])
+            return StepResult(
+                "BLOCKED", route="research",
+                message=f"design references are UNKNOWN: {outcome['research_gap']}; then "
+                        f"resume the run from research")
         if blocking:
             return StepResult("FAILED", route="descope", retryable=False, artifacts=[output],
                               error=f"design consistency failed on {', '.join(blocking)}: cut scope, "
@@ -391,7 +431,8 @@ class DesignStep(WorkflowStep):
                    "block": None, "blocking": None,
                    "warnings": None, "problems": [], "unbuildable": False,
                    "experience": False, "presentation": False, "depth": False,
-                   "content": False, "features": False, "consistency_problems": []}
+                   "content": False, "features": False, "beats": False,
+                   "research_gap": None, "consistency_problems": []}
         problems = buildability(design)
         if problems:
             outcome.update(problems=problems, unbuildable=True)
@@ -481,6 +522,14 @@ class DesignStep(WorkflowStep):
                 family, _why = content.resolve_family(strategy, design, models)
                 if family:
                     block["content_model"] = content.content_model_record(models, family)
+            # What a release is held to beyond its counts: the references, the beat chart,
+            # the signature moments and meta systems (beats.py, quality-benchmark `design`).
+            verdict = beats.check(design, strategy, getattr(self, "_benchmark", None))
+            if verdict["problems"]:
+                outcome.update(beats=True)
+                problems += verdict["problems"]
+            block["rule_results"] = list(block["rule_results"]) + verdict["results"]
+            outcome["research_gap"] = verdict["research_gap"]
         if problems:
             outcome.update(problems=problems)
             return outcome
@@ -495,6 +544,15 @@ class DesignStep(WorkflowStep):
         outcome.update(artifact=artifact, block=block, blocking=blocking, warnings=warnings,
                        problems=list(contracts("game-design", artifact)))
         return outcome
+
+    @staticmethod
+    def _run_benchmark(context):
+        """core/reference/quality-benchmark.yaml as the run pinned it (the live file for a run
+        that pinned none)."""
+        text, _digest, _pinned = pinned_references.read(
+            beats.BENCHMARK_PATH, getattr(context, "environment", None),
+            getattr(context, "run_dir", None))
+        return load_yaml(text)
 
     def _existing_floor(self, context, title_id):
         """game-design.existing_content for this run, or None. ValueError: the adopted

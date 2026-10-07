@@ -28,17 +28,22 @@
 # and finding counts, every production-quality check, the skipped content checks and the
 # audio counts are criteria of the Factory quality floor (core/reference/quality-floor.yaml),
 # which names each bar here by path instead of restating it, and scores one build on every
-# quality dimension against them (scripts/wgf_quality, docs/quality-gate-module.md). A run
-# pins this file when it starts (new-game `pinned_references`): an edit applies to the next
-# run. How to version this file and the floor: docs/factory-quality-benchmark.md. Wiring
-# another check is a change to the consumers named under `consumers`, each with its own
-# tests.
+# quality dimension against them (scripts/wgf_quality, docs/quality-gate-module.md). The design
+# step reads `design` (1.7.0): a release-tier design rests on teardown records of the genre's
+# leaders and states its beat chart, signature moments and meta systems against them
+# (scripts/wgf_design/beats.py, rules design.*). A run pins this file when it starts
+# (new-game `pinned_references`): an edit applies to the next run. How to version this file
+# and the floor: docs/factory-quality-benchmark.md. Wiring another check is a change to the
+# consumers named under `consumers`, each with its own tests.
 #
 # Calibration. Every bar records its `basis`:
 #   measured-2   both calibration releases meet it (the audit says which bars the unattended
 #                builds a person judged insufficient fall below, and which they do not)
 #   measured-1   only one release could be measured on it, or one release does not meet it
 #   proposed     a defensible default no release has been measured against
+#   hypothesis   (1.7.0) a market expectation no record in the research corpus measures yet,
+#                with its `confidence` (at most 0.6, as for a hypothesis claim) and the
+#                `evidence` it rests on; recalibrated from teardown records as they arrive
 # Two releases are not a population. Every bar here is a floor a person judged necessary,
 # not a target, and is to be recalibrated as releases accumulate - never to let one build
 # pass. The releases, the measurements and the source of each number are in the audit that
@@ -51,7 +56,7 @@
 # game presents together (world, tier, chapter). Every count is over the units the release
 # ships at the tier being judged.
 
-version: 1.6.0
+version: 1.7.0  # 1.7.0: `design` - references, the beat chart, signature moments, meta systems, market designed play, par calibration (every 1.6.0 bar unchanged)
 
 tiers:
   # `mvp` is the genre model's prototype bar and is not restated here. `release` is what a
@@ -197,6 +202,63 @@ store_listing:
   # Controls name every input the build accepts on desktop and touch.
   controls_cover_all_inputs: {release: true, basis: measured-1}
 
+design:
+  # 1.7.0. Two release-tier designs met every `content` bar above and still played like a
+  # genre's first draft: a teach unit introduced six mechanics (the content rules check only
+  # that a mechanic is introduced before it is used), a climax was held only to distinct art,
+  # risk/reward and "a decision every few seconds" were prose, the designed play was 300 s,
+  # and no design rested on a single teardown of the genre's leaders. These bars are read on
+  # the DESIGN (game-design 1.15.0: `references`, units' `beat`, `signature_moments`,
+  # `meta_systems`, secondary goals' `par`) by scripts/wgf_design/beats.py, blocking at the
+  # tier stated and advisory below it. No release has been measured against them: every one
+  # is `proposed` or `hypothesis`, and is recalibrated from teardown records, never lowered to
+  # let a design pass.
+  references:
+    # Teardown records (core/artifacts/shared/game-record.schema.json) of the genre's leaders
+    # the design rests on: games the strategy's research carries at teardown depth. Fewer in
+    # the corpus is UNKNOWN, routed to research - never filled in by the designer.
+    min_teardowns: {release: 3, basis: proposed}
+    # The dimensions each compared with the references, with the matching design line.
+    dimensions: {release: [core_verbs, signature_moments, set_pieces_per_group, content_duration, meta_systems], basis: proposed}
+  beats:
+    # Mechanics a unit introduces (core/craft/content-and-level-design.md "one mechanic per
+    # unit at most"); the game's first unit may also introduce the core verb (mechanics with
+    # progression_role core). Introductions happen in teach, breather or twist units, never on
+    # a test or a climax.
+    max_mechanics_introduced_per_unit: {release: 1, basis: proposed}
+    # Every group (or the whole sequence, without groups) has a twist and ends in a climax
+    # whose declared pattern changes the state, phase, rules, arena or objective - art alone
+    # is not a climax.
+    min_twist_per_group: {release: 1, basis: proposed}
+    climax_changes_state: {release: true, basis: proposed}
+    # A unit offering a harder line for a payoff, per group (core-loop-and-difficulty.md 2).
+    min_risk_reward_per_group: {release: 1, basis: proposed}
+    # The most frequent player decision recurs at least this often, in seconds ("a decision
+    # every few seconds", core-loop-and-difficulty.md 1).
+    max_decision_interval_s: {release: 5, basis: proposed}
+  signature_moments:
+    # The moments a player retells, by kind: what ends a unit well, what escalates while it
+    # lasts, and what is rare enough to be remembered.
+    min_end_of_unit_payoff: {release: 1, basis: proposed}
+    min_combo_escalation: {release: 1, basis: proposed}
+    min_rare_spectacle: {release: 1, basis: proposed}
+  meta_systems:
+    # Every meta system the game keeps between sessions is included for a stated player
+    # value, or explicitly declined with a reason.
+    justified: {release: true, basis: proposed}
+  designed_play:
+    # Total designed play of a finite (level-based) release, in seconds. The level-based
+    # portal games the critique compared with carry 30-60 minutes; no teardown record in the
+    # corpus measures it yet (docs/research-v2.md: the shipped corpus has none), so the bar is
+    # a hypothesis at its low end. It is in addition to content.units.min_total_designed_s,
+    # which stays the floor for every ending.
+    finite_min_s: {release: 1800, basis: hypothesis, confidence: 0.5, evidence: "level-based portal games of the genre leaders carry 30-60 min of designed play (design critique L17, 2026-10-05); no corpus record measures it"}
+  par_calibration:
+    # A par time or star threshold is calibrated on people: a bot clears a unit faster than a
+    # first-time player, so a par set from the bot's time is at least this multiple of it
+    # until a human playtest calibrates it.
+    min_human_to_bot_ratio: {release: 1.25, basis: hypothesis, confidence: 0.5, evidence: "the design critique (L17, 2026-10-05) asks for 1.25x; no human-calibrated par or bot-to-person time ratio is recorded yet"}
+
 consumers:
   # Where each block is read, or is meant to be read once wired. The strategy reads
   # `content.units` and `content.elements` to commit the release budget; the design step
@@ -209,3 +271,4 @@ consumers:
   features: [scripts/wgf_design/consistency.py, scripts/wgf_techplan/devplan.py]
   presentation: [scripts/wgf_visualqa, scripts/wgf_production, scripts/wgf_assets/climax.py, scripts/wgf_sufficiency/audit.py, scripts/wgf_quality]
   store_listing: [scripts/wgf_listing]
+  design: [scripts/wgf_design/beats.py]

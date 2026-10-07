@@ -5,7 +5,9 @@
 `.difficulty.model`, `build_spec.mastery`, `build_spec.progression.model`,
 `build_spec.content.quality_tier`, `.content.elements`, `.content.groups`,
 `.content.secondary_goals`, the units' `group`, `structure`, `elements` and `objective_kind`,
-and the strategy's `prototype_must_prove` and `concept.content_model.budget`.
+`references`, the units' `beat`, `.content.signature_moments`, `.content.meta_systems`, a
+secondary goal's `par`, and the strategy's `prototype_must_prove` and
+`concept.content_model.budget`.
 
 A loop worth repeating still needs somewhere to happen. The content units are that
 somewhere: the levels, waves, tracks, encounters, scenarios, shifts or run-segments the
@@ -221,6 +223,53 @@ and the order, combinations and difficulty sequence are measured on the build. A
 the benchmark states no bars and the family's own bars apply. A design short of its tier
 fails with a finding that names the rule, what is short and by how much; repair the content,
 never the tier.
+
+## Beyond the counts: references, beats and moments
+
+A design can meet every count above and still play like a genre's first draft: a first unit
+that teaches six mechanics, a climax that is the same unit wearing a new drawing, risk and
+reward that live only in the prose, five minutes of designed play, and nothing compared with
+the games a player already knows. At the tier `core/reference/quality-benchmark.yaml`
+`design` states its bars for (`release`), the design is also held to these (the `design.*`
+rules, `scripts/wgf_design/beats.py`); below it they are advice, recorded on the result.
+
+- **References first.** Read the teardown records of the genre's leaders the strategy's
+  research carries (`research.competitors`, depth `teardown`; how to write one is
+  `competitive-teardown.md`). Fill `references`: the games, and for every dimension the bars
+  name — core verbs, signature moments, set pieces per world, content duration, meta systems —
+  what they do and the design line that answers it (or deliberately departs, `departs: true`,
+  saying why). Never name a game the research did not tear down. When it carries too few,
+  write `references.status: unknown` with the reason: the run goes back to research for the
+  records, which a designer cannot write without playing the games.
+- **A beat per unit.** `purpose` is the beat kind; `beat` is what it promises. `claim` is
+  falsifiable ("a first-time player clears it without losing a life") and `test` names the
+  observation that would falsify it — the bot's attempts, a probe metric, a playtest.
+  `decision` is the choice the player makes most often there, as a choice rather than an
+  input, and how often it recurs in seconds: a few seconds, not a minute.
+- **One mechanic at a time.** A unit introduces one mechanic at most — the game's first unit
+  may add the core verb (`progression_role: core`) — and introduces it in a `teach`, a
+  `breather` or a `twist`, never on a `test` or a `climax`. A `teach` unit is no harder on any
+  axis than the breather before it: it is the safe place to meet something new.
+- **A world has a shape.** Every group (the whole sequence, without groups) has at least one
+  `twist` and ends in a `climax`. A climax declares in `beat.climax` what changes mid-unit —
+  a phase, the state, the rules, the arena or the objective — and what the player does
+  differently after it. Its own drawing (`art`) is still owed; it is not the climax.
+- **Risk against reward, per world.** At least one unit in every group offers a harder line
+  for a payoff (`beat.risk_reward`): the narrow route for the gold star, the greedy chain for
+  the multiplier.
+- **Signature moments.** Declare in `build_spec.content.signature_moments` what a player
+  retells — an `end-of-unit-payoff`, a `combo-escalation`, a `rare-spectacle` — each with what
+  triggers it, and build each into a unit (`beat.signature_moment`).
+- **Meta systems, decided.** List in `build_spec.content.meta_systems` every system above the
+  units the genre's leaders use — currency, upgrades, cosmetics, achievements, missions,
+  collections, unlocks, leaderboards, streaks, daily challenges — each included for what the
+  player gets from it, or declined with why. Whatever the meta loop persists is included.
+- **The market's designed play.** A finite (level-based) release carries what the genre's
+  leaders carry — 30 minutes and more, a hypothesis until teardowns measure it — in more
+  units and more to do in each, not slower ones.
+- **Par is calibrated on people.** A timed secondary goal (par, gold, star time) says in `par`
+  whether its threshold comes from a person's playtest or is the bot's time scaled by at least
+  the benchmark's ratio: a bot clears faster than a first-time player.
 
 ## Mastery
 

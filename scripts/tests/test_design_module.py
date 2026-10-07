@@ -32,7 +32,7 @@ from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
 from wgflib.workflow.config import FactoryConfig  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
 from wgflib.workflow.model import ArtifactRef, RunStatus, StepOutcome, StepStatus  # noqa: E402
-from wgf_design import archetypes, authors, compose, consistency, content, identity  # noqa: E402
+from wgf_design import archetypes, authors, beats, compose, consistency, content, identity  # noqa: E402
 from wgf_design import features as feature_check  # noqa: E402
 from wgf_design.platforms import load_platforms  # noqa: E402
 from wgf_design.step import SCHEMA_VERSION, DesignStep  # noqa: E402
@@ -275,7 +275,7 @@ class DesignFromWorkedExample(unittest.TestCase):
         # And one per feature-evaluation rule (features.py, core/reference/feature-catalogue.yaml).
         self.assertEqual(len(block["rule_results"]),
                          len(consistency.load_rules()["rules"]) + len(content.RULES)
-                         + len(feature_check.RULES))
+                         + len(beats.RULES) + len(feature_check.RULES))
         self.assertEqual(block["feature_catalogue"]["id"], "feature-catalogue")
         self.assertEqual(block["content_model"],
                          {"id": self.design["genre"]["family"],

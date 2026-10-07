@@ -26,6 +26,7 @@
 // Factory tooling: it contains no game, and is not part of one.
 
 import { test, type Page } from "@playwright/test";
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -103,6 +104,19 @@ const CFG = JSON.parse(fs.readFileSync(process.env.WGF_PLAY_CONFIG as string, "u
   survey_ms?: number;
   kind_roles?: string[];
   not_content_roles?: string[];
+  // The level critic's frames (core/reference/level-design-rubric.yaml `moments`): with
+  // level_frames, every surveyed unit is captured at its start, middle and end.
+  level_frames?: boolean;
+  // Risk and reward (core/reference/risk-reward.yaml `play`): the units played under each
+  // oracle policy (an empty id: play from the start, no unit link), on these projects only,
+  // `risk_attempts` fresh attempts per policy, each for at most risk_attempt_ms, all within
+  // risk_ms. Empty risk_units: no risk test.
+  risk_units?: string[];
+  risk_projects?: string[];
+  risk_policies?: string[];
+  risk_attempts?: number;
+  risk_attempt_ms?: number;
+  risk_ms?: number;
 };
 const URL = "/?wgf-probe=1";
 
@@ -1407,11 +1421,60 @@ interface SurveyVisit {
   duration_ms: number | null;
   playing_ms: number | null;
   reason?: string;
+  level_frames?: LevelFrame[];
+  level_ms?: number;
 }
 
 function addTo(map: Record<string, string[]>, key: string, value: string): void {
   const list = (map[key] ??= []);
   if (!list.includes(value)) list.push(value);
+}
+
+// The level critic's frames: three of every surveyed unit - its start, its middle and its end
+// as the oracle played it - for the level-design step (core/reference/level-design-rubric.yaml
+// `moments`), each with the entities the probe reported at that moment and its sha256. Kept
+// under <project>/level/, not frames/: they are the level critic's, and visual QA judges
+// frames/ whole. A unit the oracle finishes before a moment is reached has no frame of it,
+// and the record shows which.
+interface LevelFrame {
+  moment: string;
+  file: string;
+  sha256: string;
+  at_ms: number;
+  progress: number | null;
+  // [role, kind, x, y, w, h] of every visible entity but the interface.
+  entities: (string | number | null)[][];
+}
+
+function progressShare(s: Snapshot): number | null {
+  const progress = s.content?.progress;
+  return progress && progress.target > 0 ? progress.value / progress.target : null;
+}
+
+// The moment to capture now, or null: the start a second in, the middle at half the unit's
+// progress (else half its window), the end at three quarters of it (else late in the window).
+function levelMoment(s: Snapshot, elapsedMs: number, taken: LevelFrame[]): string | null {
+  const has = (m: string): boolean => taken.some((f) => f.moment === m);
+  const share = progressShare(s);
+  const span = CFG.survey_unit_ms ?? 0;
+  if (!has("start")) return elapsedMs > 1000 ? "start" : null;
+  if (!has("middle")) return (share !== null && share >= 0.5) || elapsedMs >= span * 0.5 ? "middle" : null;
+  if (!has("end")) return (share !== null && share >= 0.75) || elapsedMs >= span * 0.85 ? "end" : null;
+  return null;
+}
+
+async function levelFrame(page: Page, project: string, id: string, moment: string, s: Snapshot,
+                          atMs: number, copyOf: string | null): Promise<LevelFrame> {
+  const file = `level/${id}-${moment}.png`;
+  const target = path.join(dir(project), ...file.split("/"));
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  // The start is the survey's own one-second frame when it was just taken: the same moment.
+  if (copyOf) fs.copyFileSync(path.join(dir(project), "frames", `${copyOf}.png`), target);
+  else await page.screenshot({ path: target });
+  const sha256 = "sha256:" + crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex");
+  const entities = (s.entities ?? []).filter((e) => e.visible && e.role !== "ui")
+    .map((e) => [e.role, e.kind ?? null, Math.round(e.x), Math.round(e.y), Math.round(e.w), Math.round(e.h)]);
+  return { moment, file, sha256, at_ms: atMs, progress: progressShare(s), entities };
 }
 
 async function surveyUnit(page: Page, id: string, touch: boolean, watch: Watch, project: string,
@@ -1426,9 +1489,11 @@ async function surveyUnit(page: Page, id: string, touch: boolean, watch: Watch, 
     return visit;
   }
   const kindRoles = new Set(CFG.kind_roles ?? []);
-  const u0 = Date.now();
+  let u0 = Date.now();
   let shot = false;
   let samples = 0;
+  const levels: LevelFrame[] = [];
+  if (CFG.level_frames) visit.level_frames = levels;
   while (Date.now() - u0 < (CFG.survey_unit_ms ?? 0)) {
     const s = watch.saw(await snap(page));
     if (!s) break;
@@ -1456,6 +1521,19 @@ async function surveyUnit(page: Page, id: string, touch: boolean, watch: Watch, 
       if (!shot && Date.now() - u0 > 1000) {
         await frame(page, project, `survey-${id}-1s`, frames);
         shot = true;
+      }
+      if (CFG.level_frames) {
+        const moment = levelMoment(s, Date.now() - u0, levels);
+        if (moment) {
+          // The capture is the observer's time, not the unit's: the unit's window and the
+          // survey's are extended by it, so the survey reaches as many units as without it.
+          const taken = Date.now();
+          levels.push(await levelFrame(page, project, id, moment, s, taken - u0,
+                                       moment === "start" && shot ? `survey-${id}-1s` : null));
+          const spent = Date.now() - taken;
+          u0 += spent;
+          visit.level_ms = (visit.level_ms ?? 0) + spent;
+        }
       }
     }
     if (s.state === "won" || progressDone(s)) {
@@ -1499,7 +1577,7 @@ test("survey: every unit the design lists, entered through the probe's unit link
   const watch = new Watch(page, project, frames);
   const touch = Boolean(info.project.use.hasTouch);
   const visits: SurveyVisit[] = [];
-  const t0 = Date.now();
+  let t0 = Date.now();
   for (const id of units) {
     if (Date.now() - t0 > (CFG.survey_ms ?? 0)) {
       visits.push({ asked: id, entered: false, reported: [], index: null, kinds_by_role: {},
@@ -1508,7 +1586,157 @@ test("survey: every unit the design lists, entered through the probe's unit link
                     reason: "survey window spent" });
       continue;
     }
-    visits.push(await surveyUnit(page, id, touch, watch, project, frames));
+    const visit = await surveyUnit(page, id, touch, watch, project, frames);
+    visits.push(visit);
+    t0 += visit.level_ms ?? 0;
   }
   write(project, "survey", { applies: true, asked: units, visits, ...watch.record(), frames });
+});
+
+// -- risk and reward ------------------------------------------------------------------------
+
+// Does an optional risk exist in a unit, and does taking it pay? The bot never chooses a line
+// itself: the game's own oracle does, under a policy the game declares through its probe's
+// optional play.policy (play-probe.schema.json) - `safe` ignores every optional reward,
+// `greedy` goes for the optional pickups and harder lines the game knows of. Each sampled unit
+// is entered through the unit link and played to its end, `risk_attempts` times per policy,
+// each attempt in a fresh page. Recorded only: the level-design step compares what each policy
+// earned and how often it failed (core/reference/risk-reward.yaml). A probe without
+// play.policy is recorded as such, and nothing is played.
+interface RiskAttempt {
+  unit: string;
+  policy: string;
+  entered: boolean;
+  policy_set: boolean | null;
+  outcome: string | null;
+  duration_ms: number | null;
+  metrics_start: Record<string, number> | null;
+  metrics_end: Record<string, number> | null;
+  metrics_max: Record<string, number>;
+  reason?: string;
+}
+
+async function policyOf(page: Page): Promise<{ policies: unknown; measures: unknown } | null> {
+  return page.evaluate(() => {
+    const p = (window as unknown as { __wgf__?: { play?: { policy?: { set?: unknown; policies?(): unknown; measures?(): unknown } } } })
+      .__wgf__?.play?.policy;
+    if (!p || typeof p.set !== "function") return null;
+    try {
+      return { policies: typeof p.policies === "function" ? p.policies() : null,
+               measures: typeof p.measures === "function" ? p.measures() : null };
+    } catch (error) {
+      return { policies: null, measures: null, error: String(error) };
+    }
+  });
+}
+
+async function setPolicy(page: Page, policy: string): Promise<boolean> {
+  return page.evaluate(async (name) => {
+    const p = (window as unknown as { __wgf__?: { play?: { policy?: { set?(n: string): unknown } } } })
+      .__wgf__?.play?.policy;
+    if (!p || typeof p.set !== "function") return false;
+    try {
+      const answer = await Promise.race([Promise.resolve(p.set(name)),
+                                         new Promise((resolve) => setTimeout(() => resolve(false), 3000))]);
+      return answer === true;
+    } catch {
+      return false;
+    }
+  }, policy);
+}
+
+async function riskAttempt(page: Page, unit: string, policy: string, touch: boolean,
+                           watch: Watch): Promise<RiskAttempt> {
+  const url = unit ? `${URL}&wgf-unit=${encodeURIComponent(unit)}` : URL;
+  const attempt: RiskAttempt = { unit, policy, entered: false, policy_set: null, outcome: null,
+                                 duration_ms: null, metrics_start: null, metrics_end: null,
+                                 metrics_max: {} };
+  const started = await start(page, touch, watch, false, url);
+  if (started.playingMs === null) {
+    attempt.reason = "play never began";
+    return attempt;
+  }
+  attempt.policy_set = await setPolicy(page, policy);
+  if (!attempt.policy_set) {
+    attempt.reason = `the probe's play.policy.set("${policy}") did not answer true`;
+    return attempt;
+  }
+  const t0 = Date.now();
+  let uid: string | null = null;
+  while (Date.now() - t0 < (CFG.risk_attempt_ms ?? 0)) {
+    const s = watch.saw(await snap(page));
+    if (!s) break;
+    const now = s.content?.unit_id ?? null;
+    if (s.state === "playing") {
+      if (!attempt.entered && (!unit || now === unit)) {
+        attempt.entered = true;
+        uid = now;
+        attempt.metrics_start = { ...s.metrics };
+      }
+      if (attempt.entered && uid !== null && now !== null && now !== uid) {
+        attempt.outcome = "left";
+        break;
+      }
+    }
+    if (attempt.entered) {
+      attempt.metrics_end = { ...s.metrics };
+      for (const [key, value] of Object.entries(s.metrics ?? {})) {
+        if (typeof value === "number" && !(value <= (attempt.metrics_max[key] ?? -Infinity))) attempt.metrics_max[key] = value;
+      }
+    }
+    if (attempt.entered && (s.state === "won" || s.state === "lost")) {
+      attempt.outcome = s.state;
+      break;
+    }
+    if (s.oracle) {
+      await act(page, s.oracle, touch);
+      await page.waitForTimeout(120);
+    } else {
+      await page.waitForTimeout(40);
+    }
+  }
+  if (!attempt.entered) attempt.reason = unit ? `the probe never reported unit ${unit} in play` : "play never began";
+  else if (attempt.outcome === null) attempt.outcome = "timeout";
+  attempt.duration_ms = Date.now() - t0;
+  return attempt;
+}
+
+test("risk: the oracle's safe and greedy policies, per sampled unit", async ({ page }, info) => {
+  const project = info.project.name;
+  const units = CFG.risk_units ?? [];
+  const policies = CFG.risk_policies ?? [];
+  if (!units.length || !policies.length || !(CFG.risk_projects ?? []).includes(project)) {
+    write(project, "risk", { applies: false, reason: units.length
+      ? `risk is played on ${(CFG.risk_projects ?? []).join(", ") || "no project"} only`
+      : "no risk test was asked for (the step's `with: risk`)" });
+    return;
+  }
+  const attempts = CFG.risk_attempts ?? 0;
+  test.setTimeout((CFG.risk_ms ?? 0) + units.length * policies.length * attempts * (CFG.start_timeout_ms + 2000) + 60_000);
+  const watch = new Watch(page, project, []);
+  const touch = Boolean(info.project.use.hasTouch);
+  const opened = await start(page, touch, watch, false, units[0] ? `${URL}&wgf-unit=${encodeURIComponent(units[0])}` : URL);
+  const declared = opened.playingMs === null ? null : await policyOf(page);
+  if (!declared) {
+    write(project, "risk", { applies: true, declared: false, units, policies, attempts: [],
+                             reason: opened.playingMs === null ? "play never began"
+                               : "the probe declares no play.policy", ...watch.record() });
+    return;
+  }
+  const played: RiskAttempt[] = [];
+  const t0 = Date.now();
+  for (const unit of units) {
+    for (let n = 0; n < attempts; n += 1) {
+      for (const policy of policies) {
+        if (Date.now() - t0 > (CFG.risk_ms ?? 0)) {
+          played.push({ unit, policy, entered: false, policy_set: null, outcome: null, duration_ms: null,
+                        metrics_start: null, metrics_end: null, metrics_max: {}, reason: "risk window spent" });
+          continue;
+        }
+        played.push(await riskAttempt(page, unit, policy, touch, watch));
+      }
+    }
+  }
+  write(project, "risk", { applies: true, declared: true, offered: declared.policies, measures: declared.measures,
+                           units, policies, attempts: played, ...watch.record() });
 });

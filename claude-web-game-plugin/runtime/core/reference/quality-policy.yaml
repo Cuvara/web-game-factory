@@ -57,7 +57,9 @@
 # never remove a required step or a condition to let one run through.
 
 # 1.1.0: skipped_checks (check strength); 1.2.0: quality-gate is in new-game (workflow 11), no longer pending.
-version: 1.2.0
+# 1.3.0: level-design is a required step (workflow 16); a baseline level critic or an
+# installation's level-design rubric makes a run development.
+version: 1.3.0
 
 # The quality bars a release-tier run is judged against. A run records the version it
 # started under, so a later recalibration does not silently re-judge it.
@@ -87,6 +89,7 @@ floor:
     - verify
     - listing-validation
     - content-sufficiency
+    - level-design
     - quality-gate
   # 1.2.0: quality-gate is in new-game (workflow 11): no longer pending.
   pending: []
@@ -117,6 +120,12 @@ development_when:
   - config: visualqa.judge.kind
     in: [baseline]
     why: visual QA compares frames with approved frames instead of judging them against the rubric (factory.visualqa.judge.kind baseline)
+  - config: leveldesign.judge.kind
+    in: [baseline]
+    why: the level critic measures entity boxes and frame signatures and carries approved scores instead of judging units against the rubric (factory.leveldesign.judge.kind baseline)
+  - config: leveldesign.rubric
+    set: true
+    why: the level critic judges against an installation's rubric instead of core/reference/level-design-rubric.yaml (factory.leveldesign.rubric)
   - config: develop.checks
     lacks: [install, conformance, typecheck, lint, unit, build, smoke]
     why: develop runs fewer than the Factory's build checks (factory.develop.checks)

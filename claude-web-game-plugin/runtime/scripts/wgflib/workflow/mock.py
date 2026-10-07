@@ -338,6 +338,43 @@ class MockContentSufficiencyStep(MockStep):
             body["routes"] = [route]
 
 
+class MockLevelDesignStep(MockStep):
+    """`develop` (or `fail`) and `design-gap` in a mock plan are a level-design failure routed
+    there: FAILED with that route and not retryable, a finding naming it in the report - the
+    shape the real step (scripts/wgf_leveldesign) returns. No frame is read."""
+
+    type, role = "level-design", "qa"
+    ROUTES = ("design-gap", "develop")
+
+    def execute(self, inputs, context):
+        result = super().execute(inputs, context)
+        route = "develop" if result.route == "fail" else result.route
+        if route in self.ROUTES:
+            return StepResult("FAILED", route=route, artifacts=result.artifacts,
+                              retryable=False, error=f"{self.id} found the levels short (mock)")
+        return result
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type != "level-design-report":
+            return
+        route = "develop" if entry == "fail" else entry
+        if route in self.ROUTES:
+            check = body["checks"][0]
+            check.update(status="FAIL", summary="scripted level-design shortfall (mock)",
+                         route=route)
+            finding = {"id": f"level-design:{check['id']}", "check": check["id"],
+                       "dimension": "level-design", "severity": "blocker",
+                       "summary": check["summary"], "route": route, "owner": "level-design"}
+            if route == "design-gap":
+                finding["design_gap"] = {"field": "build_spec.content.units",
+                                         "question": "What is each unit's layout? (mock)",
+                                         "assumed": None, "severity": "blocking"}
+            body["findings"] = [finding]
+            body["verdict"] = "FAIL"
+            body["failed"] = [check["id"]]
+            body["routes"] = [route]
+
+
 class MockQualityGateStep(MockStep):
     """`design-gap`, `assets` and `develop` (or `fail`) in a mock plan are a quality gate
     failure routed there: FAILED with that route and not retryable, a dimension below its
@@ -546,6 +583,7 @@ MOCK_STEPS = (
     MockProductionQualityStep,
     MockVisualQAStep,
     MockContentSufficiencyStep,
+    MockLevelDesignStep,
     MockQualityGateStep,
     MockReviewStep,
     MockSDKStep,

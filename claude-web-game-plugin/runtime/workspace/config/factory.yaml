@@ -87,8 +87,10 @@ factory:
   #                  docs/publish-module.md)
   #   wgf_triage     the `triage` step: failures as quality findings, routed to the
   #                  specialist that owns them (scripts/wgf_triage/, docs/specialist-routing.md)
+  #   wgf_leveldesign the `level-design` step: the level critic and the risk the oracle's
+  #                  policies measure (scripts/wgf_leveldesign/, docs/level-design-critic.md)
   steps:
-    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa, wgf_sufficiency, wgf_quality, wgf_listing, wgf_publish, wgf_triage]
+    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa, wgf_sufficiency, wgf_quality, wgf_listing, wgf_publish, wgf_triage, wgf_leveldesign]
 
   # The strategy module (scripts/wgf_strategy): by default it ranks the opportunity's
   # candidate platforms by audience fit and makes the best one required. A project that has
@@ -728,6 +730,22 @@ factory:
     # states one, so the installation does, per platform id or `default`. Without it the
     # platform's rendition fails validation, which blocks for a person.
     # age_rating: {default: "12+"}
+
+  # The level-design module (scripts/wgf_leveldesign, docs/level-design-critic.md): a level
+  # critic reads the start, middle and end frame of every unit playability surveyed against
+  # core/reference/level-design-rubric.yaml, and the oracle's safe and greedy policies are held
+  # to core/reference/risk-reward.yaml. `none` judges nothing: SKIPPED below the release tier,
+  # BLOCKED at it - never a silent pass. `command` runs like visual QA's judge (the same
+  # placeholders, read-only, isolated); `baseline` measures what entity boxes and frame
+  # signatures can and leaves the rest unmeasured.
+  leveldesign:
+    judge:
+      kind: none                # none | command | baseline
+      argv: []                  # command only: {frames_dir} {brief} {verdict} {prompt}
+      timeout_seconds: 900
+      idle_timeout_seconds: null
+      verdict_from: file
+    # rubric: core/reference/level-design-rubric.yaml   # the default (pinned by the run)
 
   # The visual QA module (scripts/wgf_visualqa, docs/visual-qa-module.md): a vision judge
   # reads every frame playability captured of the production build - each state, desktop

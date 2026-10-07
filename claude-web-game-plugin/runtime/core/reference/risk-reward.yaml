@@ -1,0 +1,66 @@
+# Risk and reward: proof that an optional risk exists in a unit and that taking it pays.
+#
+# A unit whose bonus pickups sit on the safe line asks nothing of the player: the oracle - the
+# input that succeeds now - collects some of them by accident and never falls. Nothing showed
+# that a harder line, an optional pickup or a riskier order existed, or that it was worth
+# taking. Here the playability bot plays each sampled unit twice over, under two policies of
+# the game's own oracle (the probe's optional `play.policy`, core/artifacts/shared/
+# play-probe.schema.json):
+#
+#   safe     the oracle ignores every optional reward: it completes the unit the surest way
+#   greedy   the oracle goes for the optional pickups and the harder lines the game reports
+#
+# and the level-design step (scripts/wgf_leveldesign/risk.py) compares what each earned and
+# how often each failed. A unit shows risk and reward when greedy earns measurably more
+# (`reward`) at a measurably higher failure rate (`failure`) - more reward for nothing is no
+# risk, more failure for nothing is no reward. The bot never chooses the line itself: what
+# "greedy" means is the game's, because only the game knows its pickups and lines.
+#
+# Unmeasured is never a pass: a probe without `play.policy`, a policy it refuses, a unit it
+# cannot enter, or attempts that report none of the reward metrics leave the check
+# unmeasured - a warning below the release tier, not passed at it (core/reference/
+# quality-policy.yaml skipped_checks).
+#
+# Calibration (docs/level-design-critic.md, "Calibration"): the r1 builds of the two 2026-10
+# validation runs have no `play.policy`, so neither can be measured; the critique playthrough
+# of the 3D build (2026-10-04) recorded the oracle alone (the safe line) collecting 4-9 of 10
+# gems with 0-1 falls over 15 runs - the spread a greedy policy has to clear. Every bar is
+# `basis: proposed` until greedy and safe have been measured on real builds.
+
+version: 1.0.0
+basis: proposed
+
+# What the bot plays (bot.spec.ts `risk`): on these projects, at most `units` units (spread
+# across the sampled sequence like the level critic's sample), `attempts` fresh attempts per
+# policy per unit, each for at most `attempt_s` seconds, within `total_s` per project.
+play:
+  projects: [desktop]
+  units: 3
+  attempts: 3
+  attempt_s: 45
+  total_s: 600
+  policies: [safe, greedy]
+
+# The metrics an attempt is scored on, read from the probe's `metrics` at the end of the
+# attempt (the won or lost snapshot, else the last one): the first of `reward` the probe
+# reports, unless the probe names its own (`play.policy.measures()`, which wins). `lower`:
+# a metric where less is better (time) - the gain is computed on its negation.
+reward:
+  metrics: [pickups, gems, coins, collected, bonus, stars, score]
+  lower: [time]
+# A failure: the attempt ended `lost`, or any of these metrics rose during it.
+failure:
+  metrics: [falls, deaths, lives_lost, crashes, hits_taken, misses, balls_lost]
+
+# The bars. Per unit: greedy's mean reward is at least `min_relative_gain` above safe's (and
+# at least `min_absolute_gain` above it, so a 0 -> 0.1 change is not a gain), and greedy's
+# failure rate (failed attempts / attempts) at least `min_failure_rate_gain` above safe's.
+# The build: at least `min_unit_share` of the units measured show both.
+bars:
+  min_relative_gain: 0.15
+  min_absolute_gain: 1
+  min_failure_rate_gain: 0.2
+  min_unit_share: 0.5
+  # A unit counts as measured only when each policy completed at least this many attempts
+  # with a reward reading.
+  min_attempts: 2

@@ -48,7 +48,8 @@
 # and the visual-qa rubric when it starts (new-game `pinned_references`): an edit made during
 # a run applies to the next run, never to the one in flight.
 
-version: 1.1.0  # 1.1.0: floor.existing_content - an adopted repository's floor, unmeasured is a blocker; evaluate.applies
+version: 1.2.0  # 1.1.0: floor.existing_content - an adopted repository's floor, unmeasured is a blocker; evaluate.applies
+# 1.2.0: floor.level_design and floor.risk_reward - the level-design-report (workflow 16), at the release tier
 
 references:
   quality-benchmark: core/reference/quality-benchmark.yaml
@@ -83,6 +84,7 @@ build_evidence:
   production-quality-report:   {commit: commit,                  of: development}
   visual-qa-report:            {commit: commit,                  of: development}
   content-sufficiency-report:  {commit: commit,                  of: development}
+  level-design-report:         {commit: commit,                  of: development}
   prototype-report:            {commit: build_ref.commit_sha,    of: development}
   sdk-report:                  {commit: build_ref.commit_sha,    of: shipped}
   qa-report:                   {commit: build_ref.commit_sha,    of: shipped}
@@ -490,6 +492,37 @@ universal:
     evidence: content-sufficiency-report content.drift
     regression: the check FAILs on a newer build
     basis: measured-2
+  # The level critic (core/reference/level-design-rubric.yaml): every sampled unit's start,
+  # middle and end frame captured, and every unit at the rubric's bars on play space, identity,
+  # route choice, reveal, climax and distinctness. Reported only for a design that authors
+  # units; a design without levels has none to judge. No report at all is unmeasured.
+  - id: floor.level_design
+    dimension: variety
+    metric: share of the level critic's checks that pass - every unit's frames captured, every unit at the rubric's bars
+    evaluate: {kind: checks, report: level-design-report, checks: [level.frames, level.critic], applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: level-design
+    route: develop
+    evidence: level-design-report level.frames and level.critic
+    regression: a check below PASS on a newer build
+    basis: proposed
+  # An optional risk that pays (core/reference/risk-reward.yaml): greedy earns measurably more
+  # than safe at a measurably higher failure rate. A probe without play.policy measures
+  # nothing - a FAIL of risk.measured at the release tier, never a pass.
+  - id: floor.risk_reward
+    dimension: gameplay
+    metric: share of the risk checks that pass - both oracle policies measured, greedy earning more at a higher failure rate
+    evaluate: {kind: checks, report: level-design-report, checks: [risk.measured, risk.reward]}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: level-design
+    route: develop
+    evidence: level-design-report risk.measured and risk.reward
+    regression: a check below PASS on a newer build
+    basis: proposed
   - id: floor.music
     dimension: audio
     metric: music tracks delivered

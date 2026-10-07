@@ -58,10 +58,13 @@ SESSION_MARGIN_S = 45
 PROJECTS = (("desktop", 1280, 720), ("mobile", 393, 851))
 # The bot's records per viewport (bot.spec.ts): <out>/<project>/<name>.json.
 RECORDS = ("first-session", "act", "win", "lose", "pause", "traverse", "persist", "session",
-           "ramp", "showcase", "survey")
+           "ramp", "showcase", "survey", "risk")
 # How the survey is run (`survey`), and which entity roles carry a kind (`probe`): read by
 # the content-sufficiency step too, which counts what the survey recorded.
 SUFFICIENCY_PATH = os.path.join(paths.REFERENCE, "content-sufficiency.yaml")
+# The safe and greedy oracle policies the bot plays per sampled unit (`play`), for the
+# level-design step, which judges what they earned (scripts/wgf_leveldesign/risk.py).
+RISK_PATH = os.path.join(paths.REFERENCE, "risk-reward.yaml")
 # The design tiers a run's quality tier builds (`tiers[].builds.design_tiers`).
 BENCHMARK_PATH = os.path.join(paths.REFERENCE, "quality-benchmark.yaml")
 # Where the content data file of the commit played is kept, under the records directory, for
@@ -113,6 +116,17 @@ export default defineConfig({{
 
 def _utc_now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def spread(items, count):
+    """At most `count` of `items`, spread evenly across them: the first, the last and evenly
+    between (all of them when there are no more than `count`)."""
+    if count <= 0 or len(items) <= count:
+        return list(items) if count > 0 else []
+    if count == 1:
+        return [items[0]]
+    step = (len(items) - 1) / (count - 1)
+    return [items[round(i * step)] for i in range(count)]
 
 
 def _free_port():
@@ -212,6 +226,7 @@ class PlayabilityStep(WorkflowStep):
             if measuring:
                 settings["max_units"] = max(settings["max_units"], self._probe_max_units())
             settings.update(self._survey_settings(design, self.params))
+            settings.update(self._risk_settings(design, self.params, settings["survey_units"]))
             self._keep_content_data(repo, out)
             blocked = self._play(repo, out, logs, settings, context, total_s,
                                  survey_s=settings["survey_ms"] / 1000.0,
@@ -427,6 +442,28 @@ class PlayabilityStep(WorkflowStep):
         }
 
     @staticmethod
+    def _risk_settings(design, params, surveyed, path=None):
+        """The level critic's frames and the risk test's CFG. With `with: survey: true` every
+        surveyed unit is captured at its start, middle and end (level-design-rubric.yaml
+        `moments`); with `with: risk: true` the bot plays the sampled units under the oracle's
+        safe and greedy policies (risk-reward.yaml `play`) - the units spread across the
+        surveyed ones, else play from the start (an empty id) for a design without authored
+        units. Neither asked: no frame and no attempt, and the records say so."""
+        rules = load_file(path or RISK_PATH)
+        play = rules.get("play") or {}
+        asked = bool((params or {}).get("risk"))
+        units = spread(list(surveyed or []), int(play.get("units") or 0)) if surveyed else [""]
+        return {
+            "level_frames": bool((params or {}).get("survey")) and bool(surveyed),
+            "risk_units": units if asked else [],
+            "risk_projects": list(play.get("projects") or []),
+            "risk_policies": [str(p) for p in play.get("policies") or []],
+            "risk_attempts": int(play.get("attempts") or 0),
+            "risk_attempt_ms": int((play.get("attempt_s") or 0) * 1000),
+            "risk_ms": int((play.get("total_s") or 0) * 1000) if asked else 0,
+        }
+
+    @staticmethod
     def _keep_content_data(repo, out):
         """Copy the commit's content data file beside the records, when it ships one."""
         source = os.path.join(repo, *CONTENT_DATA.split("/"))
@@ -487,9 +524,18 @@ class PlayabilityStep(WorkflowStep):
         # past its window (`extend_s`) on each viewport.
         survey_units = len(settings.get("survey_units") or [])
         survey = (len(settings.get("survey_projects") or [])
-                  * (survey_s + survey_units * (settings["start_timeout_ms"] / 1000.0 + 2) + 60)
+                  * (survey_s + survey_units * (settings["start_timeout_ms"] / 1000.0 + 2) + 60
+                     # the level critic's two extra frames per unit, outside the unit's window
+                     + (survey_units * 4 if settings.get("level_frames") else 0))
                   if survey_units else 0)
-        timeout = int(2 * (bot_total_s or 0) + 2 * (SHOWCASE_S + 45) + 120 + survey
+        # The risk test's window, with a start per attempt, on the projects it runs on.
+        risk_attempts = (len(settings.get("risk_units") or []) * len(settings.get("risk_policies") or [])
+                         * int(settings.get("risk_attempts") or 0))
+        risk = (len(settings.get("risk_projects") or [])
+                * (settings.get("risk_ms", 0) / 1000.0
+                   + risk_attempts * (settings["start_timeout_ms"] / 1000.0 + 2) + 60)
+                if risk_attempts else 0)
+        timeout = int(2 * (bot_total_s or 0) + 2 * (SHOWCASE_S + 45) + 120 + survey + risk
                       + 2 * (extend_s or 0))
         try:
             run = self._run(["pnpm", "exec", "playwright", "test", "-c",

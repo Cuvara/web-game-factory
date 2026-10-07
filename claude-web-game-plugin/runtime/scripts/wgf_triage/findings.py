@@ -27,7 +27,7 @@ __all__ = ["normalize", "from_requests", "NormalizeError", "PRODUCERS", "finding
 
 # The artifact types a finding can be read from, in the order a build's reports are read.
 PRODUCERS = ("playability-report", "production-quality-report", "visual-qa-report",
-             "content-sufficiency-report", "review-report", "qa-report",
+             "content-sufficiency-report", "level-design-report", "review-report", "qa-report",
              "listing-validation-report", "quality-scorecard", "quality-report")
 
 _ID_SAFE = re.compile(r"[^a-z0-9._:/@-]+")
@@ -398,6 +398,9 @@ _READERS = {
     "playability-report": _playability,
     "visual-qa-report": _visual_qa,
     "content-sufficiency-report": _sufficiency,
+    # The level-design-report's findings are in content-sufficiency's shape (dimension,
+    # severity, observed against the bar, `design-gap` with its gap).
+    "level-design-report": _sufficiency,
     "review-report": _review,
     "qa-report": _qa,
     "listing-validation-report": _listing,

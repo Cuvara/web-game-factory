@@ -89,7 +89,14 @@ workflow:
   # release refuses while any is (it reads the triage-report and decision-record too).
   # 15: greybox-playability says it plays the greybox (`with: {phase: greybox}`): the MVP
   # build, so a time ramp promised by a post-mvp mode is not owed by it.
-  version: 15
+  # 16: level design - after content-sufficiency, a level critic reads every sampled unit's
+  # start, middle and end frames against core/reference/level-design-rubric.yaml (play space,
+  # identity, route choice, reveal, climax, distinct from the previous unit), and the
+  # playability bot's safe and greedy oracle policies (`with: risk`) show an optional risk
+  # that pays (core/reference/risk-reward.yaml). Its failures go through triage to the
+  # level-designer (`develop`) or to design (`design-gap`); the quality gate reads its checks
+  # at the release tier.
+  version: 16
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -100,6 +107,8 @@ workflow:
     - core/reference/quality-floor.yaml
     - core/reference/quality-benchmark.yaml
     - core/reference/visual-qa-rubric.yaml
+    - core/reference/level-design-rubric.yaml
+    - core/reference/risk-reward.yaml
 
   # Every artifact a step names has a schema in core/artifacts/. A workflow MAY list types
   # without one under `untyped_artifacts`, as a visible, temporary gap: check-integrity.py
@@ -295,18 +304,21 @@ workflow:
       type: triage
       stage: title:prototype
       description: Normalize the current build's failures into quality findings and route them to the specialist that owns them.
-      inputs: [game-design, prototype-report, asset-manifest, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, review-report, qa-report, verification-report, quality-report, decision-record, triage-report]
+      inputs: [game-design, prototype-report, asset-manifest, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, level-design-report, review-report, qa-report, verification-report, quality-report, decision-record, triage-report]
       outputs: [triage-report]
       # 1 + 6 assets passes + the sending routes' budgets, each followed by at most one visit
       # per specialist through next-specialist; the specialists' own budgets on develop are
-      # the bound a chain meets. The quality gate's three routes (workflow 11) add 10.
-      max_visits: 110
+      # the bound a chain meets. The quality gate's three routes (workflow 11) add 10, the
+      # level-design step's two (workflow 16) add 6.
+      max_visits: 116
       max_visits_by_route:
         playability.fail: 2
         production-quality.develop: 2
         visual-qa.develop: 2
         content-sufficiency.develop: 2
         content-sufficiency.design-gap: 1
+        level-design.develop: 2
+        level-design.design-gap: 1
         quality-gate.develop: 2
         quality-gate.assets: 2
         quality-gate.design-gap: 1
@@ -382,8 +394,12 @@ workflow:
       stage: title:prototype
       inputs: [prototype-report, game-design, scaffold-record]
       outputs: [playability-report]
+      # `risk`: the bot also plays the sampled units under the oracle's safe and greedy
+      # policies (the probe's play.policy, core/reference/risk-reward.yaml `play`), for the
+      # level-design step; with `survey` it keeps each unit's start, middle and end frame.
       with:
         survey: true
+        risk: true
       max_visits: 59
       on:
         fail: triage
@@ -440,6 +456,26 @@ workflow:
       on:
         # Through triage, like every gate: `develop` to the specialist that owns each
         # finding, `design-gap` to design (triage's `design`, with the report's gaps).
+        develop: triage
+        design-gap: triage
+
+    # Level design: a level critic - an agent able to read images, factory.leveldesign.judge -
+    # reads the start, middle and end frame of every unit the playability bot surveyed against
+    # core/reference/level-design-rubric.yaml: play space used, a recognisable layout, more
+    # than one viable line or order, a reveal, a climax that is an event, and a unit distinct
+    # from the one before; the step decides from the rubric. From the same play, the oracle's
+    # safe and greedy policies must show an optional risk that pays: greedy earns measurably
+    # more at a measurably higher failure rate (core/reference/risk-reward.yaml). At the release
+    # tier every check is required and unmeasured is not passed: FAILED with route `develop`
+    # goes through triage to the level-designer, `design-gap` through triage to design; no
+    # judge configured is BLOCKED. Below it the results are reported and the run continues.
+    - id: level-design
+      type: level-design
+      stage: title:prototype
+      inputs: [playability-report, game-design, title-strategy]
+      outputs: [level-design-report]
+      max_visits: 59
+      on:
         develop: triage
         design-gap: triage
 
@@ -526,7 +562,7 @@ workflow:
     - id: quality-gate
       type: quality-gate
       stage: title:prototype
-      inputs: [playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, qa-report, verification-report, prototype-report, game-design, sdk-report, review-report, asset-manifest, title-strategy, triage-report, decision-record]
+      inputs: [playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, level-design-report, qa-report, verification-report, prototype-report, game-design, sdk-report, review-report, asset-manifest, title-strategy, triage-report, decision-record]
       outputs: [quality-report]
       max_visits: 59
       on:

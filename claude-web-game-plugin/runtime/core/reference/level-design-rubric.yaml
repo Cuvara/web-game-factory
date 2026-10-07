@@ -1,0 +1,145 @@
+# Level design rubric: what the units of a finished game are held to by a level critic.
+#
+# The visual-qa rubric asks whether a frame looks like a finished game. Nothing asked whether
+# its LEVELS are designed: a board whose blocks fill the top fifth of the field, a course that
+# is one corridor with its gems on the safe line, ten units that differ only in a number. The
+# level-design step (title:prototype, after content-sufficiency) hands a critic - an agent
+# able to read images - three frames of every unit the playability bot sampled (`moments`:
+# the start, the middle and the end of the unit as the oracle played it, survey or traverse),
+# with each unit's objective and the design's own words for it, and asks for a score per
+# dimension per unit and the findings. The step, not the critic, decides the verdict from
+# these rules. It is an agent's reading of frames (measurement_class: automation-agent).
+#
+# The critic is an installation's choice, configured outside core (factory.leveldesign.judge,
+# docs/level-design-critic.md): a command that reads the brief and copies of the frames and
+# returns its verdict, read-only. `baseline` is no agent: it measures what pixels and the
+# probe's entity boxes can measure (`baseline`, below) and carries a person's approved scores
+# for a unit whose frames match the approved ones; what it cannot measure stays null -
+# UNMEASURED, never a pass. No judge configured: the step reports SKIPPED, which a tier whose
+# skipped checks are not passed (core/reference/quality-policy.yaml, the release tier as
+# shipped) holds as BLOCKED.
+#
+# A unit fails when a dimension it was scored on is below `pass_bar`; the build fails when a
+# unit fails, a finding is a blocker, or the mean of every unit's scores is below
+# `mean_pass_bar`. A dimension a unit's frames cannot show (null) is unmeasured: at the
+# release tier the build cannot pass on it. Each dimension and blocker names its route:
+# `develop` - the level as built must change (the level-designer specialist,
+# core/reference/specialist-routing.yaml) - or `design-gap` - the design itself states no
+# such thing for the unit, and the design must say it first.
+#
+# Calibration (docs/level-design-critic.md, "Calibration"): the r1 builds of the two 2026-10
+# validation runs, read by one agent session on 2026-10-05 against this file, and the baseline
+# measures computed on the same frames. `basis: proposed` throughout: one reading of two games
+# is a defensible default, not a measured bar. Recalibrate in a new version as verdicts
+# accumulate - never to let one build pass.
+
+version: 1.0.0
+
+pass_bar: 3
+mean_pass_bar: 3.5
+basis: proposed
+
+# The frames of one unit, in the order the brief lists them. The bot captures each (bot.spec.ts
+# survey, `level-<unit>-<moment>.png`); a unit missing one is judged on what it has, and its
+# frames check (`level.frames`) is not passed.
+moments:
+  - id: start
+    shows: about a second into the unit - the layout as the player first meets it
+  - id: middle
+    shows: the unit half done (progress at half its target, else half the unit's window)
+  - id: end
+    shows: the unit nearly done (progress at three quarters, else late in the window) - its last beat
+
+# How many units are sampled: the survey's units (every unit the design lists, but optional
+# ones), else the traverse's. A run judges at most `max_units`, spread evenly across the
+# sequence (the first, the last and evenly between), so a critic's session stays bounded.
+sample:
+  max_units: 12
+  min_units: 3
+
+dimensions:
+  play_space:
+    route: develop
+    question: Does the layout use the play space it has - is play spread across the field rather than packed into a strip of it?
+    anchors:
+      "0": Most of the field is empty for the whole unit - the content sits in one strip or corner (blocks in the top fifth, a single lane through an open world).
+      "3": The content covers most of the field at some moment of the unit; one region stays unused without a reason.
+      "5": Every region of the field matters at some point; empty space, where there is any, is deliberate (a run-up, a breather) and reads as such.
+  layout_identity:
+    route: develop
+    question: Does the unit have a recognisable shape or theme of its own - could a player describe it ("the spiral one", "the bridge level") after one play?
+    anchors:
+      "0": A generic grid, row or corridor; nothing a player could name it by.
+      "3": A recognisable silhouette or set-piece, though plain or borrowed from a neighbour.
+      "5": A distinctive shape, landmark or theme the player would remember and name.
+  route_choice:
+    route: develop
+    question: Is there more than one viable line, order or approach through the unit - a choice a player makes, not one path?
+    anchors:
+      "0": One forced line or order; every play of the unit is the same.
+      "3": Two visible options (a branch, a side route, an order of targets) of which one is plainly better.
+      "5": Several viable lines with different trade-offs - risk against speed, reward against safety.
+  reveal:
+    route: develop
+    question: Does the unit reveal something as it is played - a new area, a mechanic, a hidden reward, a change of state - rather than showing everything at the start?
+    anchors:
+      "0": What the start frame shows is all there is; the end frame is the start minus what was cleared.
+      "3": One change mid-unit (a section opens, a new element enters).
+      "5": The unit unfolds - each frame shows something the previous one did not, and it pays off.
+  climax:
+    route: develop
+    question: Does the unit end on an event - a final challenge, a boss, a finale set-piece - rather than fading out as the last piece is cleared?
+    anchors:
+      "0": The end looks like the middle with less on screen; the unit just stops.
+      "3": A recognisable final beat (a last wave, a final gate), modest in scale.
+      "5": A clear climax the unit builds toward - bigger, tenser or more spectacular than what came before.
+  distinct_from_previous:
+    route: develop
+    question: Is the unit distinct from the unit before it - in layout, elements or objective - not the previous unit re-coloured or with a number changed?
+    anchors:
+      "0": A copy of the previous unit with a new colour, one more row or a changed timer.
+      "3": A different arrangement of the same elements; a player notices the difference.
+      "5": A different idea - new layout, new element or new objective - that a player feels at once.
+    # The first sampled unit has no previous unit: it is not scored on this dimension (null,
+    # and not counted as unmeasured).
+    first_unit: not_applicable
+
+# Findings the critic must raise as `severity: blocker` whatever the scores; each fails the
+# build on its own.
+blockers:
+  - id: empty-field
+    route: develop
+    rule: In every frame of a unit, at least half of the field holds nothing the player plays with (no target, threat, hazard, collectible or route).
+  - id: clone-unit
+    route: develop
+    rule: A unit is the previous sampled unit again - the same layout and elements, a colour or a number changed.
+  - id: undesigned-unit
+    route: design-gap
+    rule: The design states nothing for a unit that would let the build make it more than a default arrangement (no layout, set-piece or beat in build_spec.content.units[] for it) - the design must say what the unit is first.
+
+# The deterministic judge (factory.leveldesign.judge.kind: baseline). It never reads a frame
+# for taste: `play_space` from the probe's entity boxes the bot recorded with each frame,
+# `distinct_from_previous` from the frames' palette, detail and layout signature against the
+# previous unit's (wgf_visualqa.baseline.signature) and the cells their content occupies. Any
+# other dimension is scored only from `<baseline_dir>/approved.json` (a person's scores for a
+# unit) when every frame of the unit matches its approved frame at `min_similarity`; else null.
+baseline:
+  # The field: the box around every non-ui entity the probe reported in the unit's frames,
+  # cut into this grid; a cell is used when a content entity's box overlaps it.
+  grid: [8, 8]
+  content_roles: [threat, goal, target, collectible, hazard]
+  # Score = the highest whose `at_least` the measure reaches (0 below the first).
+  play_space:
+    - {score: 1, at_least: 0.15}
+    - {score: 2, at_least: 0.25}
+    - {score: 3, at_least: 0.35}
+    - {score: 4, at_least: 0.50}
+    - {score: 5, at_least: 0.65}
+  # 1 - similarity of the start frames, and 1 - Jaccard of the used cells: the larger of the two.
+  distinct_from_previous:
+    - {score: 1, at_least: 0.05}
+    - {score: 2, at_least: 0.10}
+    - {score: 3, at_least: 0.20}
+    - {score: 4, at_least: 0.35}
+    - {score: 5, at_least: 0.50}
+  min_similarity: 0.90

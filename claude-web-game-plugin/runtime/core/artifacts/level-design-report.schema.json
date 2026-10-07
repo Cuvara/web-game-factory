@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/level-design-report.schema.json",
+  "title": "Level design report",
+  "description": "Whether the units of a played build are designed levels, and whether an optional risk in them exists and pays. Two measurements of the same play of one commit. The level critic: a judge (an agent able to read images, or the deterministic `baseline`) reads three frames of every sampled unit - its start, middle and end as the playability bot's oracle played it - against core/reference/level-design-rubric.yaml and scores each unit on play-space use, layout identity, route or order choice, reveal, climax as an event and distinctness from the previous unit; the step decides the verdict from the rubric. Risk and reward: the bot played each sampled unit under the game's own safe and greedy oracle policies (the probe's play.policy), and greedy must earn measurably more at a measurably higher failure rate (core/reference/risk-reward.yaml). Unmeasured is never a pass: a dimension the frames cannot show, a missing frame, a probe without play.policy are reported unmeasured, and at a tier whose skipped checks are not passed (quality-policy.yaml, the release tier) they are not passed. Every failure is a typed finding routed `develop` (the level-designer) or `design-gap`.",
+  "x-wgf": {
+    "id": "level-design-report",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.0.0",
+    "producer": "title:prototype",
+    "consumers": [
+      "title:prototype",
+      "title:prototype-review",
+      "release:qa",
+      "release:draft"
+    ],
+    "repo_path": "<game-repo>/qa/level-design/<commit>.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/level-design-report/v<n>.json",
+    "required_for_gates": []
+  },
+  "type": "object",
+  "required": [
+    "provenance",
+    "title_id",
+    "commit",
+    "measurement_class",
+    "quality_tier",
+    "judge",
+    "rubric",
+    "units",
+    "risk",
+    "checks",
+    "findings",
+    "failed",
+    "routes",
+    "verdict"
+  ],
+  "properties": {
+    "provenance": {
+      "$ref": "shared/provenance.schema.json#/$defs/provenance"
+    },
+    "title_id": {
+      "type": "string"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "The commit the playability step played, whose frames and records were judged."
+    },
+    "measurement_class": {
+      "const": "automation-agent",
+      "description": "An agent's (or a measuring script's) reading of a bot's play: never a first-time player's."
+    },
+    "quality_tier": {
+      "type": ["string", "null"],
+      "description": "The run's quality tier (else the design's); it decides whether an unmeasured check is passed."
+    },
+    "judge": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["none", "command", "baseline"] },
+        "model": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "rubric": {
+      "type": "object",
+      "required": ["path", "version", "sha256"],
+      "properties": {
+        "path": { "type": "string" },
+        "version": { "type": "string" },
+        "sha256": { "type": "string" },
+        "pass_bar": { "type": "number" },
+        "mean_pass_bar": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "risk_rules": {
+      "type": "object",
+      "required": ["path", "version", "sha256"],
+      "properties": {
+        "path": { "type": "string" },
+        "version": { "type": "string" },
+        "sha256": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "judge_runs": { "type": "integer", "minimum": 0 },
+    "units": {
+      "type": "array",
+      "description": "Every sampled unit, in the design's order: its frames by moment, and the critic's scores (null: not shown by the frames - unmeasured).",
+      "items": {
+        "type": "object",
+        "required": ["unit_id", "frames", "scores"],
+        "properties": {
+          "unit_id": { "type": "string" },
+          "index": { "type": ["integer", "null"] },
+          "source": { "enum": ["survey", "traverse"] },
+          "project": { "type": "string" },
+          "objective": { "type": ["string", "null"] },
+          "frames": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["moment", "id", "path", "sha256"],
+              "properties": {
+                "moment": { "type": "string" },
+                "id": { "type": "string" },
+                "path": { "type": "string" },
+                "sha256": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "missing_moments": { "type": "array", "items": { "type": "string" } },
+          "scores": {
+            "type": "object",
+            "additionalProperties": { "type": ["number", "null"], "minimum": 0, "maximum": 5 }
+          },
+          "score_reasons": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          },
+          "measures": { "type": "object" },
+          "comment": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "scores": {
+      "type": "object",
+      "description": "Per dimension, the lowest score any sampled unit got (null when no unit was scored on it).",
+      "additionalProperties": { "type": ["number", "null"] }
+    },
+    "mean_score": { "type": ["number", "null"] },
+    "risk": {
+      "type": "object",
+      "required": ["applies", "measured"],
+      "description": "The safe and greedy policies played per unit (the bot's risk record), and what the step concluded.",
+      "properties": {
+        "applies": { "type": "boolean" },
+        "measured": { "type": "boolean" },
+        "reason": { "type": ["string", "null"] },
+        "reward_metric": { "type": ["string", "null"] },
+        "failure_metrics": { "type": "array", "items": { "type": "string" } },
+        "units": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["unit_id", "measured"],
+            "properties": {
+              "unit_id": { "type": ["string", "null"] },
+              "measured": { "type": "boolean" },
+              "reason": { "type": ["string", "null"] },
+              "safe": { "type": "object" },
+              "greedy": { "type": "object" },
+              "reward_gain": { "type": ["number", "null"] },
+              "relative_gain": { "type": ["number", "null"] },
+              "failure_rate_gain": { "type": ["number", "null"] },
+              "pays": { "type": ["boolean", "null"] },
+              "risky": { "type": ["boolean", "null"] }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status", "required", "summary"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^(level|risk)\\.[a-z_]+$" },
+          "status": { "enum": ["PASS", "FAIL", "WARNING", "SKIPPED"] },
+          "required": { "type": "boolean" },
+          "summary": { "type": "string" },
+          "measured": {},
+          "expected": {},
+          "route": { "enum": ["develop", "design-gap"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "findings": {
+      "type": "array",
+      "description": "One typed finding per failing or warned unit dimension, blocker, frames gap or risk shortfall, in the shape specialist routing reads (content-sufficiency-report's).",
+      "items": {
+        "type": "object",
+        "required": ["id", "check", "dimension", "severity", "summary", "owner", "route"],
+        "properties": {
+          "id": { "type": "string" },
+          "check": { "type": "string" },
+          "dimension": { "type": "string" },
+          "severity": { "enum": ["blocker", "major", "minor"] },
+          "summary": { "type": "string" },
+          "observed": {},
+          "bar": {},
+          "owner": { "type": "string" },
+          "route": { "enum": ["develop", "design-gap"] },
+          "unit": { "type": ["string", "null"] },
+          "frame": { "type": ["string", "null"] },
+          "evidence": { "type": "array", "items": { "type": "string" } },
+          "design_gap": {
+            "type": "object",
+            "required": ["field", "question", "severity"],
+            "properties": {
+              "field": { "type": "string" },
+              "question": { "type": "string" },
+              "assumed": { "type": ["string", "null"] },
+              "severity": { "enum": ["blocking", "minor"] },
+              "unit": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "failed": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ids of the required checks that failed."
+    },
+    "routes": {
+      "type": "array",
+      "items": { "enum": ["design-gap", "develop"] },
+      "description": "Where the failures go back to; the step returns the first (design-gap before develop)."
+    },
+    "skipped_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "reason"],
+        "properties": {
+          "id": { "type": "string" },
+          "reason": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "description": "Checks that measured nothing, with why. A skip is never a pass."
+    },
+    "blocked_reason": { "type": ["string", "null"] },
+    "notes": { "type": ["string", "null"] },
+    "verdict": {
+      "enum": ["PASS", "FAIL", "WARNING", "BLOCKED", "SKIPPED"],
+      "description": "WARNING: below a strict tier (quality-policy.yaml skipped_checks), a shortfall or a check that measured nothing, reported and not held against the build. SKIPPED: nothing was judged at such a tier. Neither is a pass."
+    }
+  },
+  "additionalProperties": false
+}

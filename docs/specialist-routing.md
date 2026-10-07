@@ -66,6 +66,7 @@ No consumer branches on a game, an engine name or a family id.
 | a G4 decision | each typed finding a person gave (`from_requests`), or else the note, as one generalist finding | the owner's, or `design` / `assets` when the person asks for it |
 | quality-scorecard (WS-7) | its findings as they are, with owner and route recomputed from the routing data | the owner's, or `design` |
 | quality-report (WS-7, the `quality-gate` step) | each open finding in a dimension the report held below its floor, its quality dimension mapped onto a routing dimension (`producers.quality-report.dimensions`), with observed value, expected threshold and asset ids | the owner's; `design` for a `design-gap` finding, `assets` for an `assets` one |
+| baseline-regression-report (workflow 16, the `baseline-regression` step) | each finding as its producer wrote it - a metric beyond tolerance or unmeasured against the accepted build, a rubric dimension the paired judge found worse, a person's open playtest finding (scripts/wgf-playtest.py) - with the owner recomputed | `assets` when the producer chose it (a paired asset dimension), else the owner's |
 
 A finding id is `<producer>:<check>[@<viewport>]`, for example
 `visual-qa-report:score:environment` or `playability-report:content.variety@mobile`. It stays
@@ -265,6 +266,18 @@ become blocking design gaps at their `task.design_field`, or at `build_spec.cont
 content and level design, and the agent author repairs them like a developer's gaps
 (`wgf_design.step.triage_gaps`). As with `design-gap`, tech-plan, G3 and the greybox run
 again on the repaired design.
+
+## Playtest findings outside G4
+
+A person who plays a build need not wait for G4: `python3 scripts/wgf-playtest.py file
+<run-id> FILE [--build COMMIT]` files the same `request` shape into the run
+(`<run>/playtest/`, by content hash), and the run's `baseline-regression` step turns each
+into a finding of the `baseline-regression-report` producer. One of a blocking severity
+fails that step - so triage routes it to its owner - and holds the quality gate until it
+closes: when the metric it names (`measures`, an `accepted-baseline.yaml` metric) passes on a
+newer build, or a person runs `wgf-playtest.py confirm <run-id> <finding-id>`. A newer build
+alone never closes it. Both commands are refused from inside a step's process tree. See
+[accepted-baseline.md](accepted-baseline.md).
 
 ## What is not done
 

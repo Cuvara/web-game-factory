@@ -37,9 +37,10 @@ from wgflib.workflow.store import RunStore  # noqa: E402
 
 # A mock new-game approves G2 and G3 itself and waits at G4 (prototype-review), which only a
 # person decides: its trail holds the wait and then the pass.
-NEW_GAME = ["research", "strategy", "strategy-review", "design", "tech-plan", "tech-plan-review",
-            "init", "greybox", "greybox-playability", "assets", "triage", "develop", "playability",
-            "production-quality", "visual-qa", "content-sufficiency", "review", "sdk", "sdk-review", "verify",
+NEW_GAME = ["research", "strategy", "strategy-review", "accepted-baseline", "design", "tech-plan",
+            "tech-plan-review", "init", "greybox", "greybox-playability", "greybox-baseline",
+            "assets", "triage", "develop", "playability", "production-quality", "visual-qa",
+            "content-sufficiency", "baseline-regression", "review", "sdk", "sdk-review", "verify",
             "quality-gate", "prototype-review", "prototype-review", "store-listing", "listing-validation", "release"]
 SCHEMATIZED = {
     "research": "opportunity",
@@ -176,7 +177,8 @@ class IndividualCommands(CliCase):
     def test_each_command_runs_only_its_slice(self):
         expected = {
             "research": ["research"],
-            "plan": ["strategy", "strategy-review", "design", "tech-plan", "tech-plan-review"],
+            "plan": ["strategy", "strategy-review", "accepted-baseline", "design", "tech-plan",
+                     "tech-plan-review"],
             "init": ["init"],
             "assets": ["assets"],
             "develop": ["develop"],
@@ -589,15 +591,17 @@ class RunStatesThroughTheCli(CliCase):
         before = self.state()
         succeeded = lambda s: sorted(t["step"] for t in s["trail"] if t["outcome"] == "SUCCESS")
         self.assertEqual(succeeded(before),
-                         sorted(["research", "strategy", "strategy-review", "design",
-                                 "tech-plan", "tech-plan-review", "init", "greybox",
-                                 "greybox-playability", "assets", "triage"]))
+                         sorted(["research", "strategy", "strategy-review",
+                                 "accepted-baseline", "design", "tech-plan",
+                                 "tech-plan-review", "init", "greybox", "greybox-playability",
+                                 "greybox-baseline", "assets", "triage"]))
         self.wgf("new-game", "--resume", before["run_id"], "--quiet", expect=3)
         self.pass_g4(before["run_id"])
         after = self.state(before["run_id"])
         self.assertEqual(succeeded(after), sorted(succeeded(before) +
                                                   ["develop", "playability",
                                                    "production-quality", "visual-qa", "content-sufficiency",
+                                                   "baseline-regression",
                                                    "review", "sdk", "sdk-review", "verify",
                                                    "quality-gate", "prototype-review", "store-listing",
                                                    "listing-validation", "release"]))

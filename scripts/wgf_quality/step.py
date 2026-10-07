@@ -3,7 +3,8 @@
     playability-report, production-quality-report, visual-qa-report,
     content-sufficiency-report, qa-report, verification-report, prototype-report,
     game-design [+ sdk-report, review-report, asset-manifest, title-strategy,
-    listing-validation-report, triage-report, decision-record]
+    listing-validation-report, triage-report, decision-record, accepted-baseline,
+    baseline-regression-report]
       -> the build: the verified commit, the development commit it sits on, the bundle digest
       -> every report checked to be about that build (stale evidence BLOCKS)
       -> the contract: core/reference/quality-floor.yaml (universal floor, genre family or its
@@ -26,7 +27,15 @@
     BLOCKED   evidence about another build, a pinned reference edited after the start, or a
               contract that cannot be read; or every dimension holds its floor while a
               blocking finding (specialist-routing.yaml `ledger.blocking_severities`) a gate
-              raised is still open on the ledger - nothing has verified it on a newer build
+              raised is still open on the ledger - nothing has verified it on a newer build;
+              or the run holds an accepted baseline (accepted-baseline) that this build was
+              not measured against at the production phase (no baseline-regression-report of
+              its development commit): a baseline that exists is never skipped
+
+The accepted baseline (workflow 16): the run's newest baseline-regression-report of this
+build's development commit is the `baseline` block. FAIL fails the gate with its routes
+(`restore` goes to develop), so triage routes its findings; SKIPPED - nothing was accepted
+for the title - changes nothing.
 
 It plays nothing and touches no checkout: it reads what the producing steps recorded about
 the same build. A run at tier mvp is a development build: PASS means its floor holds, and the
@@ -43,13 +52,14 @@ from wgflib.yamllite import YamlError, load as load_yaml
 from . import scoring
 
 __all__ = ["QualityGateStep", "REQUIRED_INPUTS", "OPTIONAL_INPUTS", "FLOOR", "BENCHMARK",
-           "RUBRIC", "load_contract", "advance_ledger"]
+           "RUBRIC", "load_contract", "advance_ledger", "baseline_status"]
 
 REQUIRED_INPUTS = ("playability-report", "production-quality-report", "visual-qa-report",
                    "content-sufficiency-report", "qa-report", "verification-report",
                    "prototype-report", "game-design")
 OPTIONAL_INPUTS = ("sdk-report", "review-report", "asset-manifest", "title-strategy",
-                   "listing-validation-report", "triage-report", "decision-record")
+                   "listing-validation-report", "triage-report", "decision-record",
+                   "accepted-baseline", "baseline-regression-report")
 FLOOR = "core/reference/quality-floor.yaml"
 BENCHMARK = "core/reference/quality-benchmark.yaml"
 RUBRIC = "core/reference/visual-qa-rubric.yaml"
@@ -97,6 +107,58 @@ def advance_ledger(inputs, report, run_dir=None):
              "awaiting": [r["id"] for r in waiting],
              "lifecycle": lifecycle}
     return block, held
+
+
+def _same_commit(a, b):
+    return bool(a and b) and min(len(a), len(b)) >= 7 and (a.startswith(b) or b.startswith(a))
+
+
+def baseline_status(loaded, build):
+    """The `baseline` block: this build against the build a person accepted.
+
+    SKIPPED (no accepted baseline, or `status: none`), PASS / FAIL (the newest
+    baseline-regression-report of the build's development commit at the production phase),
+    UNMEASURED otherwise - a baseline exists and this build was not measured against it."""
+    accepted = loaded.get("accepted-baseline")
+    report = loaded.get("baseline-regression-report")
+    if not isinstance(accepted, dict) or accepted.get("status") == "none":
+        return {"status": "SKIPPED", "accepted_commit": None, "report": None, "routes": [],
+                "reason": ((accepted or {}).get("reason") if isinstance(accepted, dict) else
+                           None) or "the run holds no accepted baseline: nothing was accepted "
+                                    "for the title to compare this build with"}
+    commit = ((accepted.get("accepted") or {}).get("commit"))
+    block = {"accepted_commit": commit, "report": None, "routes": []}
+    if accepted.get("status") != "present":
+        return dict(block, status="UNMEASURED", reason=(
+            "an accepted build exists that cannot be measured: "
+            + "; ".join(accepted.get("problems") or ["unresolved"])))
+    if not isinstance(report, dict):
+        return dict(block, status="UNMEASURED", reason=(
+            f"the run holds an accepted baseline ({str(commit)[:12]}) and no "
+            "baseline-regression-report: this build was not measured against it"))
+    block["report"] = (report.get("provenance") or {}).get("artifact_id")
+    developed = build.get("development_commit")
+    if not _same_commit(report.get("commit"), developed):
+        return dict(block, status="UNMEASURED", reason=(
+            f"the newest baseline-regression-report describes "
+            f"{str(report.get('commit'))[:12]}, not this build's development commit "
+            f"{str(developed)[:12]}"))
+    if report.get("phase") != "production":
+        return dict(block, status="UNMEASURED", reason=(
+            "the build was measured against the accepted baseline at the greybox phase only: "
+            "its metrics and paired judgement were not made"))
+    verdict = report.get("verdict")
+    if verdict == "PASS":
+        return dict(block, status="PASS", reason="the build holds the accepted build "
+                                                 f"{str(commit)[:12]}")
+    if verdict == "FAIL":
+        routes = ["develop" if r == "restore" else r for r in report.get("routes") or []]
+        return dict(block, status="FAIL", routes=routes or ["develop"], reason=(
+            f"worse than the accepted build {str(commit)[:12]}: "
+            + ", ".join(report.get("failed") or [])))
+    return dict(block, status="UNMEASURED", reason=(
+        f"the baseline-regression-report is {verdict}: "
+        + str(report.get("blocked_reason") or report.get("skipped_reason") or "")))
 
 
 def _family_of_node():
@@ -262,6 +324,20 @@ class QualityGateStep(WorkflowStep):
                 result, previous):
         report = self._report(context, inputs, title_id, build, tier, record, summary,
                               entries, result, previous, None, seal=False)
+        loaded = {t: inputs.load(t) for t in ("accepted-baseline", "baseline-regression-report")
+                  if t in inputs}
+        report["baseline"] = baseline = baseline_status(loaded, build)
+        if baseline["status"] == "FAIL":
+            # Worse than the accepted build: the gate fails with the baseline's routes, which
+            # triage reads from the baseline-regression-report.
+            report["verdict"] = "FAIL"
+            report["routes"] = [r for r in scoring.ROUTE_ORDER
+                                if r in set(report["routes"]) | set(baseline["routes"])]
+            reasons = list(report["release_decision"].get("reasons") or [])
+            report["release_decision"] = {
+                "decision": ("not-release" if report.get("quality_tier") == "release"
+                             else report["release_decision"]["decision"]),
+                "reasons": [f"accepted baseline: {baseline['reason']}"] + reasons}
         try:
             report["ledger"], held = advance_ledger(inputs, report,
                                                     getattr(context, "run_dir", None))
@@ -277,6 +353,10 @@ class QualityGateStep(WorkflowStep):
                           + "; ".join(f"{r['id']} ({r['status']})" for r in held[:6])
                           + ". The producer that raised each must measure it passing on a "
                             "newer build.")
+        if baseline["status"] == "UNMEASURED" and report["verdict"] == "PASS":
+            reason = (f"accepted baseline unmeasured: {baseline['reason']}. A baseline that "
+                      "exists is never skipped: baseline-regression must measure this build."
+                      + (f" {reason}" if reason else ""))
         if reason and report["verdict"] == "PASS":
             report["verdict"] = "BLOCKED"
             report["blocked_reason"] = reason
@@ -297,6 +377,10 @@ class QualityGateStep(WorkflowStep):
                            for d in report["dimensions"])
         if verdict == "FAIL":
             route = report["routes"][0]
+            if not report["failed"]:
+                return StepResult("FAILED", route=route, artifacts=[output], retryable=False,
+                                  error=f"ACCEPTED-BASELINE REGRESSION (route {route}): "
+                                        f"{report['baseline']['reason']}")
             context.logger.error("quality below the floor", failed=report["failed"],
                                  route=route)
             reasons = "; ".join(report["release_decision"]["reasons"][:5])

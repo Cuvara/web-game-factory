@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/accepted-baseline.schema.json",
+  "title": "Accepted baseline",
+  "description": "The build a person accepted for a title, pinned into a run: the newest G4 `pass` decision-record a person gave for the title (or the commit factory.baseline.accepted names), the accepted development commit and the shipped commit, the reports that measured it - copied into the run with their content hashes, pinned by the decision or by the commit they describe - the frames its play captured, copied and checked against their recorded sha256, and the metrics core/reference/accepted-baseline.yaml reads from those reports. `status: none` says why there is no baseline (nothing was accepted yet); `unmeasured` says an accepted build exists that cannot be measured - a regression check on it blocks, never skips. Every later build of the run is held to it by the baseline-regression step (baseline-regression-report). Added in Factory 2.9.0.",
+  "x-wgf": {
+    "id": "accepted-baseline",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.0.0",
+    "producer": "title:design",
+    "consumers": ["title:design", "title:prototype", "title:prototype-review"],
+    "run_path": "<storage>/workflows/<run-id>/artifacts/accepted-baseline/v<n>.json",
+    "required_for_gates": []
+  },
+  "type": "object",
+  "required": ["provenance", "title_id", "reference", "status", "reason", "accepted", "reports", "frames", "metrics", "problems"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": ["string", "null"] },
+    "reference": {
+      "type": "object",
+      "required": ["path", "version", "sha256"],
+      "properties": {
+        "path": { "type": "string" },
+        "version": { "type": "string" },
+        "sha256": { "type": "string" },
+        "pinned": { "type": "boolean" }
+      }
+    },
+    "status": {
+      "enum": ["present", "none", "unmeasured"],
+      "description": "present: an accepted build with its reports. none: nothing was accepted for the title. unmeasured: an accepted build exists that cannot be measured (`problems` says why)."
+    },
+    "reason": { "type": ["string", "null"] },
+    "accepted": {
+      "type": ["object", "null"],
+      "required": ["commit", "source"],
+      "properties": {
+        "commit": { "type": ["string", "null"], "description": "The accepted development commit: the decision's pinned prototype-report's." },
+        "shipped_commit": { "type": ["string", "null"], "description": "The commit the decision's qa-report verified." },
+        "source": { "enum": ["run-store", "workspace", "config"] },
+        "run_id": { "type": ["string", "null"] },
+        "decision": {
+          "type": ["object", "null"],
+          "properties": {
+            "artifact_id": { "type": ["string", "null"] },
+            "content_hash": { "type": ["string", "null"] },
+            "decided_at": { "type": ["string", "null"] },
+            "decision": { "type": ["string", "null"] },
+            "decided_by": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    "reports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["artifact_type", "path", "pinned_by"],
+        "properties": {
+          "artifact_type": { "type": "string" },
+          "artifact_id": { "type": ["string", "null"] },
+          "content_hash": { "type": ["string", "null"] },
+          "commit": { "type": ["string", "null"] },
+          "pinned_by": { "enum": ["decision", "commit"] },
+          "path": { "type": "string", "description": "The run-relative copy." }
+        }
+      }
+    },
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["project", "id", "path", "sha256"],
+        "properties": {
+          "project": { "type": ["string", "null"] },
+          "id": { "type": ["string", "null"] },
+          "path": { "type": "string", "description": "The run-relative copy." },
+          "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "description": "{metric id: {project: value}} as core/reference/accepted-baseline.yaml `metrics` reads them from the accepted build's reports.",
+      "additionalProperties": { "type": "object" }
+    },
+    "problems": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false
+}

@@ -89,7 +89,18 @@ workflow:
   # release refuses while any is (it reads the triage-report and decision-record too).
   # 15: greybox-playability says it plays the greybox (`with: {phase: greybox}`): the MVP
   # build, so a time ramp promised by a post-mvp mode is not owed by it.
-  version: 15
+  # 16: the accepted baseline - a build a person passed at G4 is the bar every later build of
+  # the same game is held to. `accepted-baseline` pins it into the run before design (the
+  # newest G4 `pass` a person gave for the title, its reports and frames; core/reference/
+  # accepted-baseline.yaml); design and every develop visit are briefed to extend it; after
+  # the greybox and after content-sufficiency `baseline-regression` measures how much of it
+  # the candidate replaced - above the maximum the run waits for a person (approve | restore,
+  # never automation, never a timeout) - and, on the production build, the same bot's metrics
+  # within tolerance, a paired judgement of the accepted and the candidate frames per rubric
+  # dimension, and the playtest findings a person filed (scripts/wgf-playtest.py). Its
+  # failures go through triage like every gate's; the quality gate is not releasable while a
+  # baseline exists that its build was not measured against (docs/accepted-baseline.md).
+  version: 16
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -100,6 +111,7 @@ workflow:
     - core/reference/quality-floor.yaml
     - core/reference/quality-benchmark.yaml
     - core/reference/visual-qa-rubric.yaml
+    - core/reference/accepted-baseline.yaml
 
   # Every artifact a step names has a schema in core/artifacts/. A workflow MAY list types
   # without one under `untyped_artifacts`, as a visible, temporary gap: check-integrity.py
@@ -137,7 +149,7 @@ workflow:
   # separately and is not reset by a resume: factory.develop.budget.
 
   groups:
-    plan: [strategy, strategy-review, design, tech-plan, tech-plan-review]
+    plan: [strategy, strategy-review, accepted-baseline, design, tech-plan, tech-plan-review]
     # Publication of a drafted release, in the run that drafted it: `wgf publish --run <id>`.
     publish: [platform-validate, release-review, publish-review, submit]
 
@@ -166,6 +178,19 @@ workflow:
         prompt: Approve the title strategy before design starts?
         choices: [approve, reject]
 
+    # The build a person accepted for this title, if any: the newest G4 `pass` decision-record
+    # a person gave (the project's run store, workspace/titles/<id>/decisions) or the commit
+    # factory.baseline.accepted names, with the reports that measured it and the frames its
+    # play captured, copied into the run (scripts/wgf_baseline, docs/accepted-baseline.md).
+    # `status: none` when nothing was accepted yet: every later baseline check is then
+    # SKIPPED, with that reason.
+    - id: accepted-baseline
+      type: accepted-baseline
+      stage: title:design
+      description: Pin the build a person accepted for this title - its commit, reports and frames - as the bar every later build is held to.
+      inputs: [title-strategy]
+      outputs: [accepted-baseline]
+
     # Re-entered through `design-gap` from greybox or develop with the prototype-report whose
     # `design_gaps` name what the design did not decide; the design is repaired, never
     # replaced, and tech-plan and G3 run again on it. One pass per source, then a person looks.
@@ -177,7 +202,7 @@ workflow:
     - id: design
       type: design
       stage: title:design
-      inputs: [title-strategy, prototype-report, content-sufficiency-report, triage-report]
+      inputs: [title-strategy, prototype-report, content-sufficiency-report, triage-report, accepted-baseline]
       outputs: [game-design]
       # 5 = the first design + one repair from each design-gap source + two from triage.
       max_visits: 5
@@ -230,15 +255,17 @@ workflow:
       type: develop
       stage: title:prototype
       description: Build the whole MVP loop with primitives, before any asset exists.
-      inputs: [game-design, scaffold-record, title-strategy, tech-plan, playability-report]
+      inputs: [game-design, scaffold-record, title-strategy, tech-plan, playability-report, accepted-baseline, baseline-regression-report]
       outputs: [prototype-report]
       with:
         phase: greybox
-      # 7 = the first visit + 2 playability passes + 4 returns after a design repair (two
-      # design-gap sources and triage's design).
-      max_visits: 7
+      # 9 = the first visit + 2 playability passes + 2 restorations a person asked for at
+      # greybox-baseline + 4 returns after a design repair (two design-gap sources and
+      # triage's design).
+      max_visits: 9
       max_visits_by_route:
         greybox-playability.fail: 2
+        greybox-baseline.restore: 2
       on:
         design-gap: design
 
@@ -254,6 +281,24 @@ workflow:
       max_visits: 3
       on:
         fail: greybox
+
+    # How much of the accepted build the greybox replaced (accepted units removed or
+    # changed, accepted source files rewritten, accepted source lines deleted, from git):
+    # above core/reference/accepted-baseline.yaml's maximum the run WAITS for a person -
+    # `approve` the replacement (recorded, and carried for the run) or `restore`, which sends
+    # the greybox back to make its change an extension of the accepted build. Only a
+    # person's answer is taken; nothing approves it on a timeout. SKIPPED when nothing was
+    # accepted for the title.
+    - id: greybox-baseline
+      type: baseline-regression
+      stage: title:prototype
+      inputs: [accepted-baseline, prototype-report, scaffold-record, game-design, baseline-regression-report]
+      outputs: [baseline-regression-report]
+      with:
+        phase: greybox
+      max_visits: 9
+      on:
+        restore: greybox
 
     # scaffold-record is optional: it names the target platforms, whose bundle-size limits
     # the delivered files are checked against. Without it the manifest skips that check.
@@ -295,12 +340,13 @@ workflow:
       type: triage
       stage: title:prototype
       description: Normalize the current build's failures into quality findings and route them to the specialist that owns them.
-      inputs: [game-design, prototype-report, asset-manifest, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, review-report, qa-report, verification-report, quality-report, decision-record, triage-report]
+      inputs: [game-design, prototype-report, asset-manifest, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, review-report, qa-report, verification-report, quality-report, decision-record, triage-report, baseline-regression-report]
       outputs: [triage-report]
       # 1 + 6 assets passes + the sending routes' budgets, each followed by at most one visit
       # per specialist through next-specialist; the specialists' own budgets on develop are
-      # the bound a chain meets. The quality gate's three routes (workflow 11) add 10.
-      max_visits: 110
+      # the bound a chain meets. The quality gate's three routes (workflow 11) add 10, the
+      # accepted baseline's three (workflow 16) 10 more.
+      max_visits: 120
       max_visits_by_route:
         playability.fail: 2
         production-quality.develop: 2
@@ -310,6 +356,9 @@ workflow:
         quality-gate.develop: 2
         quality-gate.assets: 2
         quality-gate.design-gap: 1
+        baseline-regression.develop: 2
+        baseline-regression.assets: 2
+        baseline-regression.restore: 1
         review.request-changes: 2
         sdk-review.request-changes: 2
         verify.fail: 2
@@ -337,7 +386,7 @@ workflow:
       # triage-report: entered through triage with a specialist's label, the visit is that
       # specialist's - its focus, craft playbooks, writable scope and only the findings it
       # owns (docs/specialist-routing.md).
-      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, triage-report]
+      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, triage-report, accepted-baseline, baseline-regression-report]
       outputs: [prototype-report]
       with:
         phase: production
@@ -443,6 +492,30 @@ workflow:
         develop: triage
         design-gap: triage
 
+    # The accepted baseline (workflow 16): the production build held to the build a person
+    # accepted for this title. From the same play of the same commit - the playability
+    # report, visual-qa's, production-quality's and content-sufficiency's - and the accepted
+    # build's reports pinned at the start: how much of the accepted build it replaced (above
+    # the maximum the run waits for a person: approve | restore); the metrics the same bot
+    # measured on both builds against core/reference/accepted-baseline.yaml's tolerances; a
+    # paired judgement - the visual-qa judge shown the accepted and the candidate frame of the
+    # same state, per rubric dimension better, same or worse; and the playtest findings a
+    # person filed against a build (scripts/wgf-playtest.py). A metric beyond tolerance, a
+    # dimension judged worse or an open blocking playtest finding is FAILED and goes through
+    # triage like every gate: `assets` to assets, `develop` to the specialist that owns it,
+    # `restore` to develop. SKIPPED when nothing was accepted for the title; BLOCKED when a
+    # baseline exists that cannot be measured, or the paired judgement cannot be made.
+    - id: baseline-regression
+      type: baseline-regression
+      stage: title:prototype
+      inputs: [accepted-baseline, prototype-report, scaffold-record, game-design, playability-report, visual-qa-report, production-quality-report, content-sufficiency-report, baseline-regression-report]
+      outputs: [baseline-regression-report]
+      max_visits: 59
+      on:
+        develop: triage
+        assets: triage
+        restore: triage
+
     # An independent reviewer reads the commit develop made; it may not change it. Approve
     # continues to sdk (whose own commit sdk-review reads in turn); request-changes (FAILED,
     # route `request-changes`) goes back, through triage, to develop with the blockers. Unrouted, a request
@@ -526,7 +599,7 @@ workflow:
     - id: quality-gate
       type: quality-gate
       stage: title:prototype
-      inputs: [playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, qa-report, verification-report, prototype-report, game-design, sdk-report, review-report, asset-manifest, title-strategy, triage-report, decision-record]
+      inputs: [playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, qa-report, verification-report, prototype-report, game-design, sdk-report, review-report, asset-manifest, title-strategy, triage-report, decision-record, accepted-baseline, baseline-regression-report]
       outputs: [quality-report]
       max_visits: 59
       on:

@@ -282,6 +282,10 @@ PROMPT_COMMITMENTS = (
     " data file and its content lives in source code: read that code in the checkout, keep"
     " every unit it ships under its own id, and plan at least as much; the shipped build is"
     " counted through the play probe before any developer change and held to."
+    " `commitments.accepted_baseline`, when present, is the build a person played and"
+    " accepted at G4 for this title: extend it - keep its units, scene, camera and tuning and"
+    " add beside them. A design that replaces them stops the run for a person's decision"
+    " once the greybox measures the replacement (core/reference/accepted-baseline.yaml)."
 )
 # Appended when the step asks again: the previous draft and exactly what made it invalid.
 PROMPT_REPAIR = (
@@ -552,7 +556,8 @@ class AgentAuthor(DesignAuthor):
                        "commitments": {
                            "stated": brief_commitments.view(
                                {}, brief.get("strategy") or {})["stated"],
-                           "existing_content": brief.get("existing_content")}})
+                           "existing_content": brief.get("existing_content"),
+                           "accepted_baseline": brief.get("accepted_baseline")}})
         if not gaps:
             # On a gap repair the starting draft is the draft file itself.
             request["starting_draft"] = starting

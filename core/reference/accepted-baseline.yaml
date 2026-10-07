@@ -1,0 +1,222 @@
+# Accepted baseline: a build a person accepted is the bar the next build of the same game
+# must not fall below.
+#
+# Every other gate holds a build to an absolute floor (quality-floor.yaml, quality-
+# benchmark.yaml, the visual-qa rubric). Observed 2026-10-05 (both validation games): a run
+# adopted the repository whose build a person had passed at G4, wrote a new design, and its
+# greybox and later visits rewrote the game - every absolute gate still passed, visual QA
+# scored the environment 4 for the accepted build and for the worse one alike, and the person
+# who played both found the accepted build much better. No step read the accepted build or
+# its G4 decision. This file is what the `accepted-baseline` and `baseline-regression` steps
+# (scripts/wgf_baseline, docs/accepted-baseline.md) hold a candidate build to:
+#
+#   locate       where the accepted build of a title is found: the newest G4 `pass`
+#                decision-record a person gave for the title (the project's run store, the
+#                title's workspace decisions), or a commit a person names in
+#                factory.baseline.accepted. The reports it pinned, or that describe its
+#                commit, are copied into the run with their frames: the accepted build is a
+#                pinned input of the run, not a path to an old run store.
+#   replacement  how much of the accepted build a candidate replaced, from git: accepted
+#                content units removed or changed, accepted source files rewritten, accepted
+#                source lines deleted. Above `maximum` the run waits for a person's decision
+#                (approve the replacement, or restore and extend the accepted build); no
+#                automation answers it and it never approves on a timeout.
+#   metrics      what the same bot measured on both builds, compared with a tolerance.
+#   paired       a judge shown the accepted and the candidate frame of the same state, per
+#                visual-qa rubric dimension: better, same or worse. Worse on any dimension
+#                is a blocking finding routed to the dimension's owner.
+#   playtest     what a person who played a build files against it (scripts/wgf-playtest.py):
+#                blocking findings that close only on a re-measurement or a person's
+#                confirmation.
+#
+# Every number below that a candidate can fail is stated once, here. Never lower one to let
+# a build pass: a new version recalibrates (with the evidence), like the other references.
+# Read through the run's pinned copy (new-game `pinned_references`).
+#
+# Calibration evidence (2026-10-05). `basis: measured-2` means both validation games'
+# accepted builds (baseline-r1: 2D brick-breaker-worlds 96f5cea, run new-game-20261003-
+# 081154-4e5e0a; 3D sky-marble 64ff4c6, run new-game-20261003-082542-0de9b5) were measured
+# against the builds a person then judged worse (2D 68a12b7, run new-game-20261005-002926-
+# 318384; 3D 1c6b099, run new-game-20261005-002923-597b5e), and against what an improving
+# visit looks like (each develop commit of the two accepted runs against the previous one);
+# `proposed` is a defensible default no pair has exercised. The replay is
+# scripts/tests/test_accepted_baseline.py (fixtures copied from those run stores) and
+# docs/accepted-baseline.md "Calibration".
+
+version: 1.0.0
+
+locate:
+  gate: G4
+  decision: pass
+  # Only a person's acceptance makes a baseline: decided_by.mode human.
+  decided_by: human
+  # The reports of the accepted build the run copies: pinned by the decision when it pinned
+  # them, else the newest report of that type in the decision's run that describes the
+  # accepted (development) commit.
+  reports: [playability-report, production-quality-report, visual-qa-report, content-sufficiency-report]
+  # The frames the paired judge compares come from this report.
+  frames_from: playability-report
+
+replacement:
+  # The accepted commit's text files under these roots are what "the accepted code" is;
+  # the content data file is the shipped units (brief-commitments.yaml existing_content).
+  roots: [src]
+  content_path: public/content/units.json
+  # A file whose deleted lines are at least this share of its accepted lines (or which is
+  # gone) is rewritten.
+  file_rewritten_share: 0.5
+  # Above any of these, the candidate replaced accepted work: a person decides.
+  # Calibration: an improving visit of the accepted runs replaced at most 0.0625 of the
+  # units (2D), rewrote at most 0.0556 of the files and deleted at most 0.0842 of the lines
+  # (3D 5da69e34 -> 3cae2dde); 0.25 is about three to four times the largest improving visit.
+  # The replacements a person rejected: 2D 1.0 of the units (every unit's objective,
+  # mechanics, difficulty and layout, from greybox's second commit on), lines 0.11; 3D
+  # (no content data file at the accepted commit: units unmeasured) files 0.19, lines 0.46
+  # at greybox:1 b6b9edb.
+  maximum:
+    units_replaced_share: 0.25
+    files_rewritten_share: 0.25
+    lines_deleted_share: 0.25
+  basis: measured-2
+  # The choices a person has when a candidate exceeds the maximum (wgf decide <run> CHOICE):
+  # `approve` the replacement (recorded in the report, pinned to the accepted commit and the
+  # measurement), or `restore` - the build goes back to be made an extension of the accepted
+  # build. Automation's answer is refused; no timeout approves it.
+  choices: [approve, restore]
+
+# The projects (viewports) a metric is read for, unless the metric names its own; `all` for
+# report-level values. Noise, measured on two plays of one commit (2D f55653dc playability v9
+# and v10; 3D db651f92 v8 and v9): on desktop every metric below stayed inside its band (3D
+# bad play x1.27, entity areas x1.06-x1.14, inputs 17 -> 19; 2D within 3%); on the 3D game's
+# mobile viewport the bot's play itself varied - entity areas x0.21 and x0.53, unit time
+# x1.87, inputs x0.47 - so what depends on how the bot played is read on desktop only, and
+# the look (luminance, contrast: within 0.6 on both viewports) on both.
+projects: [desktop, mobile]
+
+# compare: equal | ratio (band [low, high] of candidate / accepted) | delta (|candidate -
+# accepted| <= max_delta) | drop (candidate >= accepted - max_drop). `dimension` is a
+# specialist-routing word (art, environment and lighting resolve by the design's engine
+# dimension); `waived_by_replacement`: SKIPPED once a person approved a replacement - the
+# look and tuning such a decision may change on purpose.
+metrics:
+  - id: win.outcome
+    projects: [desktop]
+    label: what good play reaches
+    read: {report: playability-report, check: win.reachable, field: measured.reached}
+    compare: equal
+    dimension: gameplay
+    severity: blocker
+    basis: measured-1   # 2D: won -> lost
+  - id: win.inputs
+    projects: [desktop]
+    label: inputs good play needs to finish a run
+    read: {report: playability-report, check: win.reachable, field: measured.inputs}
+    compare: ratio
+    band: [0.5, 2.0]
+    dimension: difficulty
+    severity: blocker
+    waived_by_replacement: true
+    basis: measured-2   # 2D 20 -> 3 (x0.15), 3D 60 -> 6 (x0.10)
+  - id: unit.duration_ms
+    projects: [desktop]
+    label: mean time good play spends on a unit (the units both traverses left)
+    read: {report: playability-report, check: content.units_reachable, field: measured.transitions, derive: unit_durations}
+    compare: ratio
+    band: [0.67, 1.5]
+    dimension: level-design
+    severity: blocker
+    waived_by_replacement: true
+    basis: proposed     # 2D units 1-2: 40.1 s -> 27.4 s (x0.68, inside); 3D accepted build: not measured; desktop noise not measured
+  - id: bad_play.ended_ms
+    projects: [desktop]
+    label: how long bad play survives before the run ends
+    read: {report: playability-report, check: depth.ramp, field: measured.bad_play_ended_ms}
+    compare: ratio
+    band: [0.5, 2.0]
+    dimension: difficulty
+    severity: blocker
+    waived_by_replacement: true
+    basis: measured-2   # 2D 19.1 s -> 18.8 s (x0.99); 3D 29.9 s -> 66.0 s (x2.21)
+  - id: session.length_ms
+    projects: [desktop]
+    label: length of one session with instant retries
+    read: {report: playability-report, check: depth.session_length, field: measured.length_ms}
+    compare: ratio
+    band: [0.5, 2.0]
+    dimension: content
+    severity: blocker
+    waived_by_replacement: true
+    basis: measured-2   # 2D 25.6 s -> 26.9 s (x1.05); 3D 155.3 s -> 71.9 s (x0.46); noise x1.00
+  - id: frame.luminance
+    label: mean luminance of the frames during play (0-255)
+    read: {report: playability-report, check: frames.readable, field: measured, derive: {mean_of: mean_luminance}}
+    compare: delta
+    # One eighth of the range. Between two plays of one commit it moved by at most 0.5.
+    max_delta: 32
+    dimension: lighting
+    severity: blocker
+    waived_by_replacement: true
+    basis: measured-2   # 2D 25.8 -> 92.4 (+67); 3D 121.8 -> 183.7 (+62)
+  - id: frame.contrast
+    label: contrast of the frames during play
+    read: {report: playability-report, check: frames.readable, field: measured, derive: {mean_of: contrast}}
+    compare: delta
+    max_delta: 24
+    dimension: lighting
+    severity: blocker
+    waived_by_replacement: true
+    basis: measured-1   # 2D desktop 26.4 -> 47.1 (+20.7), mobile 41.3 -> 73.2 (+31.9); 3D 47.3 -> 48.4
+  - id: entity.area
+    projects: [desktop]
+    label: median on-screen area of each entity role the probe reports
+    read: {report: playability-report, check: entities.visible, field: measured, each: median_area}
+    compare: ratio
+    band: [0.67, 1.5]
+    dimension: art
+    severity: blocker
+    waived_by_replacement: true
+    basis: measured-2   # 2D target x0.52; 3D goal x27.5, target gone
+  - id: vqa.score
+    label: the visual-qa judge's score of each rubric dimension
+    read: {report: visual-qa-report, field: scores, each_key: true}
+    compare: drop
+    # visual-qa-rubric.yaml: per-dimension scores from one judge vary by a point between
+    # runs on the same frames, so a drop of one point is noise; more is not.
+    max_drop: 1
+    # each score's owner and route are its rubric dimension's (specialist-routing.yaml
+    # visual-qa-report `scores`, visual-qa-rubric.yaml `route`)
+    dimension: art
+    dimension_by_key: visual-qa-report
+    severity: blocker
+    basis: measured-1   # 3D 4 -> 3.5 on art, readability, composition: within the noise
+
+# The paired judgement (scripts/wgf_baseline/paired.py). The judge configured for visual QA
+# (factory.visualqa.judge: command, or baseline for a golden run) is shown, for each state
+# both builds' playability reports captured, the accepted frame and the candidate frame side
+# by side, and answers per rubric dimension (core/reference/visual-qa-rubric.yaml
+# `dimensions`): better, same or worse, with a reason. `worse` on any dimension is a blocking
+# finding routed by the rubric dimension's route to its owner.
+paired:
+  # Frame ids the bot captures in every play, in the order they are paired; the first
+  # `max_pairs` both builds have, per viewport.
+  states: [first-session-1s, play-2s, state-playing, unit-1-1s, unit-2-1s, unit-3-1s, state-won, state-lost, state-retry, state-paused]
+  max_pairs: 6
+  # Fewer pairs than this on every viewport: the paired judgement is UNMEASURED.
+  min_pairs: 2
+  verdicts: [better, same, worse]
+  # A mechanical judge (kind: baseline) cannot tell better from different: a pair whose
+  # similarity is below its bar is `worse` on the rubric dimensions it reads (art,
+  # consistency, environment), `same` otherwise. A person approves a replacement; the judge
+  # never does.
+  baseline_dimensions: [art_completeness, consistency, environment]
+  severity: blocker
+  # The mechanical judge's bar is visual QA's (wgf_visualqa.baseline.MIN_SIMILARITY, 0.70):
+  # two plays of one commit paired at 0.87-1.00 (2D f55653dc, 3D db651f92); the builds a
+  # person judged worse at 0.32-0.44 (2D) and below 0.70 on every pair (3D).
+  basis: measured-2
+
+playtest:
+  # A person's playtest finding (the quality-finding `request` shape, as at G4) holds the
+  # build until it closes: on a newer build where the metric it names (`measures`) passes,
+  # or when a person confirms it fixed (scripts/wgf-playtest.py confirm).
+  blocking_severities: [blocker, major]

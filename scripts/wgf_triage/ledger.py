@@ -30,7 +30,7 @@ __all__ = ["GATE_REPORTS", "LEDGER_INPUTS", "normalize_reports", "previous_lifec
 # The reports a build is judged by, in the order they are read.
 GATE_REPORTS = ("playability-report", "production-quality-report", "visual-qa-report",
                 "content-sufficiency-report", "review-report", "qa-report",
-                "listing-validation-report", "quality-report")
+                "listing-validation-report", "quality-report", "baseline-regression-report")
 # What a step that advances the ledger reads besides the gate reports.
 LEDGER_INPUTS = ("triage-report", "prototype-report", "decision-record", "game-design",
                  "verification-report")
@@ -39,7 +39,7 @@ _FAILING = {"playability-report": ("FAIL",), "production-quality-report": ("FAIL
             "visual-qa-report": ("FAIL",), "content-sufficiency-report": ("FAIL",),
             "review-report": ("request-changes",),
             "qa-report": ("fail",), "listing-validation-report": ("FAIL",),
-            "quality-report": ("FAIL",)}
+            "quality-report": ("FAIL",), "baseline-regression-report": ("FAIL",)}
 
 
 def failing_report(kind, report):

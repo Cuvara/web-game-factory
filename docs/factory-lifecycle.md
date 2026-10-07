@@ -282,6 +282,25 @@ listing - the verified build's store package, captured and validated per platfor
 the run can start again. Release is impossible until G4 passes. Only a person decides G4:
 a decision made from inside a step's process tree is `automation`, and is refused.
 
+### The accepted build is the next build's bar (workflow 16)
+
+A G4 `pass` is more than a gate cleared: it is a person accepting a build. Every gate above
+holds a build to an absolute floor, so a later build of the same game could pass all of them
+and still be worse than the one a person accepted - observed 2026-10-05, when a run adopted
+both validation games' accepted repositories, wrote new designs and rewrote them, every gate
+passed, and the person who played both found the accepted builds much better. Since workflow
+16 the newest G4 `pass` a person gave for a title (the project's run store,
+`workspace/titles/<id>/decisions/`, or a commit named in `factory.baseline.accepted`) is
+pinned into every later run of the title by its `accepted-baseline` step, and
+`baseline-regression` holds each build to it: a candidate that replaces accepted work beyond
+`core/reference/accepted-baseline.yaml`'s maximum waits for a person (`approve | restore`,
+never automation, never a timeout - a decision the step records in its report, like the
+publish step's `submit`, because it moves no lifecycle entity and so is not a gate); a build
+worse than the accepted one on the same bot's metrics, or judged worse beside its frames, or
+holding a person's open playtest finding, goes back through triage; and the quality gate is
+not releasable while a baseline exists that its build was not measured against. See
+[accepted-baseline.md](accepted-baseline.md).
+
 ---
 
 ## Every gate produces an artifact

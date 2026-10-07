@@ -593,7 +593,9 @@ class Pinning(unittest.TestCase):
         self.assertEqual(definition.pinned_references,
                          ["core/reference/quality-floor.yaml",
                           "core/reference/quality-benchmark.yaml",
-                          "core/reference/visual-qa-rubric.yaml"])
+                          "core/reference/visual-qa-rubric.yaml",
+                          # workflow 16: the accepted baseline's tolerances (wgf_baseline)
+                          "core/reference/accepted-baseline.yaml"])
 
     def test_a_mid_run_benchmark_edit_does_not_apply_to_the_run(self):
         root = os.path.join(self.base, "factory")

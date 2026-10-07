@@ -533,6 +533,65 @@ class MockTriageStep(MockStep):
                      "selected": group, "verdict": "routed",
                      "message": f"routed {label} (mock)"})
 
+
+class MockAcceptedBaselineStep(MockStep):
+    """Nothing was accepted: the mock baseline is `status: none`, so a mock run's baseline
+    checks are SKIPPED with that reason, as a fresh title's are."""
+
+    type, role = "accepted-baseline", "qa"
+
+
+class MockBaselineRegressionStep(MockStep):
+    """SKIPPED by default (the mock run accepted nothing). `develop`, `assets` (or `fail`)
+    in a mock plan are a regression against the accepted build routed there, `restore` a
+    person's restore: FAILED with that route, not retryable, a finding in the report - the
+    shape the real step (scripts/wgf_baseline) returns. `human` waits for a person's
+    `approve | restore`, the way the real step stops on a replacement of accepted work."""
+
+    type, role = "baseline-regression", "qa"
+    ROUTES = ("develop", "assets", "restore")
+
+    def execute(self, inputs, context):
+        if self._scripted(context) == "human" and context.decision is None:
+            context.logger.info("mock step", script="human")
+            return StepResult.waiting_for_human(
+                f"{self.id}: the candidate replaced the accepted build (mock); wgf decide "
+                f"{context.run_id} approve | restore", choices=["approve", "restore"])
+        result = super().execute(inputs, context)
+        route = "develop" if result.route == "fail" else result.route
+        if route in self.ROUTES:
+            return StepResult("FAILED", route=route, artifacts=result.artifacts,
+                              retryable=False,
+                              error=f"{self.id} found the build worse than the accepted one "
+                                    "(mock)")
+        return result
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type != "baseline-regression-report":
+            return
+        body["phase"] = (self.params or {}).get("phase") or "production"
+        route = "develop" if entry == "fail" else entry
+        if route not in self.ROUTES:
+            return
+        body.update({"verdict": "FAIL", "skipped_reason": None,
+                     "baseline": {"status": "present", "commit": "0" * 40,
+                                  "artifact_id": None, "decision": None},
+                     "failed": ["baseline.metrics"], "routes": [route],
+                     "checks": [{"id": "baseline.metrics", "status": "FAIL",
+                                 "summary": "scripted regression (mock)"}],
+                     "findings": [{
+                         "id": "baseline-regression-report:metric:mock@desktop",
+                         "dimension": "gameplay", "severity": "blocker",
+                         "summary": "Scripted regression against the accepted build (mock).",
+                         "source": {"producer": "baseline-regression-report",
+                                    "step": "baseline-regression", "check": "metric:mock",
+                                    "project": None, "artifact_id": None,
+                                    "content_hash": None},
+                         "evidence_refs": [], "owner": "gameplay",
+                         "task": {"change": "Nothing: the mock builds nothing.",
+                                  "acceptance": ["the mock check passes"]},
+                         "route": "assets" if route == "assets" else "develop"}]})
+
 MOCK_STEPS = (
     MockResearchStep,
     MockStrategyStep,
@@ -547,6 +606,8 @@ MOCK_STEPS = (
     MockVisualQAStep,
     MockContentSufficiencyStep,
     MockQualityGateStep,
+    MockAcceptedBaselineStep,
+    MockBaselineRegressionStep,
     MockReviewStep,
     MockSDKStep,
     MockVerificationStep,

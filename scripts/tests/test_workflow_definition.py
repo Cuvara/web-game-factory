@@ -58,9 +58,11 @@ class ParsesValidDefinitions(unittest.TestCase):
         definition = load_definition("new-game")
         self.assertEqual(
             definition.step_ids,
-            ["research", "strategy", "strategy-review", "design", "tech-plan",
-             "tech-plan-review", "init", "greybox", "greybox-playability", "assets", "triage", "develop",
-             "playability", "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
+            ["research", "strategy", "strategy-review", "accepted-baseline", "design",
+             "tech-plan", "tech-plan-review", "init", "greybox", "greybox-playability",
+             "greybox-baseline", "assets", "triage", "develop", "playability",
+             "production-quality", "visual-qa", "content-sufficiency", "baseline-regression",
+             "review", "sdk",
              "sdk-review", "verify", "quality-gate", "prototype-review", "store-listing",
              "listing-validation", "release", "listing-triage", "platform-validate", "release-review",
              "publish-review", "submit"],
@@ -131,8 +133,8 @@ class ParsesValidDefinitions(unittest.TestCase):
                                      "review-report", "quality-report"])
         self.assertEqual(definition.step("design").on, {"descope": "$fail"})
         self.assertEqual(definition.resolve_scope("plan"),
-                         ["strategy", "strategy-review", "design", "tech-plan",
-                          "tech-plan-review"])
+                         ["strategy", "strategy-review", "accepted-baseline", "design",
+                          "tech-plan", "tech-plan-review"])
 
     def test_every_shipped_release_requires_the_irreversible_gates_before_it(self):
         # The release step cannot see its workflow; the workflow tells it which gates to
@@ -314,7 +316,14 @@ class RouteScopedVisitLimits(unittest.TestCase):
                           "content-sufficiency.design-gap": 1, "review.request-changes": 2,
                           "sdk-review.request-changes": 2, "verify.fail": 2, "iterate": 2,
                           "quality-gate.develop": 2, "quality-gate.assets": 2,
-                          "quality-gate.design-gap": 1})
+                          "quality-gate.design-gap": 1, "baseline-regression.develop": 2,
+                          "baseline-regression.assets": 2,
+                          "baseline-regression.restore": 1})
+        # The accepted baseline goes through triage like every gate (workflow 16); a
+        # person's restore at the greybox goes back to the greybox, bounded there.
+        self.assertEqual(definition.step("baseline-regression").on,
+                         {"develop": "triage", "assets": "triage", "restore": "triage"})
+        self.assertEqual(definition.step("greybox-baseline").on, {"restore": "greybox"})
         # The quality gate goes through triage like every gate (workflow 11).
         self.assertEqual(definition.step("quality-gate").on,
                          {"develop": "triage", "assets": "triage", "design-gap": "triage"})
@@ -348,7 +357,8 @@ class RouteScopedVisitLimits(unittest.TestCase):
         greybox = definition.step("greybox")
         self.assertEqual(greybox.max_visits, 1 + sum(greybox.max_visits_by_route.values())
                          + sum(design.max_visits_by_route.values()))
-        for step_id in ("playability", "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
+        for step_id in ("playability", "production-quality", "visual-qa", "content-sufficiency",
+                        "baseline-regression", "review", "sdk",
                         "sdk-review", "verify", "quality-gate", "prototype-review",
                         "store-listing", "listing-validation"):
             self.assertGreaterEqual(definition.step(step_id).max_visits, develop.max_visits,

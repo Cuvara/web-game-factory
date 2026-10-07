@@ -1,0 +1,28 @@
+{
+  "title_id": "mock-title",
+  "commit": "0000000000000000000000000000000000000000",
+  "phase": "production",
+  "baseline": {
+    "status": "none",
+    "commit": null,
+    "artifact_id": null,
+    "decision": null
+  },
+  "reference": {
+    "path": "core/reference/accepted-baseline.yaml",
+    "version": "0.0.0",
+    "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "pinned": false
+  },
+  "replacement": null,
+  "metrics": [],
+  "paired": null,
+  "playtest": [],
+  "checks": [],
+  "findings": [],
+  "failed": [],
+  "routes": [],
+  "skipped_reason": "mock: nothing was accepted for the title",
+  "blocked_reason": null,
+  "verdict": "SKIPPED"
+}

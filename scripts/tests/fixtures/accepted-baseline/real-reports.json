@@ -1,0 +1,1571 @@
+{
+ "about": "Trimmed copies of the real reports of the two validation games (2026-10-05 human playtest, factory-learning-ledger L8/L12): the build a person accepted at G4 (baseline-r1) and the build a person then judged worse. Only the fields core/reference/accepted-baseline.yaml reads are kept; `source` names the run-store file and `content_hash` the original report's.",
+ "reports": {
+  "2d-accepted-playability": {
+   "checks": [
+    {
+     "id": "win.reachable",
+     "measured": {
+      "genre_win_shape": "best-score",
+      "inputs": 20,
+      "reached": "won"
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "entities.visible",
+     "measured": {
+      "goal": {
+       "median_area": 0.0027,
+       "samples": 161,
+       "visible": 161,
+       "visible_share": 1.0
+      },
+      "player": {
+       "median_area": 0.0024,
+       "samples": 161,
+       "visible": 161,
+       "visible_share": 1.0
+      },
+      "projectile": {
+       "median_area": 0.0011,
+       "samples": 161,
+       "visible": 161,
+       "visible_share": 1.0
+      },
+      "target": {
+       "median_area": 0.0141,
+       "samples": 161,
+       "visible": 161,
+       "visible_share": 1.0
+      }
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "frames.readable",
+     "measured": {
+      "first-session-1s": {
+       "contrast": 26.45,
+       "lit_share": 0.0266,
+       "mean_luminance": 25.79
+      },
+      "play-2s": {
+       "contrast": 26.25,
+       "lit_share": 0.0262,
+       "mean_luminance": 25.71
+      }
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "content.units_reachable",
+     "measured": {
+      "stopped": "max units",
+      "transitions": [
+       {
+        "at_ms": 39432,
+        "from": 1,
+        "how": "won",
+        "since_end_ms": 362,
+        "to": 2
+       },
+       {
+        "at_ms": 80307,
+        "from": 2,
+        "how": "won",
+        "since_end_ms": 503,
+        "to": 3
+       },
+       {
+        "at_ms": 116393,
+        "from": 3,
+        "how": "won",
+        "since_end_ms": 409,
+        "to": 4
+       }
+      ],
+      "truncated": true,
+      "units_reached": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "depth.session_length",
+     "measured": {
+      "beat_at_ms": 25587,
+      "ended_on": "no retry was offered",
+      "length_ms": 25604,
+      "runs": 1,
+      "truncated": true
+     },
+     "project": "desktop",
+     "status": "WARNING"
+    },
+    {
+     "id": "depth.ramp",
+     "measured": {
+      "bad_play_ended_ms": 19077,
+      "oracle_inputs_per_third": [
+       5,
+       6,
+       8
+      ],
+      "run_length_s": 22,
+      "truncated": true
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "win.reachable",
+     "measured": {
+      "genre_win_shape": "best-score",
+      "inputs": 22,
+      "reached": "won"
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "entities.visible",
+     "measured": {
+      "goal": {
+       "median_area": 0.0076,
+       "samples": 158,
+       "visible": 158,
+       "visible_share": 1.0
+      },
+      "player": {
+       "median_area": 0.0068,
+       "samples": 158,
+       "visible": 158,
+       "visible_share": 1.0
+      },
+      "projectile": {
+       "median_area": 0.0033,
+       "samples": 158,
+       "visible": 158,
+       "visible_share": 1.0
+      },
+      "target": {
+       "median_area": 0.0404,
+       "samples": 158,
+       "visible": 158,
+       "visible_share": 1.0
+      }
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "frames.readable",
+     "measured": {
+      "first-session-1s": {
+       "contrast": 41.25,
+       "lit_share": 0.0665,
+       "mean_luminance": 28.38
+      },
+      "play-2s": {
+       "contrast": 41.25,
+       "lit_share": 0.0664,
+       "mean_luminance": 28.38
+      }
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "content.units_reachable",
+     "measured": {
+      "stopped": "max units",
+      "transitions": [
+       {
+        "at_ms": 29039,
+        "from": 1,
+        "how": "won",
+        "since_end_ms": 380,
+        "to": 2
+       },
+       {
+        "at_ms": 80536,
+        "from": 2,
+        "how": "won",
+        "since_end_ms": 567,
+        "to": 3
+       },
+       {
+        "at_ms": 117270,
+        "from": 3,
+        "how": "won",
+        "since_end_ms": 440,
+        "to": 4
+       }
+      ],
+      "truncated": true,
+      "units_reached": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "depth.session_length",
+     "measured": {
+      "beat_at_ms": 35740,
+      "ended_on": "no retry was offered",
+      "length_ms": 35759,
+      "runs": 1,
+      "truncated": true
+     },
+     "project": "mobile",
+     "status": "WARNING"
+    },
+    {
+     "id": "depth.ramp",
+     "measured": {
+      "bad_play_ended_ms": 19015,
+      "oracle_inputs_per_third": [
+       8,
+       10,
+       10
+      ],
+      "run_length_s": 22,
+      "truncated": true
+     },
+     "project": "mobile",
+     "status": "PASS"
+    }
+   ],
+   "commit": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+   "frames": [
+    {
+     "contrast": 26.45,
+     "id": "first-session-1s",
+     "lit_share": 0.0266,
+     "mean_luminance": 25.79,
+     "project": "desktop",
+     "sha256": "sha256:a7651f3e1882d11fd67f6af6e282fd660ae967ad19406cd7e609d794c35c1be4"
+    },
+    {
+     "contrast": 26.25,
+     "id": "play-2s",
+     "lit_share": 0.0262,
+     "mean_luminance": 25.71,
+     "project": "desktop",
+     "sha256": "sha256:b94a6e18b643ff9673c3aad6de42d8ea7702b3a6960ea7c25130242e0fa9d064"
+    },
+    {
+     "contrast": 21.97,
+     "id": "state-lost",
+     "lit_share": 0.0265,
+     "mean_luminance": 25.27,
+     "project": "desktop",
+     "sha256": "sha256:2d0db7e81caa500dfa92732b330fb8ed27be43fbd1a301460dfcff69e427e2c9"
+    },
+    {
+     "contrast": 28.45,
+     "id": "state-paused",
+     "lit_share": 0.0438,
+     "mean_luminance": 27.55,
+     "project": "desktop",
+     "sha256": "sha256:76e6d273ddbe8830dd073658796f13cf8f0f0f5637bc367031d1821ff9679c5a"
+    },
+    {
+     "contrast": 26.47,
+     "id": "state-playing",
+     "lit_share": 0.0269,
+     "mean_luminance": 25.82,
+     "project": "desktop",
+     "sha256": "sha256:5c955aa7d179885cc7c944ad7f6cb93711f757876ea905a7bfe985a8d7bb7b9a"
+    },
+    {
+     "contrast": 26.23,
+     "id": "state-retry",
+     "lit_share": 0.0261,
+     "mean_luminance": 25.69,
+     "project": "desktop",
+     "sha256": "sha256:429c04ac81efbf1c961f4d50f8f58a0fad4c622468e7d69314d8f21ac8409ca8"
+    },
+    {
+     "contrast": 26.09,
+     "id": "state-won",
+     "lit_share": 0.0332,
+     "mean_luminance": 26.89,
+     "project": "desktop",
+     "sha256": "sha256:503b0062aba9686648b98d56572a8e3ce5544370632889bf389cf4d78b1fd493"
+    },
+    {
+     "contrast": 26.22,
+     "id": "unit-1-1s",
+     "lit_share": 0.0261,
+     "mean_luminance": 25.72,
+     "project": "desktop",
+     "sha256": "sha256:73011e2c6b01617411802a432878b1c061d4a7f8433b565b7db057ccdcb10f88"
+    },
+    {
+     "contrast": 26.95,
+     "id": "unit-2-1s",
+     "lit_share": 0.0277,
+     "mean_luminance": 25.99,
+     "project": "desktop",
+     "sha256": "sha256:5a7de968cdb57871fe1f99115d78168105f4cb278961c2192aff265d6303c0eb"
+    },
+    {
+     "contrast": 26.88,
+     "id": "unit-3-1s",
+     "lit_share": 0.0277,
+     "mean_luminance": 25.97,
+     "project": "desktop",
+     "sha256": "sha256:79fea057c747f54b6b96e3069b51d9a3d11af9f9788c6ddd9219bf61e17e445a"
+    },
+    {
+     "contrast": 41.25,
+     "id": "first-session-1s",
+     "lit_share": 0.0665,
+     "mean_luminance": 28.38,
+     "project": "mobile",
+     "sha256": "sha256:54450111017b08fad779537d676158579c04b947630c6856aeccbea731d5ae80"
+    },
+    {
+     "contrast": 41.25,
+     "id": "play-2s",
+     "lit_share": 0.0664,
+     "mean_luminance": 28.38,
+     "project": "mobile",
+     "sha256": "sha256:97f6e59c23726ed9b4b99c09044ab8f64dcc3c2cc0753fed2d381324d8cadae3"
+    },
+    {
+     "contrast": 35.33,
+     "id": "state-lost",
+     "lit_share": 0.0826,
+     "mean_luminance": 27.88,
+     "project": "mobile",
+     "sha256": "sha256:8b9b3deca2870c43096646bcdbf370d39832e9c446785e8d7645036079b2ffb9"
+    },
+    {
+     "contrast": 44.22,
+     "id": "state-paused",
+     "lit_share": 0.1214,
+     "mean_luminance": 33.19,
+     "project": "mobile",
+     "sha256": "sha256:01328d7e4693d6007ff8701cc9cf27899a1bc3706da2dae4c1a1e0c41131f2ba"
+    },
+    {
+     "contrast": 41.25,
+     "id": "state-playing",
+     "lit_share": 0.0667,
+     "mean_luminance": 28.44,
+     "project": "mobile",
+     "sha256": "sha256:d3fca5fabfc7b3cad607185d3d4c82a5dfdd86c84f389426b430e9e54bb308b6"
+    },
+    {
+     "contrast": 40.48,
+     "id": "state-retry",
+     "lit_share": 0.0637,
+     "mean_luminance": 27.9,
+     "project": "mobile",
+     "sha256": "sha256:c3daf50c8c1700cea2df169de2575d88239a75aba44d373482b7f0a8af70fe93"
+    },
+    {
+     "contrast": 42.37,
+     "id": "state-won",
+     "lit_share": 0.0919,
+     "mean_luminance": 32.2,
+     "project": "mobile",
+     "sha256": "sha256:e20c2d64380e1222d2d8d6e7026052087c88f7c0e3bd7743faae29784c57747b"
+    },
+    {
+     "contrast": 40.45,
+     "id": "unit-1-1s",
+     "lit_share": 0.0636,
+     "mean_luminance": 27.95,
+     "project": "mobile",
+     "sha256": "sha256:5f8cd005e6ac4808971769ed0d3b3c52d32819dc8cbdbdf4d171cea32f95aec7"
+    },
+    {
+     "contrast": 42.43,
+     "id": "unit-2-1s",
+     "lit_share": 0.0726,
+     "mean_luminance": 29.24,
+     "project": "mobile",
+     "sha256": "sha256:4483db5d2b8bf82816d17394f594d2e0c6ce6c4927df350052f608f6dda00a8e"
+    },
+    {
+     "contrast": 42.38,
+     "id": "unit-3-1s",
+     "lit_share": 0.0726,
+     "mean_luminance": 29.22,
+     "project": "mobile",
+     "sha256": "sha256:cfcfbf54c0f5d202bba6e789c0dd04b288daf38b2f11088189cba14e78547b12"
+    }
+   ],
+   "provenance": {
+    "artifact_id": "wgf:playability-report:brick-breaker-worlds:20261004-19",
+    "content_hash": "sha256:ada438cd971b478f62b92012114e774b4832722a6366625817f09ca917c23b94"
+   },
+   "source": "val-2d/project/.factory/workflows/new-game-20261003-081154-4e5e0a/artifacts/playability-report/v23.json",
+   "title_id": "brick-breaker-worlds",
+   "verdict": "PASS"
+  },
+  "2d-accepted-visual-qa": {
+   "commit": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+   "provenance": {
+    "artifact_id": "wgf:visual-qa-report:brick-breaker-worlds:20261004-06",
+    "content_hash": "sha256:a5686d85b808a9d7f8e8914d3fb11d4e8813ee81d031e88362114ad1c9586ce5"
+   },
+   "scores": {
+    "art_completeness": 4,
+    "character_readability": 4,
+    "composition": 3,
+    "consistency": 5,
+    "environment": 4,
+    "no_debug": 5,
+    "typography": 4,
+    "ui_polish": 4
+   },
+   "source": "val-2d/project/.factory/workflows/new-game-20261003-081154-4e5e0a/artifacts/visual-qa-report/v5.json",
+   "title_id": "brick-breaker-worlds",
+   "verdict": "PASS"
+  },
+  "2d-candidate-playability": {
+   "checks": [
+    {
+     "id": "win.reachable",
+     "measured": {
+      "genre_win_shape": "best-score",
+      "inputs": 3,
+      "reached": "lost"
+     },
+     "project": "desktop",
+     "status": "FAIL"
+    },
+    {
+     "id": "entities.visible",
+     "measured": {
+      "goal": {
+       "median_area": 0.0027,
+       "samples": 72,
+       "visible": 72,
+       "visible_share": 1.0
+      },
+      "player": {
+       "median_area": 0.0021,
+       "samples": 72,
+       "visible": 72,
+       "visible_share": 1.0
+      },
+      "projectile": {
+       "median_area": 0.0011,
+       "samples": 72,
+       "visible": 72,
+       "visible_share": 1.0
+      },
+      "target": {
+       "median_area": 0.0073,
+       "samples": 72,
+       "visible": 72,
+       "visible_share": 1.0
+      }
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "frames.readable",
+     "measured": {
+      "first-session-1s": {
+       "contrast": 51.78,
+       "lit_share": 0.6398,
+       "mean_luminance": 95.9
+      },
+      "play-2s": {
+       "contrast": 42.41,
+       "lit_share": 0.61,
+       "mean_luminance": 88.8
+      }
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "content.units_reachable",
+     "measured": {
+      "stopped": "window",
+      "transitions": [
+       {
+        "at_ms": 31097,
+        "from": 1,
+        "how": "won",
+        "since_end_ms": 1242,
+        "to": 2
+       },
+       {
+        "at_ms": 54778,
+        "from": 2,
+        "how": "won",
+        "since_end_ms": 990,
+        "to": 3
+       }
+      ],
+      "truncated": true,
+      "units_reached": [
+       1,
+       2,
+       3
+      ]
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "depth.session_length",
+     "measured": {
+      "beat_at_ms": 26807,
+      "ended_on": "no retry was offered",
+      "length_ms": 26928,
+      "runs": 1,
+      "truncated": true
+     },
+     "project": "desktop",
+     "status": "WARNING"
+    },
+    {
+     "id": "depth.ramp",
+     "measured": {
+      "bad_play_ended_ms": 18824,
+      "extended_ms": 31124,
+      "feature": "endless-mode",
+      "longest_run_ms": 61459,
+      "mode": "endless",
+      "mode_entered": true,
+      "oracle_inputs_per_third": [
+       10,
+       36,
+       18
+      ],
+      "ramp_run": "mode",
+      "run_length_s": 25,
+      "truncated": true
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "win.reachable",
+     "measured": {
+      "genre_win_shape": "best-score",
+      "inputs": 46,
+      "reached": "won"
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "entities.visible",
+     "measured": {
+      "goal": {
+       "median_area": 0.0076,
+       "samples": 116,
+       "visible": 116,
+       "visible_share": 1.0
+      },
+      "player": {
+       "median_area": 0.0059,
+       "samples": 116,
+       "visible": 116,
+       "visible_share": 1.0
+      },
+      "projectile": {
+       "median_area": 0.0033,
+       "samples": 116,
+       "visible": 116,
+       "visible_share": 1.0
+      },
+      "target": {
+       "median_area": 0.0211,
+       "samples": 116,
+       "visible": 116,
+       "visible_share": 1.0
+      }
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "frames.readable",
+     "measured": {
+      "first-session-1s": {
+       "contrast": 73.18,
+       "lit_share": 0.5484,
+       "mean_luminance": 112.16
+      },
+      "play-2s": {
+       "contrast": 73.16,
+       "lit_share": 0.5487,
+       "mean_luminance": 112.15
+      }
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "content.units_reachable",
+     "measured": {
+      "stopped": "window",
+      "transitions": [
+       {
+        "at_ms": 43468,
+        "from": 1,
+        "how": "won",
+        "since_end_ms": 1582,
+        "to": 2
+       },
+       {
+        "at_ms": 115359,
+        "from": 2,
+        "how": "won",
+        "since_end_ms": 1081,
+        "to": 3
+       }
+      ],
+      "truncated": true,
+      "units_reached": [
+       1,
+       2,
+       3
+      ]
+     },
+     "project": "mobile",
+     "status": "FAIL"
+    },
+    {
+     "id": "depth.session_length",
+     "measured": {
+      "beat_at_ms": 37692,
+      "ended_on": "no retry was offered",
+      "length_ms": 37718,
+      "runs": 1,
+      "truncated": true
+     },
+     "project": "mobile",
+     "status": "WARNING"
+    },
+    {
+     "id": "depth.ramp",
+     "measured": {
+      "bad_play_ended_ms": 23381,
+      "extended_ms": 15388,
+      "feature": "endless-mode",
+      "longest_run_ms": 45721,
+      "mode": "endless",
+      "mode_entered": true,
+      "oracle_inputs_per_third": [
+       10,
+       19,
+       19
+      ],
+      "ramp_run": "mode",
+      "run_length_s": 25,
+      "truncated": true
+     },
+     "project": "mobile",
+     "status": "PASS"
+    }
+   ],
+   "commit": "68a12b7a237ec41d70fc81c2531f0f1a3cb0ab74",
+   "frames": [
+    {
+     "contrast": 51.78,
+     "id": "first-session-1s",
+     "lit_share": 0.6398,
+     "mean_luminance": 95.9,
+     "project": "desktop",
+     "sha256": "sha256:83962777e79d4ec4df4917d5cfd50812116ade5e5d198d8663ec3acec4c6f156"
+    },
+    {
+     "contrast": 42.41,
+     "id": "play-2s",
+     "lit_share": 0.61,
+     "mean_luminance": 88.8,
+     "project": "desktop",
+     "sha256": "sha256:5fb03ca99772259697019213bbf59733a0a23fba6471d57070f147d19c941e49"
+    },
+    {
+     "contrast": 55.17,
+     "id": "state-lost",
+     "lit_share": 0.6162,
+     "mean_luminance": 94.69,
+     "project": "desktop",
+     "sha256": "sha256:232ceaebd52f6feb0f8967702b6507237721774d8652023f478c9cfc68e53912"
+    },
+    {
+     "contrast": 60.1,
+     "id": "state-paused",
+     "lit_share": 0.6184,
+     "mean_luminance": 98.65,
+     "project": "desktop",
+     "sha256": "sha256:08352aea160247dd6a202e9283645d4e08d8ad63990ca3c7d9699013701be376"
+    },
+    {
+     "contrast": 51.77,
+     "id": "state-playing",
+     "lit_share": 0.6398,
+     "mean_luminance": 95.88,
+     "project": "desktop",
+     "sha256": "sha256:88597bf7526d44acaabd9e215cfe1709809a827410632304c527aba2a6abab58"
+    },
+    {
+     "contrast": 51.76,
+     "id": "state-retry",
+     "lit_share": 0.6397,
+     "mean_luminance": 95.93,
+     "project": "desktop",
+     "sha256": "sha256:f4f4de28698ee5679fc36203eb576c18d8dd3e3c34ff29760c27999e8e672416"
+    },
+    {
+     "contrast": 51.71,
+     "id": "unit-1-1s",
+     "lit_share": 0.6397,
+     "mean_luminance": 95.89,
+     "project": "desktop",
+     "sha256": "sha256:1a6e52d5b5baca44c19364567fe257d111187deba0a9b55f93ab6f6c0225f9ae"
+    },
+    {
+     "contrast": 51.85,
+     "id": "unit-2-1s",
+     "lit_share": 0.6379,
+     "mean_luminance": 96.14,
+     "project": "desktop",
+     "sha256": "sha256:009ae46ea8781024a60e4e8a5f4671dd47035cf00daf7c8e000d1c9c7c16011b"
+    },
+    {
+     "contrast": 53.42,
+     "id": "unit-3-1s",
+     "lit_share": 0.645,
+     "mean_luminance": 97.54,
+     "project": "desktop",
+     "sha256": "sha256:f3c0ec580d8b14c568c0000ece0db8d9113d6461f5b98a2f38d21645976dc188"
+    },
+    {
+     "contrast": 73.18,
+     "id": "first-session-1s",
+     "lit_share": 0.5484,
+     "mean_luminance": 112.16,
+     "project": "mobile",
+     "sha256": "sha256:207c0e96a1a08a1d5cc9f658ca78730a0d1ed4ebb3e5d8c9f71baa26c563f7d4"
+    },
+    {
+     "contrast": 73.16,
+     "id": "play-2s",
+     "lit_share": 0.5487,
+     "mean_luminance": 112.15,
+     "project": "mobile",
+     "sha256": "sha256:09b30b34bfd3b396b3c186bd41f2d19db3a7d482e4631f5bc9238d7ffb6eb74b"
+    },
+    {
+     "contrast": 80.75,
+     "id": "state-lost",
+     "lit_share": 0.604,
+     "mean_luminance": 116.73,
+     "project": "mobile",
+     "sha256": "sha256:54d4eb4d38adc8ead0795a179be88a37c045bc49ecc36a7f2172b9fb3ad68399"
+    },
+    {
+     "contrast": 87.27,
+     "id": "state-paused",
+     "lit_share": 0.6083,
+     "mean_luminance": 128.46,
+     "project": "mobile",
+     "sha256": "sha256:aa696c2b1a6480fcf706db51697393517466278cb6b98cea9fa5910c202b33ee"
+    },
+    {
+     "contrast": 73.0,
+     "id": "state-playing",
+     "lit_share": 0.5487,
+     "mean_luminance": 112.22,
+     "project": "mobile",
+     "sha256": "sha256:3f391b536b9a634a65dd005221edba78793e1be1cd0e0b79f3fa150c42677b16"
+    },
+    {
+     "contrast": 72.97,
+     "id": "state-retry",
+     "lit_share": 0.552,
+     "mean_luminance": 112.39,
+     "project": "mobile",
+     "sha256": "sha256:f3f0bdfe4eb903ac69c35e48bb3484ad861be5becf1fe412984302482d81a568"
+    },
+    {
+     "contrast": 88.63,
+     "id": "state-won",
+     "lit_share": 0.6868,
+     "mean_luminance": 146.45,
+     "project": "mobile",
+     "sha256": "sha256:1bf148d8eec3b2432fb3accaa926fe31253ef1e72fda8f9fb6c55dfb045c5c48"
+    },
+    {
+     "contrast": 72.91,
+     "id": "unit-1-1s",
+     "lit_share": 0.5498,
+     "mean_luminance": 112.18,
+     "project": "mobile",
+     "sha256": "sha256:26bd2e05954fe44bd32377fb1f1a82a2206d5cf4079d30b92227d3a029563c2e"
+    },
+    {
+     "contrast": 72.3,
+     "id": "unit-2-1s",
+     "lit_share": 0.576,
+     "mean_luminance": 113.91,
+     "project": "mobile",
+     "sha256": "sha256:0e41417cfa2f6fab0c5c10b951eafd464f5eea48919e05e31e4ceee1c14e8f4a"
+    },
+    {
+     "contrast": 74.74,
+     "id": "unit-3-1s",
+     "lit_share": 0.563,
+     "mean_luminance": 115.96,
+     "project": "mobile",
+     "sha256": "sha256:7ef26f44c2013a91f58f1a83651b86fdf76f15742eeff4437d48c80ca386129a"
+    }
+   ],
+   "provenance": {
+    "artifact_id": "wgf:playability-report:brick-breaker-worlds:20261005-10",
+    "content_hash": "sha256:a625b9b1624934f3833770efbde414f696edf3cc11d7f4918192d380f8c172d9"
+   },
+   "source": "val-2d/project/.factory/workflows/new-game-20261005-002926-318384/artifacts/playability-report/v15.json",
+   "title_id": "brick-breaker-worlds",
+   "verdict": "FAIL"
+  },
+  "3d-accepted-playability": {
+   "checks": [
+    {
+     "id": "win.reachable",
+     "measured": {
+      "genre_win_shape": null,
+      "inputs": 60,
+      "reached": "won"
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "entities.visible",
+     "measured": {
+      "goal": {
+       "median_area": 0.0048,
+       "samples": 124,
+       "visible": 124,
+       "visible_share": 1.0
+      },
+      "player": {
+       "median_area": 0.0163,
+       "samples": 124,
+       "visible": 124,
+       "visible_share": 1.0
+      },
+      "target": {
+       "median_area": 0.2402,
+       "samples": 106,
+       "visible": 106,
+       "visible_share": 1.0
+      }
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "frames.readable",
+     "measured": {
+      "first-session-1s": {
+       "contrast": 47.25,
+       "lit_share": 0.8843,
+       "mean_luminance": 121.81
+      },
+      "play-2s": {
+       "contrast": 47.29,
+       "lit_share": 0.8848,
+       "mean_luminance": 121.8
+      }
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "content.units_reachable",
+     "project": "desktop",
+     "status": "SKIPPED"
+    },
+    {
+     "id": "depth.session_length",
+     "measured": {
+      "beat_at_ms": null,
+      "ended_on": "window",
+      "length_ms": 155315,
+      "runs": 6
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "depth.ramp",
+     "measured": {
+      "bad_play_ended_ms": 29878,
+      "oracle_inputs_per_third": [
+       31,
+       30,
+       27
+      ],
+      "reason": "no time ramp for a unit-authored family (the genre family's `qa` states no endless_window_s)",
+      "run_length_s": 300
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "win.reachable",
+     "measured": {
+      "genre_win_shape": null,
+      "inputs": 52,
+      "reached": "won"
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "entities.visible",
+     "measured": {
+      "player": {
+       "median_area": 0.0242,
+       "samples": 76,
+       "visible": 76,
+       "visible_share": 1.0
+      },
+      "target": {
+       "median_area": 0.0242,
+       "samples": 76,
+       "visible": 76,
+       "visible_share": 1.0
+      }
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "frames.readable",
+     "measured": {
+      "first-session-1s": {
+       "contrast": 59.1,
+       "lit_share": 0.8742,
+       "mean_luminance": 123.91
+      },
+      "play-2s": {
+       "contrast": 59.15,
+       "lit_share": 0.8725,
+       "mean_luminance": 123.72
+      }
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "content.units_reachable",
+     "project": "mobile",
+     "status": "SKIPPED"
+    },
+    {
+     "id": "depth.session_length",
+     "measured": {
+      "beat_at_ms": null,
+      "ended_on": "window",
+      "length_ms": 155215,
+      "runs": 6
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "depth.ramp",
+     "measured": {
+      "bad_play_ended_ms": 30807,
+      "oracle_inputs_per_third": [
+       29,
+       29,
+       26
+      ],
+      "reason": "no time ramp for a unit-authored family (the genre family's `qa` states no endless_window_s)",
+      "run_length_s": 300
+     },
+     "project": "mobile",
+     "status": "PASS"
+    }
+   ],
+   "commit": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+   "frames": [
+    {
+     "contrast": 47.25,
+     "id": "first-session-1s",
+     "lit_share": 0.8843,
+     "mean_luminance": 121.81,
+     "project": "desktop",
+     "sha256": "sha256:bca872b0678dd40725cf9b56b8fa09fa39b0b5ae4371842057f6c68a8d1535ed"
+    },
+    {
+     "contrast": 47.29,
+     "id": "play-2s",
+     "lit_share": 0.8848,
+     "mean_luminance": 121.8,
+     "project": "desktop",
+     "sha256": "sha256:3233c26168a604ab05b2c1edd04e2882bc1884e3500c470fe870035fde30fb55"
+    },
+    {
+     "contrast": 49.78,
+     "id": "state-lost",
+     "lit_share": 0.8974,
+     "mean_luminance": 93.81,
+     "project": "desktop",
+     "sha256": "sha256:80a069a6c909f1066a44def2c54e0ea8bb9e3041a1d269f87c7975236f9be9af"
+    },
+    {
+     "contrast": 52.39,
+     "id": "state-paused",
+     "lit_share": 0.8809,
+     "mean_luminance": 97.79,
+     "project": "desktop",
+     "sha256": "sha256:9c218ba6f836c80bd83ab48551bafd508a05e7904a20f8006558383a40d9a074"
+    },
+    {
+     "contrast": 41.51,
+     "id": "state-playing",
+     "lit_share": 0.8814,
+     "mean_luminance": 117.02,
+     "project": "desktop",
+     "sha256": "sha256:933b3f694066570cd6a6394c42d1f5c3b4f2758c5687aaad1c6ee8bdbe40128d"
+    },
+    {
+     "contrast": 47.21,
+     "id": "state-retry",
+     "lit_share": 0.8836,
+     "mean_luminance": 121.67,
+     "project": "desktop",
+     "sha256": "sha256:9e59626c569f140b0c61a101b96b69faa7599c206577dc16050e27292932431d"
+    },
+    {
+     "contrast": 66.19,
+     "id": "state-won",
+     "lit_share": 0.9174,
+     "mean_luminance": 114.01,
+     "project": "desktop",
+     "sha256": "sha256:4156e9216a17f9defb189d85e570a7c4363f647b67e644d1de32dffda1fe6daa"
+    },
+    {
+     "contrast": 59.1,
+     "id": "first-session-1s",
+     "lit_share": 0.8742,
+     "mean_luminance": 123.91,
+     "project": "mobile",
+     "sha256": "sha256:9fd741f6290b4796ff69704ab2d72968ab4a525b3cc4df9fe0ec21c159ba65d8"
+    },
+    {
+     "contrast": 59.15,
+     "id": "play-2s",
+     "lit_share": 0.8725,
+     "mean_luminance": 123.72,
+     "project": "mobile",
+     "sha256": "sha256:91c35883e20fb508a13269ef5e569cd340401c4921ef74f672dc9a7f57aa9390"
+    },
+    {
+     "contrast": 76.3,
+     "id": "state-lost",
+     "lit_share": 0.9325,
+     "mean_luminance": 129.5,
+     "project": "mobile",
+     "sha256": "sha256:ccc8136b6e11113d6d601f71f93cb481d93bf3acf38776643e8374e17657d6df"
+    },
+    {
+     "contrast": 79.8,
+     "id": "state-paused",
+     "lit_share": 0.9109,
+     "mean_luminance": 131.18,
+     "project": "mobile",
+     "sha256": "sha256:a9e1071e1d163db7ad95c1d40d8ec3e005a6e716517c7b27af666e190d501de6"
+    },
+    {
+     "contrast": 47.1,
+     "id": "state-playing",
+     "lit_share": 0.8954,
+     "mean_luminance": 118.46,
+     "project": "mobile",
+     "sha256": "sha256:34fc9d80eb6b2759ed78884badb9d611293a9e6b0d39ac94d7b59764d0266c17"
+    },
+    {
+     "contrast": 59.21,
+     "id": "state-retry",
+     "lit_share": 0.8714,
+     "mean_luminance": 123.72,
+     "project": "mobile",
+     "sha256": "sha256:9c19b64fb1696f63312183e894e939eeb23d1788a258cb85ffd4b2903ecc3b73"
+    },
+    {
+     "contrast": 78.36,
+     "id": "state-won",
+     "lit_share": 0.8656,
+     "mean_luminance": 185.74,
+     "project": "mobile",
+     "sha256": "sha256:d80490158b25b36bb8e937530fa11488281284aacf29e7cad1ef615de2386d04"
+    }
+   ],
+   "provenance": {
+    "artifact_id": "wgf:playability-report:sky-marble:20261003-13",
+    "content_hash": "sha256:bb6acca222b72591497d1053c53f75f3ca64fb58576bf8ac15bf22a49defa1aa"
+   },
+   "source": "val-3d/project/.factory/workflows/new-game-20261003-082542-0de9b5/artifacts/playability-report/v15.json",
+   "title_id": "sky-marble",
+   "verdict": "PASS"
+  },
+  "3d-accepted-visual-qa": {
+   "commit": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+   "provenance": {
+    "artifact_id": "wgf:visual-qa-report:sky-marble:20261003-12",
+    "content_hash": "sha256:d61f9a19423cb13d45de93902999f0f0a650adb4aae5a45710e4ebb2661d56db"
+   },
+   "scores": {
+    "art_completeness": 4,
+    "character_readability": 4,
+    "composition": 4,
+    "consistency": 5,
+    "environment": 4,
+    "no_debug": 5,
+    "typography": 4,
+    "ui_polish": 4
+   },
+   "source": "val-3d/project/.factory/workflows/new-game-20261003-082542-0de9b5/artifacts/visual-qa-report/v10.json",
+   "title_id": "sky-marble",
+   "verdict": "PASS"
+  },
+  "3d-candidate-playability": {
+   "checks": [
+    {
+     "id": "win.reachable",
+     "measured": {
+      "genre_win_shape": "best-score",
+      "inputs": 6,
+      "reached": "won"
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "entities.visible",
+     "measured": {
+      "goal": {
+       "median_area": 0.132,
+       "samples": 114,
+       "visible": 114,
+       "visible_share": 1.0
+      },
+      "player": {
+       "median_area": 0.0209,
+       "samples": 114,
+       "visible": 114,
+       "visible_share": 1.0
+      }
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "frames.readable",
+     "measured": {
+      "first-session-1s": {
+       "contrast": 48.36,
+       "lit_share": 0.959,
+       "mean_luminance": 183.62
+      },
+      "play-2s": {
+       "contrast": 48.36,
+       "lit_share": 0.9572,
+       "mean_luminance": 183.76
+      }
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "content.units_reachable",
+     "measured": {
+      "stopped": "window",
+      "transitions": [
+       {
+        "at_ms": 20703,
+        "from": 1,
+        "how": "won",
+        "since_end_ms": 1687,
+        "to": 2
+       },
+       {
+        "at_ms": 35470,
+        "from": 2,
+        "how": "won",
+        "since_end_ms": 905,
+        "to": 3
+       }
+      ],
+      "truncated": true,
+      "units_reached": [
+       1,
+       2,
+       3
+      ]
+     },
+     "project": "desktop",
+     "status": "FAIL"
+    },
+    {
+     "id": "depth.session_length",
+     "measured": {
+      "beat_at_ms": 9823,
+      "ended_on": "beat reached",
+      "length_ms": 71885,
+      "runs": 6,
+      "truncated": true
+     },
+     "project": "desktop",
+     "status": "WARNING"
+    },
+    {
+     "id": "depth.ramp",
+     "measured": {
+      "bad_play_ended_ms": 66041,
+      "longest_run_ms": 26815,
+      "oracle_inputs_per_third": [
+       7,
+       11,
+       8
+      ],
+      "reason": "no time ramp: the genre family's `qa` states no endless_window_s, or the design is unit-authored and includes no endless mode (design-depth.yaml playability.ramp.mode_features)",
+      "run_length_s": 30,
+      "truncated": true
+     },
+     "project": "desktop",
+     "status": "PASS"
+    },
+    {
+     "id": "win.reachable",
+     "measured": {
+      "genre_win_shape": "best-score",
+      "inputs": 9,
+      "reached": "won"
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "entities.visible",
+     "measured": {
+      "goal": {
+       "median_area": 0.2769,
+       "samples": 77,
+       "visible": 77,
+       "visible_share": 1.0
+      },
+      "player": {
+       "median_area": 0.0692,
+       "samples": 77,
+       "visible": 77,
+       "visible_share": 1.0
+      }
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "frames.readable",
+     "measured": {
+      "first-session-1s": {
+       "contrast": 46.63,
+       "lit_share": 0.95,
+       "mean_luminance": 184.51
+      },
+      "play-2s": {
+       "contrast": 45.98,
+       "lit_share": 0.9521,
+       "mean_luminance": 184.73
+      }
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "content.units_reachable",
+     "measured": {
+      "stopped": "max units",
+      "transitions": [
+       {
+        "at_ms": 13027,
+        "from": 1,
+        "how": "won",
+        "since_end_ms": 511,
+        "to": 2
+       },
+       {
+        "at_ms": 20756,
+        "from": 2,
+        "how": "won",
+        "since_end_ms": 493,
+        "to": 3
+       },
+       {
+        "at_ms": 37061,
+        "from": 3,
+        "how": "won",
+        "since_end_ms": 457,
+        "to": 4
+       }
+      ],
+      "truncated": true,
+      "units_reached": [
+       1,
+       2,
+       3,
+       4
+      ]
+     },
+     "project": "mobile",
+     "status": "PASS"
+    },
+    {
+     "id": "depth.session_length",
+     "measured": {
+      "beat_at_ms": 10593,
+      "ended_on": "beat reached",
+      "length_ms": 71574,
+      "runs": 4,
+      "truncated": true
+     },
+     "project": "mobile",
+     "status": "WARNING"
+    },
+    {
+     "id": "depth.ramp",
+     "measured": {
+      "bad_play_ended_ms": 62872,
+      "longest_run_ms": 35652,
+      "oracle_inputs_per_third": [
+       14,
+       12,
+       11
+      ],
+      "reason": "no time ramp: the genre family's `qa` states no endless_window_s, or the design is unit-authored and includes no endless mode (design-depth.yaml playability.ramp.mode_features)",
+      "run_length_s": 38,
+      "truncated": true
+     },
+     "project": "mobile",
+     "status": "PASS"
+    }
+   ],
+   "commit": "1c6b099f1f2d0c960223460bc8926683209c75cf",
+   "frames": [
+    {
+     "contrast": 48.36,
+     "id": "first-session-1s",
+     "lit_share": 0.959,
+     "mean_luminance": 183.62,
+     "project": "desktop",
+     "sha256": "sha256:57b8fb33855b819d78afaaf5f7bb0ebb80c98b2e4d6cc0ca774582307586b66a"
+    },
+    {
+     "contrast": 48.36,
+     "id": "play-2s",
+     "lit_share": 0.9572,
+     "mean_luminance": 183.76,
+     "project": "desktop",
+     "sha256": "sha256:1b07713a195ee2e7f92f0f428ef98d7d679258cc8a9e04b7e29d9d3ad3a683ef"
+    },
+    {
+     "contrast": 44.87,
+     "id": "state-lost",
+     "lit_share": 0.9542,
+     "mean_luminance": 145.78,
+     "project": "desktop",
+     "sha256": "sha256:63ca4cb608940709e20790d2ac7a14dc5057a244ca1202a9d60c21b199920e56"
+    },
+    {
+     "contrast": 43.36,
+     "id": "state-paused",
+     "lit_share": 0.9278,
+     "mean_luminance": 131.18,
+     "project": "desktop",
+     "sha256": "sha256:88e79b19345c7a91a662e8febf242e2eaea6282b0809de8983f10bc276d5c331"
+    },
+    {
+     "contrast": 48.38,
+     "id": "state-playing",
+     "lit_share": 0.9572,
+     "mean_luminance": 183.8,
+     "project": "desktop",
+     "sha256": "sha256:cb36ccc109c1ff2742613a35cef8f4f2c3c165dec15890e6f2ea5f01e6d83709"
+    },
+    {
+     "contrast": 47.79,
+     "id": "state-retry",
+     "lit_share": 0.9597,
+     "mean_luminance": 184.83,
+     "project": "desktop",
+     "sha256": "sha256:27b09ddb47273b823437eb17ba03048942ebe87253118b8601c6be0718f0e649"
+    },
+    {
+     "contrast": 58.25,
+     "id": "state-won",
+     "lit_share": 0.8876,
+     "mean_luminance": 144.71,
+     "project": "desktop",
+     "sha256": "sha256:49281db858581a4ad18978477a25ca8b2d5c97901f0c200296587487d85e7bae"
+    },
+    {
+     "contrast": 44.17,
+     "id": "unit-1-1s",
+     "lit_share": 0.9739,
+     "mean_luminance": 188.54,
+     "project": "desktop",
+     "sha256": "sha256:78d6542108ce4418fe5fbcf6d6289d5c39317e75ce4a8fecfb66a9749f5f4a10"
+    },
+    {
+     "contrast": 48.3,
+     "id": "unit-2-1s",
+     "lit_share": 0.962,
+     "mean_luminance": 194.14,
+     "project": "desktop",
+     "sha256": "sha256:415f93701f4b8564a6115a7abb3b1ee49855ca333439f744e192a2956ad42955"
+    },
+    {
+     "contrast": 48.37,
+     "id": "unit-3-1s",
+     "lit_share": 0.9642,
+     "mean_luminance": 185.71,
+     "project": "desktop",
+     "sha256": "sha256:9c0cbdf380e38cfeb24faab9b8c7d0a057109442f967fff8c783626bb4daaa68"
+    },
+    {
+     "contrast": 46.63,
+     "id": "first-session-1s",
+     "lit_share": 0.95,
+     "mean_luminance": 184.51,
+     "project": "mobile",
+     "sha256": "sha256:05c41de0bc291d4e22e8b6f544432b0feb132ced66f4b4a4688041b4838ee830"
+    },
+    {
+     "contrast": 45.98,
+     "id": "play-2s",
+     "lit_share": 0.9521,
+     "mean_luminance": 184.73,
+     "project": "mobile",
+     "sha256": "sha256:acb45d19b7de65effec79e9a75d6a343b58c1e1128cb02b4c80b9493105df424"
+    },
+    {
+     "contrast": 61.56,
+     "id": "state-lost",
+     "lit_share": 0.8988,
+     "mean_luminance": 161.04,
+     "project": "mobile",
+     "sha256": "sha256:c6b93be77d9636f942f6f99732d8149e39ed1315fce56d63ddc87c8e2f05f3f4"
+    },
+    {
+     "contrast": 55.69,
+     "id": "state-paused",
+     "lit_share": 0.9009,
+     "mean_luminance": 141.7,
+     "project": "mobile",
+     "sha256": "sha256:ead71e8d03f2fd3f998fa22b7aedaf21221c37355db12201532b3fbf1d783acb"
+    },
+    {
+     "contrast": 45.71,
+     "id": "state-playing",
+     "lit_share": 0.9537,
+     "mean_luminance": 184.74,
+     "project": "mobile",
+     "sha256": "sha256:cb298f139910fdab16476e830f81080a4a938d32210deb37891d42996110f6a5"
+    },
+    {
+     "contrast": 43.14,
+     "id": "state-retry",
+     "lit_share": 0.9621,
+     "mean_luminance": 185.13,
+     "project": "mobile",
+     "sha256": "sha256:536a03127625ac602018d6e6390b8f17cb2d3e305f08902d383d03393ea0bd92"
+    },
+    {
+     "contrast": 70.28,
+     "id": "state-won",
+     "lit_share": 0.8714,
+     "mean_luminance": 176.21,
+     "project": "mobile",
+     "sha256": "sha256:c1252a538f0aeb4f83608c97b3a48c848ad1c0490455f9e8bdf308d5435d63b7"
+    },
+    {
+     "contrast": 41.9,
+     "id": "unit-1-1s",
+     "lit_share": 0.9651,
+     "mean_luminance": 186.66,
+     "project": "mobile",
+     "sha256": "sha256:b53f32afca1089abad5ced12385d0deea64c08cb349d6f1c1bcb51151b21dbba"
+    },
+    {
+     "contrast": 45.07,
+     "id": "unit-2-1s",
+     "lit_share": 0.9719,
+     "mean_luminance": 186.24,
+     "project": "mobile",
+     "sha256": "sha256:e6f9dc409ae78580d17ba0775448dc50cd2ba7c17a8c416e34eee0557e378be5"
+    },
+    {
+     "contrast": 41.88,
+     "id": "unit-3-1s",
+     "lit_share": 0.9737,
+     "mean_luminance": 186.12,
+     "project": "mobile",
+     "sha256": "sha256:d8806d0fddc9f4473caf761e7e8bb2a65d1ffae7f900baec6f7aaa032425ab38"
+    }
+   ],
+   "provenance": {
+    "artifact_id": "wgf:playability-report:sky-marble:20261005-07",
+    "content_hash": "sha256:bc0c58a3280b4a08e6773d39c41de7c29e71e6202ac9412ba642485fcea97da6"
+   },
+   "source": "val-3d/project/.factory/workflows/new-game-20261005-002923-597b5e/artifacts/playability-report/v13.json",
+   "title_id": "sky-marble",
+   "verdict": "FAIL"
+  },
+  "3d-candidate-visual-qa": {
+   "commit": "3f394e2a31efe64923c0a5a3fab973b102e5592d",
+   "provenance": {
+    "artifact_id": "wgf:visual-qa-report:sky-marble:20261005-03",
+    "content_hash": "sha256:f2637909eb8c864122b7e6600e6ebe9614892236756dc2e6bce662565d09d9e4"
+   },
+   "scores": {
+    "art_completeness": 3.5,
+    "character_readability": 3.5,
+    "composition": 3.5,
+    "consistency": 4.5,
+    "environment": 4,
+    "no_debug": 5,
+    "typography": 4.5,
+    "ui_polish": 4.5
+   },
+   "source": "val-3d/project/.factory/workflows/new-game-20261005-002923-597b5e/artifacts/visual-qa-report/v3.json",
+   "title_id": "sky-marble",
+   "verdict": "PASS"
+  }
+ }
+}

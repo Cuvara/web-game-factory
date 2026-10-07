@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/baseline-regression-report.schema.json",
+  "title": "Baseline regression report",
+  "description": "One candidate build held to the build a person accepted (accepted-baseline): how much of the accepted build it replaced, measured in git (accepted units removed or changed, accepted source files rewritten, accepted source lines deleted) against core/reference/accepted-baseline.yaml's maximum - above it a person's decision (approve | restore) is recorded here, never automation's; and at the production phase the metrics the same bot measured on both builds within the reference's tolerances, a paired judgement of the accepted and the candidate frames of the same states per visual-qa rubric dimension (better | same | worse), and the playtest findings a person filed against a build with their status. Each failure is a quality finding (shared/quality-finding.schema.json) with its owner and route, read by triage as the baseline-regression-report producer. SKIPPED when the run has no accepted baseline; the quality gate treats a run whose baseline exists and was not measured on its build as not releasable. Added in Factory 2.9.0.",
+  "x-wgf": {
+    "id": "baseline-regression-report",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.0.0",
+    "producer": "title:prototype",
+    "consumers": ["title:prototype", "title:prototype-review"],
+    "run_path": "<storage>/workflows/<run-id>/artifacts/baseline-regression-report/v<n>.json",
+    "required_for_gates": []
+  },
+  "type": "object",
+  "required": ["provenance", "title_id", "commit", "phase", "baseline", "reference", "replacement", "metrics", "paired", "playtest", "checks", "findings", "failed", "routes", "verdict"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": ["string", "null"] },
+    "commit": { "type": ["string", "null"], "description": "The candidate development commit (the prototype-report's)." },
+    "phase": { "enum": ["greybox", "production"] },
+    "baseline": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["present", "none", "unmeasured"] },
+        "commit": { "type": ["string", "null"] },
+        "artifact_id": { "type": ["string", "null"] },
+        "decision": { "type": ["string", "null"] }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "required": ["path", "version", "sha256"],
+      "properties": {
+        "path": { "type": "string" },
+        "version": { "type": "string" },
+        "sha256": { "type": "string" },
+        "pinned": { "type": "boolean" }
+      }
+    },
+    "replacement": {
+      "type": ["object", "null"],
+      "properties": {
+        "status": { "enum": ["PASS", "FAIL"] },
+        "accepted_commit": { "type": "string" },
+        "candidate_commit": { "type": "string" },
+        "units_accepted": { "type": ["integer", "null"] },
+        "units_removed": { "type": "array", "items": { "type": "string" } },
+        "units_changed": { "type": "array", "items": { "type": "string" } },
+        "units_replaced_share": { "type": ["number", "null"] },
+        "files_accepted": { "type": "integer" },
+        "files_rewritten": { "type": "integer" },
+        "files_rewritten_share": { "type": ["number", "null"] },
+        "lines_accepted": { "type": "integer" },
+        "lines_deleted": { "type": "integer" },
+        "lines_deleted_share": { "type": ["number", "null"] },
+        "maximum": { "type": "object" },
+        "exceeded": { "type": "array", "items": { "type": "string" } },
+        "decision": {
+          "type": ["object", "null"],
+          "description": "A person's answer when the candidate exceeded the maximum: approve (carried to the run's later reports while the accepted commit is the same) or restore.",
+          "properties": {
+            "choice": { "enum": ["approve", "restore"] },
+            "decided_by": { "const": "human" },
+            "decided_at": { "type": ["string", "null"] },
+            "note": { "type": ["string", "null"] },
+            "accepted_commit": { "type": "string" },
+            "measured_on": { "type": "string" },
+            "measured": { "type": "object" }
+          },
+          "required": ["choice", "decided_by", "accepted_commit"]
+        }
+      }
+    },
+    "metrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "metric", "project", "status", "summary"],
+        "properties": {
+          "id": { "type": "string" },
+          "metric": { "type": "string" },
+          "project": { "type": "string" },
+          "status": { "enum": ["PASS", "FAIL", "UNMEASURED", "SKIPPED"] },
+          "summary": { "type": "string" }
+        }
+      }
+    },
+    "paired": {
+      "type": ["object", "null"],
+      "properties": {
+        "status": { "enum": ["PASS", "FAIL", "UNMEASURED", "BLOCKED"] },
+        "judge": { "type": ["string", "null"] },
+        "dimensions": { "type": "object" },
+        "pairs": { "type": "array" },
+        "problem": { "type": ["string", "null"] }
+      }
+    },
+    "playtest": { "type": "array", "items": { "type": "object" } },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "enum": ["PASS", "FAIL", "SKIPPED"] },
+          "summary": { "type": "string" }
+        }
+      }
+    },
+    "findings": { "type": "array", "items": { "$ref": "./shared/quality-finding.schema.json#/$defs/finding" } },
+    "failed": { "type": "array", "items": { "type": "string" } },
+    "routes": { "type": "array", "items": { "enum": ["assets", "develop", "restore"] } },
+    "skipped_reason": { "type": ["string", "null"] },
+    "blocked_reason": { "type": ["string", "null"] },
+    "verdict": { "enum": ["PASS", "FAIL", "BLOCKED", "SKIPPED"] }
+  },
+  "additionalProperties": false
+}

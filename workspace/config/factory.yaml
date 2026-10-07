@@ -87,8 +87,11 @@ factory:
   #                  docs/publish-module.md)
   #   wgf_triage     the `triage` step: failures as quality findings, routed to the
   #                  specialist that owns them (scripts/wgf_triage/, docs/specialist-routing.md)
+  #   wgf_baseline   the `accepted-baseline` and `baseline-regression` steps: the build a
+  #                  person accepted, pinned and held to (scripts/wgf_baseline/,
+  #                  docs/accepted-baseline.md)
   steps:
-    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa, wgf_sufficiency, wgf_quality, wgf_listing, wgf_publish, wgf_triage]
+    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa, wgf_sufficiency, wgf_quality, wgf_listing, wgf_publish, wgf_triage, wgf_baseline]
 
   # The strategy module (scripts/wgf_strategy): by default it ranks the opportunity's
   # candidate platforms by audience fit and makes the best one required. A project that has
@@ -811,6 +814,16 @@ factory:
   # `archetype` author writes MVP-sized content and fails there, naming what is short: a
   # release-tier run needs `author: agent`, and a run with the built-in author sets
   # `strategy.quality_tier: mvp`.
+  # The accepted baseline (scripts/wgf_baseline, docs/accepted-baseline.md): the build a
+  # person accepted for the title is found on its own - the newest G4 `pass` a person gave,
+  # in the run store or workspace/titles/<id>/decisions - and every later build is held to
+  # it (core/reference/accepted-baseline.yaml). A person may name it instead: the commit,
+  # and the run whose reports measured it. There is no switch to turn it off.
+  # baseline:
+  #   accepted:
+  #     commit: 96f5ceaa7abf165594b06cfb8c69eec9f0612ec1
+  #     run: new-game-20261003-081154-4e5e0a
+
   design:
     author: archetype
     # agent:

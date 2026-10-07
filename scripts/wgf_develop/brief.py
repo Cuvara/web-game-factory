@@ -639,7 +639,7 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                 writable_paths=None, package_changes=None, loop=None, sessions=None,
                 playability=None, frames_root=None, phase=None, greybox_commit=None,
                 production=None, visual_qa=None, sufficiency=None,
-                review_baseline=None, developer=None, specialist=None):
+                review_baseline=None, developer=None, specialist=None, accepted=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
     writable_paths = list(DEFAULT_WRITABLE if writable_paths is None else writable_paths)
@@ -828,6 +828,10 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         # no commit may drop below, and the rule that the game is improved, never rebuilt.
         # None when the run adopted nothing.
         "existing_content": existing_floor(design),
+        # The build a person accepted for this title (wgf_baseline.brief.context): the rule
+        # is to extend it unless a person approved replacing it. None when nothing was
+        # accepted.
+        "accepted_baseline": accepted,
         # What the design says the finished game looks like: each MVP asset requirement's
         # role and readability with the runtime asset id that draws it, the UI spec, and
         # whether the art direction is geometric on purpose. None for a design without it.
@@ -1564,6 +1568,9 @@ def render_markdown(brief):
             "the shipped ones; a shipped unit the design renames keeps its content. The "
             "commit is refused when the content data counts below the floor or a shipped "
             "asset file is gone.\n")
+    if brief.get("accepted_baseline"):
+        from wgf_baseline.brief import render as render_accepted
+        out.extend(render_accepted(brief["accepted_baseline"]))
     if brief.get("phase") == "greybox" and adopted:
         add("## Phase: greybox (adopted game)\n")
         add("The greybox proves the loop plays and reads before assets are made. This game "

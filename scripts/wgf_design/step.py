@@ -194,6 +194,17 @@ class DesignStep(WorkflowStep):
                  "attempt": getattr(context, "attempt", 1)}
         if self._floor:
             brief["existing_content"] = self._floor
+        # The build a person accepted for this title (accepted-baseline): the design extends it
+        # unless a person approves replacing it (wgf_baseline, docs/accepted-baseline.md).
+        if "accepted-baseline" in inputs:
+            try:
+                from wgf_baseline.brief import context as accepted_context
+            except ImportError:
+                accepted_context = None
+            accepted = accepted_context(inputs.load("accepted-baseline")) \
+                if accepted_context else None
+            if accepted:
+                brief["accepted_baseline"] = accepted
         # Re-entered through `design-gap`: the prototype-report names what the design did not
         # decide, and the draft starts from the design those gaps were found in (this step's
         # own previous output), so the design is repaired, never replaced.

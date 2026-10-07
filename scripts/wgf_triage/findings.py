@@ -28,7 +28,8 @@ __all__ = ["normalize", "from_requests", "NormalizeError", "PRODUCERS", "finding
 # The artifact types a finding can be read from, in the order a build's reports are read.
 PRODUCERS = ("playability-report", "production-quality-report", "visual-qa-report",
              "content-sufficiency-report", "review-report", "qa-report",
-             "listing-validation-report", "quality-scorecard", "quality-report")
+             "listing-validation-report", "quality-scorecard", "quality-report",
+             "baseline-regression-report")
 
 _ID_SAFE = re.compile(r"[^a-z0-9._:/@-]+")
 
@@ -394,6 +395,25 @@ def _quality_report(ctx):
     return out
 
 
+def _baseline_regression(ctx):
+    """A baseline-regression-report's findings (the build against the one a person accepted)
+    are quality findings already: kept, with the owner recomputed from the routing data and
+    the route kept when its producer chose `assets` or `design`, else the owner's."""
+    out = []
+    for item in ctx.report.get("findings") or []:
+        if not isinstance(item, dict) or item.get("dimension") not in ctx.routing.dimensions:
+            continue
+        finding = dict(item)
+        finding["owner"] = ctx.routing.owner(item["dimension"])
+        if finding.get("route") not in ("assets", "design"):
+            finding["route"] = ctx.routing.route_of(finding["owner"])
+        if ctx.ref is not None and getattr(ctx.ref, "id", None):
+            finding["evidence_refs"] = list(finding.get("evidence_refs") or []) + [
+                f"artifact:{ctx.ref.id}"]
+        out.append(finding)
+    return out
+
+
 _READERS = {
     "playability-report": _playability,
     "visual-qa-report": _visual_qa,
@@ -403,6 +423,7 @@ _READERS = {
     "listing-validation-report": _listing,
     "quality-scorecard": _scorecard,
     "quality-report": _quality_report,
+    "baseline-regression-report": _baseline_regression,
 }
 
 

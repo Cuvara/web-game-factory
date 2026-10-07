@@ -69,6 +69,12 @@ python3 scripts/wgf-listing.py validate .factory/workflows/<run>/store-listing/1
 python3 scripts/wgf-listing.py copy --design game-design.json --dist ../my-game/dist  # the grounded copy
 python3 scripts/wgf-listing.py requirements poki yandex   # what each profile asks; what is UNKNOWN
 
+# A person's playtest findings against a build (docs/accepted-baseline.md): blocking until
+# the metric they name passes on a newer build, or a person confirms them. Refused from a step.
+python3 scripts/wgf-playtest.py file <run-id> notes.json [--build COMMIT]
+python3 scripts/wgf-playtest.py confirm <run-id> <finding-id>
+python3 scripts/wgf-playtest.py list <run-id>
+
 # 3D models (docs/blender-pipeline.md). Blender 4.5 LTS via WGF_BLENDER or PATH; inspect needs none.
 python3 scripts/wgf-model.py doctor                     # is the pinned Blender usable?
 python3 scripts/wgf-model.py build spec.json --id car -o car.glb --twice   # build, check, reproduce
@@ -451,6 +457,12 @@ seen by the engine — validate what you write there with ajv.
 - `docs/quality-gate-module.md` — the `quality-gate` step: one build scored on every quality
   dimension from the same build's reports, hard floors per dimension (no averaging past a
   blocker), stale evidence, the finding lifecycle, the release decision, routing, pinning
+- `docs/accepted-baseline.md` — workflow 16: the build a person accepted at G4 pinned into
+  every later run of the title (`accepted-baseline`) and each build held to it
+  (`baseline-regression`, `core/reference/accepted-baseline.yaml`): replacing accepted work
+  waits for a person (approve | restore, never automation or a timeout), the same bot's
+  metrics within tolerance, a paired visual judgement (better/same/worse), playtest findings
+  (`scripts/wgf-playtest.py`); the quality gate never skips a baseline that exists
 - `docs/factory-quality-benchmark.md` — the Factory quality benchmark as a system: the
   benchmark and the two-layer floor (universal + genre/3D), calibration and how to version it
 - `docs/store-listing-module.md` — the `store-listing` and `listing-validation` steps: the

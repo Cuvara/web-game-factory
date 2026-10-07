@@ -156,24 +156,27 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `research` | `research` | — | `research-report`, `opportunity` |
 | `strategy` | `strategy` | `opportunity` | `title-strategy` |
 | `strategy-review` | `human-checkpoint` | `title-strategy` | `decision-record` |
-| `design` | `design` | `title-strategy`, `prototype-report`, `content-sufficiency-report`, `triage-report` | `game-design` |
+| `accepted-baseline` | `accepted-baseline` | `title-strategy` | `accepted-baseline` |
+| `design` | `design` | `title-strategy`, `prototype-report`, `content-sufficiency-report`, `triage-report`, `accepted-baseline` | `game-design` |
 | `tech-plan` | `tech-plan` | `game-design`, `title-strategy` | `tech-plan` |
 | `tech-plan-review` | `human-checkpoint` | `game-design`, `tech-plan` | `decision-record` |
 | `init` | `init` | `game-design`, `tech-plan` | `scaffold-record` |
-| `greybox` | `develop` | `game-design`, `scaffold-record`, `title-strategy`, `tech-plan`, `playability-report` | `prototype-report` |
+| `greybox` | `develop` | `game-design`, `scaffold-record`, `title-strategy`, `tech-plan`, `playability-report`, `accepted-baseline`, `baseline-regression-report` | `prototype-report` |
 | `greybox-playability` | `playability` | `prototype-report`, `game-design`, `scaffold-record` | `playability-report` |
+| `greybox-baseline` | `baseline-regression` | `accepted-baseline`, `prototype-report`, `scaffold-record`, `game-design`, `baseline-regression-report` | `baseline-regression-report` |
 | `assets` | `assets` | `game-design`, `scaffold-record`, `production-quality-report`, `visual-qa-report`, `playability-report`, `triage-report` | `asset-manifest` |
-| `triage` | `triage` | `game-design`, `prototype-report`, `asset-manifest`, `playability-report`, `production-quality-report`, `visual-qa-report`, `content-sufficiency-report`, `review-report`, `qa-report`, `verification-report`, `quality-report`, `decision-record`, `triage-report` | `triage-report` |
-| `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `tech-plan`, `qa-report`, `review-report`, `playability-report`, `production-quality-report`, `visual-qa-report`, `content-sufficiency-report`, `triage-report` | `prototype-report` |
+| `triage` | `triage` | `game-design`, `prototype-report`, `asset-manifest`, `playability-report`, `production-quality-report`, `visual-qa-report`, `content-sufficiency-report`, `review-report`, `qa-report`, `verification-report`, `quality-report`, `decision-record`, `triage-report`, `baseline-regression-report` | `triage-report` |
+| `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `tech-plan`, `qa-report`, `review-report`, `playability-report`, `production-quality-report`, `visual-qa-report`, `content-sufficiency-report`, `triage-report`, `accepted-baseline`, `baseline-regression-report` | `prototype-report` |
 | `playability` | `playability` | `prototype-report`, `game-design`, `scaffold-record` | `playability-report` |
 | `production-quality` | `production-quality` | `playability-report`, `asset-manifest`, `game-design`, `scaffold-record` | `production-quality-report` |
 | `visual-qa` | `visual-qa` | `playability-report`, `game-design`, `asset-manifest`, `production-quality-report` | `visual-qa-report` |
 | `content-sufficiency` | `content-sufficiency` | `playability-report`, `game-design`, `scaffold-record`, `title-strategy`, `visual-qa-report` | `content-sufficiency-report` |
+| `baseline-regression` | `baseline-regression` | `accepted-baseline`, `prototype-report`, `scaffold-record`, `game-design`, `playability-report`, `visual-qa-report`, `production-quality-report`, `content-sufficiency-report`, `baseline-regression-report` | `baseline-regression-report` |
 | `review` | `review` | `prototype-report`, `game-design`, `scaffold-record`, `qa-report` | `review-report` |
 | `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report`, `tech-plan` | `sdk-report` |
 | `sdk-review` | `review` | `sdk-report`, `prototype-report`, `game-design`, `scaffold-record`, `qa-report` | `review-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest`, `playability-report` | `verification-report`, `qa-report` |
-| `quality-gate` | `quality-gate` | `playability-report`, `production-quality-report`, `visual-qa-report`, `content-sufficiency-report`, `qa-report`, `verification-report`, `prototype-report`, `game-design`, `sdk-report`, `review-report`, `asset-manifest`, `title-strategy`, `triage-report`, `decision-record` | `quality-report` |
+| `quality-gate` | `quality-gate` | `playability-report`, `production-quality-report`, `visual-qa-report`, `content-sufficiency-report`, `qa-report`, `verification-report`, `prototype-report`, `game-design`, `sdk-report`, `review-report`, `asset-manifest`, `title-strategy`, `triage-report`, `decision-record`, `accepted-baseline`, `baseline-regression-report` | `quality-report` |
 | `prototype-review` | `human-checkpoint` | `qa-report`, `verification-report`, `prototype-report`, `title-strategy`, `game-design`, `playability-report`, `review-report`, `quality-report` | `decision-record` |
 | `store-listing` | `store-listing` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `game-design`, `title-strategy`, `scaffold-record`, `asset-manifest`, `playability-report`, `content-sufficiency-report`, `listing-validation-report`, `triage-report` | `store-listing` |
 | `listing-validation` | `listing-validation` | `store-listing`, `game-design`, `sdk-report`, `scaffold-record` | `listing-validation-report` |

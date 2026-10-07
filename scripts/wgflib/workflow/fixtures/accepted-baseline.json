@@ -1,0 +1,16 @@
+{
+  "title_id": "mock-title",
+  "reference": {
+    "path": "core/reference/accepted-baseline.yaml",
+    "version": "0.0.0",
+    "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "pinned": false
+  },
+  "status": "none",
+  "reason": "mock: nothing was accepted for the title",
+  "accepted": null,
+  "reports": [],
+  "frames": [],
+  "metrics": {},
+  "problems": []
+}

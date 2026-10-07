@@ -195,6 +195,20 @@ def _decision_behind(context, route):
     return None
 
 
+
+def _accepted_baseline(inputs):
+    """The brief's accepted-baseline block (wgf_baseline.brief), or None: nothing accepted,
+    or the module not installed."""
+    if "accepted-baseline" not in inputs:
+        return None
+    try:
+        from wgf_baseline.brief import context as accepted_context
+    except ImportError:
+        return None
+    report = (inputs.load("baseline-regression-report")
+              if "baseline-regression-report" in inputs else None)
+    return accepted_context(inputs.load("accepted-baseline"), report)
+
 class _Guard:
     """The Factory's guarded paths, fingerprinted once before the developer (or, on a
     re-executed visit, before its checks) and compared after each thing that ran the
@@ -452,6 +466,7 @@ class DevelopStep(WorkflowStep):
                 sessions=_sessions(context, tech_plan),
                 developer=settings.developer,
                 specialist=spec,
+                accepted=_accepted_baseline(inputs),
             )
 
         if (phase == "greybox" and content_floor.adopted(design) and spec is None

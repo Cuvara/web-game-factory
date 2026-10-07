@@ -34,6 +34,8 @@ It plays nothing, renders nothing and never touches the checkout.
 | `listing-validation-report` | no | the store dimension, once a listing exists |
 | `triage-report` | no | the run's finding ledger, which the gate advances on this build |
 | `decision-record` | no | G4's decision, which verifies a person's findings |
+| `accepted-baseline` | no | the build a person accepted for the title (workflow 16) |
+| `baseline-regression-report` | no | this build held to it: replacement, metrics, paired judgement, playtest |
 
 Without a required input the step waits for input: the build has not been judged on every
 side yet. A missing optional input leaves the criteria that read it UNMEASURED - never a pass.
@@ -167,6 +169,22 @@ names), the rest to the specialist that owns the dimension, whose develop visit'
 carries them. The route budgets are on triage (`quality-gate.develop: 2`,
 `quality-gate.assets: 2`, `quality-gate.design-gap: 1`).
 
+## The accepted baseline
+
+Since workflow 16 the gate also reads `accepted-baseline` and `baseline-regression-report`
+(optional inputs) and records the `baseline` block (quality-report 1.2.0):
+
+| The run holds | `baseline.status` | Effect |
+|---|---|---|
+| no accepted baseline, or one of `status: none` (nothing was accepted for the title) | SKIPPED, with the reason | none |
+| an accepted baseline and a PASSING baseline-regression-report of this build's development commit, production phase | PASS | none |
+| the same report FAILING | FAIL | the gate FAILS with the report's routes (`restore` as `develop`), so triage routes its findings; at the release tier `not-release` |
+| an accepted baseline and no report, a report of another commit, of the greybox only, or one BLOCKED or SKIPPED; or a baseline that cannot be measured | UNMEASURED | BLOCKED (`not-release`): a baseline that exists is never skipped |
+
+The baseline's own bars are not in the floor: they are relative to the accepted build, in
+`core/reference/accepted-baseline.yaml`, pinned like the floor. See
+[accepted-baseline.md](accepted-baseline.md).
+
 ## Anti-gaming
 
 * **Evidence comes from the build.** Every score cites the reports it read, by artifact id,
@@ -202,4 +220,5 @@ mock plan entries `develop`, `assets` and `design-gap` script a failure routed t
 
 Tests: `python -m unittest scripts.tests.test_quality_gate` (the Mobile-40 case, stale
 evidence, tier mvp, an unknown family, regression, the finding lifecycle, pinning, release
-refusals, the G4 display, a passing release-quality build).
+refusals, the G4 display, a passing release-quality build); the `baseline` block in
+`scripts.tests.test_accepted_baseline` (`QualityGate`).

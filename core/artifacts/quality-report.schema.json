@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/quality-report.schema.json",
   "title": "Quality report",
-  "description": "The Factory quality gate's scorecard of ONE build: every quality dimension (gameplay, content sufficiency, variety, progression, visual, UI, audio, consistency, polish, technical/performance, platform readiness, store) scored from the reports the producing steps wrote about that same build - playability, production-quality, visual-qa, content-sufficiency, verify, review, sdk, and the store listing's validation once it exists - against the versioned quality contract (core/reference/quality-floor.yaml: the universal floor every game carries, the genre family's contract and the 3D contract) and the release bars of core/reference/quality-benchmark.yaml at the run's quality tier, as the run pinned them when it started. A dimension passes only at or above its floor: no average carries a dimension past a failed blocker criterion, and no dimension's score carries another's. Evidence about another commit than the build's is stale and blocks the report. Each failing criterion is a typed finding with its owner discipline and route, carried open across builds and closed only by a re-measurement on a newer build. The release decision is `release` only at the release tier with every dimension at its floor; a run at tier mvp is `development`, never release. Added in Factory 2.8.0 (WS-7).",
+  "description": "The Factory quality gate's scorecard of ONE build: every quality dimension (gameplay, content sufficiency, variety, progression, visual, UI, audio, consistency, polish, technical/performance, platform readiness, store) scored from the reports the producing steps wrote about that same build - playability, production-quality, visual-qa, content-sufficiency, verify, review, sdk, and the store listing's validation once it exists - against the versioned quality contract (core/reference/quality-floor.yaml: the universal floor every game carries, the genre family's contract and the 3D contract) and the release bars of core/reference/quality-benchmark.yaml at the run's quality tier, as the run pinned them when it started. A dimension passes only at or above its floor: no average carries a dimension past a failed blocker criterion, and no dimension's score carries another's. Evidence about another commit than the build's is stale and blocks the report. Each failing criterion is a typed finding with its owner discipline and route, carried open across builds and closed only by a re-measurement on a newer build. The release decision is `release` only at the release tier with every dimension at its floor; a run at tier mvp is `development`, never release. Added in Factory 2.8.0 (WS-7). 1.2.0: `baseline` - the build held to the build a person accepted (accepted-baseline, baseline-regression-report).",
   "x-wgf": {
     "id": "quality-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "producer": "title:prototype",
     "consumers": [
       "title:design",
@@ -809,6 +809,18 @@
         "lifecycle": { "type": "array", "items": { "$ref": "./shared/quality-finding.schema.json#/$defs/record" } }
       },
       "additionalProperties": false
+    },
+    "baseline": {
+      "type": "object",
+      "description": "The build against the build a person accepted (1.2.0, workflow 16): SKIPPED when the run holds no accepted baseline (`reason` says why), PASS when the run's newest baseline-regression-report passed this build's development commit at the production phase, FAIL when it failed (the gate fails, routed by its routes), UNMEASURED when a baseline exists and this build was not measured against it - no report, a report of another commit, of the greybox only, blocked or skipped - which BLOCKS the gate: a baseline that exists is never skipped.",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["SKIPPED", "PASS", "FAIL", "UNMEASURED"] },
+        "reason": { "type": ["string", "null"] },
+        "accepted_commit": { "type": ["string", "null"] },
+        "report": { "type": ["string", "null"], "description": "The baseline-regression-report's artifact id." },
+        "routes": { "type": "array", "items": { "type": "string" } }
+      }
     },
     "blocked_reason": {
       "type": [

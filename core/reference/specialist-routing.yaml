@@ -21,7 +21,8 @@
 
 # 1.1.0: content-sufficiency-report (workflow 10).
 # 1.3.0: `ledger` - which findings hold a build back until they are verified.
-version: 1.3.0
+# 1.4.0: baseline-regression-report - the accepted-baseline regression check (workflow 16).
+version: 1.4.0
 
 # The quality dimensions, as the quality-finding schema enumerates them.
 dimensions: [content, level-design, difficulty, progression, gameplay, art-2d, environment-3d, lighting-material, ui, audio, feel, store-copy, platform]
@@ -217,6 +218,15 @@ producers:
       store: store-copy
     default: gameplay
     acceptance: the quality gate scores the next build and `{check}` meets its minimum{bar_clause}.
+
+  baseline-regression-report:
+    step: baseline-regression
+    # Its findings are already quality findings, each in its own dimension with the route
+    # its producer chose (core/reference/accepted-baseline.yaml: a metric's dimension, a
+    # paired rubric dimension's route, a person's playtest finding as filed); the owner is
+    # recomputed here.
+    default: gameplay
+    acceptance: baseline-regression measures the next build against the accepted one and `{check}` passes{bar_clause}.
 
   decision-record:
     step: prototype-review

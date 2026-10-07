@@ -48,12 +48,26 @@ interface Content {
   unit_kind: string;
   objective?: string;
   progress?: Progress;
+  par_s?: number;
+}
+interface Collider {
+  shape: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 interface Snapshot {
   state: string;
   metrics: Record<string, number>;
   content?: Content;
-  entities: { id: string; kind?: string; role: string; x: number; y: number; w: number; h: number; visible: boolean; asset?: string | null; render?: string }[];
+  entities: { id: string; kind?: string; role: string; x: number; y: number; w: number; h: number; visible: boolean; asset?: string | null; render?: string; collider?: Collider }[];
+  // Optional play-realism fields (core/reference/play-realism.yaml): the drawn board, where the
+  // player is across its path, camera and control forward, falls and respawns so far.
+  playfield?: { x: number; y: number; w: number; h: number };
+  track?: { offset: number; half_width: number };
+  view?: { camera_forward: number[]; control_forward: number[] };
+  setbacks?: number;
   inputs: Move[];
   assets_loaded?: string[];
   audio?: { music: string | null; playing: boolean; level: number; muted?: boolean };
@@ -123,6 +137,30 @@ const CFG = JSON.parse(fs.readFileSync(process.env.WGF_PLAY_CONFIG as string, "u
   // (visual-quality.yaml `sample`). 0: never.
   min_new_kinds?: number;
   variety_extend_ms?: number;
+  // Naive play (core/reference/play-realism.yaml `naive`): beside the opening unit, these
+  // units through the unit link, on these projects, each policy for naive_run_ms, each
+  // (unit, policy) naive_repeats times (more than once only when the step compares clear
+  // rates with an accepted build); the policies by input kind (`held`: a listed move has
+  // hold_ms; `tap`), and how the jitter policy errs.
+  naive_units?: string[];
+  naive_projects?: string[];
+  naive_run_ms?: number;
+  naive_repeats?: number;
+  naive_policies?: Record<string, string[]>;
+  naive_jitter_px?: number;
+  naive_reaction_ms?: number;
+  naive_error_rate?: number;
+  naive_seed?: number;
+  // Risk and reward (play-realism.yaml `risk`, with the step's `with: risk`): the units played
+  // under each of the game's oracle policies (an empty id: play from the start), on these
+  // projects, risk_attempts fresh attempts per policy, each at most risk_attempt_ms, all
+  // within risk_ms. Empty risk_units: no risk test.
+  risk_units?: string[];
+  risk_projects?: string[];
+  risk_policies?: string[];
+  risk_attempts?: number;
+  risk_attempt_ms?: number;
+  risk_ms?: number;
 };
 const URL = "/?wgf-probe=1";
 
@@ -335,6 +373,9 @@ test.beforeEach(async ({ page }, info) => {
   const name = RECORD_OF[info.title];
   const asked = name !== undefined && fs.existsSync(pending(info.project.name, name));
   test.skip(info.retry > 0 && !asked, "made again only when its host was degraded");
+  // Every canvas a context is asked of reports a lost WebGL context on the console, where
+  // Watch counts it (play-realism.yaml `runtime`).
+  await page.addInitScript(installContextWatch);
   if (CFG.environment) {
     await page.addInitScript(installHealth, { tick: CFG.environment.tick_ms, stall: CFG.environment.stall_ms });
   }
@@ -347,6 +388,7 @@ const RECORD_OF: Record<string, string> = {
   "lose and restart: the anti-oracle plays badly, then retries": "lose",
   "traverse: the oracle plays unit after unit": "traverse",
   "ramp: samples of the play that promises the time ramp": "ramp",
+  "naive: the build played by someone who is not perfect": "naive",
 };
 
 // The roles a glimpse is taken for, and how many a test takes.
@@ -356,6 +398,24 @@ const GLIMPSES = 6;
 // may take to stage and to report its asset drawn.
 const SHOWCASE_MAX = 16;
 const SHOWCASE_STAGE_MS = 6000;
+
+// The console line a lost WebGL context is reported by (installContextWatch), never the game's.
+const CONTEXT_LOST = "[wgf-play] webglcontextlost";
+
+// In the page, before any of the game's scripts: every canvas a context is asked of reports a
+// `webglcontextlost` event on the console. Patches getContext only to add the listener.
+function installContextWatch(): void {
+  const proto = HTMLCanvasElement.prototype as unknown as { getContext: (...args: unknown[]) => unknown };
+  const original = proto.getContext;
+  const watched = new WeakSet<object>();
+  proto.getContext = function (this: HTMLCanvasElement, ...args: unknown[]): unknown {
+    if (!watched.has(this)) {
+      watched.add(this);
+      this.addEventListener("webglcontextlost", () => console.warn("[wgf-play] webglcontextlost"));
+    }
+    return original.apply(this, args);
+  };
+}
 
 // What one test saw beside play itself: page errors, every response for a file under
 // /assets/ (and the runtime manifest's body), the runtime asset ids the probe reported
@@ -370,8 +430,30 @@ class Watch {
   audio: { ms: number; state: string; music: string | null; playing: boolean; level: number; muted: boolean | null }[] = [];
   readonly t0 = Date.now();
 
+  // console.error lines (with where they were logged from, and whether that is the page's own
+  // origin) and lost WebGL contexts: play-realism.yaml `runtime`.
+  consoleErrors: { text: string; url: string; same_origin: boolean }[] = [];
+  webglLost = 0;
+
   constructor(readonly page: Page, readonly project: string, readonly frames: string[]) {
     page.on("pageerror", (e) => this.errors.push(e.message.slice(0, 300)));
+    page.on("console", (message) => {
+      const text = message.text();
+      if (message.type() === "warning" && text.startsWith(CONTEXT_LOST)) {
+        this.webglLost += 1;
+        return;
+      }
+      if (message.type() !== "error" || this.consoleErrors.length >= 200) return;
+      const url = message.location()?.url ?? "";
+      let same = true;
+      try {
+        // A line with no source (an inline script, an eval) is counted as the page's own.
+        same = !url || new globalThis.URL(url).origin === new globalThis.URL(page.url()).origin;
+      } catch {
+        same = true;
+      }
+      this.consoleErrors.push({ text: text.slice(0, 300), url: url.slice(0, 200), same_origin: same });
+    });
     page.on("response", async (response) => {
       const url = new globalThis.URL(response.url());
       if (!url.pathname.includes("/assets/")) return;
@@ -512,7 +594,8 @@ class Watch {
 
   record(): Record<string, unknown> {
     return { errors: this.errors, asset_requests: this.requests, runtime_assets: this.runtimeAssets,
-             assets_loaded: [...this.loaded].sort(), ui: this.ui, audio: this.audio };
+             assets_loaded: [...this.loaded].sort(), ui: this.ui, audio: this.audio,
+             console: { errors: this.consoleErrors, webgl_lost: this.webglLost } };
   }
 }
 
@@ -1031,16 +1114,26 @@ test("win: the oracle plays well", async ({ page }, info) => {
     // Every frame for 10 s of play: which entities are drawn, where, and with what (the
     // runtime asset and how it is rendered). Long enough for a threat that spawns on the
     // horizon to reach the player, where it has to be read.
+    // With each entity, the body it collides with when the probe reports one ([shape, x, y,
+    // w, h], else null), and per frame the drawn board (playfield) when it reports one: the
+    // physics checks hold every turn of a mover to something drawn (play-realism.yaml).
+    type Sample = [string, string, number, number, number, number, number, string | null, string | null,
+                   [string, number, number, number, number] | null];
     const sampler = page.evaluate(async (ms: number) => {
-      const out: [string, string, number, number, number, number, number, string | null, string | null][][] = [];
+      const out: Sample[][] = [];
+      const playfields: ({ x: number; y: number; w: number; h: number } | null)[] = [];
       const end = performance.now() + ms;
       while (performance.now() < end) {
         await new Promise((r) => requestAnimationFrame(r));
         const play = (window as unknown as { __wgf__?: { play?: { snapshot(): Snapshot } } }).__wgf__?.play;
         const s = play?.snapshot();
-        if (s) out.push(s.entities.map((e) => [e.id, e.role, e.visible ? 1 : 0, e.x, e.y, e.w, e.h, e.asset ?? null, e.render ?? null]));
+        if (s) {
+          out.push(s.entities.map((e) => [e.id, e.role, e.visible ? 1 : 0, e.x, e.y, e.w, e.h, e.asset ?? null, e.render ?? null,
+                                          e.collider ? [e.collider.shape, e.collider.x, e.collider.y, e.collider.w, e.collider.h] : null]));
+          playfields.push(s.playfield ? { x: s.playfield.x, y: s.playfield.y, w: s.playfield.w, h: s.playfield.h } : null);
+        }
       }
-      return { frames: out, viewport: [innerWidth, innerHeight] };
+      return { frames: out, playfields: playfields.some((p) => p) ? playfields : [], viewport: [innerWidth, innerHeight] };
     }, 10000);
     const t0 = Date.now();
     let shot = false;
@@ -2017,4 +2110,339 @@ test("survey: every unit the design lists, entered through the probe's unit link
     visits.push(await surveyUnit(page, id, touch, watch, project, frames));
   }
   write(project, "survey", { applies: true, asked: units, visits, ...watch.record(), frames });
+});
+
+// -- Naive play: the build played by someone who is not perfect ------------------------------
+//
+// The oracle plays perfectly; a first-time player does not. Per sampled unit - the opening one
+// from a first session, then each of CFG.naive_units through the unit link - each policy plays
+// for naive_run_ms, retrying a loss at once, naive_repeats times: `steady` holds and repeats
+// the first move the oracle names, unchanged ("hold forward"); `jitter` follows the oracle late
+// by naive_reaction_ms, a pointer off by up to naive_jitter_px, and with probability
+// naive_error_rate presses another listed move (never a utility, retry or begin control).
+// Seeded, so the same build plays the same. Every run records how long it played, whether and
+// when it cleared the unit, its losses, the probe's `setbacks` count, and a sample every
+// 250 ms of `track` and `view` when the probe reports them, and the unit's `content.par_s`.
+// It judges nothing: scripts/wgf_playability/realism.py holds it to play-realism.yaml.
+
+interface NaiveSample {
+  ms: number;
+  state: string;
+  setbacks: number | null;
+  track: { offset: number; half_width: number } | null;
+  view: { camera_forward: number[]; control_forward: number[] } | null;
+  progress: number | null;
+}
+interface NaiveRun {
+  policy: string;
+  asked: string | null;
+  unit_id: string | null;
+  entered: boolean;
+  played_ms: number;
+  won: boolean;
+  clear_ms: number | null;
+  losses: number;
+  inputs: number;
+  setbacks_first: number | null;
+  setbacks_last: number | null;
+  par_s: number | null;
+  samples: NaiveSample[];
+  reason?: string;
+}
+
+function seeded(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// The moves of play listed now: not a pause, settings, retry or begin control.
+function playMoves(s: Snapshot | null): Move[] {
+  return (s?.inputs ?? []).filter((m) => !UTILITY.test(m.action) && !UNDO.test(m.action) && !BEGIN.test(m.action));
+}
+
+function unitUrl(asked: string | null): string {
+  return asked ? `${URL}&wgf-unit=${encodeURIComponent(asked)}` : URL;
+}
+
+async function naiveRun(page: Page, policy: string, asked: string | null, touch: boolean, watch: Watch,
+                        random: () => number): Promise<NaiveRun> {
+  const run: NaiveRun = { policy, asked, unit_id: null, entered: false, played_ms: 0, won: false, clear_ms: null,
+                          losses: 0, inputs: 0, setbacks_first: null, setbacks_last: null, par_s: null, samples: [] };
+  const started = await start(page, touch, watch, false, unitUrl(asked));
+  if (started.playingMs === null) {
+    run.reason = "play never began";
+    return run;
+  }
+  const viewport = page.viewportSize() ?? { width: 1280, height: 720 };
+  const t0 = Date.now();
+  let enteredAt = t0;
+  let lastSample = 0;
+  let forward: Move | null = null;
+  while (Date.now() - t0 < (CFG.naive_run_ms ?? 0)) {
+    const s = watch.saw(await snap(page));
+    if (!s) break;
+    const uid = s.content?.unit_id ?? null;
+    if (!run.entered && s.state === "playing") {
+      if (asked !== null && uid !== asked) {
+        run.reason = uid ? `the probe reported ${uid}, not ${asked}` : "the probe reported no unit";
+        break;
+      }
+      run.entered = true;
+      run.unit_id = uid;
+      run.par_s = typeof s.content?.par_s === "number" ? s.content.par_s : null;
+      enteredAt = Date.now();
+    }
+    // Into the next unit on its own: this unit's run is over.
+    if (run.entered && uid && run.unit_id && uid !== run.unit_id) break;
+    if (typeof s.setbacks === "number") {
+      if (run.setbacks_first === null) run.setbacks_first = s.setbacks;
+      run.setbacks_last = s.setbacks;
+    }
+    if (run.entered && Date.now() - lastSample >= 250) {
+      lastSample = Date.now();
+      run.samples.push({ ms: lastSample - enteredAt, state: s.state, setbacks: typeof s.setbacks === "number" ? s.setbacks : null,
+                         track: s.track ? { offset: s.track.offset, half_width: s.track.half_width } : null,
+                         view: s.view ? { camera_forward: s.view.camera_forward, control_forward: s.view.control_forward } : null,
+                         progress: s.content?.progress?.value ?? null });
+    }
+    if (run.entered && (s.state === "won" || progressDone(s))) {
+      run.won = true;
+      run.clear_ms = Date.now() - enteredAt;
+      break;
+    }
+    if (s.state === "lost") {
+      run.losses += 1;
+      if (!(await retry(page, s, touch))) break;
+      await page.waitForTimeout(300);
+      continue;
+    }
+    if (s.state !== "playing") {
+      await page.waitForTimeout(50);
+      continue;
+    }
+    let move: Move | null = null;
+    if (policy === "steady") {
+      forward ??= s.oracle && !UTILITY.test(s.oracle.action) ? s.oracle : playMoves(s)[0] ?? null;
+      move = forward;
+    } else {
+      const options = playMoves(s);
+      move = options.length && random() < (CFG.naive_error_rate ?? 0)
+        ? options[Math.floor(random() * options.length)]
+        : s.oracle && !UTILITY.test(s.oracle.action) ? s.oracle : null;
+      if (move && move.input.type === "pointer") {
+        const j = CFG.naive_jitter_px ?? 0;
+        const x = Math.min(viewport.width - 1, Math.max(0, move.input.x + (random() * 2 - 1) * j));
+        const y = Math.min(viewport.height - 1, Math.max(0, move.input.y + (random() * 2 - 1) * j));
+        move = { action: move.action, input: { ...move.input, x, y } };
+      }
+      // Seen, then acted on a reaction later: the world has moved on meanwhile.
+      if (move) await page.waitForTimeout(CFG.naive_reaction_ms ?? 0);
+    }
+    if (move) {
+      await act(page, move, touch);
+      run.inputs += 1;
+      await page.waitForTimeout(60);
+    } else {
+      await page.waitForTimeout(40);
+    }
+  }
+  run.played_ms = run.entered ? Date.now() - enteredAt : 0;
+  return run;
+}
+
+test("naive: the build played by someone who is not perfect", async ({ page }, info) => {
+  const project = info.project.name;
+  if (!(CFG.naive_projects ?? []).includes(project) || !(CFG.naive_run_ms ?? 0)) {
+    write(project, "naive", { applies: false, reason: `naive play runs on ${(CFG.naive_projects ?? []).join(", ") || "no project"} only` });
+    return;
+  }
+  const health = new Health();
+  const units: (string | null)[] = [null, ...(CFG.naive_units ?? [])];
+  const most = Math.max(1, ...Object.values(CFG.naive_policies ?? {}).map((k) => k.length));
+  const repeats = Math.max(1, CFG.naive_repeats ?? 1);
+  test.setTimeout(units.length * most * repeats * ((CFG.naive_run_ms ?? 0) + CFG.start_timeout_ms + 5000) + 60_000);
+  // Every run starts as a first session: a save from the run before would start it elsewhere.
+  await page.addInitScript(() => {
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch {
+      // storage refused: the run starts as the build would anyway
+    }
+  });
+  const frames: string[] = [];
+  const watch = new Watch(page, project, frames);
+  const touch = Boolean(info.project.use.hasTouch);
+  const random = seeded(CFG.naive_seed ?? 1);
+  const runs: NaiveRun[] = [];
+  let kind: string | null = null;
+  for (const asked of units) {
+    // The input kind decides the policies: a listed move held (steer, drag) or only taps.
+    if (kind === null) {
+      const opened = await start(page, touch, watch, false, unitUrl(asked));
+      const now = opened.playingMs === null ? null : await snap(page);
+      const listed = [...playMoves(now), ...(now?.oracle ? [now.oracle] : [])];
+      kind = listed.some((m) => (m.input.hold_ms ?? 0) > 0) ? "held" : "tap";
+    }
+    for (let n = 0; n < repeats; n += 1) {
+      for (const policy of CFG.naive_policies?.[kind] ?? []) {
+        // Every run starts on a fresh page: the page before it is read before it goes.
+        await health.keep(page);
+        runs.push(await naiveRun(page, policy, asked, touch, watch, random));
+      }
+    }
+  }
+  await finish(page, info, "naive", { applies: true, input_kind: kind, units, repeats, runs, ...watch.record(), frames },
+               health);
+});
+
+// -- Risk and reward: the game's own oracle policies, per sampled unit ------------------------
+//
+// Does an optional risk exist in a unit, and does taking it pay? The bot never chooses a line
+// itself: the game's own oracle does, under a policy the game declares through its probe's
+// optional play.policy (play-probe.schema.json) - `safe` ignores every optional reward,
+// `greedy` goes for the optional pickups and harder lines the game knows of. Each sampled unit
+// is entered through the unit link and played to its end, risk_attempts times per policy,
+// each attempt on a fresh page. Recorded only: the level-design step judges what each policy
+// earned and how often it failed. A probe without play.policy is recorded as such.
+interface RiskAttempt {
+  unit: string;
+  policy: string;
+  entered: boolean;
+  policy_set: boolean | null;
+  outcome: string | null;
+  duration_ms: number | null;
+  metrics_start: Record<string, number> | null;
+  metrics_end: Record<string, number> | null;
+  metrics_max: Record<string, number>;
+  reason?: string;
+}
+
+async function policyOf(page: Page): Promise<{ policies: unknown; measures: unknown } | null> {
+  return page.evaluate(() => {
+    const p = (window as unknown as { __wgf__?: { play?: { policy?: { set?: unknown; policies?(): unknown; measures?(): unknown } } } })
+      .__wgf__?.play?.policy;
+    if (!p || typeof p.set !== "function") return null;
+    try {
+      return { policies: typeof p.policies === "function" ? p.policies() : null,
+               measures: typeof p.measures === "function" ? p.measures() : null };
+    } catch (error) {
+      return { policies: null, measures: null, error: String(error) };
+    }
+  });
+}
+
+async function setPolicy(page: Page, policy: string): Promise<boolean> {
+  return page.evaluate(async (name) => {
+    const p = (window as unknown as { __wgf__?: { play?: { policy?: { set?(n: string): unknown } } } })
+      .__wgf__?.play?.policy;
+    if (!p || typeof p.set !== "function") return false;
+    try {
+      const answer = await Promise.race([Promise.resolve(p.set(name)),
+                                         new Promise((resolve) => setTimeout(() => resolve(false), 3000))]);
+      return answer === true;
+    } catch {
+      return false;
+    }
+  }, policy);
+}
+
+async function riskAttempt(page: Page, unit: string, policy: string, touch: boolean,
+                           watch: Watch): Promise<RiskAttempt> {
+  const attempt: RiskAttempt = { unit, policy, entered: false, policy_set: null, outcome: null,
+                                 duration_ms: null, metrics_start: null, metrics_end: null, metrics_max: {} };
+  const started = await start(page, touch, watch, false, unitUrl(unit || null));
+  if (started.playingMs === null) {
+    attempt.reason = "play never began";
+    return attempt;
+  }
+  attempt.policy_set = await setPolicy(page, policy);
+  if (!attempt.policy_set) {
+    attempt.reason = `the probe's play.policy.set("${policy}") did not answer true`;
+    return attempt;
+  }
+  const t0 = Date.now();
+  let uid: string | null = null;
+  while (Date.now() - t0 < (CFG.risk_attempt_ms ?? 0)) {
+    const s = watch.saw(await snap(page));
+    if (!s) break;
+    const now = s.content?.unit_id ?? null;
+    if (s.state === "playing") {
+      if (!attempt.entered && (!unit || now === unit)) {
+        attempt.entered = true;
+        uid = now;
+        attempt.metrics_start = { ...s.metrics };
+      }
+      if (attempt.entered && uid !== null && now !== null && now !== uid) {
+        attempt.outcome = "left";
+        break;
+      }
+    }
+    if (attempt.entered) {
+      attempt.metrics_end = { ...s.metrics };
+      for (const [key, value] of Object.entries(s.metrics ?? {})) {
+        if (typeof value === "number" && !(value <= (attempt.metrics_max[key] ?? -Infinity))) attempt.metrics_max[key] = value;
+      }
+    }
+    if (attempt.entered && (s.state === "won" || s.state === "lost")) {
+      attempt.outcome = s.state;
+      break;
+    }
+    if (s.oracle) {
+      await act(page, s.oracle, touch);
+      await page.waitForTimeout(120);
+    } else {
+      await page.waitForTimeout(40);
+    }
+  }
+  if (!attempt.entered) attempt.reason = unit ? `the probe never reported unit ${unit} in play` : "play never began";
+  else if (attempt.outcome === null) attempt.outcome = "timeout";
+  attempt.duration_ms = Date.now() - t0;
+  return attempt;
+}
+
+test("risk: the oracle's safe and greedy policies, per sampled unit", async ({ page }, info) => {
+  const project = info.project.name;
+  const units = CFG.risk_units ?? [];
+  const policies = CFG.risk_policies ?? [];
+  if (!units.length || !policies.length || !(CFG.risk_projects ?? []).includes(project)) {
+    write(project, "risk", { applies: false, reason: units.length
+      ? `risk is played on ${(CFG.risk_projects ?? []).join(", ") || "no project"} only`
+      : "no risk test was asked for (the step's `with: risk`)" });
+    return;
+  }
+  const attempts = CFG.risk_attempts ?? 0;
+  test.setTimeout((CFG.risk_ms ?? 0) + units.length * policies.length * attempts * (CFG.start_timeout_ms + 2000) + 60_000);
+  const watch = new Watch(page, project, []);
+  const touch = Boolean(info.project.use.hasTouch);
+  const opened = await start(page, touch, watch, false, unitUrl(units[0] || null));
+  const declared = opened.playingMs === null ? null : await policyOf(page);
+  if (!declared) {
+    write(project, "risk", { applies: true, declared: false, units, policies, attempts: [],
+                             reason: opened.playingMs === null ? "play never began" : "the probe declares no play.policy",
+                             ...watch.record() });
+    return;
+  }
+  const played: RiskAttempt[] = [];
+  const t0 = Date.now();
+  for (const unit of units) {
+    for (let n = 0; n < attempts; n += 1) {
+      for (const policy of policies) {
+        if (Date.now() - t0 > (CFG.risk_ms ?? 0)) {
+          played.push({ unit, policy, entered: false, policy_set: null, outcome: null, duration_ms: null,
+                        metrics_start: null, metrics_end: null, metrics_max: {}, reason: "risk window spent" });
+          continue;
+        }
+        played.push(await riskAttempt(page, unit, policy, touch, watch));
+      }
+    }
+  }
+  write(project, "risk", { applies: true, declared: true, offered: declared.policies, measures: declared.measures,
+                           units, policies, attempts: played, ...watch.record() });
 });

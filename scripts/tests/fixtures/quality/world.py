@@ -390,6 +390,25 @@ class World:
             out["won"] = screen("won", [retry])
         return out
 
+    def naive(self, project, common):
+        """The naive test's record (play-realism.yaml `naive`): a game a first-time player can
+        play - the opening unit cleared under both policies at about its par, no setback, the
+        player near the centre of its path and the camera's forward the control's (3D)."""
+        if project != "desktop":
+            return {"applies": False, "reason": "naive play runs on desktop only"}
+        unit = self.units[0]["id"]
+        path = self.dimension == "3d"
+        samples = [{"ms": n * 250, "state": "playing", "setbacks": 0,
+                    "track": {"offset": 0.5, "half_width": 4} if path else None,
+                    "view": ({"camera_forward": [0, -1], "control_forward": [0, -1]}
+                             if path else None),
+                    "progress": None} for n in range(20)]
+        runs = [{"policy": policy, "asked": None, "unit_id": unit, "entered": True,
+                 "played_ms": 21000, "won": True, "clear_ms": 21000, "losses": 0, "inputs": 40,
+                 "setbacks_first": 0, "setbacks_last": 0, "par_s": 30, "samples": samples}
+                for policy in ("steady", "jitter")]
+        return dict(common, applies=True, input_kind="held", units=[None], repeats=1, runs=runs)
+
     def records(self, build, project, items):
         """{test: record} for one viewport, as bot.spec.ts writes them."""
         ex = self.spec.get("experience") or {}
@@ -400,6 +419,8 @@ class World:
             {"url": "/assets/" + entry["url"], "status": 200}
             for entry in runtime["assets"].values()]
         common = {"asset_requests": requests, "runtime_assets": runtime, "errors": [],
+                  # The console the bot watched (play-realism.yaml `runtime`): clean.
+                  "console": {"errors": [], "webgl_lost": 0},
                   "audio": [{"state": "playing", "playing": True, "level": 0.06,
                              "music": self.music_id()}] * 3,
                   "audio_unfocused": [{"state": "playing", "level": 0.0}]}
@@ -425,8 +446,9 @@ class World:
             row = []
             for e in playing["entities"]:
                 x = e["x"] + (step * 4 if e["role"] == "projectile" else 0)
+                # The collider the probe reports: the drawn box (play-realism.yaml physics).
                 row.append([e["id"], e["role"], 1, x, e["y"], e["w"], e["h"], e["asset"],
-                            e["render"]])
+                            e["render"], ["rect", x, e["y"], e["w"], e["h"]]])
             frames.append(row)
         sampled = {"frames": frames, "viewport": list(VIEWPORTS[project])}
         win = dict(common, sampled=sampled, inputs=12,
@@ -453,6 +475,7 @@ class World:
                                    "after": {"progress": {"value": 0}}}
         pause = dict(common, reached="paused")
         out = {"first-session": first, "act": act, "win": win, "lose": lose, "pause": pause}
+        out["naive"] = self.naive(project, common)
 
         # The content: the first units played in order, every unit surveyed (desktop only).
         bars = self.qa.get("content") or {}
@@ -719,7 +742,7 @@ class FixturePlayabilityStep(PlayabilityStep):
             json.dump(self.world.content_data(build), handle)
 
     def _play(self, repo, out, logs, settings, context, bot_total_s=0, survey_s=0,
-              extend_s=0):
+              extend_s=0, realism_s=0):
         build = self.world.build_of(self._commit)
         items = self.world.manifest_items()
         for project in VIEWPORTS:

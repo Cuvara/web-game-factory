@@ -79,7 +79,7 @@ The bot reads the game's play probe (`core/artifacts/shared/play-probe.schema.js
 The bot acts **only** through real input at the listed positions, never through the
 probe. The developer brief embeds the schema, so a developer knows how the build is judged.
 
-### The bot's ten tests, per viewport
+### The bot's tests, per viewport
 
 - **First session:** opens the game. If the title screen lists a begin input (`play`,
   `start`, ...), the bot presses it. Then it makes no input at all for the idle window,
@@ -155,6 +155,17 @@ probe. The developer brief embeds the schema, so a developer knows how the build
   The step also keeps the played commit's `public/content/units.json` beside the records
   (`<records_dir>/content/units.json`), so that step measures exactly the build that was
   played.
+- **Naive** (desktop, `core/reference/play-realism.yaml` `naive`): the oracle plays
+  perfectly; a first-time player does not. The bot plays the opening unit from a first session
+  and the middle and last of the authored units the build carries through the unit link, each
+  under every policy for its input kind, for `naive.run_s` (25 s), retrying a loss at once:
+  `steady` holds and repeats the first move the oracle names ("hold forward"); `jitter` follows
+  the oracle `reaction_ms` late, a pointer up to `jitter_px` off, and with probability
+  `error_rate` another listed move (never a utility, retry or begin control). Seeded, and each
+  run starts as a first session (local and session storage cleared). `naive.json` records, per
+  run, how long it played, whether and when it cleared the unit, its losses, the probe's
+  `setbacks`, `content.par_s`, and a sample every 250 ms of `track` and `view`. Its window is
+  outside the time budget, like the showcase's; the process timeout grows by it.
 - **The adopted floor** - when the design records the existing-content floor `unmeasured`
   (the adopted checkout ships no content data file) and this visit plays exactly its commit,
   the traverse plays up to `brief-commitments.yaml existing_content.probe.max_units` units
@@ -187,8 +198,9 @@ reads these from `records_dir`:
   window blur, the platform mute every portal requires - for the production check
   `audio.plays`;
 - the win test's per-frame entity samples are
-  `[id, role, visible, x, y, w, h, asset, render]` (the last two `null` when the probe
-  does not report them);
+  `[id, role, visible, x, y, w, h, asset, render, collider]` (`asset` and `render` `null`
+  when the probe does not report them; `collider` `[shape, x, y, w, h]` or `null`), and
+  `sampled.playfields` the probe's `playfield` per frame when it reports one;
 - `ui`: the DOM UI measured on each screen state seen - `title` (before the begin input),
   `playing`, `paused`, `won` / `lost`, and `retry` (play after the retry) - each with its
   frame `frames/state-<name>.png`. Per state: every visible interactive element
@@ -269,6 +281,36 @@ The visual bars were calibrated on frames this step captured: the unreadable run
 and the template's two example games. The calibration and its margin are recorded in
 `visual-quality.yaml` itself. `lit_share` is a floor against a dark screen, not a measure
 of readability; `entities.*` judges what must be seen.
+
+### Play realism
+
+`scripts/wgf_playability/realism.py`, every bar in
+[`core/reference/play-realism.yaml`](../core/reference/play-realism.yaml) with its
+calibration. The checks above judge what is drawn and play with a perfect oracle; two
+validation builds of 2026-10 passed them with a ball that turned at a ceiling nothing drew, a
+course held forward through in a fifth of its par, and hairpins narrower than the track
+(factory-learning-ledger L11, L13, L14). These read the play probe's optional realism fields
+([template-contract.md](template-contract.md#the-play-probe-realism-fields-and-the-layout-file)).
+A check whose field the build does not report is **unmeasured** - never a pass: at the status
+`play-realism.yaml unmeasured` gives the run's quality tier (a WARNING at every tier as
+shipped, saying the game cannot be checked), with `measured.unmeasured` and the reason.
+
+| Check | Passes when |
+|---|---|
+| `physics.undrawn_collision` | every turn or stop of a projectile in the win test's per-frame samples (2D builds; a 3D build's screen positions are projections, so it is unmeasured there) happens at a drawn surface: the face of another visible entity on the side the mover was moving toward (in that frame or the one before - a brick the hit breaks), an edge of the probe's `playfield`, something the mover is inside, or a surface moving with it (a ball carried on a paddle), within `tolerance_px` plus the frame's travel, measured from the mover's `collider` when it reports one, else its drawn box. Without a `playfield`, a turn at nothing drawn fails only when a drawn entity still lies ahead of the mover (the board's edges enclose everything drawn); otherwise it is unmeasured. A composite mover is not judged |
+| `physics.collider_size` | every entity that reports a `collider` is drawn `min_drawn_to_collider`-`max_drawn_to_collider` x its body on each axis (median over the frames). No collider reported: unmeasured |
+| `naive.setbacks` | the probe's `setbacks` rise at most `max_setbacks_per_min` a minute of jittered play. Without `setbacks`, losses are counted as a lower bound: a FAIL above the bar, unmeasured below it |
+| `naive.drift` | the 90th percentile of the probe's `track` `\|offset\| / half_width` under jittered play is at most `max_drift_p90`. No `track`: unmeasured |
+| `naive.alignment` | the 90th percentile angle between the probe's `view` `camera_forward` and `control_forward` is at most `max_alignment_deg`. No `view`: unmeasured |
+| `naive.pace` | every naive run that cleared a unit took at least `min_clear_to_par` x its par (`content.par_s`, else the design unit's `parameters.time_target`); a run still short of the end after that share of par is a lower bound that passes. No cleared or long-enough run with a par: unmeasured |
+| `level.geometry` | (project `build`, once per build, only when the commit ships `public/content/layouts.json`) no bend is tighter than `min_radius_to_width` x the width, and none under `tight_radius_to_width` has an open inner edge |
+| `level.unit_length` | every layout is at least `min_length_to_width` x its width long, and - when it states its `top_speed` - is crossed at top speed in at least `min_traverse_to_par` x its par and the tier's `min_traverse_s` |
+
+They fail the step like any required check (route `fail`), and triage routes them by
+`core/reference/specialist-routing.yaml`: `physics.` and `naive.` to gameplay, `level.` to the
+level designer. The naive bars `max_setbacks_per_min`, `max_drift_p90` and
+`max_alignment_deg` are not yet calibrated on builds that report the fields (neither 2026-10
+build does); the YAML says so, and they move with the first records that measure them.
 
 ## What it does not claim
 

@@ -1,0 +1,168 @@
+# Play realism: whether what a built game simulates is what it draws, whether it can be played
+# by someone who is not perfect, and whether its level geometry can be driven at all.
+#
+# The playability step (title:prototype, scripts/wgf_playability/realism.py) reads these bars.
+# Before this file the bot played only with a perfect oracle and judged only what was drawn, so
+# three defects of the 2026-10 validation builds passed every check (factory-learning-ledger
+# L11, L13, L14):
+#   - a 2D ball turned at a ceiling nothing drew, mid-board, and was drawn 2-2.7x larger than
+#     the body that collided;
+#   - a 3D marble course was cleared by holding one input in a fifth of its par, and an
+#     off-axis camera with course-relative steering made a marble drift off a bend;
+#   - 180-degree bends of radius 0.84 x the track's width, railed only on the outside, and an
+#     opening course of 38 m that a top-speed run crosses in under 5 s.
+# Every check reads only the play probe (core/artifacts/shared/play-probe.schema.json), the
+# bot's records and the content data files the played commit ships: no engine, no game, no
+# family is named in code. A check whose data the build does not report is UNMEASURED: never a
+# pass, reported with its reason, at the status `unmeasured` gives for the run's quality tier.
+#
+# Changing a bar is a version bump of this file, with the calibration that moved it.
+version: 1.0.0
+
+# What an unmeasured check is at each quality tier (core/reference/quality-benchmark.yaml
+# `tiers`). Every field these checks read is optional in the probe, so a build from before
+# this file is never failed for not reporting one; at every tier it is a WARNING saying the
+# game cannot be checked, which the report lists. `fail` would hold the build back.
+unmeasured:
+  mvp: warning
+  release: warning
+  premium: warning
+  # A run whose tier is not known (a step run outside a workflow).
+  default: warning
+
+# -- physics.undrawn_collision, physics.collider_size: turns where something is drawn --------
+physics:
+  # The roles whose reversals and stops are judged. A projectile is moved by the simulation
+  # alone; a player also turns because the player steered it, and a reversal the input made
+  # cannot be told from one a wall made, so it is not judged here.
+  roles: [projectile]
+  # Judged on the screen-space board of a 2D build only (the design's engine.dimension). A 3D
+  # build's screen positions are projections of a moving camera: a turn on screen is not a
+  # turn in the world, so physics.undrawn_collision reports it unmeasured there with that reason.
+  dimensions: [2d]
+  # A reversal: the velocity on one axis changes sign between consecutive rendered frames,
+  # moving at least this fast (CSS px per frame) on that axis before and after.
+  min_speed_px: 1.0
+  # A stop: from at least `min_speed_px` to under this, and still under it this many frames.
+  stop_speed_px: 0.25
+  stop_frames: 3
+  # A jump larger than this between two frames is a respawn or a reset, not a turn.
+  max_step_px: 120
+  # A turn is explained when the mover's collider (else its drawn box) reaches a drawn
+  # surface - another visible entity's drawn box in the frame of the turn or the one before
+  # (a brick the hit breaks), or an edge of the probe's playfield - on the side it was moving
+  # toward, within this tolerance plus the distance it travelled in the frame; or when it is
+  # inside a drawn box, or touching one that moves along the same axis (a ball carried on a
+  # paddle); or when another turn of it in the same frame is (one contact, both axes). A
+  # composite mover (bolts drawn as one box) is no body's path and is not judged. Without a
+  # playfield, a turn at nothing drawn is a FAIL only when a drawn entity still lies ahead of
+  # the mover (the board's edges enclose everything drawn in play); otherwise unmeasured.
+  # Calibration (2026-10, every playability visit of both 2D validation runs, the win test's
+  # per-frame samples, desktop and mobile, neither probe reporting a playfield): the accepted
+  # build's run (r1, 17 visits up to 96f5cea) - 34 viewports, 0 FAIL, 10 PASS, 24 unmeasured
+  # (side-wall bounces, no playfield); the defective run (head, 10 visits up to 68a12b7) - 20
+  # viewports, 8 FAIL, every one a turn moving up 220-248 px short of the drawn bar above it
+  # (the undrawn ceiling, ball centre y 370-388 on desktop), 8 unmeasured, 4 PASS. The
+  # explained turns met their surface within 1-2 px; any tolerance from 2 to 200 px
+  # separates the two builds.
+  tolerance_px: 6
+  # physics.collider_size: the drawn box over the collider, per axis, for every entity that
+  # reports a collider. Above `max_drawn_to_collider` the player sees a hit that did not
+  # happen (the sprite overlaps a brick the body has not reached); below
+  # `min_drawn_to_collider` a hit lands on nothing drawn. Calibration: both 2026-10 builds
+  # draw the ball much larger than it collides - collider radius 11 board px at a board scale
+  # of 0.542 on desktop (11.9 px across) against a drawn 32.5 px (r1, 2.73x) and 23.9 px
+  # (head, 2.0x). Neither reports a collider, so neither is measured by this check today; the
+  # bar is the ledger's (L11: "<= ~1.3x") - a sprite's outline and soft edge, not a second
+  # body's worth of margin.
+  max_drawn_to_collider: 1.3
+  min_drawn_to_collider: 0.77
+
+# -- naive.*: the build played by someone who is not perfect ---------------------------------
+naive:
+  # Per viewport: the opening unit (a fresh first session), then up to `units - 1` more of
+  # the design's authored units through the probe's unit link (wgf-unit=<id>), the first,
+  # middle and last of those the build carries.
+  units: 3
+  # Each policy plays each sampled unit for at most this long, retrying a loss at once.
+  run_s: 25
+  # Desktop only: the policies play the same game on every viewport, and the mobile
+  # viewport's touch path is the act and win tests' business.
+  projects: [desktop]
+  # The policies, by what the probe lists as the player's inputs now. `steady`: the first
+  # input the oracle names, held and repeated unchanged - "hold forward", or tapping the same
+  # spot. `jitter`: the oracle's input, but late by `reaction_ms`, a pointer off by up to
+  # `jitter_px` in each direction, and with probability `error_rate` another listed move
+  # instead (never a pause, settings or retry control). Seeded: the same build plays the same.
+  policies:
+    held: [steady, jitter]   # an input listed with hold_ms (steer, drag, charge)
+    tap: [jitter]            # taps and key presses only
+  jitter_px: 24
+  reaction_ms: 250
+  error_rate: 0.15
+  seed: 20261005
+  # naive.setbacks: falls, deaths and respawns (the probe's `setbacks`, else every `lost` as a
+  # lower bound) per minute of play under the jitter policy, failing only on at least
+  # `min_setbacks` of them - one fall in a short sample is not a rate. Calibration (2026-10,
+  # desktop, the bot's own naive test run in WSL on the two 3D builds' dist/, each build's
+  # `falls` metric standing in for `setbacks`, which neither reports): r1 (64ff4c6, course 1,
+  # the only unit it can be put in) - 0 falls in 50 s, both policies; head (1c6b099) - jitter
+  # 0 in 62 s on its default sample (meadow-roll, bumper-pond, storm-crown), 2 in 62.6 s (1.9
+  # a minute) on meadow-roll, meadow-circuit and gem-garden, the units with its tight bends;
+  # steady 3 in 25 s on gem-garden. The bar sits above r1's 0 and below the defective
+  # build's 1.9 where its bends are played; that is two builds and a few minutes of play, and
+  # it moves with the first records of builds that report `setbacks`.
+  max_setbacks_per_min: 1.5
+  min_setbacks: 2
+  # naive.drift: the player's lateral offset from the path's centre line over the half
+  # width there (the probe's `track`), 90th percentile over the jitter policy's samples. 1.0
+  # is the edge. Neither 2026-10 build reports `track`; the bar is geometric - nine samples
+  # in ten keep the player inside 90 % of the half width.
+  max_drift_p90: 0.9
+  # naive.alignment: the angle between the camera's forward and the forward the player's
+  # "forward" control moves the player (the probe's `view`), on the ground plane, 90th
+  # percentile over every sample. Screen-up must mean forward: an off-axis camera with
+  # course-relative steering (the 2026-10 3D build, develop:9) turns every push into a
+  # diagonal. Neither build reports `view`; 30 degrees is the bar a chase camera on a bend
+  # stays inside.
+  max_alignment_deg: 30
+  # naive.pace: time to clear a unit under naive play over the unit's par (the probe's
+  # `content.par_s`, else the design unit's `parameters.time_target`); a run still short of
+  # the end after the bar's share of par is a lower bound. Below the bar the unit is over
+  # before it asks anything, or its par means nothing. Calibration (2026-10, desktop, the
+  # bot's naive test as above, each build's `par` metric standing in for `content.par_s`):
+  # r1 (64ff4c6, course 1, par 18 s) - neither policy had cleared it after 25 s (at least
+  # 1.39 x par; the oracle took 17.4 s of game time, 0.97); head (1c6b099) - meadow-roll
+  # (par 24 s) cleared in 8.9-9.1 s holding forward (0.37-0.38) and 8.9-12.3 s jittered
+  # (0.37-0.51), storm-crown (par 50 s) in 19.0 s holding forward (0.38). The diagnosis
+  # capture agrees (holding forward cleared meadow-roll in 5.05 s, 0.21). The 2D builds'
+  # opening units were not cleared naively within 25 s (r1, par 22 s), and their oracle
+  # cleared them in 0.89-1.67 x par. 0.5 sits between.
+  min_clear_to_par: 0.5
+
+# -- level.*: the geometry a build declares (public/content/layouts.json, wgf-layouts/1) ----
+geometry:
+  # A bend is judged on its centre-line radius over the track's width there.
+  # level.geometry fails a bend tighter than `min_radius_to_width` (its inner edge folds
+  # toward a point), and a bend tighter than `tight_radius_to_width` whose inner edge is open
+  # (no rail or wall: `rails` true or "inside"). Calibration: r1 (64ff4c6, twelve courses,
+  # transcribed from its course data) bends no tighter than 2.0 x the width (its 170-degree
+  # hairpins, r 11 m at 5.5 m, open) and was accepted at G4; head (1c6b099, layouts.json)
+  # has 180-degree bends of 0.84 x (meadow-circuit, r 6.684 m at 8 m, railed outside only)
+  # and a 130-degree bend of 1.22 x with no rail (gem-garden), and players fell off them.
+  # A turn's speed was considered and left out: r1's hairpins at its top speed (16 m/s at r
+  # 11 m) pull harder than head's (8 m/s at 6.7 m), so it is the width that discriminates.
+  min_radius_to_width: 1.0
+  tight_radius_to_width: 1.5
+  # level.unit_length: a unit's path length over its width, and the time a run at the
+  # layout's top speed takes to cross it - against the unit's par and, per quality tier,
+  # in seconds. Calibration: r1 - length 29-98 x the width, 14.6-27.5 s at top speed, which
+  # is 0.66-0.81 of par; head - 2.7-17 x the width, 4.5-12.5 s, 0.15-0.39 of par (course 1:
+  # 38 m, 4.75 s at 8 m/s, par 24 s).
+  min_length_to_width: 20
+  min_traverse_to_par: 0.5
+  min_traverse_s:
+    mvp: 8
+    release: 12
+    premium: 12
+    default: 8

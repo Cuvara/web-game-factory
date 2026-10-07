@@ -137,6 +137,56 @@ Two more parts of the probe serve the content-sufficiency step
   its `kind`, in the game's own vocabulary. The schema requires it (`probe.valid` reads it),
   and the content audit counts elements on the build by it.
 
+## The play probe realism fields and the layout file
+
+The playability step also checks that what a build simulates is what it draws, that someone
+who is not perfect can play it, and that the level geometry it declares can be driven
+([playability-module.md](playability-module.md#play-realism),
+`core/reference/play-realism.yaml`). Every field it reads for that is **optional** and stated
+in the probe schema; a build without one is played as before, and the check that needs it
+reports *unmeasured* - a warning saying the game cannot be checked, never a pass:
+
+| Field | For | Read by |
+|---|---|---|
+| `entities[].collider` `{shape: rect\|circle, x, y, w, h}` | the body the simulation collides, projected to the screen beside the drawn box | `physics.undrawn_collision`, `physics.collider_size` |
+| `playfield` `{x, y, w, h}` | a 2D board: the drawn bounds whose edges stop what moves | `physics.undrawn_collision` |
+| `track` `{offset, half_width}` | a path game: the player's signed offset from the centre line, and half the width there | `naive.drift` |
+| `view` `{camera_forward, control_forward}` | a camera the player steers relative to: both as `[x, z]` on the ground plane | `naive.alignment` |
+| `setbacks` | falls, deaths and respawns since the page loaded, whether or not play ended in `lost` | `naive.setbacks` |
+| `content.par_s` | the unit's par time as shown (else the design unit's `parameters.time_target`) | `naive.pace` |
+
+Two rules come with them. Every surface the simulation turns a mover at is **drawn**: an
+entity, or an edge of `playfield` - a wall or ceiling with nothing drawn at it fails
+`physics.undrawn_collision`. And a group of things a player counts is reported **one entity
+each**, never as one `composite` box: a composite row of bricks hides which brick is there,
+and a turn at a gap in it reads as a hit.
+
+A game whose units are paths may declare their geometry in **`public/content/layouts.json`**,
+which the step copies from the commit it plays and the level checks lint:
+
+```jsonc
+{
+  "schema": "wgf-layouts/1",
+  "layouts": {
+    "<unit id>": {
+      "width": 8,           // the path's width, in the layout's own length unit
+      "top_speed": 12,      // optional: the player's top speed, length units per second
+      "par_s": 30,          // optional: else units.json / the design's parameters.time_target
+      "segments": [
+        { "t": "line", "len": 20, "w": 6, "rails": true },
+        { "t": "turn", "deg": 90, "r": 16, "rails": "outside" },
+        { "t": "jump", "gap": 4 }
+      ]
+    }
+  }
+}
+```
+
+A segment is `line` (`len`), `turn` (`deg`, signed; `r`, the centre-line radius) or `jump`
+(`gap`); any other `t` counts its `len`. `w` overrides the width for one segment; `rails` is
+`true` (both edges), `"inside"`, `"outside"` or absent (open). A build without the file
+declares no geometry and is not linted.
+
 ## How drift is caught
 
 `scripts/tests/test_template_contract.py` holds every entry against a checkout of the pinned

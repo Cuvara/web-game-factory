@@ -1,0 +1,1516 @@
+{
+ "produced": "2026-10-05",
+ "rules_version": "1.0.0",
+ "note": "Calibration of core/reference/play-realism.yaml. Physics: realism.judge over every recorded playability visit's win test (per-frame samples) of both 2D validation runs. Naive: the bot's naive test (bot.spec.ts) run in WSL against each build's dist/ (python http.server, Playwright 1.63 chromium-1243), with each build's own `falls` metric standing in for `setbacks` and its `par`/`par-time` metric for `content.par_s` (neither build reports the realism fields). Level: realism.judge_layouts over public/content/layouts.json at 1c6b099; r1 (64ff4c6) declares its courses in src/game/courses.ts, transcribed for the YAML's notes only.",
+ "physics": {
+  "head 68a12b7 run": {
+   "run": "new-game-20261005-002926-318384",
+   "counts": {
+    "WARNING": 8,
+    "FAIL": 8,
+    "PASS": 4
+   },
+   "viewports": [
+    {
+     "visit": "1-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 5,
+     "unexplained": [
+      {
+       "frame": 103,
+       "moving": "+x",
+       "at": [
+        828.7,
+        454.9
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "1-1",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 5,
+     "unexplained": [
+      {
+       "frame": 106,
+       "moving": "+x",
+       "at": [
+        375.2,
+        463.6
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "10-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 13,
+     "unexplained": [
+      {
+       "frame": 52,
+       "moving": "+x",
+       "at": [
+        823.7,
+        489.0
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 59,
+       "moving": "+x",
+       "at": [
+        822.8,
+        565.5
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "10-1",
+     "project": "mobile",
+     "status": "FAIL",
+     "turns": 10,
+     "unexplained": [
+      {
+       "frame": 114,
+       "moving": "-y",
+       "at": [
+        281.8,
+        388.2
+       ],
+       "gap_ahead_px": 234.6
+      }
+     ]
+    },
+    {
+     "visit": "2-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 6,
+     "unexplained": [
+      {
+       "frame": 117,
+       "moving": "+x",
+       "at": [
+        827.9,
+        586.7
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 153,
+       "moving": "-x",
+       "at": [
+        456.4,
+        220.2
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "2-1",
+     "project": "mobile",
+     "status": "PASS",
+     "turns": 5,
+     "unexplained": []
+    },
+    {
+     "visit": "3-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 2,
+     "unexplained": [
+      {
+       "frame": 143,
+       "moving": "-x",
+       "at": [
+        453.9,
+        228.6
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "3-1",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 4,
+     "unexplained": [
+      {
+       "frame": 95,
+       "moving": "+x",
+       "at": [
+        375.4,
+        456.6
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "4-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 12,
+     "unexplained": [
+      {
+       "frame": 85,
+       "moving": "+x",
+       "at": [
+        829.7,
+        466.5
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "4-1",
+     "project": "mobile",
+     "status": "FAIL",
+     "turns": 7,
+     "unexplained": [
+      {
+       "frame": 87,
+       "moving": "+x",
+       "at": [
+        275.0,
+        553.0
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 93,
+       "moving": "-y",
+       "at": [
+        259.3,
+        370.1
+       ],
+       "gap_ahead_px": 220.6
+      }
+     ]
+    },
+    {
+     "visit": "5-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 8,
+     "unexplained": [
+      {
+       "frame": 89,
+       "moving": "-x",
+       "at": [
+        460.4,
+        445.4
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "5-1",
+     "project": "mobile",
+     "status": "FAIL",
+     "turns": 7,
+     "unexplained": [
+      {
+       "frame": 130,
+       "moving": "-y",
+       "at": [
+        258.9,
+        375.2
+       ],
+       "gap_ahead_px": 225.7
+      }
+     ]
+    },
+    {
+     "visit": "6-1",
+     "project": "desktop",
+     "status": "FAIL",
+     "turns": 11,
+     "unexplained": [
+      {
+       "frame": 133,
+       "moving": "-y",
+       "at": [
+        698.3,
+        371.6
+       ],
+       "gap_ahead_px": 242.2
+      },
+      {
+       "frame": 138,
+       "moving": "-y",
+       "at": [
+        672.9,
+        374.4
+       ],
+       "gap_ahead_px": 245.0
+      }
+     ]
+    },
+    {
+     "visit": "6-1",
+     "project": "mobile",
+     "status": "PASS",
+     "turns": 6,
+     "unexplained": []
+    },
+    {
+     "visit": "7-1",
+     "project": "desktop",
+     "status": "PASS",
+     "turns": 8,
+     "unexplained": []
+    },
+    {
+     "visit": "7-1",
+     "project": "mobile",
+     "status": "FAIL",
+     "turns": 5,
+     "unexplained": [
+      {
+       "frame": 90,
+       "moving": "-y",
+       "at": [
+        257.3,
+        373.7
+       ],
+       "gap_ahead_px": 224.2
+      }
+     ]
+    },
+    {
+     "visit": "8-1",
+     "project": "desktop",
+     "status": "FAIL",
+     "turns": 9,
+     "unexplained": [
+      {
+       "frame": 120,
+       "moving": "-y",
+       "at": [
+        618.6,
+        372.5
+       ],
+       "gap_ahead_px": 243.1
+      }
+     ]
+    },
+    {
+     "visit": "8-1",
+     "project": "mobile",
+     "status": "PASS",
+     "turns": 9,
+     "unexplained": []
+    },
+    {
+     "visit": "9-1",
+     "project": "desktop",
+     "status": "FAIL",
+     "turns": 10,
+     "unexplained": [
+      {
+       "frame": 94,
+       "moving": "-y",
+       "at": [
+        707.5,
+        377.1
+       ],
+       "gap_ahead_px": 247.7
+      }
+     ]
+    },
+    {
+     "visit": "9-1",
+     "project": "mobile",
+     "status": "FAIL",
+     "turns": 7,
+     "unexplained": [
+      {
+       "frame": 90,
+       "moving": "-y",
+       "at": [
+        261.8,
+        375.9
+       ],
+       "gap_ahead_px": 226.4
+      }
+     ]
+    }
+   ]
+  },
+  "r1 96f5cea run": {
+   "run": "new-game-20261003-081154-4e5e0a",
+   "counts": {
+    "WARNING": 24,
+    "PASS": 10
+   },
+   "viewports": [
+    {
+     "visit": "1-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 9,
+     "unexplained": [
+      {
+       "frame": 126,
+       "moving": "-x",
+       "at": [
+        447.3,
+        592.5
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 212,
+       "moving": "+x",
+       "at": [
+        832.7,
+        352.7
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "1-1",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 6,
+     "unexplained": [
+      {
+       "frame": 76,
+       "moving": "-x",
+       "at": [
+        15.1,
+        563.8
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "10-1",
+     "project": "desktop",
+     "status": "PASS",
+     "turns": 4,
+     "unexplained": []
+    },
+    {
+     "visit": "10-1",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 3,
+     "unexplained": [
+      {
+       "frame": 129,
+       "moving": "+x",
+       "at": [
+        373.9,
+        522.3
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "11-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 3,
+     "unexplained": [
+      {
+       "frame": 104,
+       "moving": "-x",
+       "at": [
+        450.9,
+        533.0
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "11-1",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 5,
+     "unexplained": [
+      {
+       "frame": 97,
+       "moving": "+x",
+       "at": [
+        373.8,
+        496.7
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 110,
+       "moving": "+x",
+       "at": [
+        374.6,
+        504.0
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "12-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 3,
+     "unexplained": [
+      {
+       "frame": 109,
+       "moving": "-x",
+       "at": [
+        452.2,
+        529.5
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "12-1",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 4,
+     "unexplained": [
+      {
+       "frame": 129,
+       "moving": "+x",
+       "at": [
+        372.4,
+        559.0
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "13-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 4,
+     "unexplained": [
+      {
+       "frame": 112,
+       "moving": "-x",
+       "at": [
+        453.6,
+        526.0
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "13-1",
+     "project": "mobile",
+     "status": "PASS",
+     "turns": 4,
+     "unexplained": []
+    },
+    {
+     "visit": "14-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 4,
+     "unexplained": [
+      {
+       "frame": 115,
+       "moving": "-x",
+       "at": [
+        450.8,
+        531.9
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "14-1",
+     "project": "mobile",
+     "status": "PASS",
+     "turns": 4,
+     "unexplained": []
+    },
+    {
+     "visit": "15-1",
+     "project": "desktop",
+     "status": "PASS",
+     "turns": 4,
+     "unexplained": []
+    },
+    {
+     "visit": "15-1",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 5,
+     "unexplained": [
+      {
+       "frame": 132,
+       "moving": "+x",
+       "at": [
+        374.1,
+        572.7
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 181,
+       "moving": "-x",
+       "at": [
+        19.0,
+        305.4
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "16-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 4,
+     "unexplained": [
+      {
+       "frame": 110,
+       "moving": "-x",
+       "at": [
+        451.2,
+        573.7
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 157,
+       "moving": "+x",
+       "at": [
+        826.1,
+        430.9
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "16-1",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 5,
+     "unexplained": [
+      {
+       "frame": 152,
+       "moving": "-x",
+       "at": [
+        20.5,
+        239.3
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "17-1",
+     "project": "desktop",
+     "status": "PASS",
+     "turns": 3,
+     "unexplained": []
+    },
+    {
+     "visit": "17-1",
+     "project": "mobile",
+     "status": "PASS",
+     "turns": 3,
+     "unexplained": []
+    },
+    {
+     "visit": "2-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 10,
+     "unexplained": [
+      {
+       "frame": 112,
+       "moving": "-x",
+       "at": [
+        448.5,
+        589.4
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 180,
+       "moving": "+x",
+       "at": [
+        832.7,
+        352.7
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 267,
+       "moving": "+x",
+       "at": [
+        831.4,
+        236.4
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "2-1",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 7,
+     "unexplained": [
+      {
+       "frame": 74,
+       "moving": "-x",
+       "at": [
+        13.7,
+        581.2
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 106,
+       "moving": "+x",
+       "at": [
+        380.9,
+        353.4
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 130,
+       "moving": "-x",
+       "at": [
+        16.2,
+        325.0
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "3-2",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 4,
+     "unexplained": [
+      {
+       "frame": 263,
+       "moving": "+x",
+       "at": [
+        831.2,
+        273.6
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "3-2",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 6,
+     "unexplained": [
+      {
+       "frame": 169,
+       "moving": "+x",
+       "at": [
+        380.1,
+        283.3
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 220,
+       "moving": "-x",
+       "at": [
+        14.3,
+        484.0
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "4-1",
+     "project": "desktop",
+     "status": "PASS",
+     "turns": 5,
+     "unexplained": []
+    },
+    {
+     "visit": "4-1",
+     "project": "mobile",
+     "status": "PASS",
+     "turns": 5,
+     "unexplained": []
+    },
+    {
+     "visit": "5-1",
+     "project": "desktop",
+     "status": "PASS",
+     "turns": 3,
+     "unexplained": []
+    },
+    {
+     "visit": "5-1",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 5,
+     "unexplained": [
+      {
+       "frame": 111,
+       "moving": "-x",
+       "at": [
+        13.3,
+        583.0
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 174,
+       "moving": "+x",
+       "at": [
+        380.9,
+        356.5
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "6-1",
+     "project": "desktop",
+     "status": "PASS",
+     "turns": 4,
+     "unexplained": []
+    },
+    {
+     "visit": "6-1",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 3,
+     "unexplained": [
+      {
+       "frame": 117,
+       "moving": "+x",
+       "at": [
+        376.8,
+        608.8
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "7-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 8,
+     "unexplained": [
+      {
+       "frame": 165,
+       "moving": "+x",
+       "at": [
+        832.2,
+        601.4
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 243,
+       "moving": "-x",
+       "at": [
+        448.5,
+        308.9
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "7-1",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 5,
+     "unexplained": [
+      {
+       "frame": 118,
+       "moving": "+x",
+       "at": [
+        380.8,
+        590.9
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "8-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 5,
+     "unexplained": [
+      {
+       "frame": 186,
+       "moving": "-x",
+       "at": [
+        453.7,
+        325.7
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 238,
+       "moving": "+x",
+       "at": [
+        832.5,
+        473.6
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "8-1",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 7,
+     "unexplained": [
+      {
+       "frame": 120,
+       "moving": "+x",
+       "at": [
+        377.3,
+        543.1
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 160,
+       "moving": "-x",
+       "at": [
+        12.1,
+        403.4
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "9-1",
+     "project": "desktop",
+     "status": "WARNING",
+     "turns": 5,
+     "unexplained": [
+      {
+       "frame": 142,
+       "moving": "-x",
+       "at": [
+        450.2,
+        541.0
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    },
+    {
+     "visit": "9-1",
+     "project": "mobile",
+     "status": "WARNING",
+     "turns": 10,
+     "unexplained": [
+      {
+       "frame": 110,
+       "moving": "+x",
+       "at": [
+        377.0,
+        585.5
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 145,
+       "moving": "-x",
+       "at": [
+        25.3,
+        250.1
+       ],
+       "gap_ahead_px": null
+      },
+      {
+       "frame": 152,
+       "moving": "-x",
+       "at": [
+        12.8,
+        408.4
+       ],
+       "gap_ahead_px": null
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "naive": {
+  "3d r1 64ff4c6": {
+   "input_kind": "held",
+   "units": [
+    null
+   ],
+   "runs": [
+    {
+     "policy": "steady",
+     "unit_id": "1",
+     "played_ms": 24953,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 43,
+     "setbacks_first": 0,
+     "setbacks_last": 0,
+     "par_s": 18
+    },
+    {
+     "policy": "jitter",
+     "unit_id": "1",
+     "played_ms": 25091,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 34,
+     "setbacks_first": 0,
+     "setbacks_last": 0,
+     "par_s": 18
+    }
+   ],
+   "checks": {
+    "naive.setbacks": {
+     "status": "PASS",
+     "summary": "0 setbacks in 25 s of jittered play: 0.0 a minute"
+    },
+    "naive.drift": {
+     "status": "WARNING",
+     "summary": "unmeasured: the probe reports no `track`, so where the player is across its path cannot be read"
+    },
+    "naive.alignment": {
+     "status": "WARNING",
+     "summary": "unmeasured: the probe reports no `view`, so whether screen-up moves the player forward cannot be read"
+    },
+    "naive.pace": {
+     "status": "PASS",
+     "summary": "naive play took at least 1.386 x par on 2 unit run(s) (still short of the end on 2 of them: a lower bound)"
+    }
+   }
+  },
+  "3d head 1c6b099, default sample": {
+   "input_kind": "held",
+   "units": [
+    null,
+    "bumper-pond",
+    "storm-crown"
+   ],
+   "runs": [
+    {
+     "policy": "steady",
+     "unit_id": "meadow-roll",
+     "played_ms": 9099,
+     "won": true,
+     "clear_ms": 9099,
+     "losses": 0,
+     "inputs": 18,
+     "setbacks_first": 0,
+     "setbacks_last": 0,
+     "par_s": 24
+    },
+    {
+     "policy": "jitter",
+     "unit_id": "meadow-roll",
+     "played_ms": 8894,
+     "won": true,
+     "clear_ms": 8894,
+     "losses": 0,
+     "inputs": 12,
+     "setbacks_first": 0,
+     "setbacks_last": 0,
+     "par_s": 24
+    },
+    {
+     "policy": "steady",
+     "unit_id": "bumper-pond",
+     "played_ms": 25031,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 81,
+     "setbacks_first": 0,
+     "setbacks_last": 0,
+     "par_s": 32
+    },
+    {
+     "policy": "jitter",
+     "unit_id": "bumper-pond",
+     "played_ms": 25160,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 36,
+     "setbacks_first": 0,
+     "setbacks_last": 0,
+     "par_s": 32
+    },
+    {
+     "policy": "steady",
+     "unit_id": "storm-crown",
+     "played_ms": 19012,
+     "won": true,
+     "clear_ms": 19012,
+     "losses": 0,
+     "inputs": 62,
+     "setbacks_first": 0,
+     "setbacks_last": 1,
+     "par_s": 50
+    },
+    {
+     "policy": "jitter",
+     "unit_id": "storm-crown",
+     "played_ms": 24941,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 41,
+     "setbacks_first": 0,
+     "setbacks_last": 0,
+     "par_s": 50
+    }
+   ],
+   "checks": {
+    "naive.setbacks": {
+     "status": "PASS",
+     "summary": "0 setbacks in 59 s of jittered play: 0.0 a minute"
+    },
+    "naive.drift": {
+     "status": "WARNING",
+     "summary": "unmeasured: the probe reports no `track`, so where the player is across its path cannot be read"
+    },
+    "naive.alignment": {
+     "status": "WARNING",
+     "summary": "unmeasured: the probe reports no `view`, so whether screen-up moves the player forward cannot be read"
+    },
+    "naive.pace": {
+     "status": "FAIL",
+     "summary": "naive play (jitter) cleared meadow-roll in 8.89 s, 0.371 x its 24.0 s par: the unit is over before it asks anything, or its par means nothing"
+    }
+   }
+  },
+  "3d head 1c6b099, the tight-bend units": {
+   "input_kind": "held",
+   "units": [
+    null,
+    "meadow-circuit",
+    "gem-garden"
+   ],
+   "runs": [
+    {
+     "policy": "steady",
+     "unit_id": "meadow-roll",
+     "played_ms": 8888,
+     "won": true,
+     "clear_ms": 8888,
+     "losses": 0,
+     "inputs": 21,
+     "setbacks_first": 0,
+     "setbacks_last": 0,
+     "par_s": 24
+    },
+    {
+     "policy": "jitter",
+     "unit_id": "meadow-roll",
+     "played_ms": 12346,
+     "won": true,
+     "clear_ms": 12346,
+     "losses": 0,
+     "inputs": 13,
+     "setbacks_first": 0,
+     "setbacks_last": 0,
+     "par_s": 24
+    },
+    {
+     "policy": "steady",
+     "unit_id": "meadow-circuit",
+     "played_ms": 25075,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 87,
+     "setbacks_first": 0,
+     "setbacks_last": 0,
+     "par_s": 40
+    },
+    {
+     "policy": "jitter",
+     "unit_id": "meadow-circuit",
+     "played_ms": 25115,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 39,
+     "setbacks_first": 0,
+     "setbacks_last": 1,
+     "par_s": 40
+    },
+    {
+     "policy": "steady",
+     "unit_id": "gem-garden",
+     "played_ms": 25098,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 80,
+     "setbacks_first": 0,
+     "setbacks_last": 3,
+     "par_s": 32
+    },
+    {
+     "policy": "jitter",
+     "unit_id": "gem-garden",
+     "played_ms": 25205,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 40,
+     "setbacks_first": 0,
+     "setbacks_last": 1,
+     "par_s": 32
+    }
+   ],
+   "checks": {
+    "naive.setbacks": {
+     "status": "FAIL",
+     "summary": "2 setbacks in 63 s of jittered play: 1.91 a minute"
+    },
+    "naive.drift": {
+     "status": "WARNING",
+     "summary": "unmeasured: the probe reports no `track`, so where the player is across its path cannot be read"
+    },
+    "naive.alignment": {
+     "status": "WARNING",
+     "summary": "unmeasured: the probe reports no `view`, so whether screen-up moves the player forward cannot be read"
+    },
+    "naive.pace": {
+     "status": "FAIL",
+     "summary": "naive play (steady) cleared meadow-roll in 8.89 s, 0.37 x its 24.0 s par: the unit is over before it asks anything, or its par means nothing"
+    }
+   }
+  },
+  "2d r1 96f5cea": {
+   "input_kind": "held",
+   "units": [
+    null
+   ],
+   "runs": [
+    {
+     "policy": "steady",
+     "unit_id": "w1-l1",
+     "played_ms": 18997,
+     "won": false,
+     "clear_ms": null,
+     "losses": 1,
+     "inputs": 166,
+     "setbacks_first": null,
+     "setbacks_last": null,
+     "par_s": 22
+    },
+    {
+     "policy": "jitter",
+     "unit_id": "w1-l1",
+     "played_ms": 25147,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 36,
+     "setbacks_first": null,
+     "setbacks_last": null,
+     "par_s": 22
+    }
+   ],
+   "checks": {
+    "naive.setbacks": {
+     "status": "WARNING",
+     "summary": "unmeasured: the probe reports no `setbacks`, so only losses were counted (0 in 25 s): a fall that does not end play is not seen"
+    },
+    "naive.drift": {
+     "status": "WARNING",
+     "summary": "unmeasured: the probe reports no `track`, so where the player is across its path cannot be read"
+    },
+    "naive.alignment": {
+     "status": "WARNING",
+     "summary": "unmeasured: the probe reports no `view`, so whether screen-up moves the player forward cannot be read"
+    },
+    "naive.pace": {
+     "status": "PASS",
+     "summary": "naive play took at least 0.864 x par on 2 unit run(s) (still short of the end on 2 of them: a lower bound)"
+    }
+   }
+  },
+  "2d head 68a12b7": {
+   "input_kind": "held",
+   "units": [
+    null,
+    "w2-l8",
+    "w4-l8"
+   ],
+   "runs": [
+    {
+     "policy": "steady",
+     "unit_id": "w1-l1",
+     "played_ms": 18023,
+     "won": false,
+     "clear_ms": null,
+     "losses": 1,
+     "inputs": 121,
+     "setbacks_first": null,
+     "setbacks_last": null,
+     "par_s": 22
+    },
+    {
+     "policy": "jitter",
+     "unit_id": "w1-l1",
+     "played_ms": 22310,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 37,
+     "setbacks_first": null,
+     "setbacks_last": null,
+     "par_s": 22
+    },
+    {
+     "policy": "steady",
+     "unit_id": "w2-l8",
+     "played_ms": 25138,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 118,
+     "setbacks_first": null,
+     "setbacks_last": null,
+     "par_s": 62
+    },
+    {
+     "policy": "jitter",
+     "unit_id": "w2-l8",
+     "played_ms": 24813,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 28,
+     "setbacks_first": null,
+     "setbacks_last": null,
+     "par_s": 62
+    },
+    {
+     "policy": "steady",
+     "unit_id": "w4-l8",
+     "played_ms": 24912,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 104,
+     "setbacks_first": null,
+     "setbacks_last": null,
+     "par_s": 74
+    },
+    {
+     "policy": "jitter",
+     "unit_id": "w4-l8",
+     "played_ms": 26524,
+     "won": false,
+     "clear_ms": null,
+     "losses": 0,
+     "inputs": 44,
+     "setbacks_first": null,
+     "setbacks_last": null,
+     "par_s": 74
+    }
+   ],
+   "checks": {
+    "naive.setbacks": {
+     "status": "WARNING",
+     "summary": "unmeasured: the probe reports no `setbacks`, so only losses were counted (0 in 74 s): a fall that does not end play is not seen"
+    },
+    "naive.drift": {
+     "status": "WARNING",
+     "summary": "unmeasured: the probe reports no `track`, so where the player is across its path cannot be read"
+    },
+    "naive.alignment": {
+     "status": "WARNING",
+     "summary": "unmeasured: the probe reports no `view`, so whether screen-up moves the player forward cannot be read"
+    },
+    "naive.pace": {
+     "status": "PASS",
+     "summary": "naive play took at least 0.819 x par on 2 unit run(s) (still short of the end on 2 of them: a lower bound)"
+    }
+   }
+  }
+ },
+ "level": {
+  "3d head 1c6b099": {
+   "level.geometry": {
+    "status": "FAIL",
+    "summary": "3 of 9 bends cannot be driven: gem-garden segment 2 turns 130 degrees at r 11 on a width of 9 (1.22 x), tight with an open inner edge",
+    "measured": {
+     "bends": 9,
+     "failing": [
+      {
+       "unit": "gem-garden",
+       "segment": 2,
+       "deg": 130,
+       "r": 11,
+       "width": 9,
+       "radius_to_width": 1.22,
+       "inner_edge": "open",
+       "problem": "tight with an open inner edge"
+      },
+      {
+       "unit": "meadow-circuit",
+       "segment": 1,
+       "deg": 180,
+       "r": 6.684,
+       "width": 8,
+       "radius_to_width": 0.84,
+       "inner_edge": "open",
+       "problem": "tighter than the width allows"
+      },
+      {
+       "unit": "meadow-circuit",
+       "segment": 3,
+       "deg": 180,
+       "r": 6.684,
+       "width": 8,
+       "radius_to_width": 0.84,
+       "inner_edge": "open",
+       "problem": "tighter than the width allows"
+      }
+     ]
+    }
+   },
+   "level.unit_length": {
+    "status": "FAIL",
+    "summary": "12 of 12 units are too short: bumper-pond - length 1.8 x its width",
+    "measured": {
+     "units": [
+      {
+       "unit": "bumper-pond",
+       "length": 40.0,
+       "length_to_width": 1.8
+      },
+      {
+       "unit": "gap-hops",
+       "length": 50.0,
+       "length_to_width": 8.3
+      },
+      {
+       "unit": "gem-garden",
+       "length": 100.3,
+       "length_to_width": 11.1
+      },
+      {
+       "unit": "gem-rings",
+       "length": 94.7,
+       "length_to_width": 15.8
+      },
+      {
+       "unit": "lift-crossing",
+       "length": 48.0,
+       "length_to_width": 6.9
+      },
+      {
+       "unit": "meadow-circuit",
+       "length": 70.0,
+       "length_to_width": 8.7
+      },
+      {
+       "unit": "meadow-roll",
+       "length": 38.0,
+       "length_to_width": 2.7
+      },
+      {
+       "unit": "pad-hop",
+       "length": 50.0,
+       "length_to_width": 6.2
+      },
+      {
+       "unit": "ramp-climb",
+       "length": 54.0,
+       "length_to_width": 6.8
+      },
+      {
+       "unit": "storm-crown",
+       "length": 119.4,
+       "length_to_width": 17.1
+      },
+      {
+       "unit": "timed-lifts",
+       "length": 81.0,
+       "length_to_width": 13.5
+      },
+      {
+       "unit": "windmill-gauntlet",
+       "length": 98.7,
+       "length_to_width": 12.3
+      }
+     ],
+     "short": [
+      "bumper-pond",
+      "gap-hops",
+      "gem-garden",
+      "gem-rings",
+      "lift-crossing",
+      "meadow-circuit",
+      "meadow-roll",
+      "pad-hop",
+      "ramp-climb",
+      "storm-crown",
+      "timed-lifts",
+      "windmill-gauntlet"
+     ],
+     "no_top_speed": [
+      "bumper-pond",
+      "gap-hops",
+      "gem-garden",
+      "gem-rings",
+      "lift-crossing",
+      "meadow-circuit",
+      "meadow-roll",
+      "pad-hop",
+      "ramp-climb",
+      "storm-crown",
+      "timed-lifts",
+      "windmill-gauntlet"
+     ]
+    }
+   }
+  }
+ }
+}

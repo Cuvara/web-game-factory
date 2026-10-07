@@ -42,7 +42,7 @@ from wgf_design import commitments, existing
 from wgf_design.content import quality_tier
 from wgf_design.experience import load_rules as load_experience_rules
 
-from . import analysis
+from . import analysis, realism
 
 __all__ = ["PlayabilityStep", "RULES_PATH", "BOT_SPEC", "FAIL_ROUTE", "RECORDS", "PROJECTS"]
 
@@ -58,7 +58,7 @@ SESSION_MARGIN_S = 45
 PROJECTS = (("desktop", 1280, 720), ("mobile", 393, 851))
 # The bot's records per viewport (bot.spec.ts): <out>/<project>/<name>.json.
 RECORDS = ("first-session", "act", "win", "lose", "pause", "traverse", "persist", "session",
-           "ramp", "showcase", "survey")
+           "ramp", "showcase", "survey", "naive")
 # How the survey is run (`survey`), and which entity roles carry a kind (`probe`): read by
 # the content-sufficiency step too, which counts what the survey recorded.
 SUFFICIENCY_PATH = os.path.join(paths.REFERENCE, "content-sufficiency.yaml")
@@ -68,6 +68,9 @@ BENCHMARK_PATH = os.path.join(paths.REFERENCE, "quality-benchmark.yaml")
 # the content-sufficiency step (scripts/wgf_sufficiency) to measure the build that was played.
 CONTENT_DATA = "public/content/units.json"
 CONTENT_COPY = os.path.join("content", "units.json")
+# The path geometry the commit declares, if any (core/reference/play-realism.yaml `geometry`),
+# kept beside it for the level checks (scripts/wgf_playability/realism.py).
+LAYOUTS_COPY = os.path.join("content", "layouts.json")
 _NO_BROWSER = ("Executable doesn't exist", "browserType.launch", "playwright install")
 # The control actions that leave a finished unit for the next one. A vocabulary, not a bar: the
 # design's own control action ids naming one of these words are added to it.
@@ -171,6 +174,11 @@ class PlayabilityStep(WorkflowStep):
             scope_tiers = self._scope_tiers(context, design)
             ramp_required = self._unmeasured_held(context, design, "depth.ramp")
             ramp_tiers = self._built_tiers(context, design, self.params)
+            # The play-realism bars (physics, naive play, level geometry), and the tier whose
+            # `unmeasured` status a check its data is missing for takes.
+            realism_rules = realism.load_rules()
+            tier = (run_tier(getattr(context, "environment", None))
+                    or quality_tier(design, None)[0])
         except (OSError, YamlError, ValueError) as exc:
             return StepResult.blocked(
                 f"the genre model and depth bars could not be read ({exc}): nothing can be held "
@@ -212,10 +220,12 @@ class PlayabilityStep(WorkflowStep):
             if measuring:
                 settings["max_units"] = max(settings["max_units"], self._probe_max_units())
             settings.update(self._survey_settings(design, self.params))
+            settings.update(self._naive_settings(design, realism_rules, scope_tiers))
             self._keep_content_data(repo, out)
             blocked = self._play(repo, out, logs, settings, context, total_s,
                                  survey_s=settings["survey_ms"] / 1000.0,
-                                 extend_s=settings["ramp_extend_ms"] / 1000.0)
+                                 extend_s=settings["ramp_extend_ms"] / 1000.0,
+                                 naive_s=self._naive_window_s(settings))
             judged = copy.deepcopy(rules)
             judged["_idle_ms"] = settings["idle_ms"]
             judged["_truncated"] = truncated
@@ -234,7 +244,14 @@ class PlayabilityStep(WorkflowStep):
                                              scope_tiers=scope_tiers,
                                              ramp_required=ramp_required,
                                              ramp_tiers=ramp_tiers)
+                    checks += realism.judge(records, design, realism_rules, project, tier,
+                                            self._built_units(design, scope_tiers))
                 frames += self._frames(frames_dir, project, context.run_dir)
+            # The level geometry the played commit declares: once per build, not per viewport.
+            checks += realism.judge_layouts(self._json(os.path.join(out, LAYOUTS_COPY)),
+                                            realism_rules, tier,
+                                            self._json(os.path.join(out, CONTENT_COPY)),
+                                            self._built_units(design, scope_tiers))
             if not blocked and not any(p["ran"] for p in projects):
                 blocked = "the bot produced no records on any viewport; see " + os.path.join(logs, "bot.log")
             records_dir = (os.path.relpath(out, context.run_dir).replace(os.sep, "/")
@@ -427,13 +444,63 @@ class PlayabilityStep(WorkflowStep):
         }
 
     @staticmethod
+    def _naive_settings(design, rules, scope_tiers=None):
+        """The naive test's CFG (core/reference/play-realism.yaml `naive`): the units it plays
+        beside the opening one - the middle and last of the authored units the build carries,
+        entered through the probe's unit link - the policies, and how they err."""
+        naive = rules.get("naive") or {}
+        _content, mode, _units = analysis.content_units(design)
+        built = PlayabilityStep._built_units(design, scope_tiers)
+        extra = (realism.naive_units(built, int(naive.get("units") or 1))
+                 if mode == "authored" else [])
+        return {
+            "naive_units": extra,
+            "naive_projects": list(naive.get("projects") or []),
+            "naive_run_ms": int((naive.get("run_s") or 0) * 1000),
+            "naive_policies": {k: list(v or []) for k, v in (naive.get("policies") or {}).items()},
+            "naive_jitter_px": float(naive.get("jitter_px") or 0),
+            "naive_reaction_ms": int(naive.get("reaction_ms") or 0),
+            "naive_error_rate": float(naive.get("error_rate") or 0),
+            "naive_seed": int(naive.get("seed") or 1),
+        }
+
+    @staticmethod
+    def _naive_window_s(settings):
+        """Seconds the naive test may take on all its viewports: every unit, under at most two
+        policies, for its run plus a start. Outside the time budget the other tests share, like
+        the showcase: a game plays exactly as long as before, and the process timeout grows."""
+        units = 1 + len(settings.get("naive_units") or [])
+        policies = max([len(v) for v in (settings.get("naive_policies") or {}).values()] or [0])
+        per_run = settings.get("naive_run_ms", 0) / 1000.0 + settings["start_timeout_ms"] / 1000.0 + 5
+        return len(settings.get("naive_projects") or []) * units * policies * per_run
+
+    @staticmethod
+    def _built_units(design, scope_tiers=None):
+        """The design's content units of the tiers this build carries (all of them when the
+        tiers are not known)."""
+        if scope_tiers:
+            return analysis.content_units(design, tuple(scope_tiers))[2]
+        return analysis.content_units(design)[2]
+
+    @staticmethod
+    def _json(path):
+        """The JSON at `path`, or None when it is absent or not JSON."""
+        try:
+            with open(path, encoding="utf-8") as handle:
+                return json.load(handle)
+        except (OSError, ValueError):
+            return None
+
+    @staticmethod
     def _keep_content_data(repo, out):
-        """Copy the commit's content data file beside the records, when it ships one."""
-        source = os.path.join(repo, *CONTENT_DATA.split("/"))
-        if os.path.isfile(source):
-            target = os.path.join(out, CONTENT_COPY)
-            os.makedirs(os.path.dirname(target), exist_ok=True)
-            shutil.copyfile(source, target)
+        """Copy the commit's content data file - and its layout file, when it declares one -
+        beside the records."""
+        for data, copy in ((CONTENT_DATA, CONTENT_COPY), (realism.LAYOUTS_DATA, LAYOUTS_COPY)):
+            source = os.path.join(repo, *data.split("/"))
+            if os.path.isfile(source):
+                target = os.path.join(out, copy)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                shutil.copyfile(source, target)
 
     # -- running ------------------------------------------------------------------------
 
@@ -465,7 +532,7 @@ class PlayabilityStep(WorkflowStep):
         return None
 
     def _play(self, repo, out, logs, settings, context, bot_total_s=0, survey_s=0,
-              extend_s=0):
+              extend_s=0, naive_s=0):
         """Run the bot. None when it ran (whatever it found); else why it could not."""
         port = _free_port()
         os.makedirs(os.path.join(repo, "tests", "wgf-play"), exist_ok=True)
@@ -490,7 +557,7 @@ class PlayabilityStep(WorkflowStep):
                   * (survey_s + survey_units * (settings["start_timeout_ms"] / 1000.0 + 2) + 60)
                   if survey_units else 0)
         timeout = int(2 * (bot_total_s or 0) + 2 * (SHOWCASE_S + 45) + 120 + survey
-                      + 2 * (extend_s or 0))
+                      + 2 * (extend_s or 0) + (naive_s or 0))
         try:
             run = self._run(["pnpm", "exec", "playwright", "test", "-c",
                              "playwright.wgf-play.config.ts"], repo, timeout,

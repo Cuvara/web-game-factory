@@ -45,6 +45,7 @@ TITLES = {
     "progression.persists": "What the design says persists survives a reload",
     "depth.session_length": "A session lasts as long as it was designed to",
     "depth.ramp": "The ramp holds: bad play ends, good play is asked for more",
+    "depth.stall": "Play never stops: no stretch with nothing asked and nothing achieved",
 }
 
 

@@ -15,7 +15,9 @@ outside this suite; here, its refusals and the report it writes.
 
 import copy
 import json
+import math
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -1008,8 +1010,9 @@ class AuthoredPuzzle(Judge):
         # A time-ramp family whose play itself is endless: its session is the run.
         design = copy.deepcopy(PUZZLE_DESIGN)
         design["genre"].update(family="arcade", ending="endless")   # qa.endless_window_s: 30
-        self.records["session"]["runs"] = [
-            {"duration_ms": 90000, "inputs": 40, "oracle_inputs_per_third": [16, 14, 10]}]
+        # Its samples are fresh runs of the endless play itself (no mode to enter).
+        self.records["ramp"] = {"applies": True, "run": "session", "mode": None, "entered": None,
+                                "samples": [self.sample([16, 14, 8])] * 3}
         check = self.judge(design)["depth.ramp"]
         self.assertEqual(check["status"], "FAIL")
         self.assertTrue(check["required"])
@@ -1031,14 +1034,26 @@ class AuthoredPuzzle(Judge):
              "evaluation": {"decision": decision, "reason": "the arcade family expects it"}})
         return design
 
-    def ramp_run(self, thirds, entered=True, extended_ms=None, **extra):
-        record = {"applies": True, "mode": "endless", "entered": entered,
-                  "runs": [{"duration_ms": 60000, "inputs": sum(thirds),
-                            "oracle_inputs_per_third": list(thirds)}] if entered else []}
-        if extended_ms:
-            record["extended_ms"] = extended_ms
+    @staticmethod
+    def sample(thirds, idle_ms=1500, duration_ms=30000, ended="window"):
+        """One ramp sample as bot.spec.ts playSample records it."""
+        return {"duration_ms": duration_ms, "inputs": sum(thirds),
+                "oracle_inputs_per_third": list(thirds), "longest_idle_ms": idle_ms,
+                "idle_at_ms": 4000, "ended": ended}
+
+    def ramp_samples(self, *samples, entered=True, **extra):
+        """A ramp record of samples: each a sample dict or a list of thirds."""
+        rows = [s if isinstance(s, dict) else self.sample(s) for s in samples]
+        record = {"applies": True, "run": "mode", "mode": "endless", "entered": entered,
+                  "samples": rows if entered else [], "planned_samples": 3}
         record.update(extra)
         self.records["ramp"] = record
+
+    def ramp_run(self, thirds, entered=True, extended_ms=None, **extra):
+        """Three samples of the same counts."""
+        if extended_ms:
+            extra["extended_ms"] = extended_ms
+        self.ramp_samples(*([thirds] * 3 if entered else []), entered=entered, **extra)
 
     def test_an_authored_run_is_not_judged_as_a_time_ramp(self):
         # The live counts, on an authored level of a time-ramp family with no endless mode.
@@ -1047,11 +1062,13 @@ class AuthoredPuzzle(Judge):
         for thirds in ([3, 2, 1], [8, 5, 4]):
             self.records["session"]["runs"] = [
                 {"duration_ms": 40000, "inputs": sum(thirds), "oracle_inputs_per_third": thirds}]
-            check = self.judge(design)["depth.ramp"]
+            checks = self.judge(design)
+            check = checks["depth.ramp"]
             self.assertEqual(check["status"], "PASS", check["summary"])
             self.assertFalse(check["required"])
             self.assertIn("no time ramp", check["measured"]["reason"])
             self.assertNotIn("asks for less", check["summary"])
+            self.assertNotIn("depth.stall", checks)         # no samples: nothing to watch
 
     def test_the_authored_session_is_never_the_endless_modes_run(self):
         # The design includes an endless mode: the authored level the session played is not
@@ -1065,7 +1082,7 @@ class AuthoredPuzzle(Judge):
         self.assertEqual(check["measured"]["ramp_run"], "mode")
         self.assertFalse(check["measured"]["mode_entered"])
         self.assertIn("could not enter it", check["measured"]["unmeasured"])
-        self.assertNotIn("oracle_inputs_per_third", check["measured"])
+        self.assertNotIn("pooled_inputs_per_third", check["measured"])
 
     def test_an_endless_mode_the_build_does_not_carry_is_not_owed(self):
         # The greybox builds the MVP: a post-mvp endless mode is not in it, so the authored
@@ -1081,28 +1098,114 @@ class AuthoredPuzzle(Judge):
             check = self.judge(self.endless_design(decision=decision))["depth.ramp"]
             self.assertIn("no time ramp", check["measured"]["reason"])
 
-    def test_an_endless_run_whose_input_rate_falls_fails(self):
+    def test_endless_samples_whose_pooled_input_rate_falls_fail(self):
+        # Each sample's fall (18 -> 11) is inside its own band (2 x sqrt 29 = 10.8); pooled,
+        # 54 -> 33 is beyond 2 x sqrt 87 = 18.7.
         self.ramp_run([18, 15, 11])
-        check = self.judge(self.endless_design())["depth.ramp"]
+        checks = self.judge(self.endless_design())
+        check = checks["depth.ramp"]
         self.assertEqual(check["status"], "FAIL")
         self.assertTrue(check["required"])
-        self.assertIn("acted 11 times in the last third of its longest endless-mode run and 18",
-                      check["summary"])
+        self.assertIn("acted 33 times in the last thirds and 54 in the first", check["summary"])
+        self.assertIn("asks for less", check["summary"])
+        self.assertEqual(check["measured"]["pooled_inputs_per_third"], [54, 45, 33])
         self.assertTrue(check["measured"]["mode_entered"])
+        self.assertEqual(checks["depth.stall"]["status"], "PASS")
 
-    def test_an_endless_run_whose_input_rate_rises_passes(self):
+    def test_endless_samples_whose_pooled_input_rate_rises_pass(self):
+        # 36 -> 57: 21 over a band of 2 x sqrt 93 = 19.3.
         self.ramp_run([12, 14, 19])
         check = self.judge(self.endless_design())["depth.ramp"]
         self.assertEqual(check["status"], "PASS", check["summary"])
         self.assertTrue(check["required"])
-        self.assertEqual(check["measured"]["oracle_inputs_per_third"], [12, 14, 19])
-        self.assertIn("held or rose", check["summary"])
+        self.assertEqual(check["measured"]["pooled_inputs_per_third"], [36, 42, 57])
+        self.assertEqual(len(check["measured"]["samples"]), 3)
+        self.assertIn("a rise beyond the noise band", check["summary"])
+
+    def test_one_samples_own_fall_fails_whatever_the_pool(self):
+        # Two strong ramps hide nothing: one run that asks for 4 after 20 asked for less.
+        self.ramp_samples([20, 10, 4], [10, 20, 30], [10, 20, 30])
+        check = self.judge(self.endless_design())["depth.ramp"]
+        self.assertEqual(check["status"], "FAIL", check["summary"])
+        self.assertIn("sample 1: the oracle acted 4 times", check["summary"])
+
+    def test_a_flat_rate_never_passes(self):
+        # The same game every time, asking the same of the player throughout: not a ramp.
+        for samples in ([[10, 10, 10]] * 3, [[10, 11, 10], [12, 9, 11], [9, 10, 10]],
+                        [[14, 13, 15], [12, 14, 13], [13, 12, 14]]):
+            self.ramp_samples(*samples, extended_ms=60000)
+            self.ramp_required = None
+            check = self.judge(self.endless_design())["depth.ramp"]
+            self.assertEqual(check["status"], "WARNING", check["summary"])
+            self.assertIn("inside the noise band", check["measured"]["unmeasured"])
+            self.ramp_required = ("at quality tier release a check that measured nothing is "
+                                  "not passed (core/reference/quality-policy.yaml "
+                                  "skipped_checks)")
+            check = self.judge(self.endless_design())["depth.ramp"]
+            self.assertEqual(check["status"], "FAIL", check["summary"])
+            self.assertTrue(check["required"])
+
+    def test_a_noisy_borderline_is_extended_then_unmeasured_never_decided(self):
+        # The live afe0580 run, [10, 29, 9], beside two more of the same game: pooled 30 -> 32,
+        # inside 2 x sqrt 62 = 15.7. The bot played on (extended_ms); still inside, unmeasured.
+        self.ramp_samples([10, 29, 9], [10, 14, 12], [10, 17, 11], extended_ms=60000)
+        check = self.judge(self.endless_design())["depth.ramp"]
+        self.assertEqual(check["status"], "WARNING", check["summary"])
+        self.assertNotIn("asks for less", check["summary"])
+        self.assertEqual(check["measured"]["extended_ms"], 60000)
+        self.assertEqual(check["measured"]["noise_band"], 15.75)
+        # Alone, the live run decides nothing either: one sample of the three it is judged on.
+        self.ramp_samples([10, 29, 9])
+        check = self.judge(self.endless_design())["depth.ramp"]
+        self.assertEqual(check["status"], "WARNING", check["summary"])
+        self.assertIn("1 clean sample(s) of the 3", check["measured"]["unmeasured"])
+
+    def test_fewer_clean_samples_than_planned_never_pass(self):
+        self.ramp_samples([12, 14, 19], [12, 14, 19],
+                          reason="sample 3: play.mode.enter(\"endless\") answered false")
+        check = self.judge(self.endless_design())["depth.ramp"]
+        self.assertEqual(check["status"], "WARNING", check["summary"])
+        self.assertIn("2 clean sample(s) of the 3", check["summary"])
+        self.assertIn("answered false", check["measured"]["sampling_stopped"])
+
+    def test_a_stall_is_its_own_finding_not_a_ramp_failure(self):
+        # A ball trapped above steel bricks (the live brick game, fixed in 48a80bb): 14 s with
+        # nothing to do and nothing achieved deflates the run's last third to 9.
+        self.ramp_samples([10, 14, 23], self.sample([10, 29, 9], idle_ms=14000),
+                          [10, 17, 19])
+        checks = self.judge(self.endless_design())
+        stall = checks["depth.stall"]
+        self.assertEqual(stall["status"], "FAIL", stall["summary"])
+        self.assertTrue(stall["required"])
+        self.assertIn("ramp sample 2", stall["summary"])
+        self.assertIn("14.0 s in play with no oracle input and no progress", stall["summary"])
+        ramp = checks["depth.ramp"]
+        self.assertNotIn("asks for less", ramp["summary"])
+        self.assertEqual(ramp["measured"]["stalled_samples"], [2])
+        self.assertEqual(ramp["measured"]["pooled_inputs_per_third"], [20, 31, 42])
+        self.assertIn("depth.stall", ramp["measured"]["unmeasured"])
+        # A stall routes to gameplay (specialist-routing.yaml default_dimension: no `depth.`
+        # entry), the owner of a game that stops being playable.
+        from wgf_triage.routing import Routing
+        routing = Routing.load()
+        self.assertNotIn("depth.", routing.producer("playability-report")["checks"])
+        self.assertEqual(routing.default_dimension, "gameplay")
+
+    def test_a_stall_on_its_bar_is_not_one(self):
+        from wgflib import genre_models
+
+        bar = genre_models.qa_of(self.endless_design())["ramp"]["stall_max_s"]
+        self.ramp_run([12, 14, 19])
+        self.records["ramp"]["samples"][0]["longest_idle_ms"] = bar * 1000
+        checks = self.judge(self.endless_design())
+        self.assertEqual(checks["depth.stall"]["status"], "PASS", checks["depth.stall"]["summary"])
+        self.assertEqual(checks["depth.ramp"]["status"], "PASS")
 
     def test_too_small_a_sample_is_unmeasured_not_passed(self):
         from wgflib import genre_models
 
         minimum = genre_models.qa_of(self.endless_design())["ramp"]["min_inputs_per_third"]
-        self.assertGreater(minimum, 3)
+        self.assertGreater(minimum, 3 * 3)
         # Rising, and still too few to tell from noise: the bot played on and it stays short.
         self.ramp_run([3, 4, 6], extended_ms=60000)
         check = self.judge(self.endless_design())["depth.ramp"]
@@ -1133,13 +1236,14 @@ class AuthoredPuzzle(Judge):
         self.ramp_run([12, 14, 19])
         self.assertEqual(self.judge(self.endless_design())["depth.ramp"]["status"], "PASS")
 
-    def test_an_endless_session_too_small_to_read_is_unmeasured(self):
+    def test_an_endless_session_with_no_samples_is_unmeasured(self):
         design = copy.deepcopy(PUZZLE_DESIGN)
         design["genre"].update(family="arcade", ending="endless")
         check = self.judge(design)["depth.ramp"]                # the session's [3, 2, 1]
         self.assertEqual(check["status"], "WARNING", check["summary"])
         self.assertNotIn("asks for less", check["summary"])
         self.assertEqual(check["measured"]["ramp_run"], "session")
+        self.assertIn("no sample was played", check["measured"]["unmeasured"])
 
     def test_bad_play_that_never_ends_is_still_measured(self):
         self.records["lose"]["endedAtMs"] = None
@@ -1167,6 +1271,72 @@ class AuthoredPuzzle(Judge):
         self.assertEqual(check["status"], "FAIL")
         self.assertIn("l-02", check["summary"])
         self.assertLess(check["measured"]["l-02"], 0.6)
+
+
+class TheRampVerdict(unittest.TestCase):
+    """analysis.ramp_verdict on simulated bots: seeded Poisson counts per third, sampled the
+    way bot.spec.ts samples (the planned samples, then whole further samples while undecided,
+    as many as extend_s fits - two at the shipped 30 s cut windows). Each case is a game whose
+    true rate per third is known; what is asserted is how often each verdict comes out."""
+
+    TRIALS = 600
+
+    @staticmethod
+    def poisson(rng, mean):
+        limit, k, p = math.exp(-mean), 0, 1.0
+        while True:
+            p *= rng.random()
+            if p <= limit:
+                return k
+            k += 1
+
+    def verdicts(self, rates, extra=2, seed=7):
+        from wgflib import genre_models
+
+        bars = genre_models.qa_of({})["ramp"]
+        rng = random.Random(seed)
+        counts = {"pass": 0, "fail": 0, "unmeasured": 0}
+        for _ in range(self.TRIALS):
+            samples = []
+            for _n in range(bars["samples"] + extra):
+                samples.append({"oracle_inputs_per_third": [self.poisson(rng, r) for r in rates],
+                                "longest_idle_ms": 1000})
+                if len(samples) < bars["samples"]:
+                    continue
+                verdict = analysis.ramp_verdict(samples, bars)["verdict"]
+                if verdict != "unmeasured":
+                    break
+            counts[verdict] += 1
+        return {k: v / self.TRIALS for k, v in counts.items()}
+
+    def test_a_flat_rate_almost_never_passes(self):
+        # One-sided 2-sigma per look: a few percent. The old one-run rule ("the last third at
+        # least the first") passed a flat game more often than not.
+        rates = self.verdicts([10, 10, 10])
+        self.assertLess(rates["pass"], 0.06, rates)
+
+    def test_a_ramp_like_the_live_brick_games_passes_and_never_fails(self):
+        rates = self.verdicts([10, 14, 18])
+        self.assertGreater(rates["pass"], 0.9, rates)
+        self.assertLess(rates["fail"], 0.01, rates)
+
+    def test_a_falling_rate_fails_and_never_passes(self):
+        rates = self.verdicts([18, 14, 10])
+        self.assertGreater(rates["fail"], 0.9, rates)
+        self.assertEqual(rates["pass"], 0.0, rates)
+
+    def test_a_gentle_ramp_is_mostly_unmeasured_rarely_failed(self):
+        # A rise of a fifth is not told from noise in this budget: unmeasured, not a coin toss
+        # between PASS and FAIL (the one-run rule failed it about a third of the time).
+        rates = self.verdicts([10, 12, 12])
+        self.assertLess(rates["fail"], 0.06, rates)
+        self.assertGreater(rates["unmeasured"], 0.6, rates)
+
+    def test_a_missing_bar_is_unmeasured_never_defaulted(self):
+        verdict = analysis.ramp_verdict([{"oracle_inputs_per_third": [10, 20, 30]}] * 3,
+                                        {"samples": 3, "noise_z": 2, "min_inputs_per_third": 10})
+        self.assertEqual(verdict["verdict"], "unmeasured")
+        self.assertIn("stall_max_s", verdict["reason"])
 
 
 class TheAntiOracle(unittest.TestCase):
@@ -1380,18 +1550,39 @@ class TheStepsTier(unittest.TestCase):
         design = AuthoredPuzzle.endless_design()
         qa = genre_models.qa_of(design)
         base = {"idle_ms": 0, "win_ms": 0, "lose_ms": 0, "start_timeout_ms": 0}
-        cfg, truncated, _ = PlayabilityStep._content_settings(design, qa, base,
+        roomy = dict(qa, time_budget=dict(qa["time_budget"], bot_total_s=100000))
+        cfg, truncated, _ = PlayabilityStep._content_settings(design, roomy, base,
                                                               ["mvp", "post-mvp"])
         self.assertEqual(cfg["ramp_run"], "mode")
         self.assertEqual(cfg["ramp_mode"], qa["ramp"]["mode"])
+        # Each of the planned samples is a whole run_s window; the budget asks for all of them.
+        self.assertEqual(cfg["ramp_samples"], qa["ramp"]["samples"])
+        self.assertGreaterEqual(cfg["ramp_samples"], 3)
         self.assertEqual(cfg["ramp_ms"], qa["ramp"]["run_s"] * 1000)
+        self.assertEqual(cfg["ramp_noise_z"], qa["ramp"]["noise_z"])
+        self.assertEqual(cfg["ramp_stall_ms"], qa["ramp"]["stall_max_s"] * 1000)
         self.assertEqual(cfg["ramp_min_inputs"], qa["ramp"]["min_inputs_per_third"])
         self.assertEqual(cfg["ramp_extend_ms"], qa["ramp"]["extend_s"] * 1000)
         self.assertFalse(truncated["ramp"])
+        # Under the shipped budget the samples share the cut every window takes, and every
+        # window the bot is given still fits the viewport's hard cap.
+        cfg, truncated, total_s = PlayabilityStep._content_settings(design, qa, base,
+                                                                    ["mvp", "post-mvp"])
+        played = (cfg["traverse_ms"] + cfg["persist_ms"] + cfg["session_max_ms"]
+                  + cfg["ramp_samples"] * cfg["ramp_ms"])
+        self.assertLessEqual(played, total_s * 1000)
+        # An endless play is sampled too: the ramp test plays its fresh runs.
+        endless = copy.deepcopy(PUZZLE_DESIGN)
+        endless["genre"].update(family="arcade", ending="endless")
+        cfg, _t, _ = PlayabilityStep._content_settings(endless, genre_models.qa_of(endless),
+                                                       base)
+        self.assertEqual(cfg["ramp_run"], "session")
+        self.assertEqual(cfg["ramp_samples"], qa["ramp"]["samples"])
+        self.assertGreater(cfg["ramp_ms"], 0)
         # The greybox's MVP build carries no post-mvp endless mode: nothing to enter.
         cfg, _t, _ = PlayabilityStep._content_settings(design, qa, base, ["mvp"])
         self.assertIsNone(cfg["ramp_run"])
-        self.assertEqual((cfg["ramp_ms"], cfg["ramp_extend_ms"]), (0, 0))
+        self.assertEqual((cfg["ramp_ms"], cfg["ramp_extend_ms"], cfg["ramp_samples"]), (0, 0, 0))
         # Authored, no endless mode: the session is not extended for a ramp it has not got.
         cfg, _t, _ = PlayabilityStep._content_settings(PUZZLE_DESIGN, genre_models.qa_of(
             PUZZLE_DESIGN), base)

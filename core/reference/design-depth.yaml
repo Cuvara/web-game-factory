@@ -24,6 +24,10 @@
 #        there after the bot's input was delivered. The bot's reaction, click and polling are
 #        excluded - the raw interval failed an unchanged build on a loaded machine (1687 ms vs
 #        586 ms for the same gameplay). The value is unchanged.
+# 1.4.0: playability.ramp - the time ramp is judged on `samples` fresh runs, pooled, against a
+#        noise band (`noise_z`), extended while inside it; a stretch of play with no oracle
+#        input and no progress longer than `stall_max_s` is its own finding (depth.stall);
+#        `relief_dip_s` removed - it was stated and implemented nowhere (below)
 version: 1.4.0
 
 meta_loop:
@@ -110,34 +114,64 @@ playability:
     max_multiplier: 1.5
     sessions: 1
   ramp:
-    # Bad play ends a run within this many times the design's run length; oracle input rate
-    # in the last third of the longest run is at least the first third's; one relief dip of
-    # at least relief_dip_s is allowed.
+    # Bad play ends a run within this many times the design's run length, and good play is
+    # asked for more as a run goes on: the oracle's input rate in the last third of a run is
+    # above the first third's - shown beyond the noise of the counts, not read off one run.
     bad_play_max_multiplier: 3
-    relief_dip_s: 2
+    # (relief_dip_s, "one relief dip of at least 2 s is allowed", was removed in 1.4.0: no
+    # code ever measured it, so the check's text promised a criterion nobody applied. The
+    # judge compares a run's first and last thirds only, so a breather in the middle third -
+    # of any length - was and is allowed; a dip that reaches the last third is the decline
+    # the ramp exists to catch; and play that stops altogether is depth.stall, below.)
+    #
     # The input-rate ramp is a time ramp, and it is read only on a run of the play that
     # promises one (a family whose `qa` states endless_window_s): the session itself when
     # that play is endless (game-design genre.ending `endless`, or content that is not
     # authored), else a run of a mode the design includes at a tier this build carries -
     # a feature whose `catalogue` (or id) is one of mode_features. The bot enters that mode
     # through the probe's optional `play.mode.enter(mode)` (docs/template-contract.md) and
-    # plays it for run_s with instant retries. An authored-unit design with no such mode
-    # ramps between its units, which difficulty.axes_progress judges; its longest unit is
-    # not a time ramp, and a brick level that needs fewer moves as it clears is not a
-    # game asking for less.
+    # plays it for run_s. An authored-unit design with no such mode ramps between its units,
+    # which difficulty.axes_progress judges; its longest unit is not a time ramp, and a brick
+    # level that needs fewer moves as it clears is not a game asking for less.
     mode_features: [endless-mode]
     mode: endless
     run_s: 60
-    # The fewest oracle inputs the first third of the longest run must hold before its
-    # rate can be compared with the last third's. Counts are Poisson-like: at 10 the
-    # spread of one third's count is about +-3 (sqrt 10), so a fall to 3 or 4 is a fall,
-    # while the live 2026-10-05 counts (3 then 1, 8 then 4: a handful of deliberate moves
-    # in an authored level) are inside the noise of so few. Below it the bot plays the
-    # run on for up to extend_s more; still short, the ramp is unmeasured - never a pass,
-    # and at a tier whose skipped checks are not passed (quality-policy.yaml
-    # skipped_checks) a failure.
+    # The run is sampled, not played once: `samples` fresh runs (a fresh page each, the mode
+    # entered again), each held for run_s or until the game ends it, the oracle playing. One
+    # run per viewport made the verdict a coin toss - the live 2026-10-05 brick game read
+    # [10, 14, 23] PASS on one commit and [10, 29, 9] FAIL on the next with identical
+    # gameplay code. The counts of every sample are pooled: the last thirds against the first.
+    samples: 3
+    # The noise band. Under a rate that does not change, how n = first + last inputs split
+    # between the two thirds is Binomial(n, 1/2): their difference has a spread of sqrt(n).
+    # A difference inside noise_z x sqrt(n) is not decided either way: the bot plays more
+    # samples (extend_s), and if it is still inside, the ramp is unmeasured - never a pass,
+    # and a FAIL at a tier whose skipped checks are not passed. At 2 a game whose rate is flat
+    # reads as a rise about 2.3% of the time per look (one-sided normal tail), and a real
+    # ramp of the live brick game's size (about 1.8x, [10, ., 19] per run) clears it on the
+    # three pooled samples (27 against 2 x sqrt(87) = 18.7). A pooled fall beyond the band -
+    # or one sample's own fall beyond its own band - fails: the game asks for less.
+    noise_z: 2
+    # The fewest oracle inputs the pooled first thirds must hold before the rate is compared
+    # (and the fewest a single sample's first third holds before its own fall is judged).
+    # Counts are Poisson-like: at 10 the spread of a third's count is about +-3 (sqrt 10).
+    # Below it, after the extension, the ramp is unmeasured - never a pass.
     min_inputs_per_third: 10
+    # Play beyond the planned samples while the pooled counts are short of the minimum or
+    # inside the noise band: whole further samples, as many as fit in extend_s.
     extend_s: 60
+    # A stall: the longest stretch of a sample, in play (state `playing`), with no oracle
+    # input and no change in what the run has achieved (the design's goal metric, the unit's
+    # progress, the unit reached). Longer than this is depth.stall - a gameplay defect, routed
+    # to gameplay, never read as a ramp: the samples it occurs in are left out of the ramp's
+    # counts, whose thirds it would deflate. 10 s is the opening grace the experience floor
+    # gives a player before the game must ask something of them (experience-rules.yaml
+    # onboarding.min_grace_s) and a third of the time-ramp families' endless window (arcade,
+    # survival: endless_window_s 30); an oracle playing a time-ramp game acts every second or
+    # so (the live brick game's endless runs: 38-76 inputs in 32-67 s), and a run in which
+    # nothing is asked and nothing is achieved for 10 s has stopped being played - the live
+    # brick game's ball trapped above its steel bricks (game fix 48a80bb).
+    stall_max_s: 10
   persists:
     # Generation modes for which progression.persists is required; others get WARNING.
     required_generations: [authored]

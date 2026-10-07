@@ -9,6 +9,19 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**`depth.ramp` is judged on several runs, and a stall is its own finding** (design-depth.yaml
+1.4.0, [docs/playability-module.md](docs/playability-module.md)). One endless run per
+viewport, cut the moment its first third held 10 inputs, flipped between PASS and FAIL across
+commits with identical gameplay code. The ramp test now plays `ramp.samples` (3) fresh runs
+of the play that promises the time ramp - the endless play itself, which the session no
+longer stands in for, or the endless mode - and pools their thirds against a noise band of
+`ramp.noise_z` (2) x sqrt(n): a fall beyond it fails, a rise beyond it on every planned sample
+passes, and a difference inside it is extended (`extend_s`) and then unmeasured - never a
+pass, a FAIL at the release tier. A new check, `depth.stall` (routed to gameplay), fails a
+sample that went over `ramp.stall_max_s` (10 s) in play with no oracle input and no progress,
+and that sample is left out of the ramp. `relief_dip_s` was stated and never implemented: it
+is removed. Existing reports are not invalidated; a re-run playability step re-measures.
+
 **Publishing merged with the quality work.** Workflow `new-game` 13 carries both: the quality
 gate (11), store copy and listing triage (12), and the publication per platform (the submit
 step's per-platform visits, the `platform-ids` route back to `sdk` and its visit limit).

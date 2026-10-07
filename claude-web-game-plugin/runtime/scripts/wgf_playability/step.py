@@ -346,9 +346,9 @@ class PlayabilityStep(WorkflowStep):
         subtracted; whatever is left is shared out between the traverse, persist and session
         windows in proportion to what they asked for, and every check judged from a window that
         was cut is marked `truncated`. A design whose time ramp is read on a mode it includes
-        (analysis.time_ramp) asks for that run's window too (design-depth.yaml
-        `playability.ramp.run_s`); the run the ramp is read on may be played on for up to
-        `ramp.extend_s` more while its first third holds too few oracle inputs to compare.
+        (analysis.time_ramp) asks for `ramp.samples` x `ramp.run_s` more: the ramp test plays
+        that many fresh runs of the endless play or mode, and may play whole further samples
+        within `ramp.extend_s` while the pooled counts are too few or inside the noise band.
         """
         spec = (design or {}).get("build_spec") or {}
         content, _mode, units = analysis.content_units(design)
@@ -363,6 +363,10 @@ class PlayabilityStep(WorkflowStep):
         content_applies = content is not None
         depth_applies = bool(depth.get("meta_loop") or depth.get("first_session"))
         on_mode = bool(depth_applies and ramp and ramp["run"] == "mode")
+        # The time ramp is read on `ramp.samples` fresh runs of its play, each `run_s` long -
+        # the session's endless play or the mode's - in the ramp test, never on the session.
+        sampled = bool(depth_applies and ramp)
+        planned = int(ramp_bars.get("samples") or 0) if sampled else 0
         asked = {
             "traverse": (budget.get("traverse_s") or 0) * 1000 if content_applies else 0,
             "persist": (budget.get("persist_s") or 0) * 1000 if depth_applies else 0,
@@ -373,7 +377,7 @@ class PlayabilityStep(WorkflowStep):
             "session": (min(target_s * (session_bars.get("max_multiplier") or 0),
                             target_s * (session_bars.get("min_share") or 0) + SESSION_MARGIN_S)
                         * 1000 if depth_applies else 0),
-            "ramp": (ramp_bars.get("run_s") or 0) * 1000 if on_mode else 0,
+            "ramp": planned * (ramp_bars.get("run_s") or 0) * 1000,
         }
         total_s = budget.get("bot_total_s") or 0
         spent = (settings["idle_ms"] + settings["win_ms"] + settings["lose_ms"]
@@ -404,11 +408,15 @@ class PlayabilityStep(WorkflowStep):
             # `ramp_mode` through the probe's play.mode and plays it for ramp_ms), else none.
             "ramp_run": (ramp or {}).get("run") if depth_applies else None,
             "ramp_mode": ramp["mode"] if on_mode else None,
-            "ramp_ms": int(asked["ramp"] * scale),
+            # Per sample: ramp_ms (the budget's share, split evenly between the planned
+            # samples), the pooled-count rule the bot extends on, and the stall bar.
+            "ramp_ms": int(asked["ramp"] * scale / planned) if planned else 0,
+            "ramp_samples": planned,
+            "ramp_noise_z": float(ramp_bars.get("noise_z") or 0) if sampled else 0,
             "ramp_min_inputs": int(ramp_bars.get("min_inputs_per_third") or 0)
-                               if depth_applies and ramp else 0,
-            "ramp_extend_ms": int((ramp_bars.get("extend_s") or 0) * 1000)
-                              if depth_applies and ramp else 0,
+                               if sampled else 0,
+            "ramp_extend_ms": int((ramp_bars.get("extend_s") or 0) * 1000) if sampled else 0,
+            "ramp_stall_ms": int((ramp_bars.get("stall_max_s") or 0) * 1000) if sampled else 0,
         }, truncated, total_s
 
     @staticmethod
@@ -513,14 +521,19 @@ class PlayabilityStep(WorkflowStep):
         # The bot's own budget decides the timeout, not a fixed number: two viewports of
         # bot_total_s and of the showcase (its window, the start before it and the last state
         # it stages), plus the install-free start-up and the report - and the survey's window
-        # with a start per unit, on the projects it runs on. The ramp's run may be played on
-        # past its window (`extend_s`) on each viewport.
+        # with a start per unit, on the projects it runs on. The ramp may play further
+        # samples past its window (`extend_s`) on each viewport, and starts every sample on a
+        # fresh page.
         survey_units = len(settings.get("survey_units") or [])
+        ramp_ms = settings.get("ramp_ms") or 0
+        ramp_starts = ((settings.get("ramp_samples") or 0)
+                       + int((settings.get("ramp_extend_ms") or 0) // ramp_ms)) if ramp_ms else 0
         survey = (len(settings.get("survey_projects") or [])
                   * (survey_s + survey_units * (settings["start_timeout_ms"] / 1000.0 + 2) + 60)
                   if survey_units else 0)
         timeout = int(2 * (bot_total_s or 0) + 2 * (SHOWCASE_S + 45) + 120 + survey
-                      + 2 * (extend_s or 0) + 2 * self._again_s(settings))
+                      + 2 * (extend_s or 0) + 2 * self._again_s(settings)
+                      + 2 * ramp_starts * settings["start_timeout_ms"] / 1000.0)
         try:
             run = self._run(["pnpm", "exec", "playwright", "test", "-c",
                              "playwright.wgf-play.config.ts"], repo, timeout,

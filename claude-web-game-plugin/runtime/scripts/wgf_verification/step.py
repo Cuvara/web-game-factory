@@ -89,6 +89,8 @@ class VerifyStep(WorkflowStep):
                                           missing_inputs=inputs.missing)
             # The lineage rule accepts only this run's sdk commits between develop's and sdk's.
             session.run_id = getattr(context, "run_id", None)
+            # Browser QA reads the run's quality tier from it (browser_qa.tier_class).
+            session.context = context
             checks = run_checks(session, where)
 
         title_id = self._title_id(loaded, session, context)

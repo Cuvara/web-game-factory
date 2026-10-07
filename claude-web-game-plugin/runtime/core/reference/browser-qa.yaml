@@ -1,0 +1,379 @@
+# Browser QA: the built game played in a real browser at every viewport a player brings,
+# judged as data. Read by the `verify` step (scripts/wgf_verification/browser_qa.py), which
+# runs the Factory's own browser spec (scripts/wgf_verification/browser_qa.spec.ts) against
+# the production build behind the refusing network proxy, then judges what it recorded here.
+#
+# The spec judges nothing. It records - per viewport - load and readiness timings, the menus
+# it walked, the DOM UI on each screen, what the play probe reported, the console, uncaught
+# exceptions, WebGL context loss, the context menu, the sounds the page started (Web Audio
+# and media elements, hooked before the bundle runs), its frame times and JS heap, and the
+# host's own health; and it decodes every audio clip the runtime manifest ships. The Python
+# side holds every number to the bars below.
+#
+# Tiers - one vocabulary for every check here (docs/verification-module.md, "Browser QA"):
+#   hard      Hard Gate. Required at every quality tier: a FAIL fails verification and
+#             loops the build back to develop, whatever the run is.
+#   quality   Quality Gate. A threshold. Required where the run's quality-tier class is in
+#             `quality_required_at` (the release class, as shipped): there a FAIL fails
+#             verification; at any other class it is a WARNING that does not block.
+#   advisory  Reported, never required: a WARNING at most.
+# A check nothing could measure (no play probe, no control of that kind, a recording the
+# host degraded) is never a PASS: it is BLOCKED where the check is required and the
+# measurement was possible in principle, else a WARNING naming what was not measured.
+#
+# Timing checks (`timing: true`) read the host's health, as the playability bot does
+# (core/reference/visual-quality.yaml `environment`, whose bars are reused, not copied): a
+# timer in the spec's own process, a timer in a worker inside the page, and how long the
+# local static server took to answer. A recording made on a degraded host is made again, up
+# to `environment.max_attempts`; when every attempt was degraded the timing checks are
+# BLOCKED - re-measured on a quiet host - and never passed, whatever they read. A frame-time
+# failure read on a software rasterizer (SwiftShader, llvmpipe) is BLOCKED the same way: the
+# host cannot draw the game at speed, which says nothing about the game; a pass there stands,
+# because a software rasterizer only ever makes frames slower.
+#
+# Calibrated 2026-10-07 on the two validation games at their accepted commits - Brick Breaker
+# Worlds (PixiJS, 894b4b8) and Sky Marble (three.js, c340631); see docs/verification-module.md
+# "Browser QA" for what each measured and the defects the first runs found. Bars were not
+# moved to make a game pass: a defect a game shows is a defect.
+version: 1.0.0
+
+# Quality-tier classes (core/reference/quality-policy.yaml tier.classes values) at which a
+# `quality` check is required.
+quality_required_at: [release]
+
+# The viewports a player brings. `touch` makes the context a touch device (isMobile, hasTouch):
+# the long-press context menu is probed there, hover states are not.
+viewports:
+  - {id: desktop-wide, width: 1920, height: 1080, kind: desktop, touch: false}
+  - {id: desktop-standard, width: 1280, height: 720, kind: desktop, touch: false}
+  - {id: desktop-narrow, width: 1024, height: 768, kind: desktop, touch: false}
+  - {id: tablet, width: 768, height: 1024, kind: tablet, touch: true}
+  - {id: mobile, width: 390, height: 844, kind: mobile, touch: true}
+
+# Where the once-per-build measurements are made: the audio session and the performance run
+# on the standard desktop (the viewport the portals' own QA opens first).
+audio_viewport: desktop-standard
+perf_viewport: desktop-standard
+
+# The play the spec does to reach the end states, on every viewport listed. The oracle (play
+# probe, `wgf-probe=1`) plays well for at most win_s; the anti-oracle plays badly for at most
+# lose_s. A state not reached in its window is unmeasured, never a pass.
+outcomes:
+  viewports: [desktop-wide, desktop-standard, desktop-narrow, tablet, mobile]
+  win_s: 90
+  # 90: Brick Breaker Worlds lost its three balls to bad play in 49-59 s on desktop; 60 was cut.
+  lose_s: 90
+  restart_s: 10
+  start_timeout_s: 30
+
+console:
+  # A console message at `error` level from the game's own origin is a defect: the game told
+  # its own console something failed. Messages about requests the Factory's proxy refused
+  # (a portal SDK that is not there locally) and messages located on another origin are the
+  # environment's, never the game's: they are recorded, not judged.
+  ignore_patterns: ["net::ERR_", "Failed to load resource", "ERR_TUNNEL_CONNECTION_FAILED", "ERR_PROXY_CONNECTION_FAILED"]
+  max_errors: 0
+
+bars:
+  load:
+    # Navigation start to the play probe leaving `loading` (else the template probe's time to
+    # interactive). `ready_max_s` is when loading is taken never to complete at all (hard);
+    # `max_load_s` the quality bar on an unthrottled local desktop.
+    ready_max_s: 30
+    max_load_s: 6
+    # Navigation start to the first moment the page offers the player an input (a title
+    # screen with its begin input, or play itself).
+    max_first_interaction_s: 8
+    # A canvas covering less than this share of the viewport is not the game drawn.
+    min_canvas_share: 0.25
+  frames:
+    # requestAnimationFrame deltas over `sample_s` of active play (the oracle playing).
+    sample_s: 8
+    # 95th percentile frame time, ms: 33.4 is a 30 fps floor at the 95th percentile.
+    max_p95_ms: 33.4
+    # A frame at or over `long_frame_ms` is a visible hitch; at most this share of frames.
+    long_frame_ms: 100
+    max_long_share: 0.02
+  memory:
+    # JS heap after a forced collection, once play has started and again after `session_s`
+    # of play, losses and restarts. Growth beyond the bar is a leak a long session pays for.
+    session_s: 45
+    max_growth_mb: 24
+  layout:
+    # The page itself must not scroll: content past the viewport by more than this, px.
+    max_overflow_px: 2
+    # A visible control or text cut by the viewport edge by more than this, px.
+    max_clip_px: 2
+    # Two controls overlapping (neither inside the other) by more than this many px squared.
+    max_overlap_px2: 16
+    # The gap kept between a control and the viewport edge (safe margin), px.
+    safe_margin_px: 4
+    # A gameplay-critical entity (play probe roles below) covered by painted UI: at most this
+    # share of its drawn box, at any sampled moment of play.
+    critical_roles: [player, threat, goal, target, projectile, hazard]
+    max_entity_cover_share: 0.25
+    # ... in at least this many consecutive samples: a banner shown for a moment as play
+    # starts ("+100", a course card that slides away) is not UI over play. Calibrated on Sky
+    # Marble, whose course card still covers the far track in the first sample of play and is
+    # gone by the next.
+    min_cover_samples: 2
+    # How often, and how many times, entities are sampled during play.
+    cover_samples: 8
+    cover_interval_ms: 400
+  states:
+    # A control's hover or pressed state differs from its rest state in at least one of these
+    # computed properties; a disabled control differs from an enabled one.
+    properties: [background-color, background-image, color, border-color, box-shadow, transform, filter, opacity, outline-color, text-shadow, scale, translate]
+  audio:
+    # A sound starts within this window after a declared action is taken (an
+    # experience.actions[] entry that states `audio`), or after play reaches won or lost.
+    action_window_ms: 500
+    outcome_window_ms: 2500
+    # The end of play is heard when it happens, which is before the probe reports `won` or
+    # `lost` once the end card is up: a sound this long before the reported state counts.
+    # Calibrated on Brick Breaker Worlds, whose game-over sting starts 350-1030 ms before its
+    # fail card reports `lost`.
+    outcome_lead_ms: 1500
+    # A clip the runtime manifest does not mark `audio.loop` (and that is not music) started
+    # with loop on is an accidental loop. An unidentified buffer at most this long started
+    # looping is judged the same way.
+    oneshot_max_s: 6
+    # Loudness of the shipped clips, decoded in the browser: each clip's gated RMS (50 ms
+    # blocks louder than `gate_dbfs`, as loudness meters gate silence), in dBFS.
+    gate_dbfs: -50
+    # Effects (type sfx, ui) must sit within this spread of each other, loudest to quietest.
+    max_sfx_spread_db: 20
+    # Music sits under the effects, but stays audible: the median music clip at most
+    # `max_music_over_sfx_db` above the median effect, and at most `max_music_under_sfx_db`
+    # below it.
+    max_music_over_sfx_db: 3
+    max_music_under_sfx_db: 24
+    # A peak at or over this dBFS is clipping.
+    clip_peak_dbfs: -0.1
+  assets:
+    # The shipped files under the bundle, read offline. A texture edge over max_edge_px will
+    # not upload on many mobile GPUs (quality); over warn_edge_px it costs memory most games
+    # do not need (advisory). Byte bars are advisory: core/reference/asset-policy.yaml bounds
+    # what the assets step delivers, this reads what ships.
+    texture_max_edge_px: 4096
+    texture_warn_edge_px: 2048
+    image_max_bytes: 1048576
+    sfx_max_bytes: 524288
+    music_max_kbps: 256
+
+# The measured master level (play probe `audio.level`) reads as silent at or below
+# production-quality.yaml `audio.max_muted_level`, read from there so the two never drift.
+muted_level:
+  file: production-quality.yaml
+  path: [audio, max_muted_level]
+# How a timing check is protected from a busy host: visual-quality.yaml `environment` (tick,
+# stall and server-wait bars, max_attempts), read from there for the same reason.
+environment:
+  file: visual-quality.yaml
+  path: [environment]
+# Renderer strings that mark a software rasterizer: a frame-time failure on one is BLOCKED.
+software_renderers: [SwiftShader, llvmpipe, softpipe, "Microsoft Basic Render"]
+
+# The checks. `scope`: `viewport` - one check per viewport (`browser.<id>:<viewport>`);
+# `once` - one check, measured on audio_viewport (audio) or perf_viewport (performance);
+# `outcome` - one per outcomes viewport; `offline` - read from the bundle and the decoded
+# clips. `owner` is the specialist a failure is routed to. `category` is the
+# verification-report's category the check is filed under.
+checks:
+  # -- loading and menus -------------------------------------------------------------------
+  - id: loads
+    tier: hard
+    scope: viewport
+    category: gameplay
+    owner: gameplay
+    what: "The page loads: the document answers, and nothing the game fetches from its own origin fails"
+  - id: canvas
+    tier: hard
+    scope: viewport
+    category: gameplay
+    owner: ui
+    what: "A canvas is drawn and covers at least bars.load.min_canvas_share of the viewport"
+  - id: ready
+    tier: hard
+    scope: viewport
+    category: gameplay
+    owner: gameplay
+    what: "Loading completes: the play probe leaves `loading` within bars.load.ready_max_s"
+  - id: menus
+    tier: hard
+    scope: viewport
+    category: gameplay
+    owner: ui
+    what: "The title screen offers a way into play, and taking it starts play"
+  - id: load-time
+    tier: quality
+    scope: viewport
+    category: policy
+    owner: performance
+    timing: true
+    what: "Loading completes within bars.load.max_load_s"
+  - id: first-interaction
+    tier: quality
+    scope: viewport
+    category: policy
+    owner: performance
+    timing: true
+    what: "The first input is offered within bars.load.max_first_interaction_s"
+  # -- runtime health ----------------------------------------------------------------------
+  - id: page-errors
+    tier: hard
+    scope: viewport
+    category: policy
+    owner: gameplay
+    what: "No uncaught exception or unhandled rejection while loading, playing, pausing and ending"
+  - id: console-errors
+    tier: quality
+    scope: viewport
+    category: policy
+    owner: gameplay
+    what: "No console error from the game's own origin (console.max_errors)"
+  - id: webgl-context
+    tier: hard
+    scope: viewport
+    category: policy
+    owner: performance
+    what: "No WebGL context is lost"
+  - id: context-menu
+    tier: quality
+    scope: viewport
+    category: policy
+    owner: ui
+    hard_when_profile: context_menu_suppressed
+    what: "A right click (and a long press on a touch device) on the game opens no context menu: the game prevents it. Hard where a targeted platform profile sets requirements.context_menu_suppressed"
+  # -- end states and session control ------------------------------------------------------
+  - id: win
+    tier: quality
+    scope: outcome
+    category: gameplay
+    owner: gameplay
+    what: "The oracle reaches `won` within outcomes.win_s (a design with a win)"
+  - id: lose
+    tier: quality
+    scope: outcome
+    category: gameplay
+    owner: gameplay
+    what: "Bad play reaches `lost` within outcomes.lose_s"
+  - id: restart
+    tier: quality
+    scope: outcome
+    category: gameplay
+    owner: gameplay
+    what: "After `lost`, the retry the game offers returns to play within outcomes.restart_s"
+  - id: pause-resume
+    tier: quality
+    scope: viewport
+    category: gameplay
+    owner: gameplay
+    what: "The game pauses (its pause control, else Escape) and resumes to play; a game with no pause control is reported, not failed"
+  - id: hidden-pause
+    tier: quality
+    scope: viewport
+    category: gameplay
+    owner: gameplay
+    what: "With the page hidden, play holds still (paused, or nothing moves) and can be resumed when it is shown again"
+  # -- layout ------------------------------------------------------------------------------
+  - id: overflow
+    tier: quality
+    scope: viewport
+    category: gameplay
+    owner: ui
+    what: "The page does not scroll: nothing extends past the viewport by more than bars.layout.max_overflow_px"
+  - id: clipping
+    tier: quality
+    scope: viewport
+    category: gameplay
+    owner: ui
+    what: "No visible control or text is cut by the viewport edge, on any screen measured"
+  - id: ui-overlap
+    tier: quality
+    scope: viewport
+    category: gameplay
+    owner: ui
+    what: "No two controls overlap, and no control overlaps text outside it, on any screen measured"
+  - id: ui-covers-play
+    tier: quality
+    scope: viewport
+    category: gameplay
+    owner: ui
+    what: "Painted UI never covers more than bars.layout.max_entity_cover_share of a gameplay-critical entity during play"
+  - id: safe-margins
+    tier: advisory
+    scope: viewport
+    category: gameplay
+    owner: ui
+    what: "Every control keeps bars.layout.safe_margin_px from the viewport edge"
+  - id: button-states
+    tier: advisory
+    scope: viewport
+    category: gameplay
+    owner: ui
+    what: "Where a control is present, hover and pressed differ from rest (pointer devices), and a disabled control differs from an enabled one"
+  # -- audio -------------------------------------------------------------------------------
+  - id: audio-clips
+    tier: hard
+    scope: offline
+    category: assets
+    owner: audio
+    what: "Every audio clip the runtime manifest ships is fetched and decodes"
+  - id: audio-events
+    tier: quality
+    scope: once
+    category: assets
+    owner: audio
+    what: "Each declared action with a sound (experience.actions[].audio) and each end state reached (won, lost) starts a sound within its window"
+  - id: audio-loops
+    tier: hard
+    scope: once
+    category: assets
+    owner: audio
+    what: "No one-shot clip is started looping (the runtime manifest's audio.loop says which clips loop)"
+  - id: audio-mute
+    tier: quality
+    scope: once
+    category: assets
+    owner: audio
+    what: "The game's mute control silences the master output and unmuting restores it; a game with no mute control is reported, not failed"
+  - id: audio-hidden
+    tier: hard
+    scope: once
+    category: assets
+    owner: audio
+    what: "With the page hidden the master output is silent (every portal's rule: no sound when the player looks away)"
+  - id: audio-loudness
+    tier: quality
+    scope: offline
+    category: assets
+    owner: audio
+    what: "Shipped clips are balanced (effects within max_sfx_spread_db, music under the effects within its window) and none clips"
+  # -- performance -------------------------------------------------------------------------
+  - id: frame-stability
+    tier: quality
+    scope: once
+    category: policy
+    owner: performance
+    timing: true
+    what: "During play the 95th percentile frame time is at most bars.frames.max_p95_ms and long frames at most bars.frames.max_long_share"
+  - id: memory-growth
+    tier: quality
+    scope: once
+    category: policy
+    owner: performance
+    timing: true
+    what: "The JS heap after a forced collection grows at most bars.memory.max_growth_mb over a session"
+  - id: oversized-textures
+    tier: quality
+    scope: offline
+    category: assets
+    owner: performance
+    what: "No shipped image is larger than bars.assets.texture_max_edge_px on an edge"
+  - id: asset-weight
+    tier: advisory
+    scope: offline
+    category: assets
+    owner: performance
+    what: "Images over warn_edge_px or image_max_bytes, effects over sfx_max_bytes, music over music_max_kbps"

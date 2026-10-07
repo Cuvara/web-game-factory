@@ -43,7 +43,7 @@ GAME_CONFIG = textwrap.dedent("""\
     platforms:
       - { id: y8, profile: y8@1.2.0, role: required }
       - { id: yandex, profile: yandex@1.3.0, role: required }
-      - { id: crazygames, profile: crazygames@1.2.0, role: required }
+      - { id: crazygames, profile: crazygames@1.3.0, role: required }
     """)
 IDS = {"external_game_id": "y8-4711", "app_id": "app-0042"}
 STATUS = {"submitted": "In review", "live": "Published", "draft": "Draft"}

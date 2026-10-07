@@ -15,7 +15,9 @@
 # (factory.publish.platforms.crazygames.terms_confirmed) and bumps this file.
 
 id: crazygames
-version: 2.3.0  # 2.3.0: the three documented covers as three upload intents. 2.2.0: the CrazyGames adapter's flow - the submission form, both upload
+version: 2.4.0  # 2.4.0: re-read 2026-10-07 - the 250 MB sourced, the update rule, IAP and
+                #        account-integration restrictions
+                # 2.3.0: the three documented covers as three upload intents. 2.2.0: the CrazyGames adapter's flow - the submission form, both upload
                 #        shapes, Basic/Full Launch words, all as hypotheses
 status: unverified
 docs: https://docs.crazygames.com/
@@ -26,12 +28,16 @@ sources:
   - {url: "https://docs.crazygames.com/requirements/intro/", read: "2026-10-04"}
   - {url: "https://docs.crazygames.com/resources/unity-custom-build/", read: "2026-10-04"}
   - {url: "https://files.crazygames.com/documents/developer_terms_20250818.pdf", read: "2026-10-04"}
+  - {url: "https://docs.crazygames.com/requirements/technical/", read: "2026-10-07"}
+  - {url: "https://docs.crazygames.com/requirements/account-integration/", read: "2026-10-07"}
+  - {url: "https://docs.crazygames.com/sdk/in-game-purchases/", read: "2026-10-07"}
+  - {url: "https://docs.crazygames.com/faq/", read: "2026-10-07"}
 
 unknowns:
   - The submission form's exact fields, labels and limits (title, description, controls, instructions).
   - Whether categories and tags are chosen by the developer or assigned by CrazyGames.
   - "The cover, trailer video and build upload widgets, and whether the build is a zip or a folder (both are modeled: upload.zip and upload.files, each optional; the adapter takes whichever the console shows)."
-  - The upload size limit (250 MB is carried over from profile 1.0.0 and is not sourced).
+  - Whether the upload widget enforces the documented 250 MB and 1,500-file limits itself.
   - The orientation, mobile and Progress Save toggles.
   - The status labels the console shows, and which of them mean under review.
   - The QA tool's checklist.
@@ -220,7 +226,7 @@ submission:
   constraints:
     replaces_index_html: true    # the portal rewrites index.html on upload; inline wrappers are lost
     archive_root_index: true
-    upload_max_mb: 250           # carried over from 1.0.0; unsourced (see unknowns)
+    upload_max_mb: 250           # https://docs.crazygames.com/requirements/technical/ (read 2026-10-07)
 
   fields:
     title: {required: true, max: null, locales: shared, listing: listing.title, basis: hypothesis}
@@ -236,3 +242,9 @@ submission:
       source: https://docs.crazygames.com/requirements/intro/
     - rule: Pay only in Full Launch and only with the CrazyGames SDK; no other portal branding, no other ads.
       source: https://files.crazygames.com/documents/developer_terms_20250818.pdf
+    - rule: An update is the revised files uploaded and resubmitted; updates typically go live within the same working day (read 2026-10-07).
+      source: https://docs.crazygames.com/faq/
+    - rule: Full Launch requires progress tied to the account where progress applies - the Data module, the User module with one's own backend, or Automatic Progress Save (a person's toggle; not allowed with in-game purchases).
+      source: https://docs.crazygames.com/requirements/account-integration/
+    - rule: In-game purchases are invite-only, through CrazyGames' Xsolla account, for signed-in users only.
+      source: https://docs.crazygames.com/sdk/in-game-purchases/

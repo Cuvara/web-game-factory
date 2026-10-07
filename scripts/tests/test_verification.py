@@ -1102,10 +1102,10 @@ class PlatformAndPolicy(VerificationCase):
     def test_each_platform_is_built_and_judged_on_its_own_bundle(self):
         # Template contract 1 boots one adapter per bundle; with two targets the Factory
         # builds each against a config naming it alone (WGF_GAME_CONFIG), the target last.
-        self.add_platform("- { id: crazygames, profile: crazygames@1.2.0, role: optional }")
+        self.add_platform("- { id: crazygames, profile: crazygames@1.3.0, role: optional }")
         sdk = fixture("inputs/sdk-report.json")
         sdk["platforms"].append(dict(sdk["platforms"][0], platform_id="crazygames",
-                                     profile_version="1.2.0"))
+                                     profile_version="1.3.0"))
         runner = FakeRunner({"pnpm build": honoring_build,
                              "evaluate-assertions": lambda c, cwd, env: FakeRunner.evaluate(
                                  c, cwd, env, results=fixture("assertions-generic-web.json"))})
@@ -1122,7 +1122,7 @@ class PlatformAndPolicy(VerificationCase):
             config = read_json(self.repo, "build", "platforms", pid, "game.config.json")
             self.assertEqual(config["platforms"], [
                 dict(id=pid, profile={"generic-web": "generic-web@1.1.0",
-                                      "crazygames": "crazygames@1.2.0"}[pid], role="required")])
+                                      "crazygames": "crazygames@1.3.0"}[pid], role="required")])
             self.assertEqual(config["build"]["output"], f"build/platforms/{pid}/dist")
             self.assertEqual(config["game"]["id"], "fixture-game")
             with open(os.path.join(self.repo, "build", "platforms", pid, "dist",
@@ -1161,7 +1161,7 @@ class PlatformAndPolicy(VerificationCase):
     def test_a_build_that_ignores_the_platform_config_fails(self):
         # The same bytes for two platforms: the template did not honour WGF_GAME_CONFIG, so
         # one adapter would boot on both portals.
-        self.add_platform("- { id: crazygames, profile: crazygames@1.2.0, role: optional }")
+        self.add_platform("- { id: crazygames, profile: crazygames@1.3.0, role: optional }")
         result, report, _ = self.verify(runner=self.all_assertions_pass())
         check = self.check(report, "build.platform:crazygames")
         self.assertEqual(check["status"], "FAIL")
@@ -1169,7 +1169,7 @@ class PlatformAndPolicy(VerificationCase):
         self.assertEqual(result.route, "fail")
 
     def test_one_failed_platform_build_fails_the_verdict(self):
-        self.add_platform("- { id: crazygames, profile: crazygames@1.2.0, role: optional }")
+        self.add_platform("- { id: crazygames, profile: crazygames@1.3.0, role: optional }")
 
         def build(command, cwd, env):
             if "crazygames" in env.get("WGF_GAME_CONFIG", ""):
@@ -1200,10 +1200,10 @@ class PlatformAndPolicy(VerificationCase):
         package["wgf"] = {"template": {"version": "1.3.0", "contract": 2}}
         package.setdefault("scripts", {})["build:platforms"] = "node scripts/build/x.mjs"
         self.write("package.json", json.dumps(package))
-        self.add_platform("- { id: crazygames, profile: crazygames@1.2.0, role: optional }")
+        self.add_platform("- { id: crazygames, profile: crazygames@1.3.0, role: optional }")
         sdk = fixture("inputs/sdk-report.json")
         sdk["platforms"].append(dict(sdk["platforms"][0], platform_id="crazygames",
-                                     profile_version="1.2.0"))
+                                     profile_version="1.3.0"))
 
         def build_platforms(command, cwd, env):
             from wgf_verification.platform_builds import digest_tree

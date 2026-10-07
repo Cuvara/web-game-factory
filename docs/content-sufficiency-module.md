@@ -81,7 +81,12 @@ evidence (`measurement_class: automation-bot`).
   See [playability-module.md](playability-module.md). The probe contract is in the probe
   schema and in [template-contract.md](template-contract.md#the-play-probe-unit-link-and-entity-kinds).
 - **The content data file.** The played commit's `public/content/units.json` is kept at
-  `<records_dir>/content/units.json`.
+  `<records_dir>/content/units.json`, and with it the **layout source**, when the commit
+  ships one: the JSON file under `public/content/` that holds each unit's geometry keyed by
+  unit id. It is `public/content/layouts.json` (its `layouts` object, or its root) by default
+  (`core/reference/content-sufficiency.yaml` `layout.source`); a data file may name another
+  with `layout_source` (`{path, key}` or a path, only under `public/content/`). It is kept at
+  `<records_dir>/content/<the same relative path>`.
 - **Entity kinds.** While a content unit is in play, every entity of a content role must
   carry `entities[].kind`. This is required by `core/artifacts/shared/play-probe.schema.json`,
   and playability's `probe.valid` checks it.
@@ -93,7 +98,9 @@ The step measures every quantity twice, on two views of the same units:
 - **The build view:**
   - a unit's elements are its data mechanics plus the content kinds the probe showed in it.
     The kinds of the player and the interface are left out;
-  - its layout is its data beyond the descriptive keys;
+  - its geometry is the lists in its own `layout` entry in the data file
+    (`layout.unit_key`) and in its entry in the layout source - nowhere else (see
+    near-identical units);
   - its structure, group, objective kind and art are the data file's values where it
     carries them, else the design's;
   - its difficulty is what the probe reported, else the data's.
@@ -126,7 +133,7 @@ lists every skip in `skipped_checks`, and the step names them in its summary.
 | `content.entity_kinds` | Entities of a content role carry `kind` (first session, act and survey samples) | None without one. Required for authored content; a warning for generated content |
 | `content.elements` | Distinct elements; each used in >= N units (elements only climax units use are their set pieces); introduction points; how late the last one arrives | `content.elements.*` |
 | `content.combinations` | Share of units whose set of elements no other unit has | `content.combinations.min_distinct_ratio` |
-| `content.structure` | Distinct structure kinds; share of near-identical units | `content.structure.*` |
+| `content.structure` | Distinct structure kinds; share of near-identical units, on the units' geometry | `content.structure.*`. SKIPPED as `UNMEASURED` when units without geometry could carry the repeated share past `max_repeated_layout_ratio` |
 | `content.groups` | Groups, units per group, and every group after the first bringing an element the player has not met. The same elements with only cosmetic change fails | `content.units.min_groups`, `min_units_per_group`. Skipped where the family has no `budget.group_kind` |
 | `content.difficulty` | Axes that escalate first unit to last; runs of units that change only their numbers; relief | `content.difficulty.min_escalating_axes`, `relief_every_units`, genre-models `variety.max_consecutive_scaling_only_units` |
 | `content.objectives` | Objective kinds (`objective_kind`, else the normalized objective), plus the design's secondary goals; the share of the most common kind | `content.objectives.*` |
@@ -140,15 +147,63 @@ A `content.regression` failure is a blocker, so the report's verdict is FAIL, an
 quality gate's `floor.content_sufficient` holds the content dimension below its floor: the
 gate fails with `QUALITY REGRESSION` ([quality-gate-module.md](quality-gate-module.md)).
 
-**Near-identical units.** Two units are the same unit with other numbers when either is true:
+**Near-identical units.** Units are compared on their **geometry**
+(`scripts/wgf_design/layouts.py`), and geometry comes only from a **declared place**:
 
+- in the build, each unit's own `layout` entry in `public/content/units.json`
+  (`core/reference/content-sufficiency.yaml` `layout.unit_key`) - an object such as
+  `{"width": 8, "segments": [...]}`, or a list - and its entry in the layout source
+  (`public/content/layouts.json` `layouts`, keyed by unit id, or the file the data file names
+  in `layout_source`). A game may use either or both: a 3D course game ships each course as
+  its unit's `layout` and no layouts.json;
+- in the design, each unit's `parameters` (game-design `units[].parameters`).
+
+No other key of a unit counts: a `tags` list, a `parameters` block or any other list beside
+the layout is not geometry, so adding one cannot turn an unmeasured check into a measured one.
+
+Inside a declared layout, the geometry is its **sequences**: every outermost list - a track's
+segments, a grid's rows, a wave list, a board's cells, a spawn table - wherever it sits and
+whatever its container is called (`segments` renamed `pieces` is the same course). Items are
+compared by value: a record keeps its own field names, and 30.0 is 30. A scalar outside every
+list (a width, a par time, a speed, a flag, a word) is tuning: the same layout at another
+difficulty, and a key the game may never read.
+
+Similarity is how much of the smaller layout the larger one holds, in order: each sequence's
+items are matched to one sequence of the other (longest matching blocks, pairs one to one,
+the best first), over the item count of the smaller layout. A copy of another unit's course
+padded with an unrelated list (a 40-piece `decor`) is therefore still a copy. Two units are
+the same unit with other numbers when either is true:
+
+- one's geometry is wholly inside the other's (similarity 1.0: identical, renamed, padded),
+  whatever the units are called;
 - they share their structure kind, their element combination and their objective kind, and
-  their layouts are at least `layout.near_identical_similarity` (0.85) alike;
-- their non-empty layouts are identical.
+  their geometry is at least `layout.near_identical_similarity` (0.85) alike.
 
-Similarity is the Jaccard similarity of the layouts' leaves, compared by path and value. A
-number outside any list (a speed, a count) counts only by where it sits, never by its value.
-A number inside a list (a cell, a position) is the layout itself.
+A design unit is also repeated when another design unit has its structure, its elements and
+the same parameter values, whatever its geometry says - the identity the design check had
+before geometry, so the design side is never looser than it was.
+
+A build unit whose declared layout holds no list has **no geometry**: it is *undetermined*,
+never repeated. Its scalar names are no evidence of identity: under content-sufficiency 1.2.0
+a unit's "layout" was the set of its parameter names, so two different courses that both
+carried `par_s`, `limit_s`, `gems` were flagged near-identical, and naming a parameter nothing
+reads "fixed" it. Adding, renaming or removing a scalar key changes no verdict. The repeated
+share is held to `content.structure.max_repeated_layout_ratio` on the units with geometry;
+while the undetermined units could carry it past the bar (each repeating a unit not yet
+repeated - the report's `repeated_ratio_at_most`, with the units in `undetermined`), the check
+is SKIPPED as `UNMEASURED`, never a pass: the quality gate holds a skipped content-sufficiency
+check at the release tier (`floor.sufficiency_measured`). The developer's fix is to ship each
+unit's geometry as data in a declared place. Measured repetition over the bar still fails,
+routed by the design view as every by-design check. The design step's
+`content.tier_structure` applies the same rule to the design's `units[].parameters`, so a
+design gap is not closed by renaming parameters.
+
+**What this does not establish.** The judge reads the declared geometry; it does not verify
+that the game builds each unit from it. A `layout` the game never reads would be measured all
+the same. What holds that is the develop contract - the unit is built from its `layout` entry
+loaded at boot, and nothing in `src/` hard-codes a unit (the develop brief) - and the play
+probe's survey, which enters every unit through its unit link and records what it drew there.
+There is no runtime check that the drawn geometry matches the declared one.
 
 **Generated content** (`parametric`, `procedural`). The units listed are representative, so
 no unit list is counted, and every unit check is skipped with that reason. Entity kinds are

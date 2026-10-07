@@ -1217,7 +1217,13 @@ def _content_section(brief):
             f"further from the design than the genre's tolerance, or a mechanic parameter "
             f"missing from `tuning` each fails the step. Every row of the table is owed, the "
             f"later tiers' rows included when this run builds them: a build that ships a "
-            f"subset fails.\n")
+            f"subset fails. Each unit's geometry - its track segments, grid rows, wave list "
+            f"or board - is data too: put it in the unit's own `layout` entry, its pieces as "
+            f"lists, and build the unit from it (or keep every unit's layout in "
+            f"`public/content/layouts.json` under `layouts`, keyed by unit id). The content "
+            f"check compares units on those lists only - never on tuning scalars or any other "
+            f"key - so a unit whose layout holds no list cannot be measured, and that is no "
+            f"pass at the release tier.\n")
     else:
         add(f"`{content.get('file')}` and `{content.get('test')}` are optional for a "
             f"{mode or 'generated'} design: the units are generated from the parameters, so "

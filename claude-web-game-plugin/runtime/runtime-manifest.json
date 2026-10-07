@@ -140,7 +140,7 @@
     "core/reference/research-analysis.yaml": "sha256:cbbfb33f712523d306b458a19fa25456119557abe2e0c4e57a0c8cc505cfdc3e",
     "core/reference/research-vocabulary.yaml": "sha256:c3a48ca1cc4498e1fef0160b3f4c478cca1cf5025c4a01777f019cb6b1ce0bef",
     "core/reference/scoring/portfolio-default.v1.yaml": "sha256:27ca9350c988fa2b9531d05fef35eff80a5fddeda34fc3c04bac344c792faaa5",
-    "core/reference/specialist-routing.yaml": "sha256:e6235874a09587bc9ed5276d14f781bf9be5b3f8ef8ba3765d6335e7f7bdfca1",
+    "core/reference/specialist-routing.yaml": "sha256:cd136e4e89518e24fbc3160f3b46a579ee2c542831d378bc2db4c52e2427ca25",
     "core/reference/store-listing.yaml": "sha256:8f0c7ef15182f6eb3885d30ae9ba2d415bb7714b72424557d0a12ed9da5f7704",
     "core/reference/visual-qa-rubric.yaml": "sha256:d34e0a006b7af80a2fdc740fb331c77ddd0c943a587dceb3fc272901cfdf5a16",
     "core/reference/visual-quality.yaml": "sha256:cd21179dad8950577e66eb57238bb5cdcfb91d5e0392392ce643271b1a9805ac",

@@ -21,7 +21,8 @@
 
 # 1.1.0: content-sufficiency-report (workflow 10).
 # 1.3.0: `ledger` - which findings hold a build back until they are verified.
-version: 1.3.0
+# 1.4.0: playability `depth.` stated (gameplay), which only `default_dimension` routed before.
+version: 1.4.0
 
 # The quality dimensions, as the quality-finding schema enumerates them.
 dimensions: [content, level-design, difficulty, progression, gameplay, art-2d, environment-3d, lighting-material, ui, audio, feel, store-copy, platform]
@@ -105,6 +106,9 @@ producers:
       difficulty.: difficulty
       idle.grace: difficulty
       progression.: progression
+      # depth.session_length, depth.ramp, depth.stall: play that stops, or does not ask for
+      # more as it goes, is the game loop's.
+      depth.: gameplay
       act.acknowledged: feel
       start.objective: ui
       restart.works: ui

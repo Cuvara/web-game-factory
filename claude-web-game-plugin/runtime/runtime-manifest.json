@@ -466,7 +466,7 @@
     "workspace/config/mcp-playwright-localhost.json": "sha256:e869dd3ea79da1e1f54e712466d66bf030b97b18c6b0a1c12086aeca9d3eabc2",
     "workspace/config/portfolio.yaml": "sha256:09eeef4557bc29982014c7cdf74562677924e0375acca4db21af3fb7ca21c7c5",
     "workspace/config/profiles/autonomous.yaml": "sha256:46ecdf359c8fa8962b08da25a71312f5ef0903cc7983386542df26f9799bb391",
-    "workspace/config/template.lock.json": "sha256:30c5797eb17950d0ac6073d4310839dd7ab99c799e454a9d9863d209e4798828",
+    "workspace/config/template.lock.json": "sha256:d97d3def187e0145d5e9b9a2b76075a252df067c6732bedaf1bc9490dd50288f",
     "workspace/library/fonts/alegreya-sans-sc/OFL.txt": "sha256:0677891e6a143f297350d260ad766ad33bfc18ed5fa4f213acf648d6b597ec1a",
     "workspace/library/fonts/alegreya-sans-sc/alegreya-sans-sc.woff2": "sha256:8378576cd84c568c24eb1990bb00b294f966abeea08a3c6e53c339d588b3063b",
     "workspace/library/fonts/alegreya-sans/OFL.txt": "sha256:0677891e6a143f297350d260ad766ad33bfc18ed5fa4f213acf648d6b597ec1a",

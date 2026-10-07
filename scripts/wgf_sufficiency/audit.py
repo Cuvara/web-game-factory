@@ -26,8 +26,8 @@ bar (route `develop`).
 A check is SKIPPED only when nothing it measures is claimed: no content contract (except at
 the release tier, where that is itself a failure), generated content where a unit list would
 be counted, or a tier that states no bar for it - or when what it measures could not be
-measured on the build (`content.structure` while units carry no layout geometry, only tuning
-scalars: wgf_design/layouts.py), which is UNMEASURED. A skip is never a pass.
+measured on the build (`content.structure` while units declare no layout geometry - no list
+in their `layout` entry or the layout source: wgf_design/layouts.py), which is UNMEASURED. A skip is never a pass.
 """
 
 import os
@@ -193,18 +193,17 @@ def observations(records, rules):
 # -- layouts --------------------------------------------------------------------------------
 
 def layout_of(unit, rules):
-    """The unit's layout: its content data beyond the descriptive keys, as {path: value} of
-    its leaves (array positions kept: a grid's row 3 is not its row 4; a number outside any
-    list counts only where it sits, so two units that differ only in a tuning number have
-    one layout). Only its GEOMETRY - the leaves inside a list (`geometry`) - is compared:
-    a layout of tuning scalars alone says nothing about how alike two units are."""
+    """The unit's data beyond the descriptive keys, as {path: value} of its leaves (array
+    positions kept; a number outside any list counts only where it sits). Descriptive only:
+    repetition is judged on `geometry`, the sequences of the unit's declared layout."""
     return geometry_of.leaves(unit, _descriptive(rules))
 
 
 def geometry(unit, rules, source=None):
-    """The unit's geometry (wgf_design/layouts.py): the leaves of its data inside a list, and
-    of its entry in the layout source. Empty - undetermined - for a unit of tuning scalars."""
-    return geometry_of.geometry(unit, _descriptive(rules), source)
+    """The unit's geometry (wgf_design/layouts.py): the outermost lists of its declared
+    `layout` entry and of its entry in the layout source, container names dropped. Empty -
+    undetermined - when neither declares a list; no other key of the unit counts."""
+    return geometry_of.geometry(unit, rules, source)
 
 
 def _descriptive(rules):
@@ -232,7 +231,10 @@ def _view_unit(design_unit, built=None, seen=None, rules=None, source=None):
             map(str, design_unit.get("elements") or []))
         parameters = design_unit.get("parameters") if isinstance(
             design_unit.get("parameters"), dict) else {}
-        layout = geometry({"parameters": parameters}, rules) if parameters else {}
+        layout = geometry_of.design_geometry(parameters)
+        # The design's identity of a unit (structure, elements, full parameter values): two
+        # design units equal on it are repeated whatever their geometry says.
+        identity = geometry_of.design_identity(design_unit.get("structure"), combo, parameters)
         difficulty = dict(design_unit.get("difficulty") or {})
         unit = design_unit
     else:
@@ -242,6 +244,7 @@ def _view_unit(design_unit, built=None, seen=None, rules=None, source=None):
         else:
             combo |= set(map(str, built.get("elements") or []))
         layout = geometry(built, rules, source)
+        identity = None
         difficulty = dict(design_unit.get("difficulty") or {})
         difficulty.update({k: v for k, v in (built.get("difficulty") or {}).items()
                            if _number(v) is not None})
@@ -253,7 +256,7 @@ def _view_unit(design_unit, built=None, seen=None, rules=None, source=None):
     return {"id": design_unit.get("id"), "group": unit.get("group"),
             "structure": unit.get("structure"), "objective_kind": _objective_kind(unit),
             "purpose": unit.get("purpose"), "art": [str(a) for a in unit.get("art") or []],
-            "combo": frozenset(combo), "geometry": layout,
+            "combo": frozenset(combo), "geometry": layout, "identity": identity,
             "difficulty": difficulty,
             "duration": _number(unit.get("expected_duration_s")) or 0,
             "assets": set(seen["assets"]) if seen else set(),
@@ -401,13 +404,13 @@ def _structure_problems(view, bars, threshold):
         # Tuning scalars are no evidence of identity: a unit without geometry is undetermined,
         # and while the undetermined could carry the share past the bar it is unmeasured.
         measured["unmeasured"] = (
-            f"{len(undetermined)} of {len(view)} units carry no layout geometry - their data "
-            f"are tuning scalars only ({_ids(undetermined)}), which say nothing about whether "
-            f"two units are the same - so whether at most {most:.0%} of the units repeat "
+            f"{len(undetermined)} of {len(view)} units carry no layout geometry - no list in "
+            f"their own `layout` entry or in the layout source ({_ids(undetermined)}); tuning "
+            f"scalars and other keys say nothing about whether two units are the same - so whether at most {most:.0%} of the units repeat "
             f"another (content.structure.max_repeated_layout_ratio) cannot be established: "
-            f"up to {worst:.0%} could. Ship each unit's geometry as data - in its own entry "
-            f"(e.g. `layout`) or the layout source keyed by unit id "
-            f"(content-sufficiency.yaml layout.source)")
+            f"up to {worst:.0%} could. Ship each unit's geometry as data - in its own `layout` "
+            f"entry in units.json (content-sufficiency.yaml layout.unit_key) or the layout "
+            f"source keyed by unit id (layout.source)")
     return problems, measured
 
 

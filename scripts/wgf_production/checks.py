@@ -25,6 +25,10 @@ __all__ = ["judge", "contrast_ratio", "required_assets", "served_paths", "scene_
 
 ASSETS, DEVELOP = "assets", "develop"
 
+# A text's box at least this share of the text's own colour is a field of that colour, not
+# big glyphs over a background (_Frames.text_background).
+INK_FIELD = 0.85
+
 
 def _check(cid, ok, summary, route, *, project=None, required=True, measured=None,
            expected=None, assets=None, frames=None, status=None):
@@ -185,6 +189,41 @@ class _Frames:
         at = ratios[min(len(ratios) - 1, int(float(bars.get("percentile", 0.9)) * len(ratios)))]
         return {"ratio": round(at, 2), "surround_luminance": round(surround, 4)}
 
+    def text_background(self, frame_id, box, viewport, ink, delta):
+        """The colour behind a text in `box`: the frame's dominant colour there - unless
+        that is the text's own colour (`ink`) while the box is not a field of it: big bold
+        glyphs can cover more of their box than its background does. Then the dominant
+        colour of the pixels that are not the text's. A box all but filled with the text's
+        colour (at least INK_FIELD of it) keeps it: the text cannot be told from what is
+        behind it, and contrast must say so. None when the frame cannot be read."""
+        background = self.background(frame_id, box, viewport)
+        if background is None or not ink:
+            return background
+        near = lambda rgb: max(abs(rgb[k] - ink[k]) for k in range(3)) <= delta  # noqa: E731
+        if not near(background):
+            return background
+        image = self.image(frame_id)
+        scale = image.width / float(viewport[0])
+        x0, y0 = max(0, int(box[0] * scale)), max(0, int(box[1] * scale))
+        x1 = min(image.width, int((box[0] + box[2]) * scale))
+        y1 = min(image.height, int((box[1] + box[3]) * scale))
+        step = max(1, min(x1 - x0, y1 - y0) // 24)
+        buckets, total, inked = {}, 0, 0
+        px = image.pixels
+        for y in range(y0, y1, step):
+            for x in range(x0, x1, step):
+                i = (y * image.width + x) * 4
+                rgb = (px[i], px[i + 1], px[i + 2])
+                total += 1
+                if near(rgb):
+                    inked += 1
+                    continue
+                buckets.setdefault(tuple(v >> 4 for v in rgb), []).append(rgb)
+        if not buckets or inked >= INK_FIELD * total:
+            return background
+        dominant = max(buckets.values(), key=len)
+        return [round(statistics.fmean(c[k] for c in dominant)) for k in range(3)]
+
     def text_backdrop(self, frame_id, box, viewport, ink, paint, delta):
         """What is drawn behind a DOM text, read from the frame inside its glyph `box` (CSS
         px), for what the DOM cannot tell: a nine-slice border-image, a mask, a pseudo-element
@@ -204,7 +243,7 @@ class _Frames:
         image = self.image(frame_id)
         if image is None or not box or len(box) < 4 or not viewport or not viewport[0] or not ink:
             return None
-        background = self.background(frame_id, box, viewport)
+        background = self.text_background(frame_id, box, viewport, ink, delta)
         if background is None:
             return None
         scale = image.width / float(viewport[0])
@@ -756,6 +795,8 @@ def _text_backdrop(item, ui, frames, bars):
     clutter_bar = float(bars.get("max_backdrop_clutter", 0.3))
     if measured["clutter"] > clutter_bar:
         problems.append(f"{measured['clutter']:.2f} of its box is other art (> {clutter_bar:g})")
+    if not measured["ink_distinct"]:
+        problems.append("the frame behind it is its own colour: it cannot be seen")
     run_bar = float(bars.get("max_ink_run_em", 2.0))
     decorated = any(d in str(item.get("decoration") or "")
                     for d in ("underline", "line-through", "overline"))
@@ -793,8 +834,9 @@ def ui_text(project, tests, rules, frames):
                 backdrops += 1
                 busy.extend(f"{label} on a busy backdrop: {p}" for p in problems)
             color = item.get("color")
-            background = item.get("background") or frames.background(
-                ui.get("frame"), item.get("box"), ui.get("viewport"))
+            background = item.get("background") or frames.text_background(
+                ui.get("frame"), item.get("box"), ui.get("viewport"), color,
+                float(bars.get("backdrop_delta", 40)))
             if not color or not background:
                 undetermined += 1
                 continue

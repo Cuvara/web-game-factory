@@ -319,10 +319,9 @@ async function frame(page: Page, project: string, id: string, frames: string[]):
 // element (button, [role=button], a, input) and every visible text outside one, with its
 // bounds, font size and weight, foreground colour and the opaque background behind it (the
 // element's own and its ancestors' background colours composited; null when none is opaque, or
-// one of them paints an image, a border-image, a mask or a painting pseudo-element, or another
-// element paints between the text and that background - the canvas, a picture or art shows
-// through and only the frame can tell; a control's colour, font and background are those of
-// the element drawing its text), the rectangle of its own text (`glyph_box`, where the
+// one of them up to the opaque one paints an image, a border-image, a mask or a painting
+// pseudo-element - the canvas, a picture or art shows through and only the frame can tell; a
+// control's colour, font and background are those of the element drawing its text), the rectangle of its own text (`glyph_box`, where the
 // production gate reads the frame behind it), its text-shadow and stroke colours (`paint`)
 // and its text-decoration line, whether the element's computed style equals the user-agent default for its tag
 // (read from an element of the same tag in a blank frame no page stylesheet reaches), and the
@@ -361,48 +360,23 @@ async function measureUI(page: Page): Promise<unknown> {
       }
       return false;
     };
-    // An element that draws something of its own where it lies.
-    const PAINTED = new Set(["canvas", "img", "video", "svg", "picture", "iframe", "object", "embed"]);
-    const paints = (n: Element): boolean => {
-      if (PAINTED.has(n.tagName.toLowerCase())) return true;
-      const s = getComputedStyle(n);
-      const fill = parse(s.backgroundColor);
-      return Boolean(fill && fill[3] > 0) || imagePaint(s) || pseudoPaints(n);
-    };
     // The opaque background behind the text: the background colours of the element and its
-    // ancestors composited, up to the first opaque one (the backdrop). Null - undetermined,
-    // for the frame to decide - when any of them up to the backdrop paints other than a plain
-    // colour, or when, at the text's centre, an element that is neither one of them nor inside
-    // the text paints between the text and the backdrop (a canvas, an image, a sibling tile
-    // laid under or over it).
-    const background = (el: Element, at: DOMRect | null): number[] | null => {
+    // ancestors composited, up to the first opaque one. Null - undetermined, for the frame to
+    // decide - when none is opaque, or any of them up to it paints other than a plain colour.
+    // (Another element painting under the text - a canvas behind a HUD over an opaque body -
+    // is not looked for here: the production gate reads every text's frame for its backdrop.)
+    const background = (el: Element): number[] | null => {
       const layers: RGBA[] = [];
-      const chain: Element[] = [];
-      let backdrop: Element | null = null;
       for (let n: Element | null = el; n; n = n.parentElement) {
         const style = getComputedStyle(n);
-        chain.push(n);
         if (imagePaint(style) || pseudoPaints(n)) return null;
         const bg = parse(style.backgroundColor);
         if (bg && bg[3] > 0) {
           layers.push(bg);
-          if (bg[3] >= 1) {
-            backdrop = n;
-            break;
-          }
+          if (bg[3] >= 1) break;
         }
       }
-      if (!backdrop || !layers.length) return null;
-      if (at && at.width > 0 && at.height > 0) {
-        const x = at.left + at.width / 2, y = at.top + at.height / 2;
-        if (x >= 0 && y >= 0 && x < innerWidth && y < innerHeight) {
-          for (const e of document.elementsFromPoint(x, y)) {
-            if (e === backdrop || e.contains(backdrop)) break;
-            if (chain.includes(e) || el.contains(e)) continue;
-            if (paints(e)) return null;
-          }
-        }
-      }
+      if (!layers.length || layers[layers.length - 1][3] < 1) return null;
       let out = layers[layers.length - 1];
       for (let i = layers.length - 2; i >= 0; i--) out = over(layers[i], out);
       return out.slice(0, 3).map((v) => Math.round(v));
@@ -507,7 +481,7 @@ async function measureUI(page: Page): Promise<unknown> {
         text_drawn: Boolean(((el as HTMLElement).innerText || (el as HTMLInputElement).value || "").trim()),
         box: box(r), font_px: parseFloat(faceStyle.fontSize),
         font_weight: Number(faceStyle.fontWeight) || 400,
-        color: ink(face), background: background(face, glyph ?? r), ua_default: differs.length === 0,
+        color: ink(face), background: background(face), ua_default: differs.length === 0,
         ua_differs: differs, glyph_box: glyph ? box(glyph) : null, paint: paint(face),
         decoration: faceStyle.textDecorationLine,
       });
@@ -531,7 +505,7 @@ async function measureUI(page: Page): Promise<unknown> {
       textNodes.push(parent);
       texts.push({ text: (parent.innerText || "").trim().slice(0, 60), box: box(r),
                    font_px: parseFloat(s.fontSize), font_weight: Number(s.fontWeight) || 400,
-                   color: ink(parent), background: background(parent, glyph ?? r),
+                   color: ink(parent), background: background(parent),
                    glyph_box: glyph ? box(glyph) : null, paint: paint(parent),
                    decoration: s.textDecorationLine });
     }

@@ -599,6 +599,30 @@ class ABusyBackdrop(unittest.TestCase):
         self.assertEqual(hidden["status"], "FAIL", hidden)
         self.assertTrue(hidden["measured"]["low_contrast"], hidden)
 
+    def test_big_glyphs_covering_most_of_their_box_are_not_their_background(self):
+        # A bold score whose strokes cover more of its box than the panel does: the
+        # background is the panel's colour, not the text's own.
+        text_frame(self.dir, "state-won")
+        frames = judging._Frames(self.dir)
+        image = frames.image("state-won")
+        for y in range(20, 50):
+            for x in range(20, 140):
+                if (x // 6) % 3 and y % 10 != 0:
+                    i = (y * 200 + x) * 4
+                    image.pixels[i:i + 3] = bytes(INK)
+        ink = list(INK) + [1]
+        self.assertEqual(frames.background("state-won", TEXT_BOX, [200, 100]), list(INK))
+        self.assertEqual(frames.text_background("state-won", TEXT_BOX, [200, 100], ink, 40),
+                         list(PANEL))
+        # A box all of the text's colour keeps it: the text cannot be seen on it.
+        hidden = self.text({"behind": INK})
+        frames = judging._Frames(self.dir)
+        self.assertEqual(frames.text_background("state-won", TEXT_BOX, [200, 100], ink, 40),
+                         list(INK))
+        # The DOM said ink on sand; the frame shows the text on its own colour.
+        self.assertEqual(hidden["status"], "FAIL", hidden)
+        self.assertIn("cannot be seen", " ".join(hidden["measured"]["busy_backdrop"]))
+
     def test_no_frame_is_counted_never_passed_on_the_backdrop(self):
         item = {"text": "Saves", "box": [5, 5, 40, 12], "font_px": 14, "font_weight": 400,
                 "color": [255, 255, 255, 1], "background": None}

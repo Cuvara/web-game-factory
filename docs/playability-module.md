@@ -194,9 +194,8 @@ reads these from `records_dir`:
   frame `frames/state-<name>.png`. Per state: every visible interactive element
   (`button`, `[role=button]`, `a`, `input`) with its box, font size and weight, colour, the
   opaque background behind it (own and ancestors' background colours composited; `null`
-  when none is opaque, when one of them up to it paints an image, a border-image, a mask or
-  a painting pseudo-element, or when another painting element lies between the text and it,
-  so only the frame can tell; a control's colour, font and background are those of the
+  when none is opaque, or when one of them up to it paints an image, a border-image, a mask
+  or a painting pseudo-element, so only the frame can tell; a control's colour, font and background are those of the
   element drawing its text), `glyph_box` (the rectangle of its own text, where the
   production gate reads the frame behind it), `paint` (its text-shadow and stroke colours),
   `decoration` (its text-decoration line), `ua_default` (its computed style equals the user-agent default for its tag, read from a

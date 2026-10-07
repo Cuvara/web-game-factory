@@ -790,7 +790,7 @@ class GameConfigRewrite(unittest.TestCase):
              "game_url": "https://games.example.com/neon/?v=1"},
             {"id": "gamemonetize", "profile": "gamemonetize@1.1.0", "role": "optional",
              "game_id": "gm-title_0001"},
-            {"id": "y8", "profile": "y8@1.2.0", "role": "optional"},
+            {"id": "y8", "profile": "y8@1.3.0", "role": "optional"},
         ]
         text = apply_game_config(GAME_CONFIG, dict(self.PLAN, platforms=platforms))
         self.assertEqual(yaml_load(text)["platforms"], platforms)

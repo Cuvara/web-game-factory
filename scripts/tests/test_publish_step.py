@@ -41,7 +41,7 @@ GAME_CONFIG = textwrap.dedent("""\
     build:
       output: dist
     platforms:
-      - { id: y8, profile: y8@1.2.0, role: required }
+      - { id: y8, profile: y8@1.3.0, role: required }
       - { id: yandex, profile: yandex@1.3.0, role: required }
       - { id: crazygames, profile: crazygames@1.3.0, role: required }
     """)

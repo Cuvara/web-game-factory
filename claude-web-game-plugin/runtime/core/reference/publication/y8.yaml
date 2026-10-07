@@ -14,7 +14,9 @@
 # uploaded.
 
 id: y8
-version: 2.2.0  # 2.2.0: the Y8 adapter's flow - the Studio check, create confirm, Feedback tab,
+version: 2.3.0  # 2.3.0: re-read 2026-10-07 - the Builds tab (documented), the App ID's delay, the
+                #        update rule, the bank-transfer payout threshold
+                # 2.2.0: the Y8 adapter's flow - the Studio check, create confirm, Feedback tab,
                 #        upload, Basic Info tab, save - the undocumented parts as hypotheses
 status: unverified
 docs: https://docs.y8.com/
@@ -24,6 +26,9 @@ sources:
   - {url: "https://docs.y8.com/studio/studio/", read: "2026-10-04"}
   - {url: "https://docs.y8.com/studio/create-game/", read: "2026-10-04"}
   - {url: "https://docs.y8.com/studio/overview/", read: "2026-10-04"}
+  - {url: "https://developer.y8.com/", read: "2026-10-07"}
+  - {url: "https://docs.y8.com/studio/create-game/", read: "2026-10-07"}
+  - {url: "https://docs.y8.com/studio/overview/", read: "2026-10-07"}
 
 unknowns:
   - Every Basic Info field (description, instructions, categories, tags) and its limits.
@@ -73,7 +78,13 @@ submission:
     # console shows them is a hypothesis (unknowns).
     issued_on_create:
       - {key: external_game_id, read: [{label: "Game ID"}]}
-      - {key: app_id, read: [{label: "App ID"}]}
+      - key: app_id
+        read: [{label: "App ID"}]
+        note: >
+          The Game ID is issued when the record is created (the name is the only field); the
+          App ID is issued when the game's page is first opened and may read "Not yet
+          available" until the page is refreshed (https://docs.y8.com/studio/create-game/,
+          read 2026-10-07). That text is not an id: refresh, never record it.
     # Where each issued id reaches the build: the sdk step writes the registry's ids into
     # this platform's entry in game.config.yaml, and the build is made again.
     build_config: {external_game_id: "platforms[].game_id", app_id: "platforms[].app_id"}
@@ -139,6 +150,18 @@ submission:
       target: [{role: region, name: "Feedback"}]
       basis: hypothesis
       note: Read as status evidence; quoted with a rejection.
+    - id: tab.builds
+      phase: upload_build
+      class: reversible
+      action: click
+      optional: true
+      target: [{role: tab, name: "Builds"}, {text: "Builds"}]
+      names: [Builds]
+      basis: documented
+      source: https://docs.y8.com/studio/overview/
+      note: >
+        Builds are uploaded on the game's Builds tab under My Games (read 2026-10-07).
+        Optional: a console that shows the upload field without the tab runs on.
     - id: upload.build
       phase: upload_build
       class: reversible
@@ -146,7 +169,9 @@ submission:
       value: package.file
       target: [{label: "Game file"}]
       basis: hypothesis
-      note: The build, under My Games; zip or files is unknown (unknowns).
+      note: >
+        The build, on the Builds tab (documented); the field's label and whether it takes
+        a zip or files are unknown (unknowns).
     - id: tab.basic_info
       phase: fill_metadata
       class: reversible
@@ -189,7 +214,10 @@ submission:
     - id: declare.payout
       phase: human_fields
       class: human
-      note: YMP (50% share, PayPal or bank payout and tax details) or AFP via Google - a commercial choice.
+      note: >
+        YMP (50% of eligible ad revenue; payout from USD 100 by PayPal or from USD 500 by
+        bank transfer, within 10 business days of invoice acceptance) or AFP via Google - a
+        commercial choice (https://developer.y8.com/, read 2026-10-07).
     - id: review.request
       phase: request_review
       class: irreversible
@@ -221,4 +249,10 @@ submission:
     - rule: Copied, misleading, low-quality, repeatedly reskinned or mass-generated games may be rejected.
       source: https://developer.y8.com/
     - rule: Review feedback appears in the game's Feedback tab; resubmission cooldowns grow with each rejection.
+      source: https://developer.y8.com/
+    - rule: An update is a new build uploaded through the portal; it is reviewed before it replaces the live version (read 2026-10-07).
+      source: https://developer.y8.com/
+    - rule: Every game must be connected to a Studio; Studios must not be created to dodge restrictions (read 2026-10-07).
+      source: https://docs.y8.com/studio/create-game/
+    - rule: The SDK requirements the Developer Portal shows for the game (ads, cloud saves, leaderboards, achievements) are completed - a per-game checklist behind the login, UNKNOWN to the Factory (read 2026-10-07).
       source: https://developer.y8.com/

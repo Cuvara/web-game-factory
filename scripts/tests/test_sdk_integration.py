@@ -1137,12 +1137,12 @@ class Commits(SdkCase):
         make_repo(self.repo)
         base = self.head()
         plan = self.tech_plan({"id": "yandex", "profile": "yandex@1.3.0", "role": "required"},
-                              {"id": "y8", "profile": "y8@1.2.0", "role": "optional"})
+                              {"id": "y8", "profile": "y8@1.3.0", "role": "optional"})
         result = self.execute(prototype_report=prototype_at(base), tech_plan=plan)
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
         with open(os.path.join(self.repo, "game.config.yaml"), encoding="utf-8") as handle:
             after = handle.read()
-        self.assertIn("  - { id: y8, profile: y8@1.2.0, role: optional, game_id: y8-4711, "
+        self.assertIn("  - { id: y8, profile: y8@1.3.0, role: optional, game_id: y8-4711, "
                       "app_id: app-0042 }\n", after)
         self.assertIn("  - { id: yandex, profile: yandex@1.3.0, role: required }\n", after)
         self.assertIn("game.config.yaml",

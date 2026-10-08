@@ -426,10 +426,12 @@ def _evaluate(layer, criterion, loaded, evidence_by_type, tier, references, defe
             isinstance(c, dict) and _matches(c.get("id"), evaluate.get("checks"))
             for c in report.get("checks") or []):
         return None
-    if evaluate.get("required_only") == REQUIRED_PASSED and evaluate.get("applies") ==             APPLIES_REPORTED and not any(
+    if (evaluate.get("required_only") == REQUIRED_PASSED
+            and evaluate.get("applies") == APPLIES_REPORTED
+            and not any(
                 isinstance(c, dict) and _matches(c.get("id"), evaluate.get("checks"))
                 and (c.get("required") or c.get("status") == "PASS")
-                for c in report.get("checks") or []):
+                for c in report.get("checks") or [])):
         # Every check it reads is one the producer does not hold at this run's strength,
         # and none passed: the producer's own WARNINGs say so; nothing applies here.
         return None

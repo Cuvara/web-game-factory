@@ -35,8 +35,10 @@ from wgflib import (agentenv, build_scope, check_strength, checkout, genre_model
                     provenance)
 from wgflib.netguard import BROWSER_BYPASS, BROWSER_PROXY_VAR, RefusingProxy, sandbox_env
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+from wgflib.workflow import references as pinned_references
 from wgflib.workflow.quality import run_tier
 from wgflib.yamllite import YamlError, load_file
+from wgflib.yamllite import load as load_yaml
 
 from wgf_design import commitments, existing, layouts
 from wgf_design.content import quality_tier
@@ -57,11 +59,27 @@ SESSION_MARGIN_S = 45
 
 
 
-def _viewports(path=None):
+# The bars a run is held to as it pinned them when it started (new-game
+# `pinned_references`): a resume on an updated Factory plays and judges the same way.
+RULES_REF = "core/reference/visual-quality.yaml"
+REALISM_REF = "core/reference/play-realism.yaml"
+
+
+def pinned_yaml(context, relpath):
+    """A reference file as the run pinned it (the live file for a run that pinned none).
+    Raises references.PinError when the run's copy is gone or was edited."""
+    text, _digest, _pinned = pinned_references.read(
+        relpath, getattr(context, "environment", None), getattr(context, "run_dir", None))
+    return load_yaml(text)
+
+
+def _viewports(path=None, rules=None):
     """((id, width, height, device), ...) - the viewports the bot plays on, from
-    core/reference/visual-quality.yaml `viewports`. Never defaulted in code."""
+    core/reference/visual-quality.yaml `viewports` (`rules`: that file already read).
+    Never defaulted in code."""
     found = []
-    for entry in (load_file(path or RULES_PATH) or {}).get("viewports") or []:
+    data = rules if rules is not None else load_file(path or RULES_PATH)
+    for entry in (data or {}).get("viewports") or []:
         if isinstance(entry, dict) and entry.get("id"):
             found.append((str(entry["id"]), int(entry["width"]), int(entry["height"]),
                           str(entry.get("device") or "Desktop Chrome")))
@@ -161,6 +179,13 @@ class PlayabilityStep(WorkflowStep):
     type = "playability"
     clock = staticmethod(_utc_now)
 
+    def _run_viewports(self):
+        """The viewports of the bars this run pinned (set by execute), else the live file's."""
+        return getattr(self, "_viewports", None) or VIEWPORTS
+
+    def _projects(self):
+        return tuple(v[:3] for v in self._run_viewports())
+
     def execute(self, inputs, context):
         missing = [t for t in REQUIRED_INPUTS if t not in inputs]
         if missing:
@@ -188,7 +213,15 @@ class PlayabilityStep(WorkflowStep):
         if not os.path.isdir(os.path.join(located, ".git")):
             return StepResult.blocked(f"no game checkout at {located}")
 
-        rules = load_rules()
+        try:
+            rules = pinned_yaml(context, RULES_REF)
+            self._viewports = _viewports(rules=rules)
+        except pinned_references.PinError as exc:
+            return StepResult.blocked(
+                f"the visual-quality bars this run started under cannot be read ({exc}): no "
+                "build is played against bars edited after the start")
+        except (YamlError, ValueError) as exc:
+            return StepResult.blocked(f"the visual-quality bars could not be read ({exc})")
         experience_rules = load_experience_rules()
         try:
             # The bars the content, difficulty and depth checks read: design-depth.yaml's
@@ -204,13 +237,17 @@ class PlayabilityStep(WorkflowStep):
             ramp_tiers = self._built_tiers(context, design, self.params)
             # The play-realism bars (core/reference/play-realism.yaml): what physics, naive play,
             # level geometry and the console are held to, and how hard at the run's tier.
-            realism_rules = realism.load_rules()
+            realism_rules = pinned_yaml(context, REALISM_REF)
             tier = (run_tier(getattr(context, "environment", None))
                     or quality_tier(design, None)[0])
             strength = realism.strength_for(
                 realism_rules, tier,
                 held=lambda cid: self._unmeasured_held(context, design, cid))
             accepted, accepted_error = self._accepted_play(self.params)
+        except pinned_references.PinError as exc:
+            return StepResult.blocked(
+                f"the play-realism bars this run started under cannot be read ({exc}): no "
+                "build is judged against bars edited after the start")
         except (OSError, YamlError, ValueError) as exc:
             return StepResult.blocked(
                 f"the genre model and depth bars could not be read ({exc}): nothing can be held "
@@ -267,7 +304,7 @@ class PlayabilityStep(WorkflowStep):
             judged["_idle_ms"] = settings["idle_ms"]
             judged["_truncated"] = truncated
             checks, frames, projects, played = [], [], [], {}
-            for project, width, height in PROJECTS:
+            for project, width, height in self._projects():
                 records = self._records(os.path.join(out, project))
                 played[project] = records
                 frames_dir = os.path.join(out, project, "frames")
@@ -689,7 +726,8 @@ class PlayabilityStep(WorkflowStep):
         with open(os.path.join(repo, "playwright.wgf-play.config.ts"), "w", encoding="utf-8") as h:
             retries = max(0, int((settings.get("environment") or {}).get("max_attempts") or 1) - 1)
             h.write(CONFIG.format(port=port, proxy_var=BROWSER_PROXY_VAR, bypass=BROWSER_BYPASS,
-                                  retries=retries).replace("__WGF_PROJECTS__", projects_config()))
+                                  retries=retries).replace("__WGF_PROJECTS__",
+                                                           projects_config(self._run_viewports())))
         config_path = os.path.join(out, "settings.json")
         os.makedirs(out, exist_ok=True)
         with open(config_path, "w", encoding="utf-8") as handle:
@@ -820,7 +858,7 @@ class PlayabilityStep(WorkflowStep):
             "commit": commit,
             "measurement_class": "automation-bot",
             "projects": projects or [{"id": p, "viewport": {"width": w, "height": h}, "ran": False}
-                                     for p, w, h in PROJECTS],
+                                     for p, w, h in self._projects()],
             "checks": checks,
             "frames": frames,
             "records_dir": records_dir,

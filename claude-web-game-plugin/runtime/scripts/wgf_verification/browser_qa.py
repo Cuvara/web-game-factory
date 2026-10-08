@@ -16,7 +16,12 @@ are required where the run's quality-tier class is in `quality_required_at` (the
 class, as shipped) and are WARNINGs elsewhere; `advisory` checks are never required. A check
 that measured nothing is never a PASS: BLOCKED where it is required and the measurement was
 possible (the spec did not run, the host was degraded on every attempt), a WARNING where the
-game has nothing of that kind to measure (no pause control, no mute control).
+game has nothing of that kind to measure (no pause control, no mute control). A check the
+build could have been measured on but whose data it OMITS - the play probe reports no
+gameplay-critical entity, or no audio level; the bundle ships no runtime manifest - is held
+as core/reference/quality-policy.yaml `skipped_checks` says (wgflib.check_strength): at a tier
+whose class is under `not_passed_at` (release) it is BLOCKED and required, never a note the
+quality floor could pass over; elsewhere a WARNING.
 
 Timing checks re-use the playability bot's host-health judgement
 (wgf_playability.analysis.environment_health, with visual-quality.yaml `environment`): a
@@ -32,9 +37,11 @@ import socket
 import statistics
 import struct
 
-from wgflib import paths
+from wgflib import check_strength, paths
 from wgflib.netguard import BROWSER_BYPASS, BROWSER_PROXY_VAR
+from wgflib.workflow import references as pinned_references
 from wgflib.workflow.quality import run_tier
+from wgflib.yamllite import load as load_yaml
 from wgflib.yamllite import load_file
 
 from .model import BLOCKED, FAIL, PASS, WARNING, Check, Evidence
@@ -94,17 +101,44 @@ export default defineConfig({{
 
 # -- the contract -------------------------------------------------------------------------
 
-def load_contract(path=None):
-    contract = load_file(path or CONTRACT_PATH)
+CONTRACT_REF = "core/reference/browser-qa.yaml"
+REFERENCED = ("environment", "muted_level")
+
+
+def pinned_reader(context):
+    """read(relpath) -> parsed YAML as the run pinned it (new-game `pinned_references`),
+    the live file for a run that pinned none. Raises references.PinError when the run's copy
+    is gone or was edited after the start."""
+    environment = getattr(context, "environment", None) if context is not None else None
+    run_dir = getattr(context, "run_dir", None) if context is not None else None
+
+    def read(relpath):
+        text, _digest, _pinned = pinned_references.read(relpath, environment, run_dir)
+        return load_yaml(text)
+    return read
+
+
+def load_contract(path=None, reader=None):
+    """The browser-QA contract. With `reader` (pinned_reader), the run's pinned copy, and
+    the values it reads from other reference files resolved through the same reader."""
+    contract = reader(CONTRACT_REF) if reader is not None else load_file(path or CONTRACT_PATH)
     if not isinstance(contract, dict) or not contract.get("checks"):
         raise ValueError(f"{paths.display(path or CONTRACT_PATH)} has no checks")
+    if reader is not None:
+        contract = dict(contract)
+        contract["_resolved"] = {key: _referenced(contract, key, reader) for key in REFERENCED
+                                 if contract.get(key)}
     return contract
 
 
-def _referenced(contract, key):
+def _referenced(contract, key, reader=None):
     """A value the contract reads from another reference file ({file, path})."""
+    resolved = contract.get("_resolved") or {}
+    if key in resolved:
+        return resolved[key]
     ref = contract.get(key) or {}
-    data = load_file(os.path.join(paths.REFERENCE, ref["file"]))
+    data = (reader("core/reference/" + ref["file"]) if reader is not None
+            else load_file(os.path.join(paths.REFERENCE, ref["file"])))
     for part in ref.get("path") or ():
         data = (data or {}).get(part)
     return data
@@ -270,14 +304,14 @@ def _hard_profiles(session):
 def check_browser(session):
     """The verify step's browser-QA group: run the spec, then judge its records."""
     try:
-        contract = load_contract()
-    except (OSError, ValueError) as exc:
+        contract = load_contract(reader=pinned_reader(session.context))
+    except (OSError, ValueError, pinned_references.PinError) as exc:
         return [session.record(Check(RUN_CHECK, "gameplay", "Browser QA ran", BLOCKED,
                                      message=f"the browser-QA contract cannot be read: {exc}",
                                      evidence=[Evidence("file", str(exc),
                                                         path=paths.display(CONTRACT_PATH))]))]
     mode = str(session.params.get("browser_qa") or "auto")
-    _tier, klass = tier_class(session.context, session.config)
+    tier, klass = tier_class(session.context, session.config)
     hard = _hard_profiles(session)
     if mode == "off":
         # Never a silent pass: switching browser QA off leaves every check it owns unmeasured.
@@ -317,7 +351,7 @@ def check_browser(session):
                                evidence=run_evidence))
     bundle = scan_bundle(session.path(session.output_dir))
     checks = judge(records, contract, klass=klass, hard_profiles=hard, bundle=bundle,
-                   records_path=f"{WORK_DIR}/out")
+                   records_path=f"{WORK_DIR}/out", tier=tier)
     session.browser_qa = {"records": records, "checks": checks, "bundle": bundle}
     return [run] + [session.record(c) for c in checks]
 
@@ -358,9 +392,10 @@ def scan_bundle(directory):
 # -- judging ------------------------------------------------------------------------------
 
 class _Judge:
-    def __init__(self, contract, klass, hard_profiles, bundle, records_path):
+    def __init__(self, contract, klass, hard_profiles, bundle, records_path, skip=None):
         self.contract = contract
         self.klass = klass
+        self.skip = skip if skip is not None else omission_policy(None, klass)
         self.hard = set(hard_profiles or ())
         self.bars = contract.get("bars") or {}
         self.defs = {c["id"]: c for c in contract.get("checks") or []}
@@ -382,6 +417,13 @@ class _Judge:
             status = FAIL if required else WARNING
         elif verdict == "blocked":
             status = BLOCKED if required else WARNING
+        elif verdict == "omitted":
+            # The build omits what the check reads: held like a skipped check at this tier.
+            required = definition.get("tier") != "advisory" and self.skip.required(
+                f"browser.{cid}", steps=("verify",))
+            status = BLOCKED if required else WARNING
+            if required:
+                message = f"{message} - {self.skip.describe()}"
         else:
             status, required = WARNING, False
         check_id = f"browser.{cid}" + (f":{viewport}" if viewport else "")
@@ -669,7 +711,7 @@ class _Judge:
             return
         seen = [e for sample in samples for e in sample or []]
         if not seen:
-            self.emit("ui-covers-play", vid, "unmeasured", "the probe reported no visible "
+            self.emit("ui-covers-play", vid, "omitted", "the probe reported no visible "
                       "gameplay-critical entity during play")
             return
         persist = max(1, int((self.bars.get("layout") or {}).get("min_cover_samples", 1)))
@@ -846,7 +888,7 @@ class _Judge:
                       (vp.get("started") or {}).get("playing_ms") is not None else "unmeasured",
                       f"the page was not hidden during play on {vid}")
         elif hidden.get("audio_hidden") is None:
-            self.emit("audio-hidden", None, "unmeasured", "the play probe reports no audio")
+            self.emit("audio-hidden", None, "omitted", "the play probe reports no audio")
         else:
             before = _level(hidden.get("audio_before"))
             after = _level(hidden.get("audio_hidden"))
@@ -936,9 +978,9 @@ class _Judge:
             self.emit("audio-loudness", None, "blocked", f"not measured: {clips_record.get('error')}")
             return
         if clips.get("manifest") != 200:
-            self.emit("audio-clips", None, "unmeasured", f"no runtime manifest (assets.json: "
+            self.emit("audio-clips", None, "omitted", f"no runtime manifest (assets.json: "
                       f"{clips.get('manifest')})")
-            self.emit("audio-loudness", None, "unmeasured", "no runtime manifest")
+            self.emit("audio-loudness", None, "omitted", "no runtime manifest")
             return
         listed = clips.get("clips") or []
         broken = [f"{c.get('id')} ({c.get('error') or c.get('status')})" for c in listed
@@ -1094,10 +1136,21 @@ def gated_loudness(blocks_db, gate):
     return round(10 * math.log10(sum(powers) / len(powers)), 2)
 
 
+def omission_policy(tier, klass):
+    """The skipped-check rule (wgflib.check_strength) for the run's quality tier; with no
+    tier known, from its class alone (strict when the class is under `not_passed_at`)."""
+    if tier is not None:
+        return check_strength.for_tier(tier, QUALITY_POLICY)
+    block = (load_file(QUALITY_POLICY) or {}).get("skipped_checks") or {}
+    strict = klass is not None and klass in (block.get("not_passed_at") or ())
+    return check_strength.SkipPolicy(None, klass, strict, block.get("optional") or ())
+
+
 def judge(records, contract, *, klass=None, hard_profiles=(), bundle=None,
-          records_path=WORK_DIR + "/out", action_audio=None, design=None):
+          records_path=WORK_DIR + "/out", action_audio=None, design=None, tier=None):
     """Every check of the contract, from the spec's records: a list of Check."""
-    j = _Judge(contract, klass, hard_profiles, bundle, records_path)
+    j = _Judge(contract, klass, hard_profiles, bundle, records_path,
+               skip=omission_policy(tier, klass))
     viewports = contract.get("viewports") or []
     outcome_viewports = (contract.get("outcomes") or {}).get("viewports") or []
     for v in viewports:

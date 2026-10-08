@@ -85,26 +85,41 @@ def _utc_now():
 _REGISTRY = {}
 
 
-def _guard(found):
+def _registry(context=None):
+    """{"tiers", "lessons"} as the run pinned them (new-game `pinned_references`), the live
+    files for a run that pinned none; cached by content. None when they cannot be read."""
+    from wgf_quality import registry
+    from wgflib.workflow import references
+    from wgflib.yamllite import load as load_yaml
+    environment = getattr(context, "environment", None) if context is not None else None
+    run_dir = getattr(context, "run_dir", None) if context is not None else None
+    texts = {}
+    for key, relpath in (("tiers", registry.TIERS_FILE), ("lessons", registry.LESSONS_FILE)):
+        text, digest, _pinned = references.read(relpath, environment, run_dir)
+        texts[key] = (text, digest)
+    cache_key = tuple(d for _t, d in texts.values())
+    if cache_key not in _REGISTRY:
+        _REGISTRY[cache_key] = {key: load_yaml(text) for key, (text, _d) in texts.items()}
+    return _REGISTRY[cache_key]
+
+
+def _guard(found, context=None):
     """Each finding whose source check a lesson names carries the lesson as `guarded_by`
-    (wgf_quality.registry.guards). Best effort: a registry that cannot be read guards
-    nothing, and never stops a triage."""
-    if "data" not in _REGISTRY:
-        try:
-            from wgf_quality import registry
-            _REGISTRY["data"] = registry.load()
-            _REGISTRY["guards"] = registry.guards
-        except Exception:  # noqa: BLE001 - knowledge is advisory here; routing is not
-            _REGISTRY["data"] = None
-    data = _REGISTRY.get("data")
+    (wgf_quality.registry.guards), from the lessons and tiers the run pinned. Best effort: a
+    registry that cannot be read guards nothing, and never stops a triage."""
+    try:
+        from wgf_quality import registry
+        data = _registry(context)
+    except Exception:  # noqa: BLE001 - knowledge is advisory here; routing is not
+        return
     if not data:
         return
     for finding in found or []:
         if not isinstance(finding, dict):
             continue
         source = finding.get("source") or {}
-        guards = _REGISTRY["guards"](data["lessons"], data["tiers"], source.get("producer"),
-                                     source.get("check"))
+        guards = registry.guards(data["lessons"], data["tiers"], source.get("producer"),
+                                 source.get("check"))
         if guards:
             finding["guarded_by"] = guards
 
@@ -487,7 +502,7 @@ class TriageStep(WorkflowStep):
             routing_version=life.get("routing_version") or routing.version,
             build_of=life.get("build_of") or (lambda kind: {"commit": commit, "digest": None}),
             handed=life.get("handed"))
-        _guard(findings)
+        _guard(findings, context)
         candidates = _lesson_candidates(_load(inputs, "triage-report"), life.get("proto"))
         body = {
             "provenance": provenance.build(

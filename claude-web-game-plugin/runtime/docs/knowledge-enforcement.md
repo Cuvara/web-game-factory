@@ -616,6 +616,27 @@ promote), not the principle - the principle rests on the real games' content and
 The trace is held against the knowledge the author's request carried (`given_knowledge`),
 never against knowledge resolved again from the finished design.
 
+**A real fresh session (2026-10-08).** The test above is deterministic. Once, by hand, the same
+question was asked of a real agent host: two fresh projects (their own `WGF_PROJECT_DIR`, no run
+or file of Session A's, no conversation), one brief - a 2D platformer with springs, crumbling
+platforms, moving logs, spikes and wind - and `wgf new-game "IDEA"`, with only the design
+author a real headless agent session (`--no-session-persistence`, a USD 8 cap) and the run
+held at G3, so nothing was built:
+
+| Factory | What happened |
+|---|---|
+| this branch (lessons 2.1.0) | The request carried the 27 rules that apply, L29 with its principle, anti-pattern and checks. The agent folded the basic hazards into the opener, debuted one element in each of eight later levels and none in the climaxes, and traced L29 to those eight levels and both checks. The design passed (`content.introductions_one_at_a_time`: none debuts more than one; `knowledge.trace_matches_design`: 13 entries, none contradicted); the knowledge-contract pins L29 at its revision and digest, `why_applicable: [global]`, blocking, with the trace. |
+| main before K5 (lessons 2.0.1) | The first draft also paced one element per level but one (its second level debuted two). No trace. |
+
+What it shows: the knowledge reached a session that knew nothing of where it came from,
+through the resolver, the request and the pinned contract, and was applied, recorded and
+checked. What it does not show: a better game - a capable model paced this brief almost as
+well unprompted; L29's value is that a violation cannot pass. Nothing was built or played.
+The experiment also found two defects of the agent author, fixed here: a foreign-mechanic
+breach named only the lexicon id (`gate`), not the design mechanic it was read from
+("checkpoint flags"), and a repair round's problems were only inside a request of hundreds of
+kilobytes that agents did not read whole - they are now also in the prompt.
+
 ## What is not here yet
 
 This is units K1 (the model and resolver), K2 (the run: the snapshot, the pins, the

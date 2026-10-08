@@ -275,7 +275,7 @@
     "scripts/wgf_init/tooling.py": "sha256:94a3dfe2a5c80974578b2301cca5b423cdc61aa6c0f986d6f118c28db00d0260",
     "scripts/wgf_knowledge/__init__.py": "sha256:36c83f28ecfb81cfd5bb4fb3401be71539a15c02bb18ea2386dde3614ada5756",
     "scripts/wgf_knowledge/cli.py": "sha256:8c2f785edc57ab211e1cb0f5e422816031f532990fe6a93ff196ab7314b2384b",
-    "scripts/wgf_knowledge/model.py": "sha256:da661809981e01ddccbe6f0abb4a08613dfac1f4ad91ddf9bbe29c67b30d6760",
+    "scripts/wgf_knowledge/model.py": "sha256:ecd7b381f7a019694f7a23c1f6216f388cd4451362249af63134a54dc9b8c30c",
     "scripts/wgf_knowledge/resolve.py": "sha256:22dec99059b5425f81053abdedea4ee40bf127f324b6029f58176121dca357f5",
     "scripts/wgf_knowledge/versions.py": "sha256:5a8e7e5c8a8c9b201fdf2aa8d8dd3d88c6776e09836b0d4393370af5725d4ebd",
     "scripts/wgf_listing/__init__.py": "sha256:3a0676d1b6a25f08b86027fac095119b57452106b71284579ad9d3e04f6e517e",

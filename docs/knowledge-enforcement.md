@@ -163,7 +163,10 @@ Deprecation never takes a rule out of a run silently. A lesson superseded by a s
 carried by the successor, which must be at least as strong, hold every check, and cover the
 scope (the weakening check follows the chain). A lesson retired with only a `reason` stays in
 every run it applied to as `recommended`: listed, reported, with the reason in its
-`why_applicable` - never blocking - and the weakening check reports the drop.
+`why_applicable` - never blocking - and the weakening check reports the drop. For a rule
+that was blocking or required that drop is an integrity error in CI (`WGF_KNOWLEDGE_STRICT=1`):
+reason-only deprecation does not retire a strong rule. Only an equally strong successor, or a
+person accepting the failing check in review, retires it.
 
 ## Exceptions: a person's, explicit and expiring
 

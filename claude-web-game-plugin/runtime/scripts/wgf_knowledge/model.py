@@ -485,8 +485,9 @@ def weakening_problems(previous, current, previous_checks, current_checks=None):
         the window widened.
 
     A lesson deprecated with only a reason is held as advisory in every run it applied to
-    (run_level), visibly, and never blocks - the explicit, reviewed way to retire a rule
-    without a successor. Against a 1.x file only deletions are checked: it had no levels
+    (run_level), visibly, and never blocks; for a rule that was blocking or required the
+    drop is reported here as a weakening (an integrity error in strict CI), so only an
+    equally strong successor or a person accepting the failing check retires it. Against a 1.x file only deletions are checked: it had no levels
     or scopes to weaken."""
     if not isinstance(previous, dict) or not isinstance(current, dict):
         return []

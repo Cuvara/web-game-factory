@@ -42,7 +42,7 @@ from wgf_design import commitments, existing, layouts
 from wgf_design.content import quality_tier
 from wgf_design.experience import load_rules as load_experience_rules
 
-from . import analysis
+from . import analysis, realism
 
 __all__ = ["PlayabilityStep", "RULES_PATH", "BOT_SPEC", "FAIL_ROUTE", "RECORDS", "PROJECTS"]
 
@@ -55,10 +55,27 @@ REQUIRED_INPUTS = ("prototype-report", "game-design", "scaffold-record")
 # beat (a new best, a unit cleared) is seen rather than cut off at the bar.
 SESSION_MARGIN_S = 45
 
-PROJECTS = (("desktop", 1280, 720), ("mobile", 393, 851))
+
+
+def _viewports(path=None):
+    """((id, width, height, device), ...) - the viewports the bot plays on, from
+    core/reference/visual-quality.yaml `viewports`. Never defaulted in code."""
+    found = []
+    for entry in (load_file(path or RULES_PATH) or {}).get("viewports") or []:
+        if isinstance(entry, dict) and entry.get("id"):
+            found.append((str(entry["id"]), int(entry["width"]), int(entry["height"]),
+                          str(entry.get("device") or "Desktop Chrome")))
+    if not found:
+        raise ValueError(f"{RULES_PATH} lists no viewports")
+    return tuple(found)
+
+
+VIEWPORTS = _viewports()
+# (id, width, height) per viewport, as the report lists them.
+PROJECTS = tuple(v[:3] for v in VIEWPORTS)
 # The bot's records per viewport (bot.spec.ts): <out>/<project>/<name>.json.
 RECORDS = ("first-session", "act", "win", "lose", "pause", "traverse", "persist", "session",
-           "ramp", "showcase", "survey")
+           "ramp", "showcase", "survey", "naive", "risk")
 # How the survey is run (`survey`), and which entity roles carry a kind (`probe`): read by
 # the content-sufficiency step too, which counts what the survey recorded.
 SUFFICIENCY_PATH = os.path.join(paths.REFERENCE, "content-sufficiency.yaml")
@@ -100,8 +117,7 @@ export default defineConfig({{
   reporter: [["line"]],
   use: {{ baseURL: "http://localhost:{port}", launchOptions: {{ args: gl }}, ...proxy }},
   projects: [
-    {{ name: "desktop", use: {{ ...devices["Desktop Chrome"], viewport: {{ width: 1280, height: 720 }} }} }},
-    {{ name: "mobile", use: {{ ...devices["Pixel 5"] }} }},
+__WGF_PROJECTS__
   ],
   webServer: {{
     command: "pnpm preview --port {port} --strictPort",
@@ -130,6 +146,15 @@ def _sha256(path):
 
 def load_rules(path=None):
     return load_file(path or RULES_PATH)
+
+
+def projects_config(viewports=None):
+    """The Playwright `projects` entries of the generated config, one per viewport."""
+    lines = []
+    for vid, width, height, device in viewports or VIEWPORTS:
+        lines.append(f'    {{ name: {json.dumps(vid)}, use: {{ ...devices[{json.dumps(device)}], '
+                     f'viewport: {{ width: {width}, height: {height} }} }} }},')
+    return "\n".join(lines)
 
 
 class PlayabilityStep(WorkflowStep):
@@ -177,10 +202,21 @@ class PlayabilityStep(WorkflowStep):
             unmeasured_held = {cid: why for cid in analysis.EVIDENCE
                                if (why := self._unmeasured_held(context, design, cid))}
             ramp_tiers = self._built_tiers(context, design, self.params)
+            # The play-realism bars (core/reference/play-realism.yaml): what physics, naive play,
+            # level geometry and the console are held to, and how hard at the run's tier.
+            realism_rules = realism.load_rules()
+            tier = (run_tier(getattr(context, "environment", None))
+                    or quality_tier(design, None)[0])
+            strength = realism.strength_for(
+                realism_rules, tier,
+                held=lambda cid: self._unmeasured_held(context, design, cid))
+            accepted, accepted_error = self._accepted_play(self.params)
         except (OSError, YamlError, ValueError) as exc:
             return StepResult.blocked(
                 f"the genre model and depth bars could not be read ({exc}): nothing can be held "
                 "to them, and no bar is defaulted in code")
+        if accepted_error:
+            return StepResult.blocked(accepted_error)
         # Keyed by step: a workflow plays more than one build (greybox-playability,
         # playability), each step's visits count from 1, and this directory is emptied
         # first - one shared directory erased the greybox's frames its report cites.
@@ -219,10 +255,14 @@ class PlayabilityStep(WorkflowStep):
             if measuring:
                 settings["max_units"] = max(settings["max_units"], self._probe_max_units())
             settings.update(self._survey_settings(design, self.params))
+            settings.update(self._naive_settings(design, realism_rules, scope_tiers,
+                                                 accepted is not None))
+            settings.update(self._risk_settings(design, realism_rules, self.params, scope_tiers))
             self._keep_content_data(repo, out)
             blocked = self._play(repo, out, logs, settings, context, total_s,
                                  survey_s=settings["survey_ms"] / 1000.0,
-                                 extend_s=settings["ramp_extend_ms"] / 1000.0)
+                                 extend_s=settings["ramp_extend_ms"] / 1000.0,
+                                 realism_s=self._realism_window_s(settings))
             judged = copy.deepcopy(rules)
             judged["_idle_ms"] = settings["idle_ms"]
             judged["_truncated"] = truncated
@@ -242,7 +282,17 @@ class PlayabilityStep(WorkflowStep):
                                              ramp_required=ramp_required,
                                              ramp_tiers=ramp_tiers,
                                              unmeasured_held=unmeasured_held)
+                    # Physics, naive play and the console, held as the host allowed them to
+                    # be measured (a degraded host never softens a failure).
+                    checks += analysis._environment(
+                        realism.judge(records, design, realism_rules, project, strength,
+                                      self._built_units(design, scope_tiers), accepted),
+                        records, rules.get("environment") or {}, unmeasured_held)
                 frames += self._frames(frames_dir, project, context.run_dir)
+            # The level geometry the played commit declares: once per build, not per viewport.
+            checks += self._layout_checks(out, design, realism_rules, strength, scope_tiers)
+            # Clearance is a proxy: it blocks only a unit whose clear rate was not measured.
+            checks = realism.gate_clearance(checks, strength)
             if not blocked and not any(p["ran"] for p in projects):
                 blocked = "the bot produced no records on any viewport; see " + os.path.join(logs, "bot.log")
             records_dir = (os.path.relpath(out, context.run_dir).replace(os.sep, "/")
@@ -463,6 +513,119 @@ class PlayabilityStep(WorkflowStep):
         }
 
     @staticmethod
+    def _naive_settings(design, rules, scope_tiers=None, compare=False):
+        """The naive test's CFG (core/reference/play-realism.yaml `naive`): the units it plays
+        beside the opening one - the middle and last of the authored units the build carries,
+        entered through the probe's unit link - the policies, how they err, and how many times
+        each (more than once only to compare clear rates with an accepted build)."""
+        naive = rules.get("naive") or {}
+        _content, mode, _units = analysis.content_units(design)
+        built = PlayabilityStep._built_units(design, scope_tiers)
+        extra = (realism.naive_units(built, int(naive.get("units") or 1))
+                 if mode == "authored" else [])
+        return {
+            "naive_units": extra,
+            "naive_projects": list(naive.get("projects") or []),
+            "naive_run_ms": int((naive.get("run_s") or 0) * 1000),
+            "naive_repeats": (int((rules.get("clear_rate") or {}).get("runs") or 1)
+                              if compare else 1),
+            "naive_policies": {k: list(v or []) for k, v in (naive.get("policies") or {}).items()},
+            "naive_jitter_px": float(naive.get("jitter_px") or 0),
+            "naive_reaction_ms": int(naive.get("reaction_ms") or 0),
+            "naive_error_rate": float(naive.get("error_rate") or 0),
+            "naive_seed": int(naive.get("seed") or 1),
+        }
+
+    @staticmethod
+    def _risk_settings(design, rules, params, scope_tiers=None):
+        """The risk test's CFG (play-realism.yaml `risk`), only with `with: risk: true`: the
+        units it plays - spread across the authored units the build carries, else play from
+        the start (an empty id) - under the game's own oracle policies. Not asked: none."""
+        risk = rules.get("risk") or {}
+        if not (params or {}).get("risk"):
+            return {"risk_units": [], "risk_projects": [], "risk_policies": [],
+                    "risk_attempts": 0, "risk_attempt_ms": 0, "risk_ms": 0}
+        _content, mode, _units = analysis.content_units(design)
+        built = [u.get("id") for u in sorted(PlayabilityStep._built_units(design, scope_tiers),
+                                             key=lambda u: (u.get("index") or 0))
+                 if isinstance(u, dict) and u.get("id")]
+        count = int(risk.get("units") or 0)
+        if mode == "authored" and built:
+            units = ([built[0]] + realism.naive_units(
+                [{"id": b, "index": i} for i, b in enumerate(built)], count))[:count]
+        else:
+            units = [""]
+        return {
+            "risk_units": units,
+            "risk_projects": list(risk.get("projects") or []),
+            "risk_policies": [str(p) for p in risk.get("policies") or []],
+            "risk_attempts": int(risk.get("attempts") or 0),
+            "risk_attempt_ms": int((risk.get("attempt_s") or 0) * 1000),
+            "risk_ms": int((risk.get("total_s") or 0) * 1000),
+        }
+
+    @staticmethod
+    def _realism_window_s(settings):
+        """Seconds the naive and risk tests may take on all their viewports: every unit, under
+        at most two policies, as many times as asked, for its run plus a start; the risk test's
+        window with a start per attempt. Outside the time budget the other tests share, like
+        the showcase: a game plays exactly as long as before, and the process timeout grows."""
+        start = settings["start_timeout_ms"] / 1000.0
+        units = 1 + len(settings.get("naive_units") or [])
+        policies = max([len(v) for v in (settings.get("naive_policies") or {}).values()] or [0])
+        per_run = settings.get("naive_run_ms", 0) / 1000.0 + start + 5
+        naive = (len(settings.get("naive_projects") or []) * units * policies
+                 * int(settings.get("naive_repeats") or 1) * per_run)
+        attempts = (len(settings.get("risk_units") or []) * len(settings.get("risk_policies") or [])
+                    * int(settings.get("risk_attempts") or 0))
+        risk = (len(settings.get("risk_projects") or [])
+                * (settings.get("risk_ms", 0) / 1000.0 + attempts * (start + 2) + 60)
+                if attempts else 0)
+        return naive + risk
+
+    @staticmethod
+    def _built_units(design, scope_tiers=None):
+        """The design's content units of the tiers this build carries (all of them when the
+        tiers are not known)."""
+        if scope_tiers:
+            return analysis.content_units(design, tuple(scope_tiers))[2]
+        return analysis.content_units(design)[2]
+
+    @staticmethod
+    def _accepted_play(params):
+        """(the accepted build's naive record or clear-rate table, None) from the step's
+        `with: accepted_play` - a JSON file, absolute or under the project - else (None,
+        None); (None, why) when the file it names cannot be read."""
+        named = (params or {}).get("accepted_play")
+        if not named:
+            return None, None
+        path = str(named)
+        if not os.path.isabs(path):
+            path = os.path.join(paths.PROJECT, path)
+        try:
+            with open(path, encoding="utf-8") as handle:
+                return json.load(handle), None
+        except (OSError, ValueError) as exc:
+            return None, (f"with: accepted_play names {named}, which cannot be read ({exc}): "
+                          "the clear rates cannot be compared with the accepted build")
+
+    @staticmethod
+    def _layout_checks(out, design, rules, strength, scope_tiers=None, path=None):
+        """level.geometry, level.unit_length and level.clearance over the content data file
+        and layout source the played commit ships (copied beside the records)."""
+        content_dir = os.path.join(out, os.path.dirname(CONTENT_COPY))
+        try:
+            with open(os.path.join(out, CONTENT_COPY), encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            return []
+        contract = load_file(path or SUFFICIENCY_PATH)
+        source, _why = layouts.read_source(content_dir, data, contract)
+        return realism.judge_layouts(data, rules, strength, source,
+                                     PlayabilityStep._built_units(design, scope_tiers),
+                                     unit_key=layouts.unit_key(contract))
+
+    @staticmethod
     def _keep_content_data(repo, out, path=None):
         """Copy the commit's content data file beside the records, when it ships one, and the
         layout source it measures unit geometry on (content-sufficiency.yaml `layout.source`,
@@ -518,7 +681,7 @@ class PlayabilityStep(WorkflowStep):
         return None
 
     def _play(self, repo, out, logs, settings, context, bot_total_s=0, survey_s=0,
-              extend_s=0):
+              extend_s=0, realism_s=0):
         """Run the bot. None when it ran (whatever it found); else why it could not."""
         port = _free_port()
         os.makedirs(os.path.join(repo, "tests", "wgf-play"), exist_ok=True)
@@ -526,7 +689,7 @@ class PlayabilityStep(WorkflowStep):
         with open(os.path.join(repo, "playwright.wgf-play.config.ts"), "w", encoding="utf-8") as h:
             retries = max(0, int((settings.get("environment") or {}).get("max_attempts") or 1) - 1)
             h.write(CONFIG.format(port=port, proxy_var=BROWSER_PROXY_VAR, bypass=BROWSER_BYPASS,
-                                  retries=retries))
+                                  retries=retries).replace("__WGF_PROJECTS__", projects_config()))
         config_path = os.path.join(out, "settings.json")
         os.makedirs(out, exist_ok=True)
         with open(config_path, "w", encoding="utf-8") as handle:
@@ -550,7 +713,8 @@ class PlayabilityStep(WorkflowStep):
                   if survey_units else 0)
         timeout = int(2 * (bot_total_s or 0) + 2 * (SHOWCASE_S + 45) + 120 + survey
                       + 2 * (extend_s or 0) + 2 * self._again_s(settings)
-                      + 2 * ramp_starts * settings["start_timeout_ms"] / 1000.0)
+                      + 2 * ramp_starts * settings["start_timeout_ms"] / 1000.0
+                      + (realism_s or 0))
         try:
             run = self._run(["pnpm", "exec", "playwright", "test", "-c",
                              "playwright.wgf-play.config.ts"], repo, timeout,
@@ -576,7 +740,13 @@ class PlayabilityStep(WorkflowStep):
                    + settings.get("lose_ms", 0) + settings.get("traverse_ms", 0)
                    + 4 * settings.get("start_timeout_ms", 0)
                    + ramp_samples * (ramp_ms + settings.get("start_timeout_ms", 0)))
-        return ((attempts - 1) * windows
+        # The naive recording is made again on a degraded host too (analysis.RETRIED_RECORDS).
+        naive = (bool(settings.get("naive_projects"))
+                 * (1 + len(settings.get("naive_units") or []))
+                 * max([len(v) for v in (settings.get("naive_policies") or {}).values()] or [0])
+                 * int(settings.get("naive_repeats") or 1)
+                 * (settings.get("naive_run_ms", 0) + settings.get("start_timeout_ms", 0)))
+        return ((attempts - 1) * (windows + naive)
                 + attempts * settings.get("variety_extend_ms", 0)) / 1000.0
 
     @staticmethod

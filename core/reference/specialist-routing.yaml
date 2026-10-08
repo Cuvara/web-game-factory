@@ -154,6 +154,15 @@ producers:
       start.playable: gameplay
       win.reachable: gameplay
       lose.reachable: gameplay
+      # WS-2: version bump at integration. Play realism (core/reference/play-realism.yaml):
+      # a turn at nothing drawn, a collider unlike its sprite, a camera whose forward is not
+      # the control's and a console error are the loop's code; how hard naive play finds a
+      # unit is its difficulty; the declared geometry (bends, length, clearance) the level's.
+      physics.: gameplay
+      naive.: difficulty
+      naive.alignment: gameplay
+      level.: level-design
+      runtime.: gameplay
     acceptance: playability plays the next build and measures `{check}` PASS{bar_clause}.
 
   production-quality-report:

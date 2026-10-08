@@ -231,6 +231,51 @@ class Defects(unittest.TestCase):
         self.assertEqual(judged(self.records)["browser.win:tablet"].status, FAIL)
 
 
+class Omissions(unittest.TestCase):
+    """What the build OMITS (the probe reports no critical entity, no audio level; no runtime
+    manifest) is held like a skipped check (quality-policy.yaml skipped_checks): at the
+    release class BLOCKED and required, so the quality floor cannot pass over it; below it a
+    WARNING. A game that genuinely has none of a thing (no pause or mute control) stays a
+    WARNING at every class."""
+
+    def setUp(self):
+        self.records = healthy_records(CONTRACT)
+        self.vp = self.records["desktop-standard"]["viewport"]
+
+    def test_no_critical_entity_reported_is_blocked_at_release(self):
+        self.vp["cover"] = [[], []]
+        check = judged(self.records)["browser.ui-covers-play:desktop-standard"]
+        self.assertEqual((check.status, check.required), (BLOCKED, True))
+        check = judged(self.records, klass="development")["browser.ui-covers-play:desktop-standard"]
+        self.assertEqual((check.status, check.required), (WARNING, False))
+
+    def test_no_audio_reported_by_the_probe_is_blocked_at_release(self):
+        self.vp["hidden"]["audio_hidden"] = None
+        check = judged(self.records)["browser.audio-hidden"]
+        self.assertEqual((check.status, check.required), (BLOCKED, True))
+        check = judged(self.records, klass="development")["browser.audio-hidden"]
+        self.assertEqual((check.status, check.required), (WARNING, False))
+
+    def test_no_runtime_manifest_is_blocked_at_release(self):
+        self.records["desktop-standard"]["clips"]["clips"]["manifest"] = 404
+        checks = judged(self.records)
+        for cid in ("browser.audio-clips", "browser.audio-loudness"):
+            self.assertEqual((checks[cid].status, checks[cid].required), (BLOCKED, True), cid)
+
+    def test_a_game_with_no_pause_or_mute_control_is_a_warning_at_release(self):
+        self.vp["pause"] = {"tried": True, "paused": False, "declared": False, "how": "escape"}
+        self.vp["mute"] = {"tried": False, "reason": "no mute control"}
+        checks = judged(self.records)
+        for cid in ("browser.pause-resume:desktop-standard", "browser.audio-mute"):
+            self.assertEqual((checks[cid].status, checks[cid].required), (WARNING, False), cid)
+
+    def test_the_rule_is_the_quality_policys(self):
+        self.assertTrue(browser_qa.omission_policy(None, "release").strict)
+        self.assertFalse(browser_qa.omission_policy(None, "development").strict)
+        self.assertTrue(browser_qa.omission_policy("release", None).strict)
+        self.assertFalse(browser_qa.omission_policy("mvp", None).strict)
+
+
 class Audio(unittest.TestCase):
     def setUp(self):
         self.records = healthy_records(CONTRACT)

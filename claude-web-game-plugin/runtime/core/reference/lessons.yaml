@@ -630,7 +630,8 @@ lessons:
         - scripts/tests/test_play_realism.py::test_M1_894b4b8_is_blocked_by_its_clear_rate
       passes:
         - scripts/tests/test_play_realism.py::test_M1_the_steel_gaps_fix_is_advisory_on_clearance_at_r1_clear_rate
-      generalizes: []
+      generalizes:
+        - scripts/tests/test_knowledge_generalization.py::test_L23_clearance_catches_a_synthetic_platformer
 
   - id: L24
     title: Console errors and lost WebGL contexts were seen by no gate
@@ -676,7 +677,8 @@ lessons:
         - scripts/tests/test_browser_qa.py::test_context_menu_left_open_fails_at_release
         - scripts/tests/test_browser_qa.py::test_both_games_open_the_context_menu_at_every_viewport
       passes: []
-      generalizes: []
+      generalizes:
+        - scripts/tests/test_knowledge_generalization.py::test_L25_learned_on_A_catches_synthetic_B
 
   - id: L26
     title: Layout was judged at two viewports, never against what is played
@@ -703,7 +705,8 @@ lessons:
         - scripts/tests/test_browser_qa.py::test_overflow_clipping_overlap
         - scripts/tests/test_play_realism.py::test_the_viewports_are_data
       passes: []
-      generalizes: []
+      generalizes:
+        - scripts/tests/test_knowledge_generalization.py::test_L26_ui_covers_play_on_a_synthetic_3d_hud
 
   - id: L27
     title: Sound was checked to play, not to play when it should

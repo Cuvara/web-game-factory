@@ -30,6 +30,7 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 22. `core/reference/lessons.yaml`
 23. `core/reference/check-tiers.yaml`
 24. `core/reference/play-realism.yaml`
+25. `core/artifacts/knowledge-contract.schema.json`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.
@@ -39,6 +40,6 @@ rather than resolving it yourself.
 - Run from the factory repository root so relative core paths resolve.
 - Write artifacts to the `repo_path` given in each schema's `x-wgf` block.
 - Emit a plan before writing files; apply one patch per artifact.
-- Work the plan's tasks in dependency order and satisfy both acceptance criteria and tests. When the brief opens with blockers from code review or verification, fix those first. When it opens with *This visit* as a specialist, you are that discipline: fix only the findings it lists, read its playbooks, and write only its writable scope. Scope, monetization, platform strategy, core gameplay and architecture change only through the production change process. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job.
+- Work the plan's tasks in dependency order and satisfy both acceptance criteria and tests. When the brief opens with blockers from code review or verification, fix those first. When it opens with *This visit* as a specialist, you are that discipline: fix only the findings it lists, read its playbooks, and write only its writable scope. Scope, monetization, platform strategy, core gameplay and architecture change only through the production change process. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job. In a run, read its knowledge-contract first (`bin/wgf knowledge contract <run-id>`): the rules that apply to this title and their levels; a blocking or required rule is held by the gates on the build, never by your report. A systemic issue you find goes in your report as a lesson candidate (symptom, root cause, systemic or not) - never an edit to core/reference/lessons.yaml.
 - Do not advance the lifecycle. Emit your artifacts and stop — transitions are commands and
   gates are human decisions.

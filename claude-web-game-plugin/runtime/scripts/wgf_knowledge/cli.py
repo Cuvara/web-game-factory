@@ -20,13 +20,40 @@
         from, exceptions, regression, lessons applied and new lesson candidates. Exit 0
         PASS, 1 RELEASE_BLOCKED (enforcing or advisory alike), 2 no quality-report yet.
     wgf knowledge table [--families F,..] [--render 2d,3d] [--tiers T,..] [--platform P ...]
-                        [--json]
-        The benchmark approval table: one dry resolution per facet combination - rule counts
-        by level, experimental gaps, validators, regression tests. Nothing is started.
+                        [--profiles A,..] [--phases N,..] [--facets FILE] [--json]
+        The benchmark approval table: one dry resolution per candidate benchmark (facet
+        combination, complexity profile, roadmap phase) - rule counts by level, experimental
+        gaps, validators, regression tests, and the budget, which every row lists as requiring
+        a person's approval. Nothing is started and nothing is spent.
+    wgf knowledge ingest RUN_ID [--store DIR] [--config PATH] [--candidates FILE] [--dry-run]
+                         [--json]
+        The run's lesson candidates (prototype-report, triage-report, quality-report,
+        review-report) into workspace/lessons/candidates.yaml: schema-checked, a stated root
+        cause, de-duplicated, with the provenance of each report. A candidate whose check an
+        active lesson already holds is that lesson's regression observation. Exit 1 (nothing
+        written) when any candidate is invalid; 2 when the run store cannot be read.
+    wgf knowledge candidates [--open] [--candidates FILE] [--json]
+        The stored candidates, with their state (open, promoted, rejected) and basis.
+    wgf knowledge reject C-N --reason TEXT [--by NAME] [--candidates FILE]
+        A person rejects a candidate; it is kept, never deleted.
+    wgf knowledge promote C-N [--id L<n>] [--level L] [--check ID] [--category C]
+                          [--title TEXT] [--scope KEY=V,..] [--out FILE] [--json]
+        A PR-ready patch: the lessons.yaml entry, the evidence.yaml entry and the test stubs.
+        Writes nothing but --out; never edits core/. Exit 1 when refused - subjective
+        evidence is never drafted blocking or required.
+    wgf knowledge firewall [ID ...] [--run RUN_ID] [--kind catches|passes|generalizes]
+                           [--json]
+        The regression firewall: every lesson's (or the run's contract's) catches, passes and
+        generalizes tests, run here, one verdict per lesson. Exit 1 when one fails, is missing
+        or was skipped (a skip is never a pass). A development checkout only.
+    wgf knowledge generations [--store DIR] [--config PATH] [--json]
+        Runs compared by the Factory and knowledge versions they consumed: lessons applied,
+        satisfied, failed, excepted, verdicts; one group per generation.
 
 Also `python3 scripts/wgf-knowledge.py ...`. Exit status: 0 clean; 1 problems found (validate:
-a problem; resolve, table: a blocking or required check no workflow step validates);
-2 the command could not run (unreadable knowledge, an unknown run, a bad argument).
+a problem; resolve, table: a blocking or required check no workflow step validates; ingest,
+promote: refused; firewall: a lesson not held); 2 the command could not run (unreadable
+knowledge, an unknown run, a bad argument).
 Standard library only. See docs/knowledge-enforcement.md.
 """
 
@@ -343,44 +370,298 @@ def _split(values):
     return out
 
 
-def cmd_table(args):
-    root = _root()
-    data, checks = _load(root)
-    vocabulary = model.vocabulary(root)
+BUDGET_APPROVAL = "requires human budget approval"
+
+
+def _table_candidates(args, vocabulary):
+    """[{facets..., profile, phase, cost_estimate}] from --facets FILE, else the product of
+    the facet options (complexity profiles and roadmap phases included when given)."""
+    if args.facets:
+        from wgflib.yamllite import load as load_yaml
+        try:
+            with open(args.facets, encoding="utf-8") as handle:
+                text = handle.read()
+            try:
+                data = json.loads(text)
+            except ValueError:
+                data = load_yaml(text)
+        except (OSError, ValueError) as exc:
+            raise Unusable(f"{args.facets} cannot be read ({exc})")
+        data = data.get("candidates") if isinstance(data, dict) else data
+        if not isinstance(data, list) or not all(isinstance(e, dict) for e in data):
+            raise Unusable(f"{args.facets}: a list of candidate benchmarks (mappings), or "
+                           "`candidates:` holding one")
+        return data
     families = _split(args.families) or vocabulary["families"]
     renders = _split(args.render) or vocabulary["render"]
     tiers = _split(args.tiers) or [t for t in vocabulary["tiers"] if t != "premium"]
+    profiles = _split(args.profiles) or [None]
+    phases = _split(args.phases) or [None]
+    return [{"family": f, "render": r, "tier": t, "profile": p, "phase": n}
+            for p, n, f, r, t in itertools.product(profiles, phases, families, renders, tiers)]
+
+
+def cmd_table(args):
+    # Dry by construction: the resolver is pure, and nothing here imports the engine or a
+    # step - a benchmark is approved, and its budget granted, by a person, never by a table.
+    root = _root()
+    data, checks = _load(root)
+    vocabulary = model.vocabulary(root)
     workflow = _workflow(root)
     rows, missing = [], False
-    for family, render, tier in itertools.product(families, renders, tiers):
-        run_facets = resolver.facets(family=family, render=render, tier=tier,
-                                     platforms=args.platform)
+    for entry in _table_candidates(args, vocabulary):
+        try:
+            run_facets = resolver.facets(
+                family=entry.get("family"), genre=entry.get("genre"), render=entry.get("render"),
+                tier=entry.get("tier"), platforms=entry.get("platforms") or args.platform,
+                profile=entry.get("profile"), archetype=entry.get("archetype"))
+        except ValueError as exc:
+            raise Unusable(str(exc))
         body = resolver.resolve(data["lessons"], checks, data["tiers"], run_facets,
                                 workflow=workflow)
         missing = missing or bool(body["missing_validators"])
         rows.append({"facets": {k: v for k, v in run_facets.items() if v not in (None, [])},
+                     "phase": entry.get("phase"),
                      "counts": body["counts"],
                      "experimental_gaps": [e["id"] for e in body["experimental"]],
                      "required_validators": body["required_validators"],
                      "missing_validators": body["missing_validators"],
                      "regression_tests": len(body["regression_suite"]),
-                     "cost_estimate": "unmetered", "approved_by": None, "approved_at": None})
+                     "cost_estimate": entry.get("cost_estimate") or "unmetered",
+                     "budget": BUDGET_APPROVAL, "starts_run": False,
+                     "approved_by": None, "approved_at": None})
     if args.json:
-        _print_json({"rows": rows})
+        _print_json({"rows": rows, "budget": BUDGET_APPROVAL, "starts_run": False})
     else:
         print(f"{'facets':<34} {'blk':>3} {'req':>3} {'rec':>3} {'exp':>3} {'n/a':>3} "
-              f"{'tests':>5}  experimental gaps / validators")
+              f"{'tests':>5}  experimental gaps / validators / budget")
         for row in rows:
             facets = ",".join(f"{v if not isinstance(v, list) else '+'.join(v)}"
                               for v in row["facets"].values())
+            if row["phase"] is not None:
+                facets = f"phase {row['phase']}:{facets}"
             counts = row["counts"]
             print(f"{facets:<34} {counts['blocking']:>3} {counts['required']:>3} "
                   f"{counts['recommended']:>3} {counts['experimental']:>3} "
                   f"{counts['not_applicable']:>3} {row['regression_tests']:>5}  "
                   f"{' '.join(row['experimental_gaps']) or '-'} / "
-                  f"{' '.join(row['required_validators'])}")
-        print("approved by / date: (a person fills these in)")
+                  f"{' '.join(row['required_validators'])} / {row['cost_estimate']}, "
+                  f"{BUDGET_APPROVAL}")
+        print("Nothing was started and nothing was spent. Every profile and phase "
+              f"{BUDGET_APPROVAL}; approved by / date: (a person fills these in)")
     return EXIT_PROBLEMS if missing else EXIT_OK
+
+
+# ----------------------------------------------------------------------------- learning
+
+
+def _candidates_path(args):
+    if getattr(args, "candidates", None):
+        return os.path.abspath(args.candidates)
+    from wgflib import paths
+    from wgf_knowledge import ingest
+    return os.path.join(paths.PROJECT, *ingest.CANDIDATES_FILE.split("/"))
+
+
+def _load_candidates(args):
+    from wgf_knowledge import ingest
+    path = _candidates_path(args)
+    try:
+        return path, ingest.load_store(path)
+    except ingest.IngestError as exc:
+        raise Unusable(str(exc))
+
+
+def cmd_ingest(args):
+    from wgf_knowledge import ingest
+    from wgflib.workflow.api import WorkflowAPI
+    from wgflib.workflow.store import StoreError
+    try:
+        api = WorkflowAPI(config_path=args.config, store_dir=args.store)
+        state = api.store.load(args.run)
+        observations, problems = ingest.extract(
+            state, lambda ref: api.store.read_artifact(state.run_id, ref))
+    except (StoreError, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise Unusable(f"run {args.run}: {exc}")
+    except ingest.IngestError as exc:
+        raise Unusable(f"run {args.run}: the run store is malformed - {exc}")
+    path, store = _load_candidates(args)
+    data, _ = _load(_root())
+    updated, summary = ingest.ingest(store, observations, data["lessons"])
+    written = False
+    if not problems and not args.dry_run and updated != store:
+        ingest.write_store(path, updated)
+        written = True
+    out = dict(summary, run=state.run_id, observations=len(observations),
+               problems=problems, written=written, candidates=path)
+    if args.json:
+        _print_json(out)
+    else:
+        for problem in problems:
+            print(f"refused  {problem}")
+        print(f"{state.run_id}: {len(observations)} candidate observation(s); added "
+              f"{', '.join(summary['added']) or '-'}; merged "
+              f"{', '.join(summary['merged']) or '-'}; regression observations "
+              f"{', '.join(summary['regressions']) or '-'}; unchanged {summary['unchanged']}")
+        tail = (" (invalid candidates: fix the producer's report, or ingest nothing)"
+                if problems else " (dry run)" if args.dry_run else "")
+        print(f"{'wrote' if written else 'nothing written to'} {path}{tail}")
+    return EXIT_PROBLEMS if problems else EXIT_OK
+
+
+def _candidate_rows(store, evidence):
+    from wgf_knowledge import ingest
+    done = ingest.promoted(evidence)
+    out = []
+    for record in store["candidates"]:
+        state = "promoted" if record.get("id") in done else record.get("state")
+        out.append(dict(record, state=state, promoted_to=done.get(record.get("id"))))
+    return out
+
+
+def cmd_candidates(args):
+    path, store = _load_candidates(args)
+    data, _ = _load(_root())
+    rows = _candidate_rows(store, data.get("evidence"))
+    if args.open:
+        rows = [r for r in rows if r["state"] == "open"]
+    if args.json:
+        _print_json({"candidates": rows, "regressions": store["regressions"], "file": path})
+        return EXIT_OK
+    print(f"{path}: {len(store['candidates'])} candidate(s), "
+          f"{len(store['regressions'])} regression observation(s)")
+    for r in rows:
+        print(f"  {r['id']:<6} {r['state']:<9} {r['basis']:<10} {len(r['sources'])} source(s)  "
+              f"{r.get('proposed_check') or '-'}  {r['summary'][:80]}")
+    for r in store["regressions"]:
+        print(f"  regression of {r['lesson']} ({r['check']}) in {r['source']['run']} "
+              f"{r['source']['artifact_id']}")
+    return EXIT_OK
+
+
+def cmd_reject(args):
+    import getpass
+    from wgf_knowledge import ingest
+    path, store = _load_candidates(args)
+    try:
+        updated = ingest.reject(store, args.candidate, args.reason,
+                                args.by or getpass.getuser())
+    except KeyError:
+        raise Unusable(f"no candidate {args.candidate} in {path}")
+    except ValueError as exc:
+        raise Unusable(str(exc))
+    ingest.write_store(path, updated)
+    print(f"{args.candidate} rejected; kept in {path}")
+    return EXIT_OK
+
+
+def _scope_arg(values):
+    scope = {}
+    for value in values or ():
+        key, _, rest = str(value).partition("=")
+        if not key or not rest:
+            raise Unusable(f"--scope {value!r} is KEY=V[,V..]")
+        scope.setdefault(key.strip(), []).extend(v.strip() for v in rest.split(",") if v.strip())
+    return scope
+
+
+def cmd_promote(args):
+    from wgf_knowledge import ingest, promote
+    path, store = _load_candidates(args)
+    record = next((c for c in store["candidates"] if c.get("id") == args.candidate), None)
+    if record is None:
+        raise Unusable(f"no candidate {args.candidate} in {path}")
+    root = _root()
+    data, checks = _load(root)
+    try:
+        with open(os.path.join(root, *promote.LESSONS_PATH.split("/")),
+                  encoding="utf-8") as handle:
+            lessons_text = handle.read()
+        with open(os.path.join(root, *promote.EVIDENCE_PATH.split("/")),
+                  encoding="utf-8") as handle:
+            evidence_text = handle.read()
+    except OSError as exc:
+        raise Unusable(f"the knowledge files cannot be read ({exc})")
+    try:
+        result = promote.draft(
+            record, data["lessons"], lessons_text, evidence_text, checks,
+            model.vocabulary(root), evidence=data.get("evidence"), lesson_id=args.id,
+            level=args.level, check=args.check, category=args.category, title=args.title,
+            scope=_scope_arg(args.scope) if args.scope else None,
+            promoted=ingest.promoted(data.get("evidence")))
+    except promote.PromoteRefused as exc:
+        if args.json:
+            _print_json({"refused": str(exc)})
+        else:
+            print(f"refused  {exc}")
+        return EXIT_PROBLEMS
+    if args.out:
+        with open(args.out, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(result.patch)
+    if args.json:
+        _print_json({"lesson": result.lesson, "evidence": result.evidence,
+                     "files": sorted(result.files), "notes": result.notes,
+                     "patch": result.patch, "out": args.out})
+        return EXIT_OK
+    if not args.out:
+        sys.stdout.write(result.patch)
+    for note in result.notes:
+        print(f"# note: {note}", file=sys.stderr)
+    print("# a draft for a pull request: apply it with `git apply`"
+          + (f" {args.out}" if args.out else "")
+          + ", write the stub tests, run check-integrity and `wgf knowledge firewall "
+          f"{result.lesson['id']}`; nothing was written to core/", file=sys.stderr)
+    return EXIT_OK
+
+
+def cmd_firewall(args):
+    from wgf_knowledge import firewall
+    root = _root()
+    if args.run:
+        from wgflib.workflow.api import WorkflowAPI
+        from wgflib.workflow.store import StoreError
+        try:
+            api = WorkflowAPI(config_path=args.config, store_dir=args.store)
+            state = api.store.load(args.run)
+            ref = state.latest_of_type("knowledge-contract")
+            contract = api.store.read_artifact(state.run_id, ref) if ref is not None else None
+        except (StoreError, OSError, ValueError, KeyError) as exc:
+            raise Unusable(f"run {args.run}: {exc}")
+        if contract is None:
+            raise Unusable(f"run {args.run} has no knowledge-contract: run "
+                           "`wgf knowledge firewall` for every lesson instead")
+        lessons = firewall.suite_of(contract)
+    else:
+        data, _ = _load(root)
+        lessons = data["lessons"]
+    kinds = tuple(args.kind) if args.kind else model.TEST_KINDS
+    try:
+        report = firewall.run(lessons, root, ids=args.ids or None, kinds=kinds)
+    except firewall.FirewallUnusable as exc:
+        raise Unusable(str(exc))
+    if args.json:
+        _print_json(report)
+    else:
+        for line in firewall.render_lines(report):
+            print(line)
+    return EXIT_OK if report["verdict"] == firewall.PASS else EXIT_PROBLEMS
+
+
+def cmd_generations(args):
+    from wgf_knowledge import generations
+    from wgflib.workflow.api import WorkflowAPI
+    try:
+        api = WorkflowAPI(config_path=args.config, store_dir=args.store)
+    except (OSError, ValueError) as exc:
+        raise Unusable(str(exc))
+    entries, problems = generations.rows(api.store)
+    groups = generations.generations(entries)
+    if args.json:
+        _print_json({"runs": entries, "generations": groups, "problems": problems})
+    else:
+        for line in generations.render_lines(entries, groups, problems):
+            print(line)
+    return EXIT_OK
 
 
 def build_parser():
@@ -426,8 +707,61 @@ def build_parser():
     table.add_argument("--render", action="append", metavar="2d,3d")
     table.add_argument("--tiers", action="append", metavar="T,..")
     table.add_argument("--platform", action="append", metavar="ID")
+    table.add_argument("--profiles", action="append", metavar="A,..",
+                       help="complexity benchmark profiles (each requires budget approval)")
+    table.add_argument("--phases", action="append", metavar="N,..",
+                       help="roadmap phases (each requires budget approval)")
+    table.add_argument("--facets", metavar="FILE",
+                       help="candidate benchmarks: a list of {family, render, tier, platforms, "
+                            "profile, phase, cost_estimate}")
     table.add_argument("--json", action="store_true")
     table.set_defaults(handler=cmd_table)
+
+    def store_args(sub_parser):
+        sub_parser.add_argument("--store", metavar="DIR")
+        sub_parser.add_argument("--config", metavar="PATH")
+
+    ingest = sub.add_parser("ingest", help="a run's lesson candidates into candidates.yaml")
+    ingest.add_argument("run", metavar="RUN_ID")
+    store_args(ingest)
+    ingest.add_argument("--candidates", metavar="FILE")
+    ingest.add_argument("--dry-run", action="store_true")
+    ingest.add_argument("--json", action="store_true")
+    ingest.set_defaults(handler=cmd_ingest)
+    candidates = sub.add_parser("candidates", help="the stored lesson candidates")
+    candidates.add_argument("--open", action="store_true")
+    candidates.add_argument("--candidates", metavar="FILE")
+    candidates.add_argument("--json", action="store_true")
+    candidates.set_defaults(handler=cmd_candidates)
+    reject = sub.add_parser("reject", help="a person rejects a candidate (kept)")
+    reject.add_argument("candidate", metavar="C-N")
+    reject.add_argument("--reason", required=True)
+    reject.add_argument("--by", metavar="NAME")
+    reject.add_argument("--candidates", metavar="FILE")
+    reject.set_defaults(handler=cmd_reject)
+    prom = sub.add_parser("promote", help="a candidate drafted as a lesson: a PR-ready patch")
+    prom.add_argument("candidate", metavar="C-N")
+    prom.add_argument("--id", metavar="L<n>")
+    prom.add_argument("--level", choices=list(model.LEVELS))
+    prom.add_argument("--check", metavar="SOURCE:ID")
+    prom.add_argument("--category")
+    prom.add_argument("--title")
+    prom.add_argument("--scope", action="append", metavar="KEY=V,..")
+    prom.add_argument("--out", metavar="FILE", help="write the patch here (else stdout)")
+    prom.add_argument("--candidates", metavar="FILE")
+    prom.add_argument("--json", action="store_true")
+    prom.set_defaults(handler=cmd_promote)
+    fw = sub.add_parser("firewall", help="every lesson's regression tests, run here")
+    fw.add_argument("ids", nargs="*", metavar="ID")
+    fw.add_argument("--run", metavar="RUN_ID", help="the run's contract's regression suite")
+    store_args(fw)
+    fw.add_argument("--kind", action="append", choices=list(model.TEST_KINDS))
+    fw.add_argument("--json", action="store_true")
+    fw.set_defaults(handler=cmd_firewall)
+    gens = sub.add_parser("generations", help="runs compared by the knowledge they consumed")
+    store_args(gens)
+    gens.add_argument("--json", action="store_true")
+    gens.set_defaults(handler=cmd_generations)
     return parser
 
 

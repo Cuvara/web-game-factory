@@ -7,7 +7,7 @@
     "id": "quality-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "producer": "title:prototype",
     "consumers": [
       "title:design",
@@ -477,7 +477,7 @@
           },
           "scorecard": {
             "type": "string",
-            "description": "Added by WS-9. The scorecard line the criterion names in its own `scorecard` field, when it is not its dimension's line."
+            "description": "Added in 1.2.0. The scorecard line the criterion names in its own `scorecard` field, when it is not its dimension's line."
           },
           "basis": {
             "type": "string"
@@ -804,7 +804,7 @@
     },
     "scorecard": {
       "type": "object",
-      "description": "Added by WS-9. The same criteria read per discipline a person judges a game by (core/reference/quality-floor.yaml `scorecard`): gameplay, game feel, level design, 2D art, 3D art, UI/UX, audio, performance, technical integrity, accessibility and readability, platform compliance, publishing readiness - each with its own score - and every hard blocker listed on its own. A line with a blocker below its minimum is BELOW_FLOOR whatever it or any other line scores: no average lifts a blocker, and a line BELOW_FLOOR fails the gate. Absent from a report scored on a floor from before the scorecard.",
+      "description": "Added in 1.2.0. The same criteria read per discipline a person judges a game by (core/reference/quality-floor.yaml `scorecard`): gameplay, game feel, level design, 2D art, 3D art, UI/UX, audio, performance, technical integrity, accessibility and readability, platform compliance, publishing readiness - each with its own score - and every hard blocker listed on its own. A line with a blocker below its minimum is BELOW_FLOOR whatever it or any other line scores: no average lifts a blocker, and a line BELOW_FLOOR fails the gate. Absent from a report scored on a floor from before the scorecard.",
       "required": [
         "render",
         "lines",
@@ -935,7 +935,7 @@
     },
     "missing_gates": {
       "type": "array",
-      "description": "Added by WS-9. Gates the Factory's quality policy requires before this step that the run's own workflow does not have - a run started under an older definition, or a workflow from elsewhere. Named so a person never decides G4 believing they ran; a report naming any is never a release.",
+      "description": "Added in 1.2.0. Gates the Factory's quality policy requires before this step that the run's own workflow does not have - a run started under an older definition, or a workflow from elsewhere. Named so a person never decides G4 believing they ran; a report naming any is never a release.",
       "items": {
         "type": "object",
         "required": [
@@ -963,7 +963,7 @@
     },
     "lesson_candidates": {
       "type": "array",
-      "description": "Added by WS-9. Systemic issues specialist visits reported (prototype-report specialist.lesson_candidates, triage-report lesson_candidates), surfaced to the person deciding G4. A candidate is never applied by itself: a person promotes it to core/reference/lessons.yaml, with the check and test that hold it.",
+      "description": "Added in 1.2.0. Systemic issues specialist visits reported (prototype-report specialist.lesson_candidates, triage-report lesson_candidates), surfaced to the person deciding G4. A candidate is never applied by itself: a person promotes it to core/reference/lessons.yaml, with the check and test that hold it.",
       "items": {
         "$ref": "./shared/quality-finding.schema.json#/$defs/lesson_candidate"
       }

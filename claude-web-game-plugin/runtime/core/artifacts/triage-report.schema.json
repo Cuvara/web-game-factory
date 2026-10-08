@@ -8,7 +8,7 @@
     "id": "triage-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "producer": "title:prototype",
     "consumers": ["title:prototype", "title:design", "title:prototype-review", "release:store-listing", "release:draft"],
     "updated_by": ["release:store-listing"],
@@ -92,7 +92,7 @@
     },
     "lesson_candidates": {
       "type": "array",
-      "description": "Added by WS-9. The lesson candidates of the specialist visits this triage read (prototype-report specialist.lesson_candidates), carried forward from the run's previous triage-report: surfaced to the quality gate and the person deciding G4, never applied by themselves.",
+      "description": "Added in 1.2.0. The lesson candidates of the specialist visits this triage read (prototype-report specialist.lesson_candidates), carried forward from the run's previous triage-report: surfaced to the quality gate and the person deciding G4, never applied by themselves.",
       "items": {
         "$ref": "./shared/quality-finding.schema.json#/$defs/lesson_candidate"
       }

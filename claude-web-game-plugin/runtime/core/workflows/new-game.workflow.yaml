@@ -89,7 +89,11 @@ workflow:
   # release refuses while any is (it reads the triage-report and decision-record too).
   # 15: greybox-playability says it plays the greybox (`with: {phase: greybox}`): the MVP
   # build, so a time ramp promised by a post-mvp mode is not owed by it.
-  version: 15
+  # 16: three more develop specialists - art director, performance engineer, browser QA -
+  # routed by triage (specialist-routing 1.6.0), with their visit budgets on triage and
+  # develop; every implementer's change meets every judge before G4 and release
+  # (quality-policy 1.3.0 rule 6, checked on this graph).
+  version: 16
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -300,7 +304,7 @@ workflow:
       # 1 + 6 assets passes + the sending routes' budgets, each followed by at most one visit
       # per specialist through next-specialist; the specialists' own budgets on develop are
       # the bound a chain meets. The quality gate's three routes (workflow 11) add 10.
-      # WS-9 (version bump at integration): three more develop specialists - art director,
+      # 16: three more develop specialists - art director,
       # performance engineer, browser QA - four visits each, each returning here once: 12.
       max_visits: 122
       max_visits_by_route:
@@ -328,7 +332,7 @@ workflow:
         ui: develop
         audio-designer: develop
         sdk: develop
-        # WS-9: specialists added to core/reference/specialist-routing.yaml. Publishing
+        # 16: specialists added to core/reference/specialist-routing.yaml. Publishing
         # compliance works on the listing (route `listing`): held here, taken after G4.
         art-director: develop
         performance-engineer: develop
@@ -355,7 +359,7 @@ workflow:
       # assets (assets' own route budgets), each of which enters develop once more.
       # 59 = the first visit + 16 + 8 x 4 + 6 + 4 returns after a design repair (one each
       # from greybox's and develop's design-gap, two from triage's design).
-      # WS-9 (version bump at integration): + 3 x 4 for the art director, the performance
+      # 16: + 3 x 4 for the art director, the performance
       # engineer and browser QA = 71.
       max_visits: 71
       max_visits_by_route:

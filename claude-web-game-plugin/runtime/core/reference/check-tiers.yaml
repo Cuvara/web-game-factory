@@ -27,6 +27,11 @@
 #             (`tier.all`), or follows the named `tier.rule`. Nothing is restated: a new entry
 #             in the file is classified by the same rule, and an entry whose field the map
 #             does not cover fails check-integrity.
+#             `prefix` is prepended to every id the file declares, when the producer reports
+#             them under it (browser-qa.yaml `loads` is reported as `browser.loads`).
+#             `findings_via` names the report triage reads the producer's failures through
+#             (a verify check reaches triage as a qa-report blocking defect), so a finding
+#             there carries the lessons of its check (`guarded_by`).
 #   explicit  `checks` lists each id and its tier. Used for a producer whose checks are
 #             defined in code (`defined_in`: each id must appear there as a string literal)
 #             and for a file whose own fields do not say which tier a check is. An entry the
@@ -41,7 +46,7 @@
 # and triage's `guarded_by`). Add a check to a source file and it is classified here, or the
 # integrity check fails.
 
-version: 1.0.0  # WS-9: version bump at integration
+version: 1.0.0
 
 applies_at: release
 
@@ -96,6 +101,15 @@ sources:
     producer: game-design
     enumerate: {list: rules}
     tier: {by: severity, map: {blocking: hard, warning: advisory}}
+  browser-qa:
+    file: core/reference/browser-qa.yaml
+    producer: verification-report
+    findings_via: [qa-report]
+    enumerate: {list: checks}
+    prefix: browser.
+    # Each check states its own tier in the file; per viewport it is reported as
+    # `browser.<id>:<viewport>`, and a finding's `:<viewport>` is not part of the check.
+    tier: {by: tier, map: {hard: hard, quality: quality, advisory: advisory}}
 
   # ---------------------------------------------------------------- explicit tables
   content-sufficiency:
@@ -160,6 +174,36 @@ sources:
       ui.overlap: hard
       ui.styled: hard
       ui.states: hard
+  play-realism:
+    producer: playability-report
+    defined_in: scripts/wgf_playability
+    # core/reference/play-realism.yaml: a measured FAIL holds the build at the tiers
+    # `enforce.fail_required_at` names (release, premium); an unmeasured one follows
+    # quality-policy.yaml skipped_checks. Pass/fail ones are hard; one held to a
+    # calibrated bar (a ratio, a share of par, a per-tier duration, a clear rate) quality.
+    # level.clearance is a proxy: realism.gate_clearance makes it advisory unit by unit
+    # where the unit's clear rate was measured and passed.
+    checks:
+      physics.undrawn_collision: hard
+      physics.collider_size: quality
+      naive.setbacks: quality
+      naive.drift: quality
+      naive.alignment: quality
+      naive.pace: quality
+      naive.unit_duration: quality
+      naive.clear_rate: quality
+      level.geometry: quality
+      level.unit_length: quality
+      level.clearance: quality
+      runtime.console_errors: quality
+      runtime.webgl_context: hard
+  browser-qa-run:
+    producer: verification-report
+    findings_via: [qa-report]
+    defined_in: scripts/wgf_verification
+    # Whether the browser-QA spec ran at all: BLOCKED at release when it did not.
+    checks:
+      browser.run: hard
   model-review:
     producer: asset-manifest
     defined_in: scripts/wgf_assets

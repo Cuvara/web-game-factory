@@ -49,7 +49,7 @@
 #      platforms. At any other tier it is reported as SKIPPED and does not hold the build up.
 #      A real failure is never turned into a skip.
 #
-#   6. Independent review (WS-9). The implementer of a change is never its only judge: every
+#   6. Independent review (1.3.0). The implementer of a change is never its only judge: every
 #      path a shipped workflow can take from a step of an `independent_review.implementers`
 #      type to a step at a stage under `independent_review.before` passes a step of every
 #      judge type listed for it - steps that do not share the implementer's brief and do not
@@ -57,7 +57,7 @@
 #      check-integrity (scripts/wgf_quality/registry.py independent_review_problems), so a
 #      workflow edit that lets a change reach G4 or release without them fails.
 #
-#   7. No bypass for a small game (WS-9). No tier, profile or configuration removes a
+#   7. No bypass for a small game (1.3.0). No tier, profile or configuration removes a
 #      required step: the tier changes a run's class and its bars, never the steps it runs
 #      (rule 2 makes a run that lacks one development). A run whose workflow predates a
 #      required step (an old run resumed) is named at G4 and in the quality-report as
@@ -72,7 +72,8 @@
 # never remove a required step or a condition to let one run through.
 
 # 1.1.0: skipped_checks (check strength); 1.2.0: quality-gate is in new-game (workflow 11), no longer pending.
-version: 1.2.0
+# 1.3.0: rule 6 (independent review, `independent_review`) and rule 7 (no bypass for a small game).
+version: 1.3.0
 
 # The quality bars a release-tier run is judged against. A run records the version it
 # started under, so a later recalibration does not silently re-judge it.
@@ -184,8 +185,7 @@ preflight:
       - which makes the run development, never a release
 
 # Rule 6. Keyed by the implementing step's type; the judges are step types too. `before`:
-# the stages no implementer's change may reach unjudged.
-# WS-9: version bump at integration.
+# the stages no implementer's change may reach unjudged. Added in 1.3.0.
 independent_review:
   before: [title:prototype-review, release:draft]
   implementers:

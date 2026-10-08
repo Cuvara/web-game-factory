@@ -29,6 +29,7 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 21. `core/artifacts/shared/quality-finding.schema.json`
 22. `core/reference/lessons.yaml`
 23. `core/reference/check-tiers.yaml`
+24. `core/reference/play-realism.yaml`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

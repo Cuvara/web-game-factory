@@ -335,12 +335,38 @@ def _review(ctx):
     return out
 
 
+def _defect_check(table, defect_id):
+    """(check, viewport) - the verification check a qa-report defect was made from, when the
+    producer's `verification_checks` table names it. Verify writes a defect's id as `vr-` +
+    the check id with every character outside [a-z0-9-] made `-` (the per-viewport suffix
+    `:<viewport>` included); the longest check whose stem the id is, or starts with plus
+    `-`, is it, and what follows is the viewport. (None, None) otherwise."""
+    defect_id = str(defect_id or "")
+    for check in sorted(table or {}, key=len, reverse=True):
+        stem = "vr-" + re.sub(r"[^a-z0-9-]+", "-", str(check))
+        if defect_id == stem:
+            return check, None
+        if defect_id.startswith(stem + "-"):
+            return check, defect_id[len(stem) + 1:] or None
+    return None, None
+
+
 def _qa(ctx):
     out = []
+    checks = ctx.table.get("verification_checks") or {}
     for defect in ctx.report.get("blocking_defects") or []:
         if not isinstance(defect, dict):
             continue
         word = ctx.table.get("platform_defect") if defect.get("platform_id") else None
+        check, viewport = _defect_check(checks, defect.get("id"))
+        if check is not None and word is None:
+            out.append(ctx.make(
+                check=check, project=viewport, dimension=ctx.dimension(checks[check]),
+                severity="blocker", summary=defect.get("summary"),
+                route=ctx.table.get("route"),
+                change=(f"Fix `{defect.get('id')}`: {defect.get('summary')}"
+                        + (f" Repro: {defect['repro']}" if defect.get("repro") else ""))))
+            continue
         out.append(ctx.make(
             check=defect.get("id") or "defect", dimension=ctx.dimension(word),
             severity="blocker", summary=defect.get("summary"), route=ctx.table.get("route"),

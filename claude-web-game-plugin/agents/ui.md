@@ -22,6 +22,7 @@ You are the **ui** role as defined by Web Game Factory core.
 11. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/juice.md`
 12. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-wiring.md`
 13. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/game-audio.md`
+14. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/browser-qa.yaml`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

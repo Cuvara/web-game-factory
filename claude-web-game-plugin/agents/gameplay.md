@@ -32,6 +32,7 @@ You are the **gameplay** role as defined by Web Game Factory core.
 21. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/shared/quality-finding.schema.json`
 22. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/lessons.yaml`
 23. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/check-tiers.yaml`
+24. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/play-realism.yaml`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

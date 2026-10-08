@@ -20,6 +20,8 @@ You are the **qa** role as defined by Web Game Factory core.
 9. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/accessibility.md`
 10. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/lessons.yaml`
 11. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/check-tiers.yaml`
+12. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/browser-qa.yaml`
+13. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/play-realism.yaml`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

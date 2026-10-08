@@ -24,13 +24,15 @@
 # 1.4.0: a producer's `split` - a check whose failing items have different routes becomes
 #        one finding per route (production-quality's assets.runtime).
 # 1.5.0: playability `depth.` stated (gameplay), which only `default_dimension` routed before.
-# WS-9 (version bump at integration): four specialists - art-director (art-direction: one
+# 1.6.0: four specialists - art-director (art-direction: one
 #        coherent look, judged before and apart from the artists who make it),
 #        performance-engineer (performance), browser-qa (browser: page errors, viewports,
 #        focus and visibility) and publishing-compliance (compliance: what each platform's
 #        rules require of the package and listing); quality-report `criteria`, a criterion
-#        routed by its own id whatever dimension scores it.
-version: 1.5.0
+#        routed by its own id whatever dimension scores it. Play realism's checks
+#        (play-realism.yaml) in playability-report; qa-report `verification_checks`: a
+#        browser-QA defect (browser-qa.yaml) routed by the check it was made from.
+version: 1.6.0
 
 # The quality dimensions, as the quality-finding schema enumerates them.
 dimensions: [content, level-design, difficulty, progression, gameplay, art-2d, environment-3d, lighting-material, ui, audio, feel, store-copy, platform, art-direction, performance, browser, compliance]
@@ -144,7 +146,7 @@ producers:
       # more as it goes, is the game loop's.
       depth.: gameplay
       act.acknowledged: feel
-      # An uncaught page error while played is the browser QA engineer's (WS-9).
+      # An uncaught page error while played is the browser QA engineer's (1.6.0).
       page.: browser
       start.objective: ui
       restart.works: ui
@@ -154,15 +156,20 @@ producers:
       start.playable: gameplay
       win.reachable: gameplay
       lose.reachable: gameplay
-      # WS-2: version bump at integration. Play realism (core/reference/play-realism.yaml):
-      # a turn at nothing drawn, a collider unlike its sprite, a camera whose forward is not
-      # the control's and a console error are the loop's code; how hard naive play finds a
-      # unit is its difficulty; the declared geometry (bends, length, clearance) the level's.
+      # Play realism (core/reference/play-realism.yaml, 1.6.0): a turn at nothing drawn, a
+      # collider unlike its sprite and a camera whose forward is not the control's are the
+      # loop's code; how hard naive play finds a unit is its difficulty, how short a unit
+      # is (its pace against par, its duration) and its declared geometry (bends, length,
+      # clearance) the level's; a console error is the browser QA engineer's, as a page
+      # error is, and a lost WebGL context the performance engineer's.
       physics.: gameplay
       naive.: difficulty
       naive.alignment: gameplay
+      naive.pace: level-design
+      naive.unit_duration: level-design
       level.: level-design
-      runtime.: gameplay
+      runtime.: browser
+      runtime.webgl_context: performance
     acceptance: playability plays the next build and measures `{check}` PASS{bar_clause}.
 
   production-quality-report:
@@ -239,6 +246,44 @@ producers:
     route: develop
     # A defect named for a platform is the platform integrator's.
     platform_defect: platform
+    # A defect verify made from one of these checks (its id `vr-<check>[-<viewport>]`) is
+    # routed by the check: browser QA (core/reference/browser-qa.yaml, whose `owner`
+    # states the same dimension) - boot, runtime and visibility to browser QA, layout to
+    # UI, sound to audio, timings and weight to the performance engineer, the session's
+    # outcomes to gameplay.
+    verification_checks:
+      browser.run: browser
+      browser.loads: browser
+      browser.canvas: browser
+      browser.ready: browser
+      browser.menus: ui
+      browser.load-time: performance
+      browser.first-interaction: performance
+      browser.page-errors: browser
+      browser.console-errors: browser
+      browser.webgl-context: performance
+      browser.context-menu: browser
+      browser.win: gameplay
+      browser.lose: gameplay
+      browser.restart: gameplay
+      browser.pause-resume: gameplay
+      browser.hidden-pause: browser
+      browser.overflow: ui
+      browser.clipping: ui
+      browser.ui-overlap: ui
+      browser.ui-covers-play: ui
+      browser.safe-margins: ui
+      browser.button-states: ui
+      browser.audio-clips: audio
+      browser.audio-events: audio
+      browser.audio-loops: audio
+      browser.audio-mute: audio
+      browser.audio-hidden: audio
+      browser.audio-loudness: audio
+      browser.frame-stability: performance
+      browser.memory-growth: performance
+      browser.oversized-textures: performance
+      browser.asset-weight: performance
     default: gameplay
     acceptance: verify runs the next build and `{check}` no longer fails.
 
@@ -273,10 +318,23 @@ producers:
       technical: gameplay
       platform: platform
       store: store-copy
-    # A criterion routed by its own id, whatever dimension scores it (WS-9).
+    # A criterion routed by its own id, whatever dimension scores it (1.6.0).
     criteria:
       floor.performance: performance
       floor.stable_runtime: browser
+      floor.physics_drawn: gameplay
+      floor.naive_control: gameplay
+      floor.naive_challenge: difficulty
+      floor.level_geometry: level-design
+      floor.runtime_console: browser
+      floor.webgl_context: performance
+      floor.browser_boot: browser
+      floor.browser_session: gameplay
+      floor.browser_layout: ui
+      floor.browser_ui_advisory: ui
+      floor.browser_audio: audio
+      floor.browser_performance: performance
+      floor.browser_asset_weight: performance
     default: gameplay
     acceptance: the quality gate scores the next build and `{check}` meets its minimum{bar_clause}.
 

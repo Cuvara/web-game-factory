@@ -172,6 +172,9 @@ def classify(tiers, root=None):
                 problems.append(f"{where}: enumerate {source.get('enumerate')!r} is not "
                                 "floor-criteria, {keys: path} or {list: path}")
                 continue
+            # The id the producer reports a file's entry under (`prefix` + the entry's id).
+            prefix = str(source.get("prefix") or "")
+            entries = [(f"{prefix}{i}" if i else i, e) for i, e in entries]
         elif not source.get("defined_in"):
             problems.append(f"{where}: needs a `file` to read or the code it is "
                             "`defined_in`")
@@ -362,14 +365,18 @@ def lesson_problems(lessons, checks, root=None, evidence=None):
 
 def guards(lessons, tiers, producer, check):
     """The lessons whose check is `producer`'s `check` (exact id, or the check a split or
-    per-viewport finding id carries before `/` or `@`): [{"lesson", "check", "status",
-    "tests"}]."""
+    per-viewport finding id carries before `/`, `@` or a viewport's `:`): [{"lesson",
+    "check", "status", "tests"}]."""
     if not producer or not check:
         return []
     base = str(check).split("@", 1)[0].split("/", 1)[0]
+    bases = {base, base.split(":", 1)[0]}
+    # A source's `findings_via`: the report triage reads its failures through (verify's
+    # checks reach triage as the qa-report's blocking defects).
     names = {n for n, s in ((tiers or {}).get("sources") or {}).items()
-             if isinstance(s, dict) and s.get("producer") == producer}
-    wanted = {f"{n}:{base}" for n in names}
+             if isinstance(s, dict) and (s.get("producer") == producer
+                                         or producer in (s.get("findings_via") or ()))}
+    wanted = {f"{n}:{b}" for n in names for b in bases}
     out = []
     for lesson in (lessons or {}).get("lessons") or []:
         if not isinstance(lesson, dict) or lesson.get("status") not in CHECKED_STATUSES:

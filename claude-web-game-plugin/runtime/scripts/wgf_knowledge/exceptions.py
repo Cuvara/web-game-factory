@@ -16,9 +16,14 @@ such as `human` or `person`, never a value read from an exception file) and `mod
 and never past its expiry.
 
 The event's data is {"exception": <record>}; the engine adds `decided_by` (`human`: who the
-run records deciding), `decided_at` and `resume_nonce`. A reader honours it only when
-`decided_by` is a person's (present, not `automation`), the record's mode is human and names
-a person, and the resume with the same nonce corroborates it (granted()).
+run records deciding), `decided_at` and `resume_nonce`, and keeps the nonce it issued in
+state.json (`resume_nonces`). A reader honours it only when `decided_by` is `human`, the
+record's mode is human and names a person, the resume with the same nonce corroborates it,
+and that nonce is one the engine issued the run (granted(events, issued_nonces(run_dir))).
+
+`--approved-by` (or the login name) is the person's own claim of who they are, recorded as
+given: the Factory checks that it names someone - not a role, a program or a placeholder -
+and never that it is that person. Identity is the installation's to establish.
 
     approver(name=None)             the person granting: `name`, else the login name;
                                     raises ExceptionRefused for no name or a placeholder
@@ -43,7 +48,8 @@ import re
 from . import model
 
 __all__ = ["EVENT", "ExceptionRefused", "approver", "approver_problem", "request",
-           "requests_from_file", "grant", "recorded", "granted", "from_config",
+           "requests_from_file", "grant", "recorded", "granted", "issued_nonces",
+           "from_config",
            "SCOPE_KEYS"]
 
 EVENT = "KNOWLEDGE_EXCEPTION_GRANTED"
@@ -108,8 +114,18 @@ def _scope(pairs):
 # A person's handle: what `approved_by.identifier` must be. Never a placeholder that names a
 # kind of decider rather than someone.
 _HANDLE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@ '-]{0,63}")
-NOT_A_PERSON = ("human", "person", "automation", "unknown", "nobody", "user", "root",
-                "admin", "system")
+# Words that name a kind of decider, a role or a program - never one person. A handle is
+# refused when, articles and punctuation aside, it is made only of these.
+NOT_A_PERSON = frozenset((
+    "human", "humans", "person", "people", "someone", "somebody", "anyone", "everyone",
+    "nobody", "none", "unknown", "anonymous", "n/a", "na", "user", "users", "operator",
+    "owner", "me", "myself", "self", "root", "admin", "administrator", "system", "sysadmin",
+    "automation", "automated", "auto", "agent", "agents", "bot", "bots", "robot", "ai",
+    "assistant", "llm", "model", "script", "ci", "pipeline", "runner", "github", "actions",
+    "workflow", "factory", "wgf", "step", "developer", "reviewer", "tester", "qa",
+    "claude", "anthropic", "codex", "openai", "gpt", "chatgpt", "copilot", "gemini", "bard",
+    "llama", "mistral", "cursor", "code"))
+_ARTICLES = frozenset(("the", "a", "an", "my", "our", "your", "this", "that"))
 
 
 def approver_problem(name):
@@ -119,7 +135,10 @@ def approver_problem(name):
     name = name.strip()
     if not _HANDLE.fullmatch(name):
         return f"approver {name!r} is not a handle (letters, digits, . _ @ - ' and spaces)"
-    if name.lower() in NOT_A_PERSON:
+    words = [w for w in re.split(r"[\s._@'-]+", name.lower()) if w]
+    words = [w for w in words if w not in _ARTICLES and not w.isdigit()]
+    if not words or all(w in NOT_A_PERSON or w.rstrip("0123456789") in NOT_A_PERSON
+                        for w in words):
         return (f"approver {name!r} names no one: give the person's own handle with "
                 "--approved-by NAME")
     return None
@@ -324,13 +343,32 @@ def _corroborated(events, index, nonce):
     return False
 
 
-def recorded(events):
+STATE_FILE = "state.json"
+
+
+def issued_nonces(run_dir):
+    """The resume nonces the engine issued the run (state.json `resume_nonces`), or None
+    when the run directory is unknown. A run with none issued yields []."""
+    if not run_dir:
+        return None
+    try:
+        with open(os.path.join(run_dir, STATE_FILE), encoding="utf-8") as handle:
+            found = (json.load(handle) or {}).get("resume_nonces")
+    except (OSError, ValueError, AttributeError):
+        return []
+    return [n for n in found or () if isinstance(n, str) and n]
+
+
+def recorded(events, issued=None):
     """[(record, why)] for every EVENT on the run, oldest first: `why` None for a person's
     act, else why it is not one - an event a step's process tree wrote (decided_by missing
     or `automation`), one no engine-recorded resume corroborates (a line appended to
     events.jsonl), or a record that is not a person's (mode not human, an approver that
-    names no one). The one reader of the event: granted() keeps the first kind, and the
-    quality gate lists the others refused (wgf_quality.compliance.run_exceptions)."""
+    names no one). `issued`: the nonces the engine issued the run (issued_nonces()); when
+    given, an event whose nonce is not among them is a forgery - a made-up nonce with a
+    hand-written WORKFLOW_RESUMED to match. The one reader of the event: granted() keeps
+    the first kind, and the quality gate lists the others refused
+    (wgf_quality.compliance.run_exceptions)."""
     events = [e for e in events or () if isinstance(e, dict)]
     out = []
     for index, event in enumerate(events):
@@ -342,10 +380,13 @@ def recorded(events):
                                                            dict) else {}
         who = data.get("decided_by")
         why = None
-        if who in (None, "", "automation"):
+        if who != "human":
             why = f"the event was not recorded by a person (decided_by {who!r})"
         elif not _corroborated(events, index, data.get("resume_nonce")):
             why = "the event is not corroborated by the resume that recorded it"
+        elif issued is not None and data.get("resume_nonce") not in issued:
+            why = ("the event's resume nonce is not one the engine issued this run "
+                   "(state.json resume_nonces): a forged pair of lines")
         elif approved.get("mode") != "human":
             why = f"the record's approver is not a person (mode {approved.get('mode')!r})"
         elif approver_problem(approved.get("identifier")):
@@ -354,10 +395,10 @@ def recorded(events):
     return out
 
 
-def granted(events):
+def granted(events, issued=None):
     """The exception records a person's resume recorded on the run, oldest first: those
     recorded() finds a person's act. Any other is no one's and is not read."""
-    return [record for record, why in recorded(events) if why is None]
+    return [record for record, why in recorded(events, issued) if why is None]
 
 
 def from_config(config):

@@ -435,9 +435,16 @@ budget raise:
           "decided_by": "human", "decided_at": "<ISO>", "resume_nonce": "<the resume's>"}}
 ```
 
-`exceptions.granted(events)` is the one reader: it honours an event only when its
-`decided_by` is present and not `automation`, the `WORKFLOW_RESUMED` with the same nonce
-follows it, and the record's `approved_by` is mode human and names a person. The contract,
+`exceptions.recorded(events, issued)` is the one reader (`granted()` keeps what it
+honours; the quality gate lists the rest refused): it honours an event only when its
+`decided_by` is `human`, the `WORKFLOW_RESUMED` with the same nonce follows it, that nonce
+is one the engine issued the run (state.json `resume_nonces`, `issued_nonces(run_dir)`),
+and the record's `approved_by` is mode human and names a person. `--approved-by` (or the
+login name) is the person's own claim: the Factory refuses a role, a program or a
+placeholder (`human`, `the bot`, `an agent`, provider and tool names, `root`, ...) and
+never verifies that the name is who ran the command - identity is the installation's to
+establish. A grant takes effect at the next quality gate (`wgf resume <run> --from
+quality-gate`), and is listed in the contract by the next `knowledge-contract`. The contract,
 the quality-report's compliance and the release list the record, so the person's name. The next contract the run makes
 lists it under `exceptions`, or under `exceptions_refused` once it has expired. No
 configuration grants one: `factory.knowledge.exceptions` is listed refused in the contract.

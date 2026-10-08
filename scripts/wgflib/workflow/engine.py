@@ -341,6 +341,10 @@ class WorkflowEngine:
                     data["advanced_past"] = state.cursor
                     self._advance_past(state, state.cursor, current)
                     if state.cursor is None or state.status in RunStatus.TERMINAL:
+                        # The run ended by advancing past its last step: a person's acts
+                        # passed with this resume are still recorded, never dropped.
+                        self._record_operator_events(state, data, operator_events,
+                                                     decided_by)
                         self._emit(state, Events.WORKFLOW_RESUMED, data=data)
                         return state
                     current = state.step(state.cursor)
@@ -354,18 +358,26 @@ class WorkflowEngine:
 
         if decision is not None:
             self.record_decision(state, state.cursor, decision, decided_by, note)
-        if operator_events:
-            # One nonce ties this resume's operator events to the WORKFLOW_RESUMED that
-            # follows them: a reader (wgflib.budget.effective) honours an operator event only
-            # when the engine's own resume record corroborates it, so a lone line appended
-            # to events.jsonl is not a person's act.
-            data["resume_nonce"] = secrets.token_hex(8)
-        for event, event_data in operator_events:
-            self.record_operator_event(state, event, event_data, decided_by,
-                                       resume_nonce=data["resume_nonce"])
+        self._record_operator_events(state, data, operator_events, decided_by)
 
         self._emit(state, Events.WORKFLOW_RESUMED, data=data)
         return state
+
+    def _record_operator_events(self, state, data, operator_events, decided_by):
+        """Record this resume's operator events, tied by one nonce to the WORKFLOW_RESUMED
+        that follows them (`data`). A reader honours an operator event only when the
+        engine's own resume record corroborates it - so a lone line appended to
+        events.jsonl is not a person's act - and, for a knowledge exception, only when the
+        nonce is one the engine issued (`state.resume_nonces`, kept in state.json), so a
+        made-up pair of lines is not one either."""
+        if not operator_events:
+            return
+        data["resume_nonce"] = secrets.token_hex(8)
+        state.resume_nonces = list(state.resume_nonces or []) + [data["resume_nonce"]]
+        for event, event_data in operator_events:
+            self.record_operator_event(state, event, event_data, decided_by,
+                                       resume_nonce=data["resume_nonce"])
+        self._save(state)  # the issued nonce is the run's own record, before anything runs
 
     def _refill_route(self, state, limited):
         """Grant the route limit a loop-blocked run stopped at a fresh budget: every entry

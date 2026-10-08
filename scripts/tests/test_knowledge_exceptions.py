@@ -215,6 +215,49 @@ class Unauthorized(_Case):
         events[0]["data"]["decided_by"] = "automation"
         self.assertEqual(exceptions.granted(events), [])
 
+    def test_a_forged_pair_with_a_made_up_nonce_is_no_ones_act(self):
+        # A real grant: its nonce is the one the engine issued and kept in state.json.
+        api, state = self.to_g4()
+        self.grant(api, state.run_id, _request(["L23"], REASON, _utc(5)[:10]))
+        run_dir = api.store.run_dir(state.run_id)
+        issued = exceptions.issued_nonces(run_dir)
+        real = self.granted_events(api, state.run_id)[0]["data"]["resume_nonce"]
+        self.assertEqual(issued, [real])
+        # A forger appends a grant and a WORKFLOW_RESUMED with a nonce of their own.
+        forged = _request(["L23"], REASON, _utc(5)[:10])[0]
+        forged.update(approved_by={"identifier": "mallory", "mode": "human"},
+                      created_at=_utc(0))
+        with open(os.path.join(run_dir, "events.jsonl"), "a", encoding="utf-8") as handle:
+            for line in ({"event": exceptions.EVENT, "data": {
+                    "exception": forged, "decided_by": "human", "resume_nonce": "f0rged"}},
+                    {"event": exceptions.RESUMED_EVENT, "data": {"resume_nonce": "f0rged"}}):
+                handle.write(json.dumps(line) + "\n")
+        events = api.store.read_events(state.run_id)
+        found = exceptions.recorded(events, issued)
+        self.assertEqual([why is None for _, why in found], [True, False])
+        self.assertIn("not one the engine issued", found[1][1])
+        self.assertEqual([r["approved_by"]["identifier"] for r in
+                          exceptions.granted(events, issued)], ["cuong"])
+        # The contract the run makes next lists the real one only.
+        state = self.remake(api, state.run_id)
+        self.assertEqual([e["approved_by"]["identifier"]
+                          for e in self.contract(api, state)["exceptions"]], ["cuong"])
+
+    def test_only_a_human_decider_is_a_person(self):
+        record = {"rule_id": "L23", "approved_by": {"identifier": "cuong", "mode": "human"}}
+        for who in ("cuong", "Human", "auto-approved", ""):
+            events = [{"event": exceptions.EVENT, "data": {
+                "exception": record, "decided_by": who, "resume_nonce": "n1"}},
+                {"event": exceptions.RESUMED_EVENT, "data": {"resume_nonce": "n1"}}]
+            self.assertEqual(exceptions.granted(events), [], who)
+
+    def test_a_role_or_a_program_is_not_an_approver(self):
+        for name in ("the human", "an agent", "claude", "Claude Code", "gpt-5", "the bot",
+                     "CI runner", "my reviewer", "42", "codex"):
+            self.assertIsNotNone(exceptions.approver_problem(name), name)
+        for name in ("cuong", "Cuong N", "duycu", "j.smith@studio"):
+            self.assertIsNone(exceptions.approver_problem(name), name)
+
     def test_the_grant_itself_refuses_automation(self):
         with self.assertRaisesRegex(exceptions.ExceptionRefused, "unauthorized"):
             exceptions.grant(None, None, [{"rule_id": "L23"}], "automation")
@@ -251,6 +294,90 @@ class Expired(_Case):
         self.assertEqual(contract["exceptions"], [])
         self.assertTrue(any("expired" in p for r in contract["exceptions_refused"]
                             for p in r["problems"]))
+
+
+class TakesEffect(_Case):
+    def test_a_grant_at_g4_is_listed_by_the_next_quality_gate(self):
+        api, state = self.to_g4()
+        state = self.grant(api, state.run_id, _request(["L23"], REASON, _utc(5)[:10]))
+        report = api.store.read_artifact(state.run_id, state.latest_of_type("quality-report"))
+        self.assertEqual(report["compliance"]["exceptions"], [])  # judged before the grant
+        state = api.run(RunRequest(resume=state.run_id, from_step="quality-gate",
+                                   decided_by="human"))
+        report = api.store.read_artifact(state.run_id, state.latest_of_type("quality-report"))
+        listed = report["compliance"]["exceptions"]
+        self.assertEqual([(e["rule_id"], e["approved_by"]["identifier"]) for e in listed],
+                         [("L23", "cuong")])
+        self.assertEqual(listed[0]["status"], "honoured")
+
+    def test_the_command_says_when_a_grant_takes_effect(self):
+        text = wgf.exception_hint("run-1", ["L23"])
+        self.assertIn("wgf resume run-1 --from quality-gate", text)
+        self.assertIn("--from knowledge-contract", text)
+        self.assertIn("read by this resume's quality-gate",
+                      wgf.exception_hint("run-1", ["L23"], "quality-gate"))
+
+    def test_the_contract_command_lists_honoured_exceptions(self):
+        import contextlib
+        import io
+        from wgf_knowledge import cli
+        body = {"facets": {}, "counts": {}, "rules": [], "not_applicable": [],
+                "required_validators": [], "regression_suite": [],
+                "exceptions": [{"rule_id": "L23", "reason": REASON, "expires_at": "2026-11-01",
+                                "approved_by": {"identifier": "cuong", "mode": "human"}}]}
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            cli._render(body)
+        self.assertIn("excepted     L23 by cuong until 2026-11-01: " + REASON, out.getvalue())
+
+
+class GateLines(unittest.TestCase):
+    def test_g3_lines_carry_reason_and_recommended_and_g4_lines_no_empty_checks(self):
+        from wgflib import gate_evidence
+        contract = {"rules": [{"id": "L1", "level": "recommended"}], "required_validators": [],
+                    "counts": {"blocking": 0, "required": 0, "recommended": 1,
+                               "experimental": 0, "not_applicable": 0},
+                    "exceptions": [{"rule_id": "L23", "reason": REASON,
+                                    "approved_by": {"identifier": "cuong", "mode": "human"},
+                                    "expires_at": "2026-11-01"}]}
+        text = "\n".join(gate_evidence.render(gate_evidence.summarize(
+            {"knowledge-contract": contract})))
+        self.assertIn("1 recommended", text)
+        self.assertIn("recommended (reported, never blocking): L1", text)
+        self.assertIn("by cuong, until 2026-11-01): " + REASON[:40], text)
+        lines = gate_evidence._compliance_lines({
+            "verdict": "RELEASE_BLOCKED", "mode": "enforcing", "versions": {},
+            "failing": [{"id": "L23", "level": "required", "status": "UNMEASURED",
+                         "blocks": True, "checks": []}]})
+        self.assertTrue(any(line.rstrip().endswith("UNMEASURED") for line in lines), lines)
+
+
+class AdvancedPast(unittest.TestCase):
+    """A resume that finds its last step already succeeded ends the run by advancing past it
+    - and still records the person's acts passed with it (Core v1: never dropped)."""
+
+    def test_operator_events_are_recorded_when_the_run_ends_on_resume(self):
+        import test_workflow_engine as harness
+        from wgflib.workflow.model import StepStatus
+        case = harness.EngineCase()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        engine = case.engine(harness.LINEAR)
+        run = engine.start()
+        self.assertEqual(run.status, RunStatus.COMPLETED)
+        state = case.store.load(run.run_id)
+        # The driver died after recording c's success, before moving the cursor on.
+        state.status, state.cursor, state.exit = RunStatus.RUNNING, "c", None
+        state.step("c").status = StepStatus.SUCCESS
+        case.store.save(state)
+        ended = engine.resume(run.run_id, operator_events=[("TEST_OPERATOR_ACT", {"x": 1})])
+        self.assertIn(ended.status, RunStatus.TERMINAL)
+        events = case.store.read_events(run.run_id)
+        acts = [e for e in events if e["event"] == "TEST_OPERATOR_ACT"]
+        self.assertEqual(len(acts), 1)
+        nonce = acts[0]["data"]["resume_nonce"]
+        self.assertEqual(case.store.load(run.run_id).resume_nonces, [nonce])
+        resumed = [e for e in events if e["event"] == exceptions.RESUMED_EVENT]
+        self.assertEqual(resumed[-1]["data"].get("resume_nonce"), nonce)
 
 
 class OldRuns(_Case):

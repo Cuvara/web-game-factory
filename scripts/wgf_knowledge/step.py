@@ -326,7 +326,8 @@ class KnowledgeStep(WorkflowStep):
                 notes.append(f"validators named by {workflow.get('id')} "
                              f"v{workflow.get('version')}; the run started under v{started}")
 
-        granted = exceptions.granted(context.read_events())
+        granted = exceptions.granted(context.read_events(),
+                                     exceptions.issued_nonces(run_dir))
         try:
             vocabulary = model.vocabulary(knowledge.root)
         except model.KnowledgeError as exc:

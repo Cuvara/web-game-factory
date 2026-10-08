@@ -288,6 +288,11 @@ class RunState:
     only `{"kind": "loop-limit", "step", "route", "scope": "step"|"route", "limit",
     "entered", "from"}` - and is None otherwise. What resume does with a blocked run is
     decided from it, never from the wording of `message`.
+
+    `resume_nonces` lists every nonce the engine issued to a resume that recorded operator
+    events (a budget raise, a knowledge exception), oldest first: a reader honours an
+    operator event only when its nonce is one of these, so a made-up nonce written into
+    events.jsonl with a matching WORKFLOW_RESUMED line is still no one's act.
     """
 
     run_id: str
@@ -308,6 +313,7 @@ class RunState:
     exit: dict = None
     message: str = None
     blocked_reason: dict = None
+    resume_nonces: list = field(default_factory=list)
     format: int = STATE_FORMAT
 
     def step(self, step_id):
@@ -368,6 +374,9 @@ class RunState:
             "decisions": self.decisions,
             "trail": self.trail,
         }
+        if self.resume_nonces:
+            # Only once one was issued: a run without operator events keeps its shape.
+            data["resume_nonces"] = list(self.resume_nonces)
         return data
 
     @classmethod

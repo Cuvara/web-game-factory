@@ -184,10 +184,13 @@ def granted(record, decided_by="human", nonce="resume-1", corroborated=True):
     return events
 
 
-def run_gate(test, docs, run_params=None, events=(), hashes=True):
-    """The real quality-gate step on `docs`, at a fixed clock; the report schema-checked."""
+def run_gate(test, docs, run_params=None, events=(), hashes=True, issued=("resume-1",)):
+    """The real quality-gate step on `docs`, at a fixed clock; the report schema-checked.
+    `issued`: the resume nonces the engine issued the run (state.json `resume_nonces`)."""
     base = tempfile.mkdtemp(prefix="wgf-compliance-")
     test.addCleanup(shutil.rmtree, base, ignore_errors=True)
+    with open(os.path.join(base, "state.json"), "w", encoding="utf-8") as handle:
+        json.dump({"resume_nonces": list(issued)}, handle)
 
     class Inputs:
         refs = {k: types.SimpleNamespace(
@@ -529,6 +532,7 @@ class Gate(unittest.TestCase):
                                                         "mode": "human"})),
             "not a person": granted(exception("L26", mode="automation")),
             "a lone line": granted(exception("L26"), corroborated=False),
+            "a nonce never issued": granted(exception("L26"), nonce="made-up"),
             "the old flat shape": [{"event": compliance.EXCEPTION_EVENT,
                                     "exception": exception("L26"), "decided_by": "duy"}],
         }

@@ -205,7 +205,7 @@ def _contract(content):
                                                            dict) else {}
         return {"rule_id": record.get("rule_id"), "status": status,
                 "by": approved.get("identifier"), "expires_at": record.get("expires_at"),
-                "problems": list(problems)}
+                "reason": record.get("reason"), "problems": list(problems)}
 
     refused = []
     for entry in content.get("exceptions_refused") or []:
@@ -215,6 +215,7 @@ def _contract(content):
     advisory = content.get("advisory") if isinstance(content.get("advisory"), dict) else None
     return {"counts": dict(content.get("counts") or {}),
             "blocking": [r.get("id") for r in rules if r.get("level") == "blocking"],
+            "recommended": [r.get("id") for r in rules if r.get("level") == "recommended"],
             "required": [r.get("id") for r in rules if r.get("level") == "required"],
             "validators": list(content.get("required_validators") or []),
             "experimental": [e.get("id") for e in content.get("experimental") or []
@@ -325,7 +326,8 @@ def _compliance_lines(knowledge):
                      f"{row.get('unmeasured')} unmeasured, {row.get('excepted')} excepted")
     for rule in knowledge.get("failing") or []:
         lines.append(f"      {'!' if rule['blocks'] else '-'} {rule['id']} ({rule['level']}) "
-                     f"{rule['status']}: {', '.join(rule['checks'][:4])}")
+                     f"{rule['status']}"
+                     + (f": {', '.join(rule['checks'][:4])}" if rule['checks'] else ""))
     for entry in knowledge.get("exceptions") or []:
         lines.append(f"      exception {entry['rule_id']} {str(entry['status']).upper()} "
                      f"(by {entry.get('by') or '?'}, until {entry.get('expires_at')}): "
@@ -441,6 +443,7 @@ def render(evidence):
         versions = entry.get("versions") or {}
         lines.append(f"  knowledge contract: {counts.get('blocking', 0)} blocking, "
                      f"{counts.get('required', 0)} required, "
+                     f"{counts.get('recommended', 0)} recommended, "
                      f"{counts.get('experimental', 0)} experimental, "
                      f"{counts.get('not_applicable', 0)} not applicable - lessons "
                      f"{versions.get('lessons') or '?'}, check-tiers "
@@ -452,6 +455,9 @@ def render(evidence):
             lines.append(f"    blocking: {', '.join(entry['blocking'])}")
         if entry.get("required"):
             lines.append(f"    required: {', '.join(entry['required'])}")
+        if entry.get("recommended"):
+            lines.append(f"    recommended (reported, never blocking): "
+                         f"{', '.join(entry['recommended'])}")
         if entry.get("validators"):
             lines.append(f"    validated by: {', '.join(entry['validators'])}")
         if entry.get("experimental"):
@@ -461,7 +467,9 @@ def render(evidence):
             lines.append(f"    exception {exception['rule_id']} {exception['status'].upper()} "
                          f"(by {exception.get('by') or '?'}, until "
                          f"{exception.get('expires_at') or '?'})"
-                         + (f": {'; '.join(exception['problems'])[:90]}"
+                         + (f": {str(exception.get('reason'))[:80]}"
+                            if exception.get("reason") else "")
+                         + (f" - refused: {'; '.join(exception['problems'])[:90]}"
                             if exception.get("problems") else ""))
         if entry.get("advisory") is not None:
             lines.append("    ! ADVISORY: a run started before the knowledge model - "

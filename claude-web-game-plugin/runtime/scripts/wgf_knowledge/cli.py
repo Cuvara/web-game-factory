@@ -208,6 +208,11 @@ def _render(body, header=None):
         print(f"MISSING      {entry['rule']} {entry['check']}: no step outputs "
               f"{entry['producer']}")
     print(f"tests        {len(body['regression_suite'])}")
+    for record in body.get("exceptions") or ():
+        approved = record.get("approved_by") if isinstance(record.get("approved_by"),
+                                                           dict) else {}
+        print(f"excepted     {record.get('rule_id')} by {approved.get('identifier') or '?'} "
+              f"until {record.get('expires_at') or '?'}: {record.get('reason') or ''}")
     for refused in body.get("exceptions_refused") or ():
         print(f"refused      {refused['exception'].get('rule_id')}: "
               + "; ".join(refused["problems"]))

@@ -359,7 +359,7 @@ class MockQualityGateStep(MockStep):
                                     "(mock)")
         return result
 
-    def _compliance(self):
+    def _compliance(self, context):
         """The compliance section of a mock quality gate over the run's knowledge-contract:
         advisory - nothing was measured, so every blocking, required and recommended rule
         is UNMEASURED and every experimental one NOT_ENFORCED - the shape the real gate
@@ -395,7 +395,7 @@ class MockQualityGateStep(MockStep):
                 "versions": contract.get("versions") or {},
                 "facets": contract.get("facets") or {},
                 "counts": {"by_level": by_level, "total": total},
-                "rules": rules, "exceptions": [],
+                "rules": rules, "exceptions": self._exceptions(context, contract),
                 "regression": {"checks_run": 0, "checks_passed": 0, "checks_failed": 0,
                                "checks_unmeasured": 0,
                                "suite": list(contract.get("regression_suite") or [])},
@@ -404,10 +404,25 @@ class MockQualityGateStep(MockStep):
                 "verdict": "RELEASE_BLOCKED" if blocking else "PASS",
                 "holds_release": False}
 
+    @staticmethod
+    def _exceptions(context, contract):
+        """Every exception offered the run - the contract's and those a person granted
+        since - judged by the quality gate's own reader at the engine's clock
+        (wgf_quality.compliance), so a grant shows at the next gate; [] where that module
+        is not installed. Judged without the lessons: the placeholder measures nothing."""
+        try:
+            from wgf_quality import compliance
+            from wgf_knowledge import model
+        except ImportError:
+            return []
+        records = list(contract.get("exceptions") or []) + compliance.run_exceptions(context)
+        now = model.parse_time(getattr(context, "now", None)) or compliance.now_utc()
+        return compliance.exception_entries(records, contract, None, now)
+
     def customize(self, body, artifact_type, context, entry):
         if artifact_type != "quality-report":
             return
-        section = self._compliance()
+        section = self._compliance(context)
         if section is not None:
             body["compliance"] = section
         route = "develop" if entry == "fail" else entry

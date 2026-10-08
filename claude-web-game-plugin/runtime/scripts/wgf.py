@@ -777,7 +777,24 @@ def cmd_resume(args):
                          decision=args.decision, note=args.note,
                          budget_sessions=args.budget_sessions, budget_cost=args.budget_cost,
                          exceptions=exceptions)
-    return exit_code(_drive(api, args, request))
+    state = _drive(api, args, request)
+    if exceptions:
+        print(exception_hint(args.run, [r.get("rule_id") for r in exceptions],
+                             args.from_step), file=sys.stderr)
+    return exit_code(state)
+
+
+def exception_hint(run_id, rules, from_step=None):
+    """What a granted exception changes, and when: it is read by the next quality gate and
+    listed by the next knowledge contract - nothing already decided is re-judged."""
+    if from_step in ("knowledge-contract", "quality-gate"):
+        return (f"Exception granted ({', '.join(map(str, rules))}): read by this resume's "
+                f"{from_step}.")
+    return (f"Exception granted ({', '.join(map(str, rules))}). It takes effect at the next "
+            f"quality-gate: to judge the current build with it now, wgf resume {run_id} "
+            f"--from quality-gate. To list it in the run's knowledge-contract (G3 and the "
+            f"briefs read it), wgf resume {run_id} --from knowledge-contract - which plans "
+            "and builds again from there.")
 
 
 def cmd_decide(args):

@@ -274,6 +274,15 @@ def _judge_exceptions(records, contract, lessons, now):
     return out
 
 
+def exception_entries(records, contract, lessons, now):
+    """The compliance section's `exceptions`: every record offered, judged at `now`, with
+    its status and problems (the section's own shape)."""
+    return [{**{k: e["exception"].get(k) for k in (
+        "rule_id", "reason", "scope", "approved_by", "created_at", "expires_at")},
+        "status": e["status"], "problems": e["problems"]}
+        for e in _judge_exceptions(records, contract, lessons, now)]
+
+
 def honoured_exceptions(records, contract, lessons, now):
     """The records of `records` that hold at `now` for the run's `contract` (the same
     judgement the compliance section lists)."""
@@ -546,7 +555,8 @@ def run_exceptions(context):
     except Exception:  # noqa: BLE001 - an unreadable log grants nothing
         return []
     out = []
-    for record, why in knowledge_exceptions.recorded(events):
+    issued = knowledge_exceptions.issued_nonces(getattr(context, "run_dir", None))
+    for record, why in knowledge_exceptions.recorded(events, issued):
         if why:
             approved = record.get("approved_by") if isinstance(record.get("approved_by"),
                                                                dict) else {}

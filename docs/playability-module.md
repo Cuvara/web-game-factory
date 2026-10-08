@@ -420,6 +420,10 @@ The **risk test** (`with: risk: true`, `play-realism.yaml risk`) plays sampled u
 game's own oracle policies `safe` and `greedy` through the probe's optional `play.policy` and
 writes `risk.json`; it judges nothing here (the level-design step reads it).
 
+The realism bars and the bot's viewports (`visual-quality.yaml`) are the copies the run
+pinned when it started (new-game `pinned_references`); a copy edited after the start BLOCKS
+the step.
+
 Triage routes the checks by `core/reference/specialist-routing.yaml` (1.6.0): `physics.` and
 `naive.alignment` to gameplay, `naive.pace`, `naive.unit_duration` and `level.` to the level
 designer, the rest of `naive.` to difficulty, `runtime.console_errors` to browser QA (as

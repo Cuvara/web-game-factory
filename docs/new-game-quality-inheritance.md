@@ -72,6 +72,19 @@ The rules are data: [core/reference/quality-policy.yaml](../core/reference/quali
 
 Tests: `scripts/tests/test_no_bypass.py`.
 
+**Pinned references.** A run is held to the bars it started under, on every entry point and
+every resume. `new-game` lists under `pinned_references` the quality floor, the quality
+benchmark and the visual-qa rubric (the quality gate, content-sufficiency, visual-qa), and -
+workflow 16 - the bot's viewports and environment bars (`visual-quality.yaml`), play realism
+(`play-realism.yaml`), browser QA (`browser-qa.yaml`, with the values it reads from
+`visual-quality.yaml` through the same pinned copy) and the regression registry
+(`check-tiers.yaml`, `lessons.yaml`). The engine copies them when the run starts and records
+their digests in the run's params; playability, verify's browser QA and triage read the run's
+copies (`scripts/wgflib/workflow/references.py read`). So a run resumed on an updated
+Factory gets no new required check and no changed tier: those apply to the next run. A copy
+edited after the start BLOCKS the step that reads it; a run started before a file was pinned
+reads the live file. Tests: `scripts/tests/test_pinned_quality_references.py`.
+
 `content-sufficiency` (WS-4) and `quality-gate` (WS-7, workflow 10,
 [quality-gate-module.md](quality-gate-module.md)) are in the workflow and enforced like every
 required step (quality-policy 1.2.0: nothing is `pending`). A required step a later

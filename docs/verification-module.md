@@ -290,6 +290,18 @@ not pass), which `floor.performance` reads. `with: {browser_qa: off}` skips the 
 leaves `browser.run` BLOCKED at the release tier (a WARNING below it): switching it off is
 never a pass.
 
+**What the build omits.** A check the build could have been measured on but whose data it
+omits - the play probe reports no gameplay-critical entity (`ui-covers-play`) or no audio
+level (`audio-hidden`), the bundle ships no runtime manifest (`audio-clips`,
+`audio-loudness`) - is held as `quality-policy.yaml skipped_checks` says
+(`wgflib.check_strength`): at the release class BLOCKED and required, so the quality floor
+cannot pass over it; below it a WARNING. A game that genuinely has none of a thing (no pause
+or mute control, no declared win, no audio in its manifest) stays a WARNING at every class.
+
+**Pinned.** The contract, and the `visual-quality.yaml` values it reads, are the copies the
+run pinned when it started (new-game `pinned_references`): a resumed run is held to the checks
+and tiers it started under.
+
 **Tiers, routing and the floor.** Each check's tier is classified once, in
 `core/reference/check-tiers.yaml` (source `browser-qa`, read from this file's `tier` with the
 `browser.` prefix; `browser.run` is `browser-qa-run`). A blocking defect reaches triage

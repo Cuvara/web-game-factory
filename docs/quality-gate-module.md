@@ -239,7 +239,9 @@ carries them. The route budgets are on triage (`quality-gate.develop: 2`,
 * **Evidence comes from the build.** Every score cites the reports it read, by artifact id,
   content hash and the commit they describe; a report of another commit blocks the gate.
 * **Thresholds come from the run's start.** `new-game` lists the floor, the benchmark and
-  the visual-qa rubric under `pinned_references`: when a run starts, the engine copies them
+  the visual-qa rubric under `pinned_references` (and, since workflow 16, the play-realism,
+  browser-QA and visual-quality bars and the regression registry the producers read -
+  docs/new-game-quality-inheritance.md "Pinned references"): when a run starts, the engine copies them
   into the run directory and records their digests in the run's params (corroborated by
   WORKFLOW_STARTED like every param). The step reads the run's copies; a copy whose digest is
   not the recorded one BLOCKS the step. An edit made during a run applies to the next run. A

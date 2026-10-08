@@ -168,7 +168,7 @@
     "core/templates/release-report.md": "sha256:91111a02b6a23b13268716e214c8edcd4d57ad1c1d5eb0bc0169ec07efe14ffc",
     "core/templates/tech-plan.md": "sha256:6d72544d3300faa203554412990479d0be57974ce43c7426e31969406951c0fa",
     "core/workflows/new-game.workflow.yaml": "sha256:81972091bd16c9bed64c900727736a040a1290a1cb4017a996c351bc00f0644e",
-    "docs/knowledge-enforcement.md": "sha256:725b55582a348c94315e4909cf2f0c64e68bbb263c317aa6c8a94b3af119ad9e",
+    "docs/knowledge-enforcement.md": "sha256:b7556f9ea10effe760be27e4c65e2b1f12d16a0dfa2e3c3c36dc58b3a4580865",
     "docs/portal-publishing-architecture.md": "sha256:b6f09dbc6b8ed649c84226fb876e2d6426fdedeb66ca284c3b9a4f3270c1b197",
     "docs/publish-module.md": "sha256:f8d2cd0fabf29c1840fef56e7f5d5a37299779ab61f991f46da1711a286e05db",
     "docs/workflow-engine.md": "sha256:b3bd72281bc225438e7e6f237918d501cd68e824b4e736dfc0a6d5040abe2821",

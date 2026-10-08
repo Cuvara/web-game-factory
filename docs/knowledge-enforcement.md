@@ -357,6 +357,12 @@ wgf knowledge resolve --family arcade --render 2d --platform yandex --tier relea
 wgf knowledge contract <run-id> [--store DIR] # the run's knowledge-contract (or a dry one)
 wgf knowledge table --families arcade,racing --render 2d,3d --tiers mvp,release
                                               # the benchmark approval table, dry
+wgf knowledge ingest <run-id> [--dry-run]     # the run's lesson candidates -> candidates.yaml
+wgf knowledge candidates [--open]             # the stored candidates
+wgf knowledge reject C-<n> --reason TEXT      # a person rejects one (kept)
+wgf knowledge promote C-<n> [--out FILE]      # a PR-ready patch; never edits core/
+wgf knowledge firewall [ID ...] [--run ID]    # every lesson's regression tests, run here
+wgf knowledge generations [--json]            # runs compared by the knowledge they consumed
 ```
 
 Exit status: 0 clean, 1 problems (validate) or a missing validator (resolve, table),
@@ -451,9 +457,60 @@ the quality-report's compliance and the release list the record, so the person's
 lists it under `exceptions`, or under `exceptions_refused` once it has expired. No
 configuration grants one: `factory.knowledge.exceptions` is listed refused in the contract.
 
+## The learning loop
+
+Unit K4. A run's producers report systemic issues as lesson candidates
+(`core/artifacts/shared/quality-finding.schema.json#/$defs/lesson_candidate`): the specialist
+visits (prototype-report `specialist.lesson_candidates`), triage, the quality-report and, since
+review-report 1.4.0, the reviewer. A candidate is the structured extraction **symptom -> root
+cause -> systemic? -> candidate -> enforcement proposal**: `symptom` (what was seen on this
+build), `summary` (the generalized lesson), `root_cause` (why the Factory let it through),
+`systemic` (`{value, why}`), `proposed_check`, `proposed_level`, `proposed_scope` - all
+optional but `summary`, additive to the 1.2.0 shape.
+
+| Step | Command | What it does |
+|---|---|---|
+| Ingest | `wgf knowledge ingest <run>` | Every candidate of the run's reports into the project's `workspace/lessons/candidates.yaml` (`scripts/wgf_knowledge/ingest.py`). Checked against the schema and required to state its root cause: one that fails is refused and nothing is written (exit 1); a store that cannot be read as a run is exit 2. Each source records the run, the report by id, type, version and digest, its content hash, the build commit and the reporter. |
+| De-duplicate | (ingest) | A candidate whose `proposed_check` an active or validated lesson holds is a **regression observation** of that lesson (`regressions`), not a new candidate; one whose normalized summary and proposed check match a stored candidate adds a source to it; the same report twice changes nothing. A check a candidate lesson names marks `duplicate_of`. |
+| Basis | (ingest) | `measured` when a source names the quality finding it was working (a gate's check failed on a build); a reviewer's candidate, or one naming no finding, is `subjective`. |
+| List, reject | `wgf knowledge candidates [--open]`, `reject C-<n> --reason TEXT` | A rejected candidate is kept. A promoted one is read from `workspace/lessons/evidence.yaml`, whose lesson entry names its `candidate`. |
+| Promote | `wgf knowledge promote C-<n> [--out FILE]` | A PR-ready patch (`git apply`): the lessons.yaml entry with the file's minor version raised, the evidence.yaml entry, and - for a lesson a check holds - test stubs for its negative (`catches`) and positive (`passes`) cases that fail until a person writes them. It writes nothing to `core/` (`promote.py`). |
+| Firewall | `wgf knowledge firewall [ID ...] [--run <run>]` | Every lesson's `catches`, `passes` and `generalizes` tests run here, one verdict per lesson: PASS, FAIL, MISSING, SKIP (never a pass) or NO_TESTS (a candidate, gap or process lesson). An active lesson with no test, or a validated one without all three kinds, FAILs (`firewall.py`). `--run` holds the run contract's regression suite. A development checkout only. |
+| Generations | `wgf knowledge generations [--json]` | Runs grouped by the Factory version and commit and the knowledge versions they recorded at start, with the lessons each applied, compliance outcomes, failed and excepted rules, and the lessons one generation applied that the previous did not (`generations.py`). Read-only. |
+
+**What promote drafts.** A measured candidate whose proposed check is classified becomes an
+enforced, active lesson whose level is derived from the check's tier; a stronger proposal is
+declared as `level`, a weaker one refused (a level is weakened only by a check's tier). A
+subjective candidate, or one whose check nothing classifies, becomes a gap / candidate lesson -
+experimental, never blocking - with the proposed check named in `gap`. Refused (exit 1): a
+rejected or already promoted candidate, one reported not systemic, **a blocking or required
+proposal on subjective evidence** (a review comment never becomes a rule that holds a build by
+itself), a blocking or required proposal no classified check can hold, and a draft that would
+fail the model's own integrity rules.
+
+**The regression firewall in CI.** `wgf test-core --only KNOWLEDGE` runs
+`test_knowledge_firewall` (every shipped lesson's tests through the firewall, and the firewall's
+own positive and negative cases), `test_knowledge_generalization`, `test_knowledge_ingest`,
+`test_knowledge_generations` and the K1-K3 model, resolver, exception and compliance tests. A
+skipped lesson test fails the firewall, so a passing category ran every one.
+
+**Generalization.** L23, L25 and L26 name `generalizes` tests
+(`scripts/tests/test_knowledge_generalization.py`): each replays the real record of the game the
+lesson came from through its check, then a synthetic game B of another family or render
+(`scripts/tests/fixtures/knowledge/`) - a platformer whose hero outgrew its shafts, a DOM-board
+puzzle that opens the context menu on a long press, a 3D kart racer whose lap board covers the
+kart - regressed (the check fails) and fixed (it passes).
+
+**The benchmark approval table** (`table`) also takes `--profiles A,B`, `--phases 1,2` and
+`--facets FILE` (a list of `{family, render, tier, platforms, profile, phase, cost_estimate}`).
+Every row lists its budget as `requires human budget approval`, and `starts_run: false`:
+building it imports no engine and starts nothing.
+
 ## What is not here yet
 
 This is units K1 (the model and resolver), K2 (the run: the snapshot, the pins, the
-`knowledge-contract` step and `wgf resume --except`) and K3 (compliance, above) of the
-learning-enforcement design. Ingestion of lesson candidates, promotion drafts, the regression
-firewall (`test-core` KNOWLEDGE) and the plugin surfaces are K4.
+`knowledge-contract` step and `wgf resume --except`), K3 (compliance, above) and K4 (the
+learning loop and the plugin surfaces: the `knowledge` skill and `/wgf-knowledge`, adapter
+binding 1.13.0) of the learning-enforcement design. Not yet: the review brief asking the
+reviewer for `lesson_candidates`, a QA-report source, and `wgf decide <run> --lesson` for the
+person at G4.

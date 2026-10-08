@@ -67,7 +67,8 @@ from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.contracts import ArtifactContracts
 
-from . import commitments, consistency, content, depth, existing, experience, presentation
+from . import (commitments, consistency, content, depth, existing, experience, inherit,
+               presentation)
 from . import features as feature_check
 from .authors import AUTHORS, AuthorError, resolve_author
 from .compose import buildability, finalize
@@ -244,6 +245,18 @@ class DesignStep(WorkflowStep):
                     "game-design to repair", retryable=False)
             brief["gaps"] = gaps
             brief["previous_design"] = previous
+            # The gap base is the previous design, but what it holds of the strategy is the
+            # current strategy's (inherit.py): what changed since it is told to the author.
+            try:
+                base = previous_design(context, strategy)
+            except RevisionError:
+                base = None
+            if base and not base["strategy_delta"].get("unchanged"):
+                brief["strategy_change"] = base["strategy_delta"]
+                context.logger.info("the strategy changed since the design the gaps were "
+                                    "found in", strategy_changes=len(
+                                        base["strategy_delta"]["changes"]),
+                                    strategy_found=base["strategy_delta"]["found"])
         try:
             author = resolve_author(author_name)
         except AuthorError as exc:
@@ -279,6 +292,9 @@ class DesignStep(WorkflowStep):
             # The step accepted this draft and something after it (the engine's lineage
             # check, a dead driver) lost it: compose it again, no author session.
             accepted = last["draft"]
+            # Accepted against the strategy of its own time: what it holds of the strategy is
+            # the current strategy's (inherit.py).
+            inherit.follow(accepted, strategy, platforms)
             context.logger.info("design composes the draft the step last accepted")
         elif last:
             brief = dict(brief, repair={"round": 0, "problems": last["problems"][:60],

@@ -1,0 +1,966 @@
+{
+  "provenance": {
+    "artifact_id": "wgf:title-strategy:brick-breaker-worlds:20261008-03",
+    "artifact_type": "title-strategy",
+    "schema_version": "1.6.0",
+    "opportunity_id": "opp-56ad9afd",
+    "title_id": "brick-breaker-worlds",
+    "produced_by": {
+      "role": "game-designer",
+      "actor": "automation"
+    },
+    "produced_at": "2026-10-08T13:40:28Z",
+    "inputs": [
+      {
+        "artifact_id": "wgf:opportunity:opp-56ad9afd:20261005-01",
+        "artifact_type": "opportunity",
+        "content_hash": "sha256:ccc1b9d4f0bc70887a7761de5b883f558161f25e9edcd598305e21f977bc4a7b"
+      }
+    ],
+    "content_hash": "sha256:827d5d3d894973ecaa65f0a419297000e54df17915a083a4a73c4b6588c6993c",
+    "status": "draft"
+  },
+  "title_id": "brick-breaker-worlds",
+  "opportunity_id": "opp-56ad9afd",
+  "one_liner": "A brick-breaker game where the player uses drag a paddle to keep a ball in play, angling rebounds off the paddle and the side walls to break every brick on the board.",
+  "why_this_opportunity": "Brick Breaker Worlds offers smashing through a wall of bricks with a well-placed shot and a screen full of multi-balls. Research (capability-screen): Brick Breaker Worlds: a shape in the capability catalog, screened against crazygames, gamedistribution, gamemonetize, gamevui, poki, y8, yandex at 0.73, with no observed market presence (estimates only). The opportunity rests on claim-bf0a6bc4fb and cites claim-0871e5f874, claim-45e8b8b427, claim-5d8a911ac6, claim-9b16b953de, claim-9c2fc37b75, claim-e619f4bcf5. Yandex Games is primary (audience regions by, kz, ru, tr; supports rewarded placements).",
+  "platform_set": [
+    {
+      "id": "yandex",
+      "profile_version": "1.3.0",
+      "role": "required",
+      "rationale": "Primary: chosen first by a person among yandex, crazygames, y8; the title is not shippable without it."
+    },
+    {
+      "id": "crazygames",
+      "profile_version": "1.3.0",
+      "role": "optional",
+      "rationale": "Secondary: CrazyGames is compatible from the same build; not required to ship."
+    },
+    {
+      "id": "y8",
+      "profile_version": "1.3.0",
+      "role": "optional",
+      "rationale": "Secondary: Y8 is compatible from the same build; not required to ship."
+    }
+  ],
+  "audience": {
+    "type": "casual",
+    "device": "both",
+    "regions": [
+      "br",
+      "by",
+      "de",
+      "fr",
+      "gb",
+      "id",
+      "kz",
+      "ru",
+      "tr",
+      "us"
+    ],
+    "player_description": "A casual player on phone or desktop who wants to be playing within seconds, in sessions of about 6 minutes."
+  },
+  "monetization": {
+    "class": "rewarded-led",
+    "placements": [
+      "rewarded",
+      "interstitial"
+    ],
+    "rationale": "An extra ball after the last ball is lost is a natural rewarded moment; interstitials fit between levels."
+  },
+  "session": {
+    "first_session_seconds": 270,
+    "target_seconds": 360,
+    "sessions_per_day_target": 3
+  },
+  "timebox_days": 12,
+  "mvp": [
+    "Core loop: launch the ball, angle rebounds off the paddle and walls, break bricks and catch the power-ups they drop (multi-ball, a wide paddle on a timer, a laser that lets the paddle shoot), clear the board for stars, open locked levels and each world's star gates, replay for three stars; 32 hand-built levels in 4 worlds of 8, each world adding its own brick type or hazard (armored two-hit bricks, unbreakable steel bricks with sliding rows, a descending field, explosive bricks and falling embers) and ending in a boss level with a health bar",
+    "A single drag control: drag a paddle to keep a ball in play, angling rebounds off the paddle and the side walls to break every brick on the board",
+    "3 designed run-segments with authored difficulty on speed, density, variety, precision",
+    "Score and personal best, persisted through the platform's cloud save",
+    "A rewarded placement at a natural moment in the loop (continue or bonus), never forced",
+    "Interstitials between sessions only, never inside one",
+    "Yandex Games SDK: init, loading-progress, gameplay-start-stop, rewarded, interstitial, pause-audio-during-ads, cloud-save",
+    "Localization: ru, en"
+  ],
+  "out_of_scope": [
+    "Multiplayer and any online play — networking multiplies the test surface and needs a server nobody has budgeted",
+    "Metagame layers: daily quests, battle pass, login rewards — retention systems are validated after the core loop is, not before",
+    "A cosmetics shop and paid customization; the unlocks the brief asks for are earned in play and stay in scope",
+    "Level editor or user-generated content",
+    "Story, cutscenes and dialogue — text multiplies localization cost",
+    "Leaderboards beyond a personal best",
+    "A second mode; the release's content is the budget in concept.content_model.budget, and nothing beyond it",
+    "An IAP economy or premium currency"
+  ],
+  "prototype_must_prove": [
+    "A first-time player understands the drag control without instruction",
+    "The core loop produces an unforced desire to retry within one 360-second session",
+    "This risk is contained: Poki requires web exclusivity, so the candidate platforms cannot all be used for the same build; choosing is a strategy decision",
+    "The rewarded placement reads as a favour rather than an interruption",
+    "It holds 30 fps on a mid-range mobile browser inside a 100 MB bundle"
+  ],
+  "success_criteria": [
+    {
+      "id": "d1_retention",
+      "label": "D1 retention",
+      "when": {
+        "left": "d1_retention",
+        "op": "gte",
+        "right": 0.25
+      },
+      "rationale": "Below this a short-session title without a metagame has no path to sustained portal traffic.",
+      "severity": "blocking"
+    },
+    {
+      "id": "session_length",
+      "label": "Median session near target",
+      "when": {
+        "left": "median_session_seconds",
+        "op": "gte",
+        "right": 270
+      },
+      "rationale": "Shorter than this and the placements the monetization model counts on never get a chance to show.",
+      "severity": "warning"
+    }
+  ],
+  "kill_criteria": [
+    {
+      "id": "control_not_understood",
+      "label": "First-time players do not understand the control",
+      "when": {
+        "left": "first_time_understood_share",
+        "op": "lt",
+        "right": 0.6
+      },
+      "rationale": "The title is scoped around one control scheme and no tutorial. If that scheme needs teaching, the scope assumption is wrong.",
+      "severity": "blocking"
+    },
+    {
+      "id": "no_retry_pull",
+      "label": "Players do not retry unprompted",
+      "when": {
+        "left": "unprompted_retry_share",
+        "op": "lt",
+        "right": 0.5
+      },
+      "rationale": "Replay is the retention system here, in place of content. Without immediate retry there is neither retention nor an ad moment.",
+      "severity": "blocking"
+    },
+    {
+      "id": "prototype_overran",
+      "label": "The prototype consumed most of the timebox",
+      "when": {
+        "left": "prototype_elapsed_days",
+        "op": "gt",
+        "right": 8
+      },
+      "rationale": "A prototype that needs more than 60% of the timebox is evidence the scope does not fit it, and production would overrun by more.",
+      "severity": "blocking"
+    },
+    {
+      "id": "mobile_performance_floor",
+      "label": "Unplayable on mid-range mobile",
+      "when": {
+        "left": "midrange_mobile_fps",
+        "op": "lt",
+        "right": 30
+      },
+      "rationale": "Most portal traffic for this audience is mobile; below 30 fps a reaction-driven loop reads as the game's fault, not the player's.",
+      "severity": "blocking"
+    }
+  ],
+  "sunset_floor": {
+    "metric": "d1_retention",
+    "value": 0.125,
+    "consecutive_reviews": 2
+  },
+  "max_prototype_iterations": 2,
+  "rollback_threshold": "critical",
+  "concept": {
+    "genre": "arcade",
+    "core_mechanic": "drag a paddle to keep a ball in play, angling rebounds off the paddle and the side walls to break every brick on the board",
+    "core_loop": "launch the ball, angle rebounds off the paddle and walls, break bricks and catch the power-ups they drop (multi-ball, a wide paddle on a timer, a laser that lets the paddle shoot), clear the board for stars, open locked levels and each world's star gates, replay for three stars; 32 hand-built levels in 4 worlds of 8, each world adding its own brick type or hazard (armored two-hit bricks, unbreakable steel bricks with sliding rows, a descending field, explosive bricks and falling embers) and ending in a boss level with a health bar",
+    "gameplay_direction": "Brick-breaker built on drag a paddle to keep a ball in play, angling rebounds off the paddle and the side walls to break every brick on the board. A session is a short run: launch the ball, angle rebounds off the paddle and walls, break bricks and catch the power-ups they drop (multi-ball, a wide paddle on a timer, a laser that lets the paddle shoot), clear the board for stars, open locked levels and each world's star gates, replay for three stars; 32 hand-built levels in 4 worlds of 8, each world adding its own brick type or hazard (armored two-hit bricks, unbreakable steel bricks with sliding rows, a descending field, explosive bricks and falling embers) and ending in a boss level with a health bar. Content: 3 specified run-segments in the prototype, 16 in the release, difficulty authored per unit on speed, density, variety, precision; progression skill-only; level-authored ramp.",
+    "control_scheme": "drag",
+    "replayability": "Mastery ramp: short levels on one difficulty curve, each with a best result to improve on",
+    "subgenre": "brick-breaker",
+    "content_model": {
+      "family": "arcade",
+      "unit_kind": "run-segment",
+      "progression": "skill-only",
+      "difficulty_shape": "level-authored",
+      "difficulty_axes": [
+        "speed",
+        "density",
+        "variety",
+        "precision"
+      ],
+      "min_units": 3,
+      "source": "research",
+      "quality_tier": "release",
+      "budget": {
+        "units": 16,
+        "references": [
+          "genre-models@1.2.1",
+          "quality-benchmark@1.6.0"
+        ],
+        "basis": [
+          {
+            "quantity": "units",
+            "genre_model": 6,
+            "benchmark": 12,
+            "value": 16
+          },
+          {
+            "quantity": "groups",
+            "benchmark": 3,
+            "value": 4,
+            "brief": 4
+          },
+          {
+            "quantity": "min_units_per_group",
+            "benchmark": 4,
+            "value": 4
+          },
+          {
+            "quantity": "elements",
+            "benchmark": 8,
+            "value": 8
+          },
+          {
+            "quantity": "designed_play_s",
+            "benchmark": 300,
+            "value": 300
+          }
+        ],
+        "groups": {
+          "kind": "world",
+          "count": 4,
+          "min_units_per_group": 4
+        },
+        "elements": {
+          "count": 8,
+          "kinds": [
+            "obstacle kind",
+            "target kind",
+            "power-up"
+          ],
+          "min_introduction_points": 6
+        },
+        "designed_play_s": 300,
+        "justification": {
+          "session_length": "16 run-segments carry at least 300 s of designed play, 1 or more full 360-second sessions of new run-segments, the floor measured on releases a person judged shippable; at 3 sessions a day the replay system, not new run-segments, carries the days after.",
+          "progression_structure": "skill-only: 4 worlds of at least 4 run-segments each, each world gated behind the last, so there is always a next world in view and each one is a themed set rather than more of one list.",
+          "mechanics": "At least 8 distinct elements (obstacle kind, target kind, power-up) across the run-segments, introduced at 6 or more points, so later run-segments change what the player does, not only a number.",
+          "replayability": "Mastery ramp: short levels on one difficulty curve, each with a best result to improve on; each run-segment keeps its own best result to replay for.",
+          "platform_expectations": "Yandex Games, CrazyGames and Y8 list finished games beside this one: a release with 16 run-segments and new elements in later ones reads as a game, where the 3-run-segment prototype would read as a demo."
+        }
+      }
+    }
+  },
+  "production_scope": {
+    "scope_complexity": "s",
+    "technical_complexity": "low",
+    "asset_complexity": "low",
+    "estimate_days": 12,
+    "asset_budget": {
+      "max_unique_assets": 30,
+      "estimated_cost_usd": 300
+    },
+    "reusable_systems": [
+      "Template boot flow: loading, menu, play, result",
+      "Template platform SDK adapter: one interface, one implementation per platform",
+      "Input handler for the drag scheme only",
+      "Score and personal-best persistence",
+      "Content as data: every designed run-segment with its difficulty values",
+      "Ad-break service honouring the strictest interstitial interval, pausing audio and input",
+      "Localization string table"
+    ],
+    "scope_decisions": [
+      "One control scheme (drag); no alternative or desktop-specific input",
+      "Platforms chosen by a person, required first: yandex, crazygames, y8 (the opportunity proposed y8, crazygames, gamedistribution, yandex, poki)",
+      "Exclusion narrowed to the release budget (content): \"A second mode; the release's content is the budget in concept.content_model.budget, and nothing beyond it\"",
+      "Quality tier release: the content budget is 16 run-segments, 4 worlds, 8 distinct elements (concept.content_model.budget), the larger of the genre model's and the quality benchmark's bars",
+      "One required platform (yandex); every other platform is optional",
+      "Replay comes from a system (mastery ramp), not from more content",
+      "Asset budget capped at 30 unique assets (low asset complexity)"
+    ]
+  },
+  "platform_compatibility": [
+    {
+      "id": "yandex",
+      "profile_version": "1.3.0",
+      "compatible": true,
+      "issues": [
+        "profile figures are unverified"
+      ],
+      "sdk": {
+        "id": "yandex",
+        "features": [
+          "init",
+          "loading-progress",
+          "gameplay-start-stop",
+          "rewarded",
+          "interstitial",
+          "pause-audio-during-ads",
+          "cloud-save"
+        ]
+      },
+      "constraints": [
+        "Locales required: ru",
+        "Bundle at most 100 MB",
+        "Interstitials at least 60s apart",
+        "Loading progress reported through the SDK",
+        "HTTPS only",
+        "External requests only to declared domains"
+      ]
+    },
+    {
+      "id": "crazygames",
+      "profile_version": "1.3.0",
+      "compatible": true,
+      "issues": [
+        "profile figures are unverified"
+      ],
+      "sdk": {
+        "id": "crazygames",
+        "features": [
+          "init",
+          "gameplay-start-stop",
+          "rewarded",
+          "interstitial",
+          "pause-audio-during-ads",
+          "cloud-save"
+        ]
+      },
+      "constraints": [
+        "Locales required: en",
+        "Bundle at most 250 MB",
+        "Interstitials at least 180s apart",
+        "HTTPS only"
+      ]
+    },
+    {
+      "id": "y8",
+      "profile_version": "1.3.0",
+      "compatible": true,
+      "issues": [
+        "profile figures are unverified"
+      ],
+      "sdk": {
+        "id": "y8",
+        "features": [
+          "init",
+          "gameplay-start-stop",
+          "rewarded",
+          "interstitial",
+          "pause-audio-during-ads",
+          "cloud-save"
+        ]
+      },
+      "constraints": [
+        "Interstitials at least 180s apart",
+        "No external links"
+      ]
+    }
+  ],
+  "risks": [
+    {
+      "description": "Required locales ru, en must be localized by a person, not machine-translated",
+      "severity": "medium",
+      "origin": "strategy",
+      "mitigation": "Keep in-game text to a short string table"
+    },
+    {
+      "description": "A classic and well-served genre; differentiation rests on feel and level design and world variety.",
+      "severity": "medium",
+      "origin": "opportunity",
+      "mitigation": "Tracked into design",
+      "claim_refs": [
+        "claim-5d8a911ac6"
+      ]
+    },
+    {
+      "description": "gamedistribution: progress relies on local storage; no portal cloud save",
+      "severity": "low",
+      "origin": "opportunity",
+      "mitigation": "Tracked into design",
+      "claim_refs": [
+        "claim-3e4aace7dc",
+        "claim-6db6d29f59",
+        "claim-9b16b953de",
+        "claim-feab9737bb"
+      ]
+    },
+    {
+      "description": "yandex: requires ru localization",
+      "severity": "medium",
+      "origin": "opportunity",
+      "mitigation": "Tracked into design",
+      "claim_refs": [
+        "claim-1d5899ec66",
+        "claim-21b503dbca",
+        "claim-289781ecc3",
+        "claim-36ec781b4f",
+        "claim-77c478048e",
+        "claim-9b16b953de",
+        "claim-aedf4467f6",
+        "claim-ebe0dbaaf5"
+      ]
+    },
+    {
+      "description": "poki: progress relies on local storage; no portal cloud save",
+      "severity": "low",
+      "origin": "opportunity",
+      "mitigation": "Tracked into design",
+      "claim_refs": [
+        "claim-0015946f54",
+        "claim-19fe15410c",
+        "claim-2122fcd4f3",
+        "claim-45bee43ffd",
+        "claim-55c84ee534",
+        "claim-6251d40daf",
+        "claim-6299fc4460",
+        "claim-6f79ea4a8d",
+        "claim-9b16b953de",
+        "claim-a9dd28949d",
+        "claim-daa69cd5b6",
+        "claim-dd3290f5c6"
+      ]
+    },
+    {
+      "description": "poki requires web exclusivity, so the candidate platforms cannot all be used for the same build; choosing is a strategy decision",
+      "severity": "high",
+      "origin": "opportunity",
+      "mitigation": "Named in prototype_must_prove; answered before production",
+      "claim_refs": [
+        "claim-0015946f54",
+        "claim-19fe15410c",
+        "claim-2122fcd4f3",
+        "claim-45bee43ffd",
+        "claim-55c84ee534",
+        "claim-6251d40daf",
+        "claim-6299fc4460",
+        "claim-6f79ea4a8d",
+        "claim-9b16b953de",
+        "claim-a9dd28949d",
+        "claim-daa69cd5b6",
+        "claim-dd3290f5c6"
+      ]
+    }
+  ],
+  "assumptions": [
+    {
+      "statement": "The research estimate of 12 development days holds for the MVP as scoped here",
+      "tier": "hypothesis",
+      "invalidated_by": "tech-plan milestones summing past the timebox (guard plan_fits_timebox)"
+    },
+    {
+      "statement": "Players sustain a 360-second session",
+      "tier": "hypothesis",
+      "invalidated_by": "median_session_seconds in the prototype playtest or first performance review"
+    },
+    {
+      "statement": "Rewarded placements monetize this loop the way research expects",
+      "tier": "hypothesis",
+      "invalidated_by": "rewarded opt-in or fill rate in the first performance review"
+    },
+    {
+      "statement": "The Yandex Games profile (v1.3.0) matches the portal's current rules",
+      "tier": "hypothesis",
+      "invalidated_by": "a validation failure or rejection citing a rule the profile does not state"
+    },
+    {
+      "statement": "The CrazyGames profile (v1.3.0) matches the portal's current rules",
+      "tier": "hypothesis",
+      "invalidated_by": "a validation failure or rejection citing a rule the profile does not state"
+    },
+    {
+      "statement": "The Y8 profile (v1.3.0) matches the portal's current rules",
+      "tier": "hypothesis",
+      "invalidated_by": "a validation failure or rejection citing a rule the profile does not state"
+    },
+    {
+      "statement": "The audience type is casual: research found no evidence for it, and casual retention targets are the least demanding",
+      "tier": "hypothesis",
+      "invalidated_by": "platform analytics after launch"
+    },
+    {
+      "statement": "The audience research describes (casual, both) is the audience Yandex Games delivers",
+      "tier": "derived",
+      "invalidated_by": "platform analytics device and region split after launch"
+    },
+    {
+      "statement": "The release content budget (16 run-segments, 4 worlds, 8 distinct elements) can be built inside the 12-day timebox",
+      "tier": "hypothesis",
+      "invalidated_by": "tech-plan milestones summing past the timebox (guard plan_fits_timebox)"
+    },
+    {
+      "statement": "The brief (\"A 2D brick-breaker arcade game (PixiJS): paddle and ball with satisfying juice, 4 themed worlds of hand-designed levels with new brick types and hazards introduced per world, power-ups (multi-ball, wide paddle, laser), star rating per level, level unlocks and saved progress, boss levels, and an endless mode for replay. Desktop and mobile touch.\") can be built on the brick-breaker shape research selected: drag a paddle to keep a ball in play, angling rebounds off the paddle and the side walls to break every brick on the board",
+      "tier": "hypothesis",
+      "invalidated_by": "design cannot realise the brief's mechanic within this shape and timebox; the prototype then plays as the shape, not as the brief"
+    }
+  ],
+  "brief": "A 2D brick-breaker arcade game (PixiJS): paddle and ball with satisfying juice, 4 themed worlds of hand-designed levels with new brick types and hazards introduced per world, power-ups (multi-ball, wide paddle, laser), star rating per level, level unlocks and saved progress, boss levels, and an endless mode for replay. Desktop and mobile touch.",
+  "research": {
+    "research_version": 2,
+    "report_id": "rr-7742cb366d",
+    "opportunity_id": "opp-56ad9afd",
+    "origin": "capability-screen",
+    "summary": "Brick Breaker Worlds: a shape in the capability catalog, screened against crazygames, gamedistribution, gamemonetize, gamevui, poki, y8, yandex at 0.73, with no observed market presence (estimates only).",
+    "theme": {
+      "theme": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes theme for Arcade (it has no teardown games)"
+      },
+      "setting": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes setting for Arcade (it has no teardown games)"
+      }
+    },
+    "fantasy": {
+      "player": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes player_fantasy for Arcade (it has no teardown games)"
+      },
+      "emotional": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes emotional_fantasy for Arcade (it has no teardown games)"
+      }
+    },
+    "art": {
+      "dimension": {
+        "value": "2d",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-5d8a911ac6"
+        ]
+      },
+      "rendering": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes art_rendering for Arcade (it has no teardown games)"
+      },
+      "tone": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes art_tone for Arcade (it has no teardown games)"
+      },
+      "palette": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes art_palette for Arcade (it has no teardown games)"
+      },
+      "camera": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes camera for Arcade (it has no teardown games)"
+      }
+    },
+    "gameplay": {
+      "genre": {
+        "value": "arcade",
+        "label": "Arcade",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-5d8a911ac6"
+        ]
+      },
+      "mechanics": {
+        "value": [
+          "aim-shoot",
+          "collect",
+          "physics-launch"
+        ],
+        "label": "drag a paddle to keep a ball in play, angling rebounds off the paddle and the side walls to break every brick on the board",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-5d8a911ac6"
+        ]
+      },
+      "gameplay_steps": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes gameplay_steps for Arcade (it has no teardown games)"
+      },
+      "controls": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes controls for Arcade (it has no teardown games)"
+      },
+      "core_loop": {
+        "value": "launch the ball, angle rebounds off the paddle and walls, break bricks and catch the power-ups they drop (multi-ball, a wide paddle on a timer, a laser that lets the paddle shoot), clear the board for stars, open locked levels and each world's star gates, replay for three stars; 32 hand-built levels in 4 worlds of 8, each world adding its own brick type or hazard (armored two-hit bricks, unbreakable steel bricks with sliding rows, a descending field, explosive bricks and falling embers) and ending in a boss level with a health bar",
+        "label": "launch the ball, angle rebounds off the paddle and walls, break bricks and catch the power-ups they drop (multi-ball, a wide paddle on a timer, a laser that lets the paddle shoot), clear the board for stars, open locked levels and each world's star gates, replay for three stars; 32 hand-built levels in 4 worlds of 8, each world adding its own brick type or hazard (armored two-hit bricks, unbreakable steel bricks with sliding rows, a descending field, explosive bricks and falling embers) and ending in a boss level with a health bar",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-5d8a911ac6"
+        ]
+      },
+      "progression": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes progression for Arcade (it has no teardown games)"
+      },
+      "difficulty_shape": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes difficulty_shape for Arcade (it has no teardown games)"
+      },
+      "retention_hooks": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes retention_hooks for Arcade (it has no teardown games)"
+      }
+    },
+    "audience": {
+      "player_type": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no game in this cell is coded on player type; the audience type is not assumed (a market descriptor such as casual describes the market, not the player)"
+      },
+      "intent": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no game in this cell is coded on intent"
+      },
+      "skill": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no game in this cell is coded on skill"
+      },
+      "device": {
+        "value": "both",
+        "label": "platform mobile share 60%",
+        "tier": "hypothesis",
+        "source": "platform",
+        "claim_refs": [
+          "claim-289781ecc3",
+          "claim-2f34773cbb",
+          "claim-6f79ea4a8d"
+        ]
+      },
+      "age_band": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no portal in the corpus states an age band for these games; none is inferred"
+      },
+      "session_behavior": {
+        "value": "medium",
+        "label": "360 s, the catalog's estimate",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-5d8a911ac6"
+        ]
+      },
+      "regions": [
+        "br",
+        "by",
+        "de",
+        "fr",
+        "gb",
+        "id",
+        "kz",
+        "ru",
+        "tr",
+        "us"
+      ]
+    },
+    "competitors": [],
+    "benchmarks": [],
+    "patterns": {
+      "adopt": []
+    },
+    "monetization": {
+      "placements": [],
+      "platform_support": [
+        {
+          "platform": "y8",
+          "formats": [
+            "rewarded",
+            "interstitial"
+          ],
+          "claim_refs": [
+            "claim-7868ed413d"
+          ]
+        },
+        {
+          "platform": "crazygames",
+          "formats": [
+            "rewarded",
+            "interstitial",
+            "banner",
+            "iap"
+          ],
+          "claim_refs": [
+            "claim-831592f95c",
+            "claim-8691d0680d",
+            "claim-d183a072ae"
+          ]
+        },
+        {
+          "platform": "gamedistribution",
+          "formats": [
+            "rewarded",
+            "interstitial"
+          ],
+          "claim_refs": [
+            "claim-6db6d29f59"
+          ]
+        },
+        {
+          "platform": "yandex",
+          "formats": [
+            "rewarded",
+            "interstitial",
+            "banner",
+            "iap"
+          ],
+          "claim_refs": [
+            "claim-36ec781b4f",
+            "claim-aedf4467f6",
+            "claim-ebe0dbaaf5"
+          ]
+        },
+        {
+          "platform": "poki",
+          "formats": [
+            "rewarded",
+            "interstitial"
+          ],
+          "claim_refs": [
+            "claim-0015946f54",
+            "claim-19fe15410c",
+            "claim-2122fcd4f3",
+            "claim-45bee43ffd",
+            "claim-6299fc4460",
+            "claim-6f79ea4a8d",
+            "claim-a9dd28949d",
+            "claim-dd3290f5c6"
+          ]
+        }
+      ],
+      "primary": "rewarded"
+    },
+    "production": {
+      "dimension": "2d",
+      "complexity": "s",
+      "tier": "hypothesis",
+      "drivers": [
+        "catalog estimate: s technical, m asset complexity (unmeasured)"
+      ],
+      "estimate_days": 12,
+      "asset_cost_usd": 300,
+      "claim_refs": [
+        "claim-5d8a911ac6"
+      ]
+    },
+    "capability": {
+      "catalog_entry": "brick-breaker-worlds",
+      "design_archetype": "agent",
+      "genre_model": null,
+      "requires": [
+        "2d physics-style ball reflection",
+        "pointer and touch paddle drag",
+        "hand-authored level data",
+        "saved progress"
+      ],
+      "buildable": true,
+      "missing": [],
+      "reason": "Built by catalog entry brick-breaker-worlds: design archetype agent."
+    },
+    "market": [],
+    "risks": [
+      {
+        "description": "A classic and well-served genre; differentiation rests on feel and level design and world variety.",
+        "severity": "medium",
+        "claim_refs": [
+          "claim-5d8a911ac6"
+        ]
+      }
+    ],
+    "confidence": {
+      "evidence_coverage": 0.0,
+      "weakest_tier": "unknown",
+      "unknown_facets": [
+        "gameplay_steps",
+        "controls",
+        "theme",
+        "setting",
+        "player_fantasy",
+        "emotional_fantasy",
+        "art_rendering",
+        "art_tone",
+        "art_palette",
+        "camera",
+        "progression",
+        "difficulty_shape",
+        "retention_hooks"
+      ],
+      "fixture_evidence": false
+    },
+    "claim_refs": [
+      "claim-0015946f54",
+      "claim-0871e5f874",
+      "claim-19fe15410c",
+      "claim-2122fcd4f3",
+      "claim-289781ecc3",
+      "claim-2f34773cbb",
+      "claim-36ec781b4f",
+      "claim-45bee43ffd",
+      "claim-45e8b8b427",
+      "claim-5d8a911ac6",
+      "claim-6299fc4460",
+      "claim-6db6d29f59",
+      "claim-6f79ea4a8d",
+      "claim-7868ed413d",
+      "claim-831592f95c",
+      "claim-8691d0680d",
+      "claim-9b16b953de",
+      "claim-9c2fc37b75",
+      "claim-a9dd28949d",
+      "claim-aedf4467f6",
+      "claim-bf0a6bc4fb",
+      "claim-d183a072ae",
+      "claim-dd3290f5c6",
+      "claim-e619f4bcf5",
+      "claim-ebe0dbaaf5"
+    ],
+    "applied": [
+      {
+        "field": "concept.control_scheme",
+        "source": "default",
+        "detail": "drag: read from the concept's wording; research coded no control scheme for this cell"
+      },
+      {
+        "field": "session.target_seconds",
+        "source": "default",
+        "detail": "no comparable game's run length was measured; the catalog estimate or the policy default is used"
+      },
+      {
+        "field": "concept.content_model",
+        "source": "brief",
+        "detail": "level-authored difficulty: the brief asks for it (authored-content), and the arcade family allows it"
+      },
+      {
+        "field": "concept.content_model",
+        "source": "research",
+        "detail": "arcade (Arcade / action): 3 run-segments in the MVP, progression skill-only, level-authored difficulty on speed, density, variety, precision - the shape research coded for this cell",
+        "claim_refs": [
+          "claim-5d8a911ac6"
+        ]
+      },
+      {
+        "field": "monetization.rationale",
+        "source": "default",
+        "detail": "no comparable game's placements were coded; the shape's own hypothesis stands"
+      },
+      {
+        "field": "audience.type",
+        "source": "default",
+        "detail": "casual: research coded no player type for this cell; it was not assumed there, only here, as the planning default"
+      },
+      {
+        "field": "audience.device",
+        "source": "research",
+        "detail": "both: platform mobile share 60% (hypothesis)",
+        "claim_refs": [
+          "claim-289781ecc3",
+          "claim-2f34773cbb",
+          "claim-6f79ea4a8d"
+        ]
+      }
+    ],
+    "design_constraints": {
+      "family": {
+        "value": "arcade",
+        "label": "Arcade / action",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-5d8a911ac6"
+        ]
+      },
+      "unit_kind": {
+        "value": "run-segment",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "label": "one run-segment of Arcade / action",
+        "claim_refs": [
+          "claim-5d8a911ac6"
+        ],
+        "reason": "the arcade genre model's first unit kind; no teardown codes it"
+      },
+      "progression": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes progression for Arcade (it has no teardown games)"
+      },
+      "difficulty_shape": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes difficulty_shape for Arcade (it has no teardown games)"
+      },
+      "retention_hooks": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes retention_hooks for Arcade (it has no teardown games)"
+      },
+      "session_band": {
+        "value": "medium",
+        "label": "360 s estimated",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-5d8a911ac6"
+        ]
+      },
+      "difficulty_axes": {
+        "value": [
+          "speed",
+          "density",
+          "variety",
+          "precision"
+        ],
+        "label": "speed, density, variety, precision",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-5d8a911ac6"
+        ],
+        "reason": "no teardown codes what the ramp raises; the arcade genre model's axes are the fallback"
+      }
+    }
+  }
+}

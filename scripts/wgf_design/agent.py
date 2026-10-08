@@ -69,6 +69,7 @@ from .authors import (ArchetypeAuthor, AuthorError, DesignAuthor, register_autho
                       split_reason)
 from .depth import load_rules as load_depth_rules
 from .experience import load_rules
+from .inherit import follow as follow_strategy
 from .revision import as_draft
 
 __all__ = ["AgentAuthor", "AgentRunFailed", "REQUIRED_KEYS", "BUILD_SPEC_KEYS",
@@ -420,6 +421,17 @@ def _kits(locales):
     return out
 
 
+# The strategy changed since the design this draft starts from, or the draft held values of
+# an earlier strategy (inherit.py; found live, defect L31: a re-planned 360 s session reached
+# the gap repair as the previous design's casual 300 s).
+PROMPT_STRATEGY_FOLLOWED = (
+    " The strategy is not the one the starting design was made from: the request's"
+    " `strategy_followed` lists the strategy-owned fields already set from the current strategy"
+    " (session lengths, genre.session_profile, locales, placements, quality tier) and what"
+    " changed in the strategy. Keep those values and fit the design to them - the session"
+    " structure, unit lengths and difficulty steps follow the current session profile.")
+
+
 def check_shape(draft):
     """Problems with the draft's shape - before `finalize` indexes into it."""
     if not isinstance(draft, dict):
@@ -528,6 +540,17 @@ class AgentAuthor(DesignAuthor):
                 json.dump({"commit": adoption.get("commit"), "path": adoption.get("path"),
                            "units": adoption.get("shipped_units") or adoption.get("units")},
                           handle, indent=2, ensure_ascii=False, default=str)
+        # What the design holds only because the strategy states it - the session, its
+        # derived profile, the locales, the approved placements, the quality tier, research -
+        # is the CURRENT strategy's, whatever the starting draft was made from (a previous
+        # design, a gap base, an archetype): a person who re-planned the strategy is heard
+        # (inherit.py; defect L31). What changed is shown to the author.
+        followed = follow_strategy(starting, brief.get("strategy"), brief.get("platforms"))
+        if repair and isinstance(repair.get("previous_draft"), dict):
+            # A round's (or a resumed visit's) draft is seeded the same way.
+            repair = dict(repair, previous_draft=copy.deepcopy(repair["previous_draft"]))
+            follow_strategy(repair["previous_draft"], brief.get("strategy"),
+                            brief.get("platforms"))
         idea = (brief.get("strategy") or {}).get("brief")
         rules = load_rules()
         models = genre_models.load()
@@ -630,6 +653,15 @@ class AgentAuthor(DesignAuthor):
                 "derived": adoption.get("derived"),
                 "rule": "Every unit id the repository ships stays in the design under its "
                         "own id; extend and improve the shipped units, never replace them."}
+        change = (revision or {}).get("strategy_delta") or brief.get("strategy_change")
+        if followed or (isinstance(change, dict) and change.get("unchanged") is False):
+            request["strategy_followed"] = {
+                "rule": "These fields are the strategy's: they were set from the current "
+                        "strategy, not carried from the previous design or draft. Keep them, "
+                        "and fit what depends on them (the session structure, unit lengths, "
+                        "difficulty steps, copy) to them.",
+                "fields": followed,
+                "strategy_delta": change if isinstance(change, dict) else None}
         if revision:
             # The identity is kept, so no other look is offered.
             request["revision"] = {"revises_version": revision.get("version"),
@@ -687,6 +719,8 @@ class AgentAuthor(DesignAuthor):
             derived = _derived_summary(adoption.get("derived"))
             if derived:
                 values["prompt"] += PROMPT_ADOPTION_DERIVED.format(derived=derived)
+        if "strategy_followed" in request:
+            values["prompt"] += PROMPT_STRATEGY_FOLLOWED
         if repair:
             values["prompt"] += PROMPT_REPAIR
         try:

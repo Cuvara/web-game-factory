@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/prototype-report.schema.json",
   "title": "Prototype Report",
-  "description": "The evidence package for gate G4 — the kill gate.\n\nIts job is to make an honest kill possible. That means it must evaluate each kill criterion authored at strategy time with a MEASURED value, and it must carry playtest observations from someone who had not seen the game before. A report that only describes what was built cannot support a decision to stop.\n\nThe recommendation field is the producing role's view, not the verdict. The verdict is a decision-record.\n\n1.1.0 adds two things the gate needs in order to read the build against the design rather than against itself: `design_gaps`, every place the design did not say enough to build from and what was assumed instead, which is how a design is corrected rather than silently reinterpreted; and `content_coverage`, how many of the designed content units were built, partly built or cut - a prototype that built two of six levels is not a prototype of the design.\n\n1.2.0 adds `specialist`: a develop visit the triage step routed to a specialist records which one, the findings it was given and what its sessions cost; the next triage records what the gates measured of them (triage-report `ledger`).",
+  "description": "The evidence package for gate G4 — the kill gate.\n\nIts job is to make an honest kill possible. That means it must evaluate each kill criterion authored at strategy time with a MEASURED value, and it must carry playtest observations from someone who had not seen the game before. A report that only describes what was built cannot support a decision to stop.\n\nThe recommendation field is the producing role's view, not the verdict. The verdict is a decision-record.\n\n1.1.0 adds two things the gate needs in order to read the build against the design rather than against itself: `design_gaps`, every place the design did not say enough to build from and what was assumed instead, which is how a design is corrected rather than silently reinterpreted; and `content_coverage`, how many of the designed content units were built, partly built or cut - a prototype that built two of six levels is not a prototype of the design.\n\n1.2.0 adds `specialist`: a develop visit the triage step routed to a specialist records which one, the findings it was given and what its sessions cost; the next triage records what the gates measured of them (triage-report `ledger`).\n\n1.3.0 adds `specialist.lesson_candidates`: a systemic issue the specialist found, stated generically with the check that should hold it (core/reference/lessons.yaml).",
 
   "x-wgf": {
     "id": "prototype-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "producer": "title:prototype",
     "consumers": ["title:prototype-review", "title:production", "title:prototype", "title:design", "release:qa", "release:draft", "release:store-listing"],
     "repo_path": "workspace/titles/<title-id>/prototype-report.json",
@@ -166,7 +166,7 @@
         "sessions": { "type": ["integer", "null"], "minimum": 0 },
         "lesson_candidates": {
           "type": "array",
-          "description": "Added by WS-9. The knowledge write-back rule: a systemic issue the specialist found while working its findings - a class of defect the Factory let through, not this build's instance of it - stated generically, with the check that should hold it. Copied from the developer's report (docs/development/report.json `lesson_candidates`); surfaced to the person at G4 by the triage-report and the quality-report.",
+          "description": "Added in 1.3.0. The knowledge write-back rule: a systemic issue the specialist found while working its findings - a class of defect the Factory let through, not this build's instance of it - stated generically, with the check that should hold it. Copied from the developer's report (docs/development/report.json `lesson_candidates`); surfaced to the person at G4 by the triage-report and the quality-report.",
           "items": {
             "$ref": "./shared/quality-finding.schema.json#/$defs/lesson_candidate"
           }

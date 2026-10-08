@@ -90,7 +90,7 @@
         "route": { "$ref": "#/$defs/route" },
         "assets": { "type": "array", "items": { "type": "string" }, "description": "Asset ids it concerns, when the producer names them." },
         "build": { "$ref": "#/$defs/build" },
-        "guarded_by": { "type": "array", "items": { "$ref": "#/$defs/guard" }, "description": "WS-9. The regression guards this failure already has: the lessons of core/reference/lessons.yaml whose check this finding's check is, with the tests that prove the check catches it. Empty or absent: no lesson names it, and a systemic cause is a lesson candidate." }
+        "guarded_by": { "type": "array", "items": { "$ref": "#/$defs/guard" }, "description": "Since quality-report 1.2.0 / triage-report 1.2.0. The regression guards this failure already has: the lessons of core/reference/lessons.yaml whose check this finding's check is, with the tests that prove the check catches it. Empty or absent: no lesson names it, and a systemic cause is a lesson candidate." }
       },
       "additionalProperties": false
     },
@@ -110,7 +110,7 @@
 
     "lesson_candidate": {
       "type": "object",
-      "description": "WS-9. A systemic issue a specialist visit found: a class of defect the Factory let through, stated so it is true of any game, with the check that should hold it. Surfaced to the person deciding G4; promoted to core/reference/lessons.yaml (with a check and a test) or rejected by a person, never applied by itself.",
+      "description": "Since quality-report 1.2.0 / triage-report 1.2.0. A systemic issue a specialist visit found: a class of defect the Factory let through, stated so it is true of any game, with the check that should hold it. Surfaced to the person deciding G4; promoted to core/reference/lessons.yaml (with a check and a test) or rejected by a person, never applied by itself.",
       "required": ["summary"],
       "properties": {
         "summary": { "type": "string", "minLength": 1, "description": "The lesson, generically: the root cause in the Factory, not this build's symptom." },
@@ -185,7 +185,7 @@
           "required": ["verdict", "producer"],
           "additionalProperties": false
         },
-        "guarded_by": { "type": "array", "items": { "$ref": "#/$defs/guard" }, "description": "WS-9. The lessons whose check this finding's is (see finding.guarded_by)." },
+        "guarded_by": { "type": "array", "items": { "$ref": "#/$defs/guard" }, "description": "Since quality-report 1.2.0 / triage-report 1.2.0. The lessons whose check this finding's is (see finding.guarded_by)." },
         "detected_seq": { "type": ["integer", "null"], "description": "Run-local order of the report it was first detected in." },
         "history": {
           "type": "array",

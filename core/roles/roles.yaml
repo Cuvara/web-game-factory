@@ -21,7 +21,7 @@
 # Which specialist owns which quality dimension is reference data, not a role property:
 # core/reference/specialist-routing.yaml. Charter: specialists.md.
 
-version: 1.1.0
+version: 1.2.0  # 1.2.0: art-director, performance-engineer, browser-qa, publishing-compliance
 
 roles:
   # ---------------------------------------------------------------- owners
@@ -310,7 +310,7 @@ roles:
       - core/craft/production-wiring.md
     writes: [src/, public/, tests/, docs/development/]
 
-  # WS-9 (version bump at integration): art direction, performance, browser QA and publishing
+  # 1.2.0: art direction, performance, browser QA and publishing
   # compliance as routed specialists.
   art-director:
     kind: implementer

@@ -136,6 +136,10 @@ from 32 units to 12. An adopted game is improved, never rebuilt:
   (the request's `adoption`, with `rewritten`; the units in full in
   `<visit>-<attempt>.adopted-units.json`) and extends them, the last design's gaps are not
   repaired, and a design missing a shipped unit id breaches `existing_content_floor_kept`.
+  What the floor derives of the shipped units is handed over, never left to infer
+  (`existing.derive`): each starting unit carries the `group` its id prefix gives it and
+  the climax `purpose` a climax term gives it, where it states neither; the starting draft
+  declares those groups; the request lists them with their unit ids (`adoption.derived`).
 - **`accepted_baseline` is a tag or a sha.** A branch name resolves to its tip, which moves
   with the run's own commits. When every commit the listing reaches (200) was made by the
   run, the floor is refused rather than taken at HEAD - name the shipped commit in

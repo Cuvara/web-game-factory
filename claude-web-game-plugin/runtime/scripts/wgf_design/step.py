@@ -583,6 +583,7 @@ class DesignStep(WorkflowStep):
         return {"commit": source.get("commit"), "path": source.get("path"),
                 "unit_ids": list(floor.get("unit_ids") or []),
                 "units": existing.adoption_units(units),
+                "derived": existing.adoption_derived(units),
                 "shipped_units": units,
                 "missing": missing,
                 "rewritten": changed,

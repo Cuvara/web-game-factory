@@ -348,6 +348,13 @@ class DesignStep(WorkflowStep):
                         f"the design does not state its production art and UI{after} "
                         f"({len(problems)} problem(s)): " + "; ".join(problems[:6]),
                         retryable=False)
+                if outcome["strategy"]:
+                    context.logger.error("the design does not keep the strategy's session",
+                                         problems=problems, repair_rounds=repair_round)
+                    return StepResult.failed(
+                        f"the design does not keep the strategy's session{after} "
+                        f"({len(problems)} problem(s)): " + "; ".join(problems[:6]),
+                        retryable=False)
                 if outcome["features"]:
                     context.logger.error("the design does not account for its features",
                                          problems=problems, repair_rounds=repair_round)
@@ -435,7 +442,8 @@ class DesignStep(WorkflowStep):
                    "block": None, "blocking": None,
                    "warnings": None, "problems": [], "unbuildable": False,
                    "experience": False, "presentation": False, "depth": False,
-                   "content": False, "features": False, "consistency_problems": []}
+                   "content": False, "features": False, "strategy": False,
+                   "consistency_problems": []}
         problems = buildability(design)
         if problems:
             outcome.update(problems=problems, unbuildable=True)
@@ -458,6 +466,13 @@ class DesignStep(WorkflowStep):
         found, feature_results = feature_check.check(design, strategy, platforms, catalogue)
         if found:
             outcome.update(features=True)
+            problems += found
+        # What the strategy owns - the session target, a first session it states, and the
+        # session profile they derive - is the strategy's, whatever the author returned: no
+        # design is judged by another session's rules (inherit.check; defect L31).
+        found = inherit.check(design, strategy)
+        if found:
+            outcome.update(strategy=True)
             problems += found
         now = self.clock()
         block, blocking, warnings = consistency.evaluate(design, strategy, platforms, now,

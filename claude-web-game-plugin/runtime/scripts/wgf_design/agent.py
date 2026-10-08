@@ -542,10 +542,12 @@ class AgentAuthor(DesignAuthor):
                           handle, indent=2, ensure_ascii=False, default=str)
         # What the design holds only because the strategy states it - the session, its
         # derived profile, the locales, the approved placements, the quality tier, research -
-        # is the CURRENT strategy's, whatever the starting draft was made from (a previous
-        # design, a gap base, an archetype): a person who re-planned the strategy is heard
-        # (inherit.py; defect L31). What changed is shown to the author.
-        followed = follow_strategy(starting, brief.get("strategy"), brief.get("platforms"))
+        # is the CURRENT strategy's, not the previous design's a gap repair or a revision
+        # starts from: a person who re-planned the strategy is heard (inherit.py; defect L31).
+        # What changed is shown to the author. A fresh draft is the built-in author's, made
+        # from this strategy already, and is told nothing.
+        followed = (follow_strategy(starting, brief.get("strategy"), brief.get("platforms"))
+                    if gaps or revision else [])
         if repair and isinstance(repair.get("previous_draft"), dict):
             # A round's (or a resumed visit's) draft is seeded the same way.
             repair = dict(repair, previous_draft=copy.deepcopy(repair["previous_draft"]))

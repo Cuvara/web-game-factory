@@ -15,8 +15,12 @@ These tests hold, on the replayed run store:
   * wgf_design/agent.py: a gap repair, a revision, and a resumed repair round all start from a
     draft that holds standard / 360 / 270, and the request records what was set and what changed
     in the strategy since the previous design (`strategy_followed`);
-  * wgf_design/step.py: a gap visit computes that strategy change, and a draft the step last
-    accepted is composed with the current strategy's fields.
+  * wgf_design/step.py: a gap visit computes that strategy change, a draft the step last
+    accepted is composed with the current strategy's fields, and a draft an author returns
+    with another session (target, stated first session, derived profile) is a problem the
+    author is asked to repair (inherit.check);
+  * what the design chose within the strategy stays: a higher tier, its own first session,
+    a narrower placement platform list, its locale order; a fresh draft is told nothing.
 
 Offline. Run from the repository root:
 
@@ -41,7 +45,7 @@ from wgf_design import AgentAuthor  # noqa: E402
 from wgf_design import inherit  # noqa: E402
 from wgf_design.platforms import load_platforms  # noqa: E402
 from wgf_design.revision import as_draft  # noqa: E402
-from wgflib.workflow.model import ArtifactRef  # noqa: E402
+from wgflib.workflow.model import ArtifactRef, StepOutcome  # noqa: E402
 
 FIXTURES = os.path.join(HERE, "fixtures", "design", "follows-strategy-2d")
 
@@ -161,19 +165,96 @@ class TheStrategyOwnedFields(Replay):
         self.assertEqual(inherit.session_profile_name(strategy("midcore", 120)), "standard")
         self.assertEqual(inherit.session_profile_name({}), "standard")
 
-    def test_placements_locales_and_tier_follow_the_strategy(self):
+    def test_a_dropped_placement_takes_its_feature_and_continue_offer(self):
         draft = copy.deepcopy(self.design)
         strategy = copy.deepcopy(self.strategy)
         strategy["monetization"] = {"class": "interstitial-led", "placements": ["interstitial"]}
-        strategy["concept"]["content_model"]["quality_tier"] = "production"
-        draft["scope"]["locales"] = ["en", "es"]
         changes = {c["field"] for c in inherit.follow(draft, strategy, self.platforms)}
         self.assertEqual({t["kind"] for t in draft["build_spec"]["monetization_touchpoints"]},
                          {"interstitial"})
         self.assertIn("build_spec.monetization_touchpoints[rewarded-extra-ball]", changes)
-        # The platforms' required locales first, en, then the design's own choices.
-        self.assertEqual(draft["scope"]["locales"], ["ru", "en", "es"])
-        self.assertEqual(draft["build_spec"]["content"]["quality_tier"], "production")
+        self.assertNotIn("continue_offer", draft["build_spec"]["failure"])
+        ids = [f["id"] for f in draft["features"]]
+        self.assertNotIn("monetization-rewarded-continue", ids)
+        self.assertIn("monetization-interstitial-between", ids)
+
+    def test_a_placements_narrowed_platforms_stay_narrowed(self):
+        draft = copy.deepcopy(self.design)
+        touchpoint = draft["build_spec"]["monetization_touchpoints"][0]
+        touchpoint["platforms"] = ["yandex", "gone-portal"]
+        changes = inherit.follow(draft, self.strategy, self.platforms)
+        self.assertEqual(touchpoint["platforms"], ["yandex"])
+        self.assertIn(f"build_spec.monetization_touchpoints[{touchpoint['id']}].platforms",
+                      [c["field"] for c in changes])
+
+    def test_locales_keep_the_designs_order_and_gain_what_is_required(self):
+        draft = copy.deepcopy(self.design)
+        draft["scope"]["locales"] = ["en", "ru"]
+        self.assertNotIn("scope.locales", [c["field"] for c in inherit.follow(
+            draft, self.strategy, self.platforms)])
+        self.assertEqual(draft["scope"]["locales"], ["en", "ru"])
+        draft["scope"]["locales"] = ["es", "en"]
+        self.assertIn("scope.locales", [c["field"] for c in inherit.follow(
+            draft, self.strategy, self.platforms)])
+        self.assertEqual(draft["scope"]["locales"], ["es", "en", "ru"])
+
+    def test_a_design_may_aim_above_the_strategys_tier_never_below(self):
+        strategy = copy.deepcopy(self.strategy)
+        strategy["concept"]["content_model"]["quality_tier"] = "mvp"
+        draft = copy.deepcopy(self.design)  # states release
+        self.assertNotIn("build_spec.content.quality_tier", [c["field"] for c in inherit.follow(
+            draft, strategy, self.platforms)])
+        self.assertEqual(draft["build_spec"]["content"]["quality_tier"], "release")
+        draft["build_spec"]["content"]["quality_tier"] = "mvp"
+        inherit.follow(draft, self.strategy, self.platforms)  # commits to release
+        self.assertEqual(draft["build_spec"]["content"]["quality_tier"], "release")
+        # One that states none is held to the strategy's tier already, and is left so.
+        del draft["build_spec"]["content"]["quality_tier"]
+        inherit.follow(draft, self.strategy, self.platforms)
+        self.assertNotIn("quality_tier", draft["build_spec"]["content"])
+
+    def test_a_first_session_the_strategy_does_not_state_is_the_designs(self):
+        strategy = copy.deepcopy(self.strategy)
+        del strategy["session"]["first_session_seconds"]
+        draft = copy.deepcopy(self.design)  # 220 s, its own choice under a 300 s target
+        inherit.follow(draft, strategy, self.platforms)
+        self.assertEqual(draft["session"]["first_session_seconds"], 220)
+        # The old target's default (min(300, 180)) is re-derived from the new target.
+        draft = copy.deepcopy(self.design)
+        draft["session"]["first_session_seconds"] = 180
+        strategy["session"]["target_seconds"] = 150
+        inherit.follow(draft, strategy, self.platforms)
+        self.assertEqual(draft["session"]["first_session_seconds"], 150)
+
+
+class TheReturnedDesignKeepsTheStrategysSession(Replay):
+    def test_the_strategy_owned_session_fields_are_checked(self):
+        # Game-design v2 against strategy v3: the live visit's draft.
+        problems = inherit.check(self.design, self.strategy)
+        self.assertEqual([p.split("]")[0] + "]" for p in problems],
+                         ["[strategy.session_target]", "[strategy.first_session]",
+                          "[strategy.session_profile]"])
+        self.assertEqual(inherit.check(self.design, self.before), [])
+
+    def test_standard_cannot_escape_the_casual_rules(self):
+        design = copy.deepcopy(self.design)
+        design["genre"]["session_profile"] = "standard"
+        problems = inherit.check(design, self.before)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("derives 'casual'", problems[0])
+
+    def test_the_step_asks_the_author_to_repair_a_wrong_profile(self):
+        # An author that returns casual for the 360 s strategy is shown the problem.
+        with open(self.host, "w", encoding="utf-8") as handle:
+            handle.write(HOST.replace('draft["fantasy"] = "Revised: " + draft["fantasy"]',
+                                      'draft["fantasy"] = "Revised: " + draft["fantasy"]\n'
+                                      '    draft["genre"]["session_profile"] = "casual"'))
+        result, context = self.visit()
+        self.assertEqual(result.outcome, StepOutcome.FAILED, result.error)
+        self.assertIn("strategy's session", result.error)
+        self.assertIn("[strategy.session_profile]", result.error)
+        repaired = self.seen("5-1-repair1")["request"]["repair"]["problems"]
+        self.assertTrue(any(p.startswith("[strategy.session_profile]") for p in repaired))
 
 
 class TheAgentStartsFromTheCurrentStrategy(Replay):
@@ -197,6 +278,14 @@ class TheAgentStartsFromTheCurrentStrategy(Replay):
         followed = seen["request"]["strategy_followed"]
         self.assertIn("genre.session_profile", [c["field"] for c in followed["fields"]])
         self.assertIn("strategy_followed", seen["prompt"])
+
+    def test_a_fresh_design_is_told_nothing_changed(self):
+        # The built-in starting draft is made from this strategy: nothing to follow.
+        AgentAuthor().draft(self.brief())
+        seen = self.seen("5-1")
+        self.assertNotIn("strategy_followed", seen["request"])
+        self.assertNotIn("strategy_followed", seen["prompt"])
+        self.assertFollows(seen["request"]["starting_draft"])
 
     def test_a_revision_starts_from_standard_360(self):
         from wgf_design.revision import previous_design

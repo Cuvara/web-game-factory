@@ -46,6 +46,7 @@ from wgflib import template_contract as contract
 from . import archetypes, identity, presentation
 from . import depth as depth_check
 from . import features as feature_check
+from .inherit import PLACEMENTS_BY_CLASS, required_locales, session_profile_name
 from .platforms import supported_placements, tightest_interval
 
 __all__ = ["DesignAuthor", "ArchetypeAuthor", "AUTHORS", "Resolved", "register_author",
@@ -53,14 +54,6 @@ __all__ = ["DesignAuthor", "ArchetypeAuthor", "AUTHORS", "Resolved", "register_a
 
 TIER_ORDER = ("mvp", "post-mvp", "optional")
 
-PLACEMENTS_BY_CLASS = {
-    "rewarded-led": ["rewarded", "interstitial"],
-    "interstitial-led": ["interstitial"],
-    "mixed-ads": ["rewarded", "interstitial", "banner"],
-    "iap-led": ["iap"],
-    "hybrid": ["rewarded", "iap"],
-    "none": [],
-}
 
 STOP = {"with", "that", "this", "than", "from", "into", "only", "beyond", "more", "less", "any",
         "one", "the", "and", "for", "per", "not", "all", "its", "their", "layer", "specific",
@@ -428,8 +421,7 @@ class ArchetypeAuthor(DesignAuthor):
         content = copy.deepcopy(a["content"])
         # Not a family: the session profile the content is held to. A casual audience playing
         # in short bursts gets shorter units and one difficulty axis raised at a time.
-        session_profile = ("casual" if audience.get("type") == "casual" and target <= 300
-                           else "standard")
+        session_profile = session_profile_name(strategy)
         models = genre_models.load()
         family_block = (models.get("families") or {}).get(a["genre"]["family"]) or {}
         generation = content.get("generation") or {}
@@ -438,13 +430,7 @@ class ArchetypeAuthor(DesignAuthor):
                          else len(listed))
         content_unit_kind = content["unit_kind"]
         kinds_word = content_unit_kind + ("" if content_unit_kind.endswith("s") else "s")
-        locales = []
-        for p in sorted(platforms, key=lambda p: not p.required):
-            for locale in p.get("requirements", "locales_required", default=[]):
-                if locale not in locales:
-                    locales.append(locale)
-        if "en" not in locales:
-            locales.append("en")
+        locales = required_locales(platforms)
         # Every face must set every locale in scope: a kit face that cannot is swapped for
         # its covering alternate (identity.ALTERNATES), never left to a system fallback.
         look, _swapped = identity.cover(look, locales, presentation.load_font_coverage())

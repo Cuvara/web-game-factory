@@ -69,7 +69,8 @@ from wgflib.workflow import references as pinned_references
 from wgflib.yamllite import load as load_yaml
 from wgflib.workflow.contracts import ArtifactContracts
 
-from . import commitments, consistency, content, depth, existing, experience, presentation
+from . import (commitments, consistency, content, depth, existing, experience, inherit,
+               presentation)
 from . import features as feature_check
 from . import knowledge as design_knowledge
 from .authors import AUTHORS, AuthorError, resolve_author
@@ -257,6 +258,18 @@ class DesignStep(WorkflowStep):
                     "game-design to repair", retryable=False)
             brief["gaps"] = gaps
             brief["previous_design"] = previous
+            # The gap base is the previous design, but what it holds of the strategy is the
+            # current strategy's (inherit.py): what changed since it is told to the author.
+            try:
+                base = previous_design(context, strategy)
+            except RevisionError:
+                base = None
+            if base and not base["strategy_delta"].get("unchanged"):
+                brief["strategy_change"] = base["strategy_delta"]
+                context.logger.info("the strategy changed since the design the gaps were "
+                                    "found in", strategy_changes=len(
+                                        base["strategy_delta"]["changes"]),
+                                    strategy_found=base["strategy_delta"]["found"])
         try:
             author = resolve_author(author_name)
         except AuthorError as exc:
@@ -292,6 +305,9 @@ class DesignStep(WorkflowStep):
             # The step accepted this draft and something after it (the engine's lineage
             # check, a dead driver) lost it: compose it again, no author session.
             accepted = last["draft"]
+            # Accepted against the strategy of its own time: what it holds of the strategy is
+            # the current strategy's (inherit.py).
+            inherit.follow(accepted, strategy, platforms)
             context.logger.info("design composes the draft the step last accepted")
         elif last:
             brief = dict(brief, repair={"round": 0, "problems": last["problems"][:60],
@@ -343,6 +359,13 @@ class DesignStep(WorkflowStep):
                                          problems=problems, repair_rounds=repair_round)
                     return StepResult.failed(
                         f"the design does not state its production art and UI{after} "
+                        f"({len(problems)} problem(s)): " + "; ".join(problems[:6]),
+                        retryable=False)
+                if outcome["strategy"]:
+                    context.logger.error("the design does not keep the strategy's session",
+                                         problems=problems, repair_rounds=repair_round)
+                    return StepResult.failed(
+                        f"the design does not keep the strategy's session{after} "
                         f"({len(problems)} problem(s)): " + "; ".join(problems[:6]),
                         retryable=False)
                 if outcome["features"]:
@@ -453,7 +476,8 @@ class DesignStep(WorkflowStep):
                    "block": None, "blocking": None,
                    "warnings": None, "problems": [], "unbuildable": False,
                    "experience": False, "presentation": False, "depth": False,
-                   "content": False, "features": False, "consistency_problems": []}
+                   "content": False, "features": False, "strategy": False,
+                   "consistency_problems": []}
         problems = buildability(design)
         if problems:
             outcome.update(problems=problems, unbuildable=True)
@@ -476,6 +500,13 @@ class DesignStep(WorkflowStep):
         found, feature_results = feature_check.check(design, strategy, platforms, catalogue)
         if found:
             outcome.update(features=True)
+            problems += found
+        # What the strategy owns - the session target, a first session it states, and the
+        # session profile they derive - is the strategy's, whatever the author returned: no
+        # design is judged by another session's rules (inherit.check; defect L31).
+        found = inherit.check(design, strategy)
+        if found:
+            outcome.update(strategy=True)
             problems += found
         now = self.clock()
         # The Factory knowledge an author of this game is given (the run's pinned knowledge,

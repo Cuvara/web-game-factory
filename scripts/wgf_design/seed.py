@@ -35,6 +35,7 @@ import re
 from wgflib import genre_models
 
 from . import content as content_rules
+from .inherit import session_profile_name
 from .authors import ArchetypeAuthor, AuthorError, Resolved, register_author
 
 __all__ = ["GenreSeedAuthor", "seed_units", "purposes_for", "NUMBERS", "PLACEHOLDERS",
@@ -136,12 +137,8 @@ def _bar(family, models, key):
 
 def _profile_name(strategy):
     """`casual` tightens how long a unit runs and how many axes one unit may raise. Not a
-    family: the same game is designed either way."""
-    audience = (strategy or {}).get("audience") or {}
-    target = ((strategy or {}).get("session") or {}).get("target_seconds")
-    if audience.get("type") == "casual" and isinstance(target, (int, float)) and target <= 300:
-        return "casual"
-    return "standard"
+    family: the same game is designed either way (inherit.session_profile_name)."""
+    return session_profile_name(strategy)
 
 
 def purposes_for(arc, count, relief_every):

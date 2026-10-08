@@ -858,8 +858,10 @@ class ScriptedAuthor:
 def without_content(draft):
     """`draft` with its content taken back out: the design names its family and lists nothing.
     The built-in author always states its content, so a draft that does not is made here."""
-    draft["genre"] = {"family": "arcade", "node": "arcade", "session_profile": "standard",
-                     "ending": "endless"}
+    # The session profile is the strategy's (wgf_design/inherit.check): the base's own.
+    draft["genre"] = {"family": "arcade", "node": "arcade",
+                      "session_profile": draft["genre"].get("session_profile", "standard"),
+                      "ending": "endless"}
     for key in ("content", "mastery"):
         draft["build_spec"].pop(key, None)
     return draft
@@ -872,7 +874,10 @@ def with_content(draft, family="arcade", models=None):
     spec = draft["build_spec"]
     mechanics = [m["id"] for m in spec["mechanics"] if m["tier"] == "mvp"]
     signals = [h.get("metric") or h["id"] for h in spec["hud"] if h["tier"] == "mvp"]
-    body = content_body(family, mechanics=mechanics, signals=signals[:2], models=models)
+    # Built to the session profile the strategy derives (the draft's own; inherit.check).
+    profile = (draft.get("genre") or {}).get("session_profile") or "standard"
+    body = content_body(family, mechanics=mechanics, signals=signals[:2], profile=profile,
+                        models=models)
     draft["genre"] = body["genre"]
     spec["content"] = body["content"]
     spec["mastery"] = body["mastery"]

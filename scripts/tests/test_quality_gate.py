@@ -593,7 +593,12 @@ class Pinning(unittest.TestCase):
         self.assertEqual(definition.pinned_references,
                          ["core/reference/quality-floor.yaml",
                           "core/reference/quality-benchmark.yaml",
-                          "core/reference/visual-qa-rubric.yaml"])
+                          "core/reference/visual-qa-rubric.yaml",
+                          "core/reference/visual-quality.yaml",
+                          "core/reference/play-realism.yaml",
+                          "core/reference/browser-qa.yaml",
+                          "core/reference/check-tiers.yaml",
+                          "core/reference/lessons.yaml"])
 
     def test_a_mid_run_benchmark_edit_does_not_apply_to_the_run(self):
         root = os.path.join(self.base, "factory")

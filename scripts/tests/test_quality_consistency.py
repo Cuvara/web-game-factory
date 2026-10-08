@@ -238,7 +238,12 @@ class MultiGenreConsistency(_Case):
                          sorted(references.collect(
                              ["core/reference/quality-floor.yaml",
                               "core/reference/quality-benchmark.yaml",
-                              "core/reference/visual-qa-rubric.yaml"])))
+                              "core/reference/visual-qa-rubric.yaml",
+                              "core/reference/visual-quality.yaml",
+                              "core/reference/play-realism.yaml",
+                              "core/reference/browser-qa.yaml",
+                              "core/reference/check-tiers.yaml",
+                              "core/reference/lessons.yaml"])))
 
         # The design is the family's at the release tier, and the design step's own rules
         # passed it (designs.py raises otherwise).
@@ -736,7 +741,12 @@ class AntiGaming(_Case):
         root = os.path.join(self.scratch, "factory")
         for relpath in ("core/reference/quality-floor.yaml",
                         "core/reference/quality-benchmark.yaml",
-                        "core/reference/visual-qa-rubric.yaml"):
+                        "core/reference/visual-qa-rubric.yaml",
+                        "core/reference/visual-quality.yaml",
+                        "core/reference/play-realism.yaml",
+                        "core/reference/browser-qa.yaml",
+                        "core/reference/check-tiers.yaml",
+                        "core/reference/lessons.yaml"):
             target = os.path.join(root, *relpath.split("/"))
             os.makedirs(os.path.dirname(target), exist_ok=True)
             if relpath.endswith("quality-benchmark.yaml"):

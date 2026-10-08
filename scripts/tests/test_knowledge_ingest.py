@@ -44,6 +44,8 @@ from wgflib.yamllite import load as load_yaml  # noqa: E402
 NEW_CHECK = "browser-qa:browser.pause-resume"      # quality tier, held by no lesson
 HARD_CHECK = "browser-qa:browser.page-errors"      # hard tier, held by no lesson
 HELD_CHECK = "browser-qa:browser.context-menu"     # held by L25 (active)
+PAUSED = ("A paused game was never resumed by any gate, so an overlay that stays after resume "
+          "passed")
 
 
 def run_cli(*argv):
@@ -346,7 +348,8 @@ class Promote(Base):
         # build the candidate's report names, ingested the way `wgf knowledge ingest` does.
         run = kr.add_run(self.store, "run-a")
         kr.add_report(self.store, run, "quality-report", kr.quality_report(
-            [kr.candidate("Pause leaves the overlay", proposed_check=NEW_CHECK, finding="f-1")],
+            [kr.candidate(PAUSED, proposed_check=check, finding="f-1")
+             for check in (NEW_CHECK, HARD_CHECK, "nothing:holds-it")],
             found=kr.findings(["f-1"])))
         state = self.store.load("run-a")
         observations, _ = ingest.extract(
@@ -365,8 +368,7 @@ class Promote(Base):
                       "basis": basis, "finding": "f-1", "resolved_in": None,
                       "date": "2026-10-08T10:00:00Z"}
         out = {"id": "C-7", "state": "open", "key": "k", "basis": basis, "duplicate_of": None,
-               "summary": "A paused game was never resumed by any gate, so an overlay that "
-                          "stays after resume passed",
+               "summary": PAUSED,
                "symptom": "The pause overlay stayed up after resume.",
                "root_cause": "Gates pause the game but never resume it and look again.",
                "systemic": {"value": True}, "proposed_check": NEW_CHECK,
@@ -403,6 +405,28 @@ class Promote(Base):
                 record["sources"][0].update(change)
                 with self.assertRaisesRegex(promote.PromoteRefused, "subjective"):
                     self.draft(record, level="blocking")
+
+    def test_a_measured_source_borrowed_from_another_candidate_is_subjective(self):
+        """The final check's probe: C-1's genuine measured source copied into a subjective
+        candidate's sources verifies nothing for it - the report holds C-1, not this one."""
+        borrowed = self.record(basis="subjective", summary="Reviewers think the font is thin",
+                               root_cause="No gate reads text legibility on phones",
+                               proposed_check=NEW_CHECK)
+        borrowed["sources"].append(dict(self.measured_source,
+                                        ingested_at="2026-10-08T10:00:00Z"))
+        borrowed["basis"] = "measured"
+        for level in ("blocking", "required"):
+            with self.assertRaisesRegex(promote.PromoteRefused, "subjective"):
+                self.draft(borrowed, level=level)
+        self.assertEqual(ingest.basis_of(borrowed, verify=self.verify), "subjective")
+        # A stored key edited to the lender's does not help: the key is computed from the
+        # record's own summary and check.
+        borrowed["key"] = ingest.key_of({"summary": PAUSED, "proposed_check": NEW_CHECK})
+        with self.assertRaisesRegex(promote.PromoteRefused, "subjective"):
+            self.draft(borrowed, level="blocking")
+        # The lender itself still drafts blocking.
+        genuine = self.record()
+        self.assertEqual(self.draft(genuine, level="blocking").lesson["level"], "blocking")
 
     def test_a_run_store_that_is_gone_makes_the_evidence_subjective(self):
         shutil.rmtree(self.store.run_dir("run-a"))

@@ -412,6 +412,16 @@ class Gate(unittest.TestCase):
         docs["knowledge-contract"] = contract_for(**kw)
         return docs
 
+    def test_the_quality_gate_records_the_factory_that_judged_the_build(self):
+        """The real quality-gate step writes compliance.evaluated_by: the Factory version and
+        commit of the code that ran it (wgf knowledge generations attributes by it)."""
+        from wgf_knowledge import versions
+        result, report = run_gate(self, self.with_contract(complete_build()))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        judged = report["compliance"]["evaluated_by"]
+        self.assertEqual(judged, versions.factory())
+        self.assertTrue(judged["version"])
+
     def test_the_accepted_build_satisfies_every_applicable_rule(self):
         result, report = run_gate(self, self.with_contract(complete_build()))
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)

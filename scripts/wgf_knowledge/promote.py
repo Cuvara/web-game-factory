@@ -260,7 +260,7 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
     # Derived from the sources, never the record's own `basis` (which a hand edit can set),
     # and each measured source re-verified against the run store: without a verifier nothing
     # is re-verified, so nothing is measured.
-    basis = ingest.basis_of(candidate, verify=verify or (lambda source: False))
+    basis = ingest.basis_of(candidate, verify=verify or (lambda source, record: False))
     if wanted in STRONG and basis != "measured":
         raise PromoteRefused(
             f"{cid}: a {wanted} rule holds every build it applies to, and this candidate's "

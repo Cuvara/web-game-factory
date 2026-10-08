@@ -324,24 +324,27 @@ def basis_of(record, verify=None):
 
     Without `verify`, what the sources claim (a measured source from a measuring report, not
     a review, naming a finding and the report it resolved in) - the store's own bookkeeping.
-    With `verify(source) -> bool` (promote: `verifier(store)`), only a source re-verified
-    against the run store counts; anything that cannot be re-verified is subjective."""
+    With `verify(source, record) -> bool` (promote: `verifier(store)`), only a source
+    re-verified against the run store AS THIS CANDIDATE'S counts - a measured source copied
+    from another candidate does not; anything that cannot be re-verified is subjective."""
     for source in (record or {}).get("sources") or ():
         if not (isinstance(source, dict) and source.get("basis") == "measured"
                 and source.get("artifact_type") in SOURCES
                 and source.get("artifact_type") not in SUBJECTIVE and source.get("finding")
                 and isinstance(source.get("resolved_in"), dict)):
             continue
-        if verify is None or verify(source):
+        if verify is None or verify(source, record):
             return "measured"
     return "subjective"
 
 
-def verify_source(source, state, read_artifact):
-    """True when the run store still proves a measured source: the report the candidate came
-    from is the run's, with the digest the source recorded, and still holds the candidate's
-    finding; the measuring report it resolved in is the run's, with its recorded digest; and
-    the finding is recorded there on the same build commit as the candidate's report."""
+def verify_source(source, state, read_artifact, record):
+    """True when the run store still proves a measured source of `record`: the report the
+    candidate came from is the run's, with the digest the source recorded, and still holds
+    THIS candidate - one whose key (normalized summary and proposed check) is the record's,
+    computed from the record's own text, never its stored `key` - carrying the finding; the
+    measuring report it resolved in is the run's, with its recorded digest; and the finding
+    is recorded there on the same build commit as the candidate's report."""
     def ref_of(artifact_id, version, digest):
         for ref in (state.artifacts or {}).get(artifact_id) or ():
             if ref.version == version and ref.checksum == digest:
@@ -362,8 +365,10 @@ def verify_source(source, state, read_artifact):
         return False
     commit = _commit(origin.type, report)
     reported = _get(report, SOURCES[origin.type]) or []
-    if commit is None or commit != source.get("commit") or not any(
-            isinstance(c, dict) and c.get("finding") == source.get("finding") for c in reported):
+    own_key = key_of(record or {})
+    if commit is None or commit != source.get("commit") or not record or not any(
+            isinstance(c, dict) and c.get("finding") == source.get("finding")
+            and key_of(c) == own_key for c in reported):
         return False
     entry = _measured_findings([(measuring, measuring.type, findings_doc)]).get(
         str(source.get("finding")))
@@ -375,7 +380,7 @@ def verifier(store):
     store error, verifies nothing."""
     cache = {}
 
-    def verify(source):
+    def verify(source, record):
         run = source.get("run")
         if run not in cache:
             try:
@@ -385,7 +390,8 @@ def verifier(store):
         state = cache[run]
         if state is None:
             return False
-        return verify_source(source, state, lambda ref: store.read_artifact(state.run_id, ref))
+        return verify_source(source, state,
+                             lambda ref: store.read_artifact(state.run_id, ref), record)
     return verify
 
 

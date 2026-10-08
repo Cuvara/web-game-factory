@@ -219,6 +219,60 @@ class TheCategory(unittest.TestCase):
             self.assertIn(name, modules)
             self.assertTrue(os.path.isfile(os.path.join(HERE, f"{name}.py")), name)
 
+    def disabled_module(self, tests, name):
+        """A lesson's tests defined on a mixin and inherited by the TestCase that discovery
+        runs - which disables them: one by a skip decorator, one by setting it to None."""
+        with open(os.path.join(tests, f"{name}.py"), "w", encoding="utf-8") as handle:
+            handle.write(textwrap.dedent('''
+                import unittest
+
+                CHECK = lambda overlap: "FAIL" if overlap > 0.25 else "PASS"
+
+
+                class LessonCases:
+                    def test_the_check_fails_the_defect(self):
+                        self.assertEqual(CHECK(overlap=0.6), "FAIL")
+
+                    def test_the_check_passes_the_fixed_build(self):
+                        self.assertEqual(CHECK(overlap=0.1), "PASS")
+
+
+                class Run(LessonCases, unittest.TestCase):
+                    @unittest.skip("disabled in the class discovery runs")
+                    def test_the_check_fails_the_defect(self):
+                        LessonCases.test_the_check_fails_the_defect(self)
+
+                    test_the_check_passes_the_fixed_build = None
+                '''))
+
+    def test_an_inherited_lesson_test_disabled_where_discovery_runs_it_fails(self):
+        """The human's M5 probe: a lesson's test inherited in a subclass, deliberately skipped
+        or switched off there - the firewall FAILS the lesson, and a KNOWLEDGE category that
+        holds it reports a failure, never a PASS."""
+        import wgf
+        root = tempfile.mkdtemp(prefix="wgf-fw-inh-")
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        tests = os.path.join(root, "scripts", "tests")
+        os.makedirs(tests)
+        tag = f"k{os.getpid()}_{id(self)}_inh"
+        disabled, check = f"{tag}_lesson", f"{tag}_knowledge"
+        self.disabled_module(tests, disabled)
+        self.addCleanup(lambda: [sys.modules.pop(n, None) for n in (disabled, check)])
+        self.addCleanup(lambda: tests in sys.path and sys.path.remove(tests))
+        for test_name, expected in (("test_the_check_fails_the_defect", firewall.SKIP),
+                                    ("test_the_check_passes_the_fixed_build", firewall.FAIL)):
+            with self.subTest(test=test_name):
+                report = firewall.run({"lessons": [lesson("L1", disabled, catches=[test_name])]},
+                                      root)
+                self.assertEqual((report["verdict"], report["lessons"][0]["verdict"]),
+                                 (firewall.FAIL, expected))
+        module = KNOWLEDGE_MODULE.format(scripts=SCRIPTS, root=root, skip=disabled).replace(
+            "::test_skipped", "::test_the_check_passes_the_fixed_build")
+        with open(os.path.join(tests, f"{check}.py"), "w", encoding="utf-8") as handle:
+            handle.write(module)
+        row = wgf.run_core_suite({"KNOWLEDGE": [check]}, tests)[0]
+        self.assertEqual(row["result"], "FAIL")
+
     def test_a_skipped_lesson_test_fails_the_knowledge_category(self):
         """A lesson whose only test is skipped: the firewall says FAIL, and the KNOWLEDGE
         category that runs it reports a failure - never a PASS, never a quiet SKIP."""

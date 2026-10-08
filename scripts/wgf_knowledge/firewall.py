@@ -90,6 +90,15 @@ def _cases(module, name):
     return found
 
 
+def _switched_off(module, name):
+    """True when a TestCase class of the module has `name` set to something not callable
+    (None): the test is defined, and disabled where discovery would run it."""
+    return any(isinstance(value, type) and issubclass(value, unittest.TestCase)
+               and value.__module__ == module.__name__ and hasattr(value, name)
+               and not callable(getattr(value, name, None))
+               for value in vars(module).values())
+
+
 def run_ref(ref, root):
     """{"ref", "status": PASS|FAIL|MISSING|SKIP, "detail"} of one test reference."""
     match = TEST_REF.match(str(ref))
@@ -105,6 +114,11 @@ def run_ref(ref, root):
         return {"ref": ref, "status": FAIL, "detail": f"{relpath} does not import: {exc}"}
     cases = _cases(module, name)
     if not cases:
+        if _switched_off(module, name):
+            # The test exists, and every class that would run it switched it off: a lesson
+            # whose proof never runs is not held.
+            return {"ref": ref, "status": FAIL,
+                    "detail": f"{name} is switched off in every class that would run it"}
         return {"ref": ref, "status": MISSING, "detail": f"{relpath} has no test {name}"}
     result = unittest.TestResult()
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):

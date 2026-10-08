@@ -103,6 +103,27 @@ class Generations(unittest.TestCase):
         self.assertIn("generation factory 2.7.0@ccccccc / check-tiers@1.2.0 / lessons@2.0.0", text)
         self.assertIn("lessons added L29", text)
 
+    def test_an_outcome_counts_for_the_knowledge_its_report_was_judged_by(self):
+        """A run started under lessons 2.0.0 and resumed under 2.1.0: its quality-report was
+        judged against 2.1.0, so its outcome belongs to that generation."""
+        run = self.mock_run("resumed", "2.0.0", "2.7.0", ["L23"],
+                            dict(compliance("PASS", satisfied=["L23"]), versions={
+                                "factory": {"version": "2.8.0", "commit": "d" * 40},
+                                "lessons": {"version": "2.1.0"},
+                                "check_tiers": {"version": "1.2.0"}}),
+                            "2026-10-08T09:00:00Z")
+        del run
+        entries, _ = generations.rows(self.store)
+        entry = entries[0]
+        self.assertEqual(entry["attributed_from"], "quality-report")
+        self.assertEqual(entry["knowledge"], {"check-tiers": "check-tiers@1.2.0",
+                                              "lessons": "lessons@2.1.0"})
+        self.assertEqual(entry["factory"]["version"], "2.8.0")
+        self.assertEqual(entry["started_with"]["knowledge"]["lessons"], "lessons@2.0.0")
+        self.assertEqual(entry["quality_report"]["artifact_id"], "qr-1")
+        self.assertEqual(entry["quality_report"]["build_commit"], kr.COMMIT)
+        self.assertIn("lessons@2.1.0", generations.generations(entries)[0]["key"])
+
     def test_a_run_without_recorded_knowledge_is_unrecorded_and_a_broken_one_a_problem(self):
         kr.add_run(self.store, "old-run", params={"quality": {"tier": "mvp"}})
         broken = kr.add_run(self.store, "broken-run")

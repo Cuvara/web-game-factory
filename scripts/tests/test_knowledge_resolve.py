@@ -155,6 +155,25 @@ class Applicability(unittest.TestCase):
         # a determined facet that does not match still excludes it
         self.assertEqual(ids(resolve(data, render="2d")), [])
 
+    def test_a_rule_with_no_or_an_unreadable_scope_applies(self):
+        legacy = rule("O1", "global")
+        del legacy["scope"]
+        body = resolve(knowledge(legacy, rule("O2", 42)), render="2d", tier="mvp")
+        self.assertEqual(ids(body), ["O1", "O2"])
+        self.assertEqual(body["rules"][0]["why_applicable"], ["no scope declared: applies"])
+        self.assertIn("unreadable: applies", body["rules"][1]["why_applicable"][0])
+
+    def test_a_run_that_pinned_lessons_1x_resolves_every_rule_as_global(self):
+        legacy = copy.deepcopy(LESSONS)
+        legacy["version"] = "1.0.0"
+        for lesson in legacy["lessons"]:
+            for key in ("scope", "lifecycle", "category", "problem", "root_cause"):
+                lesson.pop(key, None)
+            lesson["tests"] = model.all_tests(lesson)
+        body = resolve(legacy, render="2d", tier="mvp")
+        self.assertEqual({e["id"] for e in body["not_applicable"]}, {"L6", "L19"})
+        self.assertEqual(body["counts"]["blocking"], 6)
+
     def test_every_resolution_lists_its_excluded_rules_with_reasons(self):
         for facets in ({}, {"render": "2d", "tier": "mvp"}, {"render": "3d", "tier": "release"}):
             with self.subTest(facets=facets):
@@ -384,7 +403,7 @@ class Cli(unittest.TestCase):
         self.assertEqual(out["facets"]["family"], "arcade")
         self.assertEqual(out["facets"]["tier"], "release")
         self.assertEqual(out["missing_validators"], [])
-        # the run pinned no knowledge: its live files are what it was resolved from
+        # resolved from the knowledge the run pinned when it started
         self.assertEqual(out["versions"]["lessons"]["version"], "2.0.0")
 
     def test_the_python_entry_point_matches(self):

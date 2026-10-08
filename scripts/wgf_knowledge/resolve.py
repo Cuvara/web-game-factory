@@ -53,9 +53,13 @@ def facets_from(design=None, strategy=None, tier=None):
 
 def applies(lesson, run_facets):
     """(True, [why]) or (False, why_not) for one lesson's scope against the facets."""
+    if (lesson or {}).get("scope") is None:
+        # A file before the knowledge model (a run pinned lessons.yaml 1.x): no scope was
+        # ever declared, so nothing narrows it.
+        return True, ["no scope declared: applies"]
     scope = model.scope_of(lesson)
     if scope is None:
-        return False, "it has no valid scope (check-integrity refuses it)"
+        return True, [f"scope {lesson.get('scope')!r} unreadable: applies"]
     if not scope:
         return True, ["global"]
     why = []

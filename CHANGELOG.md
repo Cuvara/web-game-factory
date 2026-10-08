@@ -9,6 +9,27 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Cross-session quality transfer, and the first transferred principle (L29)** (lessons
+2.1.0, check-tiers 1.3.0, design-consistency-rules 2.2.0, content-sufficiency 1.5.0,
+game-design 1.16.0, knowledge-contract 1.2.0, quality-report 1.4.0,
+[docs/knowledge-enforcement.md](docs/knowledge-enforcement.md) "Cross-session transfer").
+Every lesson now carries a domain, a principle, an anti-pattern, a classification consistent
+with its derived level, and a revision; check-integrity fails an entry changed without its
+revision rising. A run's contract pins each rule's revision and entry digest. The design
+agent is given the applicable rules, structured, from the run's pinned knowledge, and records
+a decision trace (`knowledge_applied`) that a new blocking design rule
+(`knowledge.trace_matches_design`) holds against the design; compliance shows the trace
+beside each rule's measured status. **L29** (blocking): after the opening unit, a unit
+introduces at most one element the player has not met - held on the design
+(`content.introductions_one_at_a_time`) and on the built content data file (same id). **A
+design that debuts two never-seen elements in one unit after the first now fails the design
+step** (an agent author is asked to repair it), and a build whose units.json does so fails
+content-sufficiency; a units.json that names no unit's elements leaves the check
+unmeasured, which a release-tier quality gate holds. The genre seed author's second teaching
+unit debuted two mechanics for four families; it now debuts one. Existing artifacts stay
+valid (every schema change is additive); a run already past design is not re-judged until
+it passes design again.
+
 **A run is held to its knowledge, and a person's exception is the run's own record**
 (quality-policy 1.4.0 rule 8, new-game 17, gates 1.7.0, knowledge-contract 1.1.0,
 [docs/knowledge-enforcement.md](docs/knowledge-enforcement.md)). A new run records the

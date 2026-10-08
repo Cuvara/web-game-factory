@@ -401,6 +401,19 @@ class DesignStep(WorkflowStep):
                               + (f", {len(warnings)} warning(s) for G3" if warnings else ""))
 
     @staticmethod
+    def given_knowledge(author, design, strategy, context):
+        """The Factory knowledge the author of this draft was GIVEN (its request's
+        `knowledge`, recorded by the author as `given_knowledge`; None when it could not be
+        read) - what the draft's decision trace is held against. An author that records none
+        (a built-in author, which writes no trace; a draft composed again without an author
+        session) is held against the knowledge resolved now over the design's own family."""
+        if hasattr(author, "given_knowledge"):
+            return author.given_knowledge
+        return design_knowledge.provisional(
+            (design.get("genre") or {}).get("family"), strategy,
+            getattr(context, "environment", None) or {}, getattr(context, "run_dir", None))
+
+    @staticmethod
     def pinned_rules(context):
         """core/reference/design-consistency-rules.yaml as the run pinned it, else live."""
         text, _digest, _pinned = pinned_references.read(
@@ -468,9 +481,7 @@ class DesignStep(WorkflowStep):
         # The Factory knowledge an author of this game is given (the run's pinned knowledge,
         # resolved over the design's family and the strategy's platforms): what the design's
         # decision trace is held against (consistency knowledge.trace_matches_design).
-        given = design_knowledge.provisional(
-            (design.get("genre") or {}).get("family"), strategy,
-            getattr(context, "environment", None) or {}, getattr(context, "run_dir", None))
+        given = self.given_knowledge(author, design, strategy, context)
         ruleset = getattr(self, "_run_rules", None) or self.rules
         block, blocking, warnings = consistency.evaluate(design, strategy, platforms, now,
                                                          ruleset, knowledge=given)

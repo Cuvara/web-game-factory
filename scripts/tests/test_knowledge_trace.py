@@ -133,6 +133,45 @@ class TheTrace(unittest.TestCase):
                                    "contradicted": ["L29"]})
 
 
+class GivenNotReResolved(unittest.TestCase):
+    """The trace is held against the knowledge the author was given (its request), not
+    against knowledge resolved again from the finished design: a design whose family
+    differs from its starting draft's keeps its trace valid."""
+
+    def test_the_knowledge_given_is_what_the_trace_is_checked_against(self):
+        from wgf_design.step import DesignStep
+        given_for_puzzle = design_knowledge.provisional("puzzle", {})
+        # what the request carried: the rules for the starting draft's family, one of them
+        # narrowed here to that family so a re-resolution over another family would drop it
+        given = dict(given_for_puzzle, rules=list(given_for_puzzle["rules"]) + [{
+            "id": "L900", "level": "experimental", "checks": [], "trace": True,
+            "revision": 1}])
+        author = type("Author", (), {"given_knowledge": given})()
+        design = traced(l29.paced(), entry(),
+                        {"rule": "L900", "revision": 1, "applied": False,
+                         "how": "not applicable to the final game"})
+        design["genre"] = dict(design.get("genre") or {}, family="racing")
+        chosen = DesignStep.given_knowledge(author, design, {}, None)
+        self.assertIs(chosen, given)
+        found, _ = result(design, knowledge=chosen)
+        self.assertFalse(found["breached"], found)
+        # re-resolved from the final design, the same trace would name a rule not given
+        found, _ = result(design, knowledge=design_knowledge.provisional("racing", {}))
+        self.assertTrue(found["breached"])
+        self.assertIn("L900", str(found["measured"]))
+
+    def test_an_author_that_records_none_is_held_against_the_designs_own_family(self):
+        from wgf_design.step import DesignStep
+        design = l29.design_with(l29.paced())
+        chosen = DesignStep.given_knowledge(object(), design, {}, None)
+        self.assertEqual(chosen["facets"]["family"], design["genre"]["family"])
+
+    def test_knowledge_that_could_not_be_read_stays_unreadable(self):
+        from wgf_design.step import DesignStep
+        author = type("Author", (), {"given_knowledge": None})()
+        self.assertIsNone(DesignStep.given_knowledge(author, {}, {}, None))
+
+
 class Compliance(unittest.TestCase):
     """A claim is shown beside the measured status; it never makes a rule satisfied."""
 

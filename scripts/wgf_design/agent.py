@@ -677,6 +677,9 @@ class AgentAuthor(DesignAuthor):
             request["design_constraints"] = constraints
         knowledge = _provisional_knowledge(starting, brief.get("strategy"),
                                            brief.get("environment"), run_dir)
+        # What this draft's author was given - the trace is held against exactly it, never
+        # against knowledge resolved again from the finished design (another family, say).
+        self.given_knowledge = knowledge
         if knowledge:
             request["knowledge"] = knowledge
         with open(request_path, "w", encoding="utf-8", newline="\n") as handle:

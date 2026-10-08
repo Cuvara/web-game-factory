@@ -74,7 +74,8 @@ class Ingest(Base):
         found = kr.candidate(proposed_check=NEW_CHECK, finding="f-1", role="ui",
                              symptom="The pause overlay stayed after resume on the tablet",
                              systemic={"value": True, "why": "no gate resumes after pausing"})
-        ref = kr.add_report(self.store, run, "quality-report", kr.quality_report([found]))
+        ref = kr.add_report(self.store, run, "quality-report",
+                            kr.quality_report([found], found=kr.findings(["f-1"])))
         code, out, _ = self.ingest("run-a")
         self.assertEqual(code, 0, out)
         self.assertEqual(json.loads(out)["added"], ["C-1"])
@@ -102,7 +103,8 @@ class Ingest(Base):
         kr.add_report(self.store, run, "prototype-report",
                       kr.prototype_report([kr.candidate("A: the spec", finding="f-2")]))
         kr.add_report(self.store, run, "triage-report",
-                      kr.triage_report([kr.candidate("B: the triage")]))
+                      kr.triage_report([kr.candidate("B: the triage")],
+                                       found=kr.findings(["f-2", "f-3"])))
         kr.add_report(self.store, run, "review-report",
                       kr.review_report([kr.candidate("C: the review", finding="f-3")]))
         code, out, _ = self.ingest("run-b")
@@ -159,6 +161,42 @@ class Ingest(Base):
         self.assertFalse(os.path.exists(self.candidates))
 
 
+class Measured(Base):
+    """H1: a finding counts as measured only when the run's gates recorded it on that build."""
+
+    def test_a_made_up_finding_is_subjective_and_never_drafted_blocking(self):
+        run = kr.add_run(self.store, "run-h1")
+        kr.add_report(self.store, run, "quality-report", kr.quality_report([
+            kr.candidate("Pause leaves the overlay up", proposed_check=NEW_CHECK,
+                         proposed_level="blocking", finding="f-made-up")],
+            found=kr.findings(["f-real"])))
+        self.assertEqual(self.ingest("run-h1")[0], 0)
+        record = self.stored()["candidates"][0]
+        self.assertEqual(record["basis"], "subjective")
+        self.assertEqual(record["sources"][0]["basis"], "subjective")
+        code, out, _ = run_cli("promote", "C-1", "--candidates", self.candidates)
+        self.assertEqual(code, 1)
+        self.assertIn("subjective", out)
+
+    def test_a_finding_recorded_on_another_build_is_not_this_builds_measurement(self):
+        run = kr.add_run(self.store, "run-h1b")
+        kr.add_report(self.store, run, "quality-report", kr.quality_report(
+            [], commit="b" * 40, found=kr.findings(["f-1"], commit="b" * 40)))
+        kr.add_report(self.store, run, "prototype-report", kr.prototype_report(
+            [kr.candidate(finding="f-1", proposed_check=NEW_CHECK)], commit="c" * 40))
+        self.ingest("run-h1b")
+        self.assertEqual(self.stored()["candidates"][0]["basis"], "subjective")
+        # The same finding on the build the prototype-report describes is measured.
+        other = kr.add_run(self.store, "run-h1c")
+        kr.add_report(self.store, other, "triage-report", kr.triage_report(
+            [], commit="c" * 40, found=kr.findings(["f-1"], commit="c" * 40)))
+        kr.add_report(self.store, other, "prototype-report", kr.prototype_report(
+            [kr.candidate("Another lesson", finding="f-1", proposed_check=NEW_CHECK)],
+            commit="c" * 40))
+        self.ingest("run-h1c")
+        self.assertEqual(self.stored()["candidates"][1]["basis"], "measured")
+
+
 class Dedupe(Base):
     def test_a_candidate_whose_check_an_active_lesson_holds_is_a_regression_observation(self):
         run = kr.add_run(self.store, "run-r")
@@ -175,6 +213,67 @@ class Dedupe(Base):
         # Ingested again: nothing new.
         self.assertEqual(json.loads(self.ingest("run-r")[1])["unchanged"], 1)
         self.assertEqual(len(self.stored()["regressions"]), 1)
+
+    def test_a_different_problem_on_a_held_check_is_a_new_candidate_naming_the_lesson(self):
+        run = kr.add_run(self.store, "run-m4")
+        kr.add_report(self.store, run, "quality-report", kr.quality_report([
+            kr.candidate("Bundles ship debug symbols that triple their weight",
+                         root_cause="Packaging never strips the source maps",
+                         proposed_check=HELD_CHECK)]))
+        code, out, _ = self.ingest("run-m4")
+        self.assertEqual(json.loads(out)["added"], ["C-1"])
+        record = self.stored()["candidates"][0]
+        self.assertEqual(record["related_lessons"], ["L25"])
+        self.assertEqual(self.stored()["regressions"], [])
+
+    def test_a_finding_guarded_by_the_lesson_is_its_regression(self):
+        run = kr.add_run(self.store, "run-m4b")
+        kr.add_report(self.store, run, "quality-report", kr.quality_report([
+            kr.candidate("Something unrelated in words", root_cause="Words differ entirely",
+                         proposed_check=HELD_CHECK, finding="f-9")],
+            found=kr.findings(["f-9"], guarded_by=["L25"])))
+        self.assertEqual(json.loads(self.ingest("run-m4b")[1])["regressions"], ["L25"])
+
+    def test_a_promoted_candidates_own_report_is_not_its_regression(self):
+        run = kr.add_run(self.store, "run-m3")
+        kr.add_report(self.store, run, "quality-report", kr.quality_report([
+            kr.candidate("Pause leaves the overlay up after resume", proposed_check=NEW_CHECK,
+                         root_cause="No gate resumes after pausing")]))
+        self.ingest("run-m3")
+        with open(self.candidates, "rb") as handle:
+            before = handle.read()
+        # Promoted and merged: an active lesson now holds the check, stating the same problem.
+        promoted_lessons = {"lessons": [{
+            "id": "L99", "lifecycle": "active", "checks": [NEW_CHECK],
+            "title": "Pause leaves the overlay up after resume",
+            "problem": "Pause leaves the overlay up after resume",
+            "root_cause": "No gate resumes after pausing", "lesson": "x"}]}
+        state = self.store.load("run-m3")
+        observations, _ = ingest.extract(
+            state, lambda ref: self.store.read_artifact(state.run_id, ref))
+        doc, summary = ingest.ingest(self.stored(), observations, promoted_lessons)
+        self.assertEqual((summary["regressions"], summary["unchanged"]), ([], 1))
+        self.assertEqual(doc, self.stored())
+        with open(self.candidates, "rb") as handle:
+            self.assertEqual(handle.read(), before)
+
+    def test_a_different_root_cause_is_kept_beside_the_first(self):
+        first = kr.add_run(self.store, "run-rc1")
+        kr.add_report(self.store, first, "quality-report", kr.quality_report([
+            kr.candidate("Pause leaves the overlay up", root_cause="No gate resumes after pausing",
+                         proposed_check=NEW_CHECK)]))
+        second = kr.add_run(self.store, "run-rc2")
+        kr.add_report(self.store, second, "quality-report", kr.quality_report([
+            kr.candidate("Pause leaves the overlay up",
+                         root_cause="The overlay is drawn by a layer nothing tears down",
+                         proposed_check=NEW_CHECK)]))
+        self.ingest("run-rc1")
+        self.ingest("run-rc2")
+        record = self.stored()["candidates"][0]
+        self.assertEqual(record["root_cause"], "No gate resumes after pausing")
+        self.assertEqual(record["other_root_causes"],
+                         ["The overlay is drawn by a layer nothing tears down"])
+        self.assertEqual(ingest.store_problems(self.stored()), [])
 
     def test_the_same_summary_and_check_merge_sources(self):
         first = kr.add_run(self.store, "run-1")
@@ -247,7 +346,7 @@ class Promote(Base):
         source = {"run": "run-a", "artifact_id": "quality-report",
                   "artifact_type": "review-report" if basis == "subjective" else "quality-report",
                   "version": 1, "report_hash": "sha256:" + "d" * 64, "commit": kr.COMMIT,
-                  "basis": basis, "date": "2026-10-08T10:00:00Z"}
+                  "basis": basis, "finding": "f-1", "date": "2026-10-08T10:00:00Z"}
         out = {"id": "C-7", "state": "open", "key": "k", "basis": basis, "duplicate_of": None,
                "summary": "A paused game was never resumed by any gate, so an overlay that "
                           "stays after resume passed",
@@ -348,6 +447,36 @@ class Promote(Base):
         self.assertIn("+    status: gap", out)
         self.assertIn("nothing was written to core/", err)
 
+    def test_a_hand_edited_basis_is_not_trusted(self):
+        """H2: `basis: measured` written by hand over review-only sources is subjective."""
+        record = self.record(basis="subjective")
+        record["basis"] = "measured"
+        for level in ("blocking", "required"):
+            with self.assertRaisesRegex(promote.PromoteRefused, "subjective"):
+                self.draft(record, level=level)
+        record["sources"][0]["basis"] = "measured"       # a review is never a measurement
+        with self.assertRaisesRegex(promote.PromoteRefused, "subjective"):
+            self.draft(record, level="required")
+        lesson = self.draft(record).lesson
+        self.assertEqual(lesson["lifecycle"], "candidate")
+        # A record broken by hand is not drafted at all.
+        broken = self.record()
+        broken["sources"] = []
+        with self.assertRaisesRegex(promote.PromoteRefused, "not a candidate record"):
+            self.draft(broken)
+
+    def test_the_cli_refuses_a_store_edited_out_of_shape(self):
+        run = kr.add_run(self.store, "run-shape")
+        kr.add_report(self.store, run, "quality-report", kr.quality_report([kr.candidate()]))
+        self.ingest("run-shape")
+        with open(self.candidates, encoding="utf-8") as handle:
+            text = handle.read()
+        with open(self.candidates, "w", encoding="utf-8") as handle:
+            handle.write(text.replace('"basis": "subjective"', '"basis": "certain"', 1))
+        code, out, _ = run_cli("promote", "C-1", "--candidates", self.candidates)
+        self.assertEqual(code, 1)
+        self.assertIn("not a valid candidate store", out)
+
     def test_not_systemic_and_uncategorised_are_refused(self):
         with self.assertRaisesRegex(promote.PromoteRefused, "not systemic"):
             self.draft(self.record(systemic={"value": False, "why": "a typo in one level"}))
@@ -362,7 +491,7 @@ class Promote(Base):
                   for p in (promote.LESSONS_PATH, promote.EVIDENCE_PATH)}
         run = kr.add_run(self.store, "run-w")
         kr.add_report(self.store, run, "quality-report", kr.quality_report([
-            kr.candidate(proposed_check=NEW_CHECK, finding="f-1")]))
+            kr.candidate(proposed_check=NEW_CHECK, finding="f-1")], found=kr.findings(["f-1"])))
         self.ingest("run-w")
         out_file = os.path.join(self.tmp, "c1.patch")
         code, _, err = run_cli("promote", "C-1", "--candidates", self.candidates,

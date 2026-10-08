@@ -53,6 +53,9 @@ SOURCES = {
 }
 # A reviewer's candidate is a judgment about code, never a measurement of a build.
 SUBJECTIVE = ("review-report",)
+# The producers whose `findings` are measurements of a build: a candidate's `finding` must be
+# one of theirs, on the same build, for its evidence to count as measured.
+MEASURING = ("quality-report", "triage-report")
 SCHEMA = "core/artifacts/shared/quality-finding.schema.json"
 ACTIVE = ("active", "validated")
 
@@ -144,6 +147,12 @@ def write_store(path, doc):
     os.replace(temporary, path)
 
 
+def record_problems(record):
+    """[problem] of one stored candidate against `$defs/candidate_record`."""
+    return [f"{e.pointer or '/'}: {e.message}"
+            for e in _validator("candidate_record").iter_errors(record)]
+
+
 def store_problems(doc):
     """[problem] for each entry of a store against its record shapes."""
     validator = _validator("candidate_record")
@@ -221,14 +230,41 @@ def _refs(state):
     return sorted(found, key=lambda r: (r.order(), r.id, r.version))
 
 
+def _measured_findings(docs):
+    """{finding id: {"commits": {build commits}, "guarded_by": {lesson ids}}} of the findings
+    the run's measuring producers recorded (quality-report and triage-report `findings`): what
+    a candidate's `finding` must resolve to before its evidence counts as measured."""
+    out = {}
+    for kind, doc in docs:
+        if kind not in MEASURING:
+            continue
+        report_commits = {c for c in (_commit(kind, doc),
+                                      _get(doc, ("build", "development_commit"))) if c}
+        for finding in doc.get("findings") or ():
+            if not isinstance(finding, dict) or not finding.get("id"):
+                continue
+            entry = out.setdefault(str(finding["id"]), {"commits": set(), "guarded_by": set()})
+            own = _get(finding, ("build", "commit"))
+            entry["commits"] |= ({own} if own else set()) | report_commits
+            entry["guarded_by"] |= {g.get("lesson") for g in finding.get("guarded_by") or ()
+                                    if isinstance(g, dict) and g.get("lesson")}
+    return out
+
+
 def extract(state, read_artifact):
     """([observation], [problem]) of every lesson candidate the run's reports hold.
 
     `read_artifact(ref)` returns the report (it raises for a missing or changed file, which
     is the caller's IngestError). An observation is {"candidate": the reported candidate,
-    "source": candidate_source}. Raises IngestError for a report that is not shaped as one
-    (not an object, candidates not a list)."""
-    observations, problems = [], []
+    "source": candidate_source, "guarded_by": [lesson ids of the finding it resolved to]}.
+    Raises IngestError for a report that is not shaped as one (not an object, candidates not
+    a list).
+
+    A source is `measured` only when the candidate's `finding` resolves to a finding a
+    measuring producer of this run (quality-report, triage-report) recorded on the same build
+    commit as the report the candidate came from; a finding id nothing recorded, or one on
+    another build, leaves it `subjective`. A reviewer's candidate is always subjective."""
+    docs = []
     for ref in _refs(state):
         try:
             doc = read_artifact(ref)
@@ -237,6 +273,10 @@ def extract(state, read_artifact):
         if not isinstance(doc, dict):
             raise IngestError(f"{ref.id} v{ref.version} is a {type(doc).__name__}, not a "
                               f"{ref.type}")
+        docs.append((ref, doc))
+    measured = _measured_findings((ref.type, doc) for ref, doc in docs)
+    observations, problems = [], []
+    for ref, doc in docs:
         reported = _get(doc, SOURCES[ref.type])
         if reported is None:
             continue
@@ -244,23 +284,40 @@ def extract(state, read_artifact):
             raise IngestError(f"{ref.id} v{ref.version}: {'.'.join(SOURCES[ref.type])} is a "
                               f"{type(reported).__name__}, not a list")
         provenance = doc.get("provenance") if isinstance(doc.get("provenance"), dict) else {}
+        commit = _commit(ref.type, doc)
         for index, candidate in enumerate(reported):
             at = f"{state.run_id} {ref.id} v{ref.version} {'.'.join(SOURCES[ref.type])}[{index}]"
             found = candidate_problems(candidate)
             if found:
                 problems += [f"{at}: {p}" for p in found]
                 continue
-            subjective = ref.type in SUBJECTIVE or not candidate.get("finding")
+            finding = candidate.get("finding")
+            resolved = measured.get(str(finding)) if finding else None
+            is_measured = (ref.type not in SUBJECTIVE and resolved is not None
+                           and commit is not None and commit in resolved["commits"])
             observations.append({"candidate": candidate, "source": {
                 "run": state.run_id, "artifact_id": ref.id, "artifact_type": ref.type,
                 "version": ref.version, "report_hash": ref.checksum,
                 "content_hash": provenance.get("content_hash") or ref.content_hash,
-                "commit": _commit(ref.type, doc), "role": candidate.get("role"),
-                "finding": candidate.get("finding"),
-                "basis": "subjective" if subjective else "measured",
+                "commit": commit, "role": candidate.get("role"),
+                "finding": finding,
+                "basis": "measured" if is_measured else "subjective",
                 "evidence_refs": list(candidate.get("evidence_refs") or []),
-                "date": provenance.get("produced_at") or ref.created_at}})
+                "date": provenance.get("produced_at") or ref.created_at},
+                "guarded_by": sorted(resolved["guarded_by"]) if is_measured else []})
     return observations, problems
+
+
+def basis_of(record):
+    """A stored candidate's basis, derived from its sources - never read from the record's
+    own `basis`, which a hand edit can change: measured only when a source from a measuring
+    report (not a review) says it resolved to a measured finding."""
+    for source in (record or {}).get("sources") or ():
+        if isinstance(source, dict) and source.get("basis") == "measured" \
+                and source.get("artifact_type") in SOURCES \
+                and source.get("artifact_type") not in SUBJECTIVE and source.get("finding"):
+            return "measured"
+    return "subjective"
 
 
 # --------------------------------------------------------------------------- de-duplication
@@ -279,17 +336,45 @@ def _same_source(a, b):
 
 
 def _lesson_index(lessons):
-    """({check: active lesson id}, {check: candidate-or-gap lesson id})."""
+    """({check: [active lesson]}, {check: candidate-or-gap lesson id})."""
     active, pending = {}, {}
     for lesson in (lessons or {}).get("lessons") or ():
         if not isinstance(lesson, dict) or not lesson.get("id"):
             continue
         for check in lesson.get("checks") or ():
             if lesson.get("lifecycle") in ACTIVE:
-                active.setdefault(check, lesson["id"])
+                active.setdefault(check, []).append(lesson)
             elif lesson.get("lifecycle") == "candidate":
                 pending.setdefault(check, lesson["id"])
     return active, pending
+
+
+_STOP = frozenset("a an the of to in on and or is was it its by for not no with as at be "
+                  "that this from every any".split())
+SIMILAR = 0.5
+
+
+def _words(*texts):
+    return {w for text in texts for w in normalize(text).split() if w not in _STOP}
+
+
+def similarity(candidate, lesson):
+    """The share of the candidate's words (summary, symptom, root cause) the lesson's text
+    (title, problem, root cause, lesson) also uses."""
+    mine = _words(candidate.get("summary"), candidate.get("symptom"), candidate.get("root_cause"))
+    theirs = _words(lesson.get("title"), lesson.get("problem"), lesson.get("root_cause"),
+                    lesson.get("lesson"))
+    return len(mine & theirs) / len(mine) if mine else 0.0
+
+
+def _regression_of(candidate, lessons, guarded_by):
+    """The active lesson this candidate re-observes, or None: the finding it resolved to is
+    guarded by that lesson, or it states that lesson's problem (SIMILAR of its words). A
+    candidate that only shares the check is a new observation, not a regression."""
+    for lesson in lessons:
+        if lesson["id"] in (guarded_by or ()) or similarity(candidate, lesson) >= SIMILAR:
+            return lesson["id"]
+    return None
 
 
 def _next_id(candidates):
@@ -317,33 +402,41 @@ def ingest(doc, observations, lessons, now=None):
         candidate, source = observation["candidate"], dict(observation["source"])
         source["ingested_at"] = stamp
         check = str(candidate.get("proposed_check") or "").strip() or None
-        if check and check in active:
-            lesson = active[check]
-            seen = any(r.get("lesson") == lesson and r.get("key") == key_of(candidate)
+        key = key_of(candidate)
+        stored = by_key.get(key)
+        # A report already stored as this candidate's source is the same observation - also
+        # once the candidate was promoted and an active lesson now holds its check.
+        if stored is not None and any(_same_source(s, source)
+                                      for s in stored.get("sources") or ()):
+            summary["unchanged"] += 1
+            continue
+        lesson = _regression_of(candidate, active.get(check) or (),
+                                observation.get("guarded_by")) if check else None
+        if lesson is not None:
+            seen = any(r.get("lesson") == lesson and r.get("key") == key
                        and _same_source(r.get("source") or {}, source)
                        for r in doc["regressions"])
             if seen:
                 summary["unchanged"] += 1
                 continue
-            doc["regressions"].append({"lesson": lesson, "check": check,
-                                       "key": key_of(candidate),
+            doc["regressions"].append({"lesson": lesson, "check": check, "key": key,
                                        "summary": candidate["summary"], "source": source})
             summary["regressions"].append(lesson)
             continue
-        key = key_of(candidate)
-        stored = by_key.get(key)
         if stored is not None:
-            if any(_same_source(s, source) for s in stored.get("sources") or ()):
-                summary["unchanged"] += 1
-                continue
             stored["sources"].append(source)
-            if source["basis"] == "measured":
-                stored["basis"] = "measured"
+            stored["basis"] = basis_of(stored)
+            cause = " ".join(str(candidate["root_cause"]).split())
+            causes = [stored.get("root_cause")] + list(stored.get("other_root_causes") or [])
+            if normalize(cause) not in {normalize(c) for c in causes}:
+                # Another reporter's cause for the same lesson: kept, never dropped.
+                stored["other_root_causes"] = list(stored.get("other_root_causes") or []) + [cause]
             for field in ("symptom", "systemic", "proposed_level", "proposed_scope"):
                 if stored.get(field) is None and candidate.get(field) is not None:
                     stored[field] = candidate[field]
             summary["merged"].append(stored["id"])
             continue
+        related = [l["id"] for l in active.get(check) or ()] if check else []
         record = {"id": _next_id(doc["candidates"]), "state": "open", "key": key,
                   "summary": candidate["summary"], "symptom": candidate.get("symptom"),
                   "root_cause": candidate["root_cause"],
@@ -351,7 +444,8 @@ def ingest(doc, observations, lessons, now=None):
                   "proposed_level": candidate.get("proposed_level"),
                   "proposed_scope": candidate.get("proposed_scope"),
                   "basis": source["basis"], "duplicate_of": pending.get(check) if check else None,
-                  "rejected": None, "sources": [source]}
+                  "related_lessons": related, "rejected": None, "sources": [source]}
+        record["basis"] = basis_of(record)
         doc["candidates"].append(record)
         by_key[key] = record
         summary["added"].append(record["id"])

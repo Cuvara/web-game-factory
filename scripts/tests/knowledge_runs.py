@@ -56,8 +56,15 @@ def candidate(summary="Gates read uncaught exceptions only, never the console",
     return out
 
 
-def quality_report(candidates, commit=COMMIT, compliance=None):
-    doc = {"provenance": {"artifact_id": "qr-1", "content_hash": "sha256:" + "b" * 64},
+def findings(ids, commit=COMMIT, guarded_by=()):
+    """Measured findings, as quality-report and triage-report record them."""
+    return [{"id": i, "build": {"commit": commit, "digest": None},
+             "guarded_by": [{"lesson": l, "check": "x:y"} for l in guarded_by]} for i in ids]
+
+
+def quality_report(candidates, commit=COMMIT, compliance=None, found=()):
+    doc = {"findings": list(found),
+           "provenance": {"artifact_id": "qr-1", "content_hash": "sha256:" + "b" * 64},
            "build": {"commit": commit, "development_commit": commit, "digest": None},
            "verdict": "PASS", "release_decision": "release",
            "lesson_candidates": list(candidates)}
@@ -66,8 +73,8 @@ def quality_report(candidates, commit=COMMIT, compliance=None):
     return doc
 
 
-def triage_report(candidates, commit=COMMIT):
-    return {"provenance": {"artifact_id": "tr-1"}, "commit": commit,
+def triage_report(candidates, commit=COMMIT, found=()):
+    return {"provenance": {"artifact_id": "tr-1"}, "commit": commit, "findings": list(found),
             "lesson_candidates": list(candidates)}
 
 

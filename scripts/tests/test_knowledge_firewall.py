@@ -136,6 +136,23 @@ class Sample(unittest.TestCase):
         # A subclass that switched a test off does not run it there.
         self.assertEqual(len(firewall._cases(sys.modules[name], "test_errors")), 1)
 
+    def test_an_inherited_test_runs_where_discovery_runs_it(self):
+        name = self.module("fw_sample_inherit", WORKS)
+        cases = firewall._cases(sys.modules[name] if name in sys.modules
+                                else firewall._module(self.root, f"scripts/tests/{name}.py"),
+                                "test_the_check_fails_the_defect")
+        self.assertEqual(sorted(type(c).__name__ for c in cases), ["Cases", "Switched"])
+
+    def test_a_kind_filter_never_fails_a_lesson_for_lacking_that_kind(self):
+        name = self.module("fw_sample_kind", WORKS)
+        only_catches = lesson("L1", name, catches=["test_the_check_fails_the_defect"])
+        report = firewall.run({"lessons": [only_catches]}, self.root, kinds=("generalizes",))
+        self.assertEqual((report["verdict"], report["lessons"][0]["verdict"]),
+                         (firewall.PASS, firewall.NO_TESTS))
+        validated = dict(self.both_cases(name), lifecycle="validated")
+        report = firewall.run({"lessons": [validated]}, self.root, kinds=("catches",))
+        self.assertEqual(report["lessons"][0]["verdict"], firewall.PASS)
+
     def test_only_a_skip_is_still_not_a_pass(self):
         name = self.module("fw_sample_skip", WORKS)
         report = firewall.run({"lessons": [lesson("L1", name, catches=["test_skipped"])]},
@@ -174,6 +191,25 @@ class ShippedLessons(unittest.TestCase):
             self.assertTrue(all(t["status"] == firewall.PASS for t in cases), lesson_id)
 
 
+KNOWLEDGE_MODULE = """
+import os
+import sys
+import unittest
+
+sys.path.insert(0, {scripts!r})
+from wgf_knowledge import firewall
+
+ROOT = {root!r}
+LESSONS = {{"lessons": [{{"id": "L1", "lifecycle": "active", "status": "enforced",
+                          "tests": {{"catches": ["scripts/tests/{skip}.py::test_skipped"]}}}}]}}
+
+
+class Firewall(unittest.TestCase):
+    def test_every_lesson_holds(self):
+        self.assertEqual(firewall.run(LESSONS, ROOT)["verdict"], firewall.PASS)
+"""
+
+
 class TheCategory(unittest.TestCase):
     def test_the_core_suite_runs_the_firewall_as_knowledge(self):
         import core_suite
@@ -182,9 +218,29 @@ class TheCategory(unittest.TestCase):
                      "test_knowledge_ingest", "test_knowledge_generations"):
             self.assertIn(name, modules)
             self.assertTrue(os.path.isfile(os.path.join(HERE, f"{name}.py")), name)
-        # A lesson test the suite skipped would be SKIP here, which fails the firewall - so a
-        # KNOWLEDGE category that passed ran every lesson test; none was skipped into a pass.
-        self.assertNotIn(firewall.SKIP, (firewall.PASS, firewall.NO_TESTS))
+
+    def test_a_skipped_lesson_test_fails_the_knowledge_category(self):
+        """A lesson whose only test is skipped: the firewall says FAIL, and the KNOWLEDGE
+        category that runs it reports a failure - never a PASS, never a quiet SKIP."""
+        import wgf
+        root = tempfile.mkdtemp(prefix="wgf-fw-cat-")
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        tests = os.path.join(root, "scripts", "tests")
+        os.makedirs(tests)
+        tag = f"k{os.getpid()}_{id(self)}"
+        skip, check = f"{tag}_lesson", f"{tag}_knowledge"
+        with open(os.path.join(tests, f"{skip}.py"), "w", encoding="utf-8") as handle:
+            handle.write(textwrap.dedent(SAMPLE.format(check=WORKS)))
+        with open(os.path.join(tests, f"{check}.py"), "w", encoding="utf-8") as handle:
+            handle.write(KNOWLEDGE_MODULE.format(scripts=SCRIPTS, root=root, skip=skip))
+        self.addCleanup(lambda: [sys.modules.pop(n, None) for n in (skip, check)])
+        self.addCleanup(lambda: tests in sys.path and sys.path.remove(tests))
+        report = firewall.run({"lessons": [lesson("L1", skip, catches=["test_skipped"])]}, root)
+        self.assertEqual((report["verdict"], report["lessons"][0]["verdict"]),
+                         (firewall.FAIL, firewall.SKIP))
+        row = wgf.run_core_suite({"KNOWLEDGE": [check]}, tests)[0]
+        self.assertEqual(row["result"], "FAIL")
+        self.assertEqual((row["failed"], row["skipped"]), (1, 0))
 
 
 class RunSuite(unittest.TestCase):

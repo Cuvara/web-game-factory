@@ -25,6 +25,7 @@ import copy
 import datetime
 import json
 import os
+import shutil
 import sys
 import unittest
 
@@ -107,7 +108,11 @@ class Lessons(Sandbox):
         self.assertTrue(any(text in p for p in problems), problems)
 
 
-NEW_RULE = {"id": "L29", "title": "A new rule", "category": "audio",
+NEW_RULE = {"id": "L900", "title": "A new rule", "category": "audio",
+            "domain": "audio", "classification": "REQUIRED", "revision": 1,
+            "principle": "A sound follows the event it belongs to, because a sound out of "
+                         "step with play tells the player something false.",
+            "anti_pattern": "A sound that plays before, after or without its event.",
             "problem": "A sound played at the wrong moment.",
             "root_cause": "Nothing compared sound events with game events.",
             "lesson": "Every sound event follows the game event it belongs to.",
@@ -127,7 +132,7 @@ class Ingestion(Lessons):
         self.add_lesson(copy.deepcopy(NEW_RULE))
         self.assertEqual(self.problems(), [])
         checks, _ = registry.classify(self.read("core/reference/check-tiers.yaml"), self.root)
-        rule = next(l for l in self.lessons()["lessons"] if l["id"] == "L29")
+        rule = next(l for l in self.lessons()["lessons"] if l["id"] == "L900")
         self.assertEqual(model.level_of(rule, checks), "required")
 
     def test_a_rule_missing_its_fields_is_refused(self):
@@ -136,8 +141,8 @@ class Ingestion(Lessons):
             del rule[key]
         self.add_lesson(rule)
         problems = self.problems()
-        for text in ("L29: category None", "L29: needs a problem", "L29: needs a root_cause",
-                     "L29: needs `introduced"):
+        for text in ("L900: category None", "L900: needs a problem", "L900: needs a root_cause",
+                     "L900: needs `introduced"):
             self.assertTrue(any(text in p for p in problems), (text, problems))
 
     def test_a_duplicate_id_is_refused(self):
@@ -156,11 +161,11 @@ class Ingestion(Lessons):
         rule = copy.deepcopy(NEW_RULE)
         rule["tests"]["proves"] = []
         self.add_lesson(rule)
-        self.has("L29: tests.proves is not one of catches, passes, generalizes")
+        self.has("L900: tests.proves is not one of catches, passes, generalizes")
 
     def test_a_lesson_that_is_not_a_mapping_is_refused(self):
         data = self.lessons()
-        data["lessons"].append("L29 a sentence")
+        data["lessons"].append("L900 a sentence")
         self.write("core/reference/lessons.yaml", data)
         self.has("lessons[28]: needs an id")
 
@@ -250,7 +255,7 @@ class LevelIntegrity(Lessons):
         self.has("L23: declares level required, which is what its checks derive")
 
     def test_a_stronger_declared_level_is_accepted(self):
-        self.set_lesson("L23", level="blocking")
+        self.set_lesson("L23", level="blocking", classification="BLOCKING")
         self.assertEqual(self.problems(), [])
 
     def test_a_blocking_rule_on_an_advisory_check_fails(self):
@@ -697,8 +702,9 @@ class Weakening(unittest.TestCase):
 
     def test_a_widened_scope_and_a_stronger_level_pass(self):
         current = self.current()
-        _lesson(current, "L15")["scope"] = "global"
-        _lesson(current, "L23")["level"] = "blocking"
+        _lesson(current, "L15").update(scope="global", revision=2)
+        _lesson(current, "L23").update(level="blocking", classification="BLOCKING",
+                                       revision=2)
         self.assertEqual(self.weak(LESSONS, current), [])
 
     def test_a_deleted_lesson_fails(self):
@@ -708,8 +714,9 @@ class Weakening(unittest.TestCase):
 
     def successor(self, current, of, **changes):
         old = _lesson(current, of)
-        new = dict(copy.deepcopy(old), id="L29", **changes)
-        old.update(lifecycle="deprecated", superseded_by="L29")
+        new = dict(copy.deepcopy(old), id="L900", **changes)
+        old.update(lifecycle="deprecated", superseded_by="L900",
+                   revision=old.get("revision", 1) + 1)
         current["lessons"].append(new)
         return new
 
@@ -723,13 +730,13 @@ class Weakening(unittest.TestCase):
         self.successor(current, "L5", checks=["playability:depth.ramp"])
         problems = self.weak(LESSONS, current)
         self.has(problems, "L5: weakened in place - held blocking in a run before, required "
-                           "now (through its successor L29)")
+                           "now (through its successor L900)")
         self.has(problems, "L5: no longer held by playability:content.units_reachable "
-                           "(through its successor L29)")
+                           "(through its successor L900)")
         current = self.current()
         self.successor(current, "L1", scope={"render": ["2d"]})
         self.has(self.weak(LESSONS, current), "L1: scope narrowed in place (through its "
-                                              "successor L29)")
+                                              "successor L900)")
 
     def test_a_lesson_retired_with_a_reason_stays_advisory_and_visible(self):
         current = self.current()
@@ -854,6 +861,126 @@ class Integrity(unittest.TestCase):
         lesson["scope"] = {"render": ["5d"]}
         self.assertTrue(registry.lesson_problems(lessons, CHECKS, ROOT, DATA["evidence"],
                                                  runtime=True))
+
+
+# ------------------------------------------------------------------ the 2.1.0 model fields
+
+
+class Model21(Lessons):
+    """lessons.yaml 2.1.0: domain, principle, anti_pattern, classification, revision."""
+
+    def reset(self):
+        shutil.copyfile(os.path.join(ROOT, "core", "reference", "lessons.yaml"),
+                        os.path.join(self.root, "core", "reference", "lessons.yaml"))
+
+    def test_every_shipped_lesson_carries_the_2_1_fields(self):
+        self.assertTrue(model.has_model_2_1(LESSONS))
+        for lesson in LESSONS["lessons"]:
+            with self.subTest(lesson=lesson["id"]):
+                for key in ("domain", "principle", "anti_pattern", "classification",
+                            "revision"):
+                    self.assertTrue(lesson.get(key), key)
+                self.assertIn(lesson["domain"], model.DOMAINS)
+                self.assertGreaterEqual(lesson["revision"], 1)
+
+    def test_the_classification_follows_the_derived_level(self):
+        expected = {"blocking": "BLOCKING", "required": "REQUIRED"}
+        for lesson in LESSONS["lessons"]:
+            level = None if model.is_process(lesson) else model.level_of(lesson, CHECKS)
+            with self.subTest(lesson=lesson["id"], level=level):
+                if level in expected:
+                    self.assertEqual(lesson["classification"], expected[level])
+                else:
+                    self.assertIn(lesson["classification"],
+                                  ("OBSERVATION", "HEURISTIC", "RECOMMENDATION",
+                                   "VALIDATED_PRINCIPLE"))
+
+    def test_a_missing_2_1_field_is_refused(self):
+        for key in ("domain", "principle", "anti_pattern", "classification", "revision"):
+            with self.subTest(key=key):
+                self.set_lesson("L23", **{key: None})
+                self.has(f"L23: needs `{key}` (knowledge model 2.1.0)")
+                self.reset()
+
+    def test_a_domain_outside_the_vocabulary_is_refused(self):
+        self.set_lesson("L23", domain="fun")
+        self.has("L23: domain 'fun' is not one of")
+        self.reset()
+        self.set_lesson("L23", domain="process")
+        self.has("L23: a process lesson, and only one, has domain `process`")
+
+    def test_a_classification_never_claims_stronger_than_the_evidence(self):
+        # an experimental candidate claiming to block
+        self.set_lesson("L17", classification="BLOCKING")
+        self.has("L17: classified BLOCKING, but its level is experimental")
+        self.reset()
+        # a required rule classified as a mere observation is weaker than its checks
+        self.set_lesson("L23", classification="OBSERVATION")
+        self.has("L23: classified OBSERVATION, but its level is required")
+        self.reset()
+        self.set_lesson("L23", classification="BLOCKING")
+        self.has("L23: classified BLOCKING, but its level is required")
+        self.reset()
+        # a validated principle is a validated lesson, never one that blocks
+        self.set_lesson("L17", classification="VALIDATED_PRINCIPLE")
+        self.has("L17: a VALIDATED_PRINCIPLE is a validated lesson, not candidate")
+        self.reset()
+        self.set_lesson("L6", classification="REQUIRED")
+        self.has("L6: classified REQUIRED, but its level is none (a process lesson)")
+
+    def test_a_revision_is_an_integer_from_one(self):
+        for bad in (0, "1", True, 1.5):
+            with self.subTest(revision=bad):
+                self.set_lesson("L23", revision=bad)
+                self.has("L23: revision is an integer from 1")
+                self.reset()
+
+    def test_the_vocabularies_are_held(self):
+        data = self.lessons()
+        data["domains"] = list(data["domains"])[:-1]
+        data["classifications"] = ["BLOCKING"]
+        self.write("core/reference/lessons.yaml", data)
+        self.has("core/reference/lessons.yaml: domains are")
+        self.has("core/reference/lessons.yaml: classifications are")
+
+    def test_a_rule_version_and_digest(self):
+        lesson = copy.deepcopy(BY_ID["L23"])
+        self.assertEqual(model.rule_version(lesson), f"L23@r{lesson['revision']}")
+        digest = model.lesson_digest(lesson)
+        self.assertRegex(digest, r"^sha256:[0-9a-f]{64}$")
+        # key order and layout do not change it; a word does
+        self.assertEqual(model.lesson_digest(dict(reversed(list(lesson.items())))), digest)
+        lesson["lesson"] += " Again."
+        self.assertNotEqual(model.lesson_digest(lesson), digest)
+
+
+class Revisions(unittest.TestCase):
+    """check-integrity's base comparison: an entry changed in place raises its revision."""
+
+    def current(self):
+        return copy.deepcopy(LESSONS)
+
+    def test_an_entry_changed_without_its_revision_rising_fails(self):
+        current = self.current()
+        _lesson(current, "L24")["lesson"] += " Also on a hidden page."
+        problems = model.weakening_problems(LESSONS, current, CHECKS)
+        self.assertTrue(any("L24: the entry changed without its revision rising" in p
+                            for p in problems), problems)
+        _lesson(current, "L24")["revision"] += 1
+        self.assertEqual(model.weakening_problems(LESSONS, current, CHECKS), [])
+
+    def test_a_revision_never_falls(self):
+        previous = self.current()
+        _lesson(previous, "L24")["revision"] = 3
+        problems = model.weakening_problems(previous, self.current(), CHECKS)
+        self.assertTrue(any("L24: revision went from 3 to 1" in p for p in problems), problems)
+
+    def test_a_base_before_revisions_introduces_them(self):
+        previous = dict(self.current(), version="2.0.1")
+        for lesson in previous["lessons"]:
+            for key in ("domain", "principle", "anti_pattern", "classification", "revision"):
+                lesson.pop(key, None)
+        self.assertEqual(model.weakening_problems(previous, self.current(), CHECKS), [])
 
 
 if __name__ == "__main__":

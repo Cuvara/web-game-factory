@@ -1,4 +1,4 @@
-"""The knowledge model: core/reference/lessons.yaml 2.0.0 as rules.
+"""The knowledge model: core/reference/lessons.yaml 2.x as rules.
 
     tests_of(lesson)                  {"catches", "passes", "generalizes"}: a flat 1.x list
                                       reads as `catches`
@@ -23,6 +23,12 @@
     exception_problems(exception, lessons, checks, now, run_facets=None, vocabulary=None)
                                       why a person's exception cannot hold at `now`
     exception_active(exception, now)  True from its creation until it expires
+    lesson_digest(lesson)             sha256 of the canonical entry (2.1.0): what a run's
+                                      contract pins per rule beside its `revision`
+    rule_version(lesson)              "<id>@r<revision>" (None before 2.1.0)
+    classification_problems(at, lesson, checks)
+                                      a classification stronger or weaker than the level
+                                      the lesson's evidence derives
 
 `checks` is wgf_quality.registry.classify()'s first value: {"<source>:<id>": {"tier", ...}}.
 Pure: no process, no network, no clock (a caller passes `now`). Nothing here names a game,
@@ -39,7 +45,8 @@ __all__ = ["LEVELS", "LIFECYCLES", "SCOPE_KEYS", "RESERVED_SCOPE_KEYS", "TEST_KI
            "tests_of", "all_tests", "scope_of", "derive_level", "level_of", "level_rank",
            "is_process", "vocabulary", "lesson_problems", "file_problems",
            "weakening_problems", "exception_problems", "exception_active", "parse_time",
-           "scope_covers", "version_of"]
+           "scope_covers", "version_of", "DOMAINS", "CLASSIFICATIONS", "MODEL_2_1",
+           "lesson_digest", "rule_version", "classification_problems", "has_model_2_1"]
 
 LESSONS_FILE = "core/reference/lessons.yaml"
 EVIDENCE_FILE = "workspace/lessons/evidence.yaml"
@@ -60,6 +67,16 @@ REASON_MIN_WORDS = 4
 # The longest exception window an installation may configure: a run's, not a standing waiver.
 MAX_EXCEPTION_DAYS = 90
 PROCESS = "process"
+# 2.1.0: what part of a game a lesson is about, and how strongly its evidence lets it speak.
+DOMAINS = ("game-design", "level-design", "difficulty", "pacing", "progression",
+           "player-feedback", "game-feel", "ux", "ui", "content", "replayability",
+           "art-direction", "audio", "vfx", "performance", "accessibility", "technical",
+           "process")
+CLASSIFICATIONS = ("OBSERVATION", "HEURISTIC", "RECOMMENDATION", "VALIDATED_PRINCIPLE",
+                   "REQUIRED", "BLOCKING")
+# The lessons-file version from which every lesson carries the 2.1.0 fields.
+MODEL_2_1 = (2, 1, 0)
+MODEL_2_1_FIELDS = ("domain", "principle", "anti_pattern", "classification", "revision")
 RENDERS = ("2d", "3d")
 CHECKED = ("enforced", "partial")
 
@@ -156,6 +173,36 @@ def scope_covers(wider, narrower):
 def version_of(data):
     version = str((data or {}).get("version") or "")
     return version if _SEMVER.match(version) else None
+
+
+def _version_tuple(data):
+    version = version_of(data)
+    return tuple(int(p) for p in version.split(".")) if version else None
+
+
+def has_model_2_1(lessons):
+    """True for a lessons file at 2.1.0 or later: every lesson carries the 2.1.0 fields."""
+    found = _version_tuple(lessons)
+    return found is not None and found >= MODEL_2_1
+
+
+def lesson_digest(lesson):
+    """"sha256:<hex>" of the lesson entry as canonical JSON (keys sorted, no whitespace,
+    UTF-8): what changed in an entry, whatever its YAML layout."""
+    import hashlib
+    import json
+    text = json.dumps(lesson, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+                      default=str)
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def rule_version(lesson):
+    """"<id>@r<revision>" - one rule at one revision - or None for a lesson with none."""
+    revision = (lesson or {}).get("revision")
+    if not lesson or not lesson.get("id") or not isinstance(revision, int) \
+            or isinstance(revision, bool):
+        return None
+    return f"{lesson['id']}@r{revision}"
 
 
 # ---------------------------------------------------------------------------- vocabulary
@@ -285,6 +332,68 @@ def _level_problems(at, lesson, checks):
     return problems
 
 
+# classification -> the levels in force (level_of) it may stand beside; None is a process
+# lesson, which is never in a run and holds no build.
+_CLASSIFIED = {
+    "BLOCKING": ("blocking",),
+    "REQUIRED": ("required",),
+    "RECOMMENDATION": ("recommended",),
+    "VALIDATED_PRINCIPLE": ("recommended", "experimental"),
+    "OBSERVATION": ("experimental", None),
+    "HEURISTIC": ("experimental", None),
+}
+
+
+def classification_problems(at, lesson, checks):
+    """[problem] when a lesson's classification says more - or less - than the level its
+    checks derive: BLOCKING exactly when blocking, REQUIRED exactly when required,
+    RECOMMENDATION a recommended rule, VALIDATED_PRINCIPLE a validated lesson that is not
+    blocking or required, OBSERVATION / HEURISTIC an experimental rule or a process lesson.
+    The level is the evidence's (derived from the check tiers): a classification never
+    claims stronger, so a subjective candidate is never BLOCKING or REQUIRED."""
+    classification = (lesson or {}).get("classification")
+    if classification is None:
+        return []
+    if classification not in CLASSIFICATIONS:
+        return [f"{at}: classification {classification!r} is not one of "
+                f"{', '.join(CLASSIFICATIONS)}"]
+    level = None if is_process(lesson) else level_of(lesson, checks)
+    if level is None and not is_process(lesson):
+        return []                       # no level to hold it to: reported by _level_problems
+    problems = []
+    if level not in _CLASSIFIED[classification]:
+        problems.append(f"{at}: classified {classification}, but its level is "
+                        f"{level or 'none (a process lesson)'} - a classification follows the "
+                        "level its checks derive, never stronger or weaker")
+    if classification == "VALIDATED_PRINCIPLE" and lesson.get("lifecycle") != "validated":
+        problems.append(f"{at}: a VALIDATED_PRINCIPLE is a validated lesson, not "
+                        f"{lesson.get('lifecycle')}")
+    return problems
+
+
+def _model_2_1_problems(at, lesson, domains, required):
+    """[problem] for the 2.1.0 fields: required on every lesson of a 2.1.0 file and on any
+    lesson that sets a domain; a domain from the file's `domains`; a revision from 1."""
+    problems = []
+    if not required and lesson.get("domain") is None:
+        return problems
+    for key in MODEL_2_1_FIELDS:
+        value = lesson.get(key)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            problems.append(f"{at}: needs `{key}` (knowledge model 2.1.0)")
+    domain = lesson.get("domain")
+    if domain is not None and domain not in (domains or DOMAINS):
+        problems.append(f"{at}: domain {domain!r} is not one of "
+                        f"{', '.join(domains or DOMAINS)}")
+    if domain is not None and (domain == PROCESS) != is_process(lesson):
+        problems.append(f"{at}: a process lesson, and only one, has domain `process`")
+    revision = lesson.get("revision")
+    if revision is not None and (not isinstance(revision, int) or isinstance(revision, bool)
+                                 or revision < 1):
+        problems.append(f"{at}: revision is an integer from 1, not {revision!r}")
+    return problems
+
+
 def _lifecycle_problems(at, lesson, ids, evidence):
     lifecycle = lesson.get("lifecycle")
     status = lesson.get("status")
@@ -345,6 +454,8 @@ def lesson_problems(lessons, checks, vocab, evidence=None):
     entries = [l for l in lessons.get("lessons") or [] if isinstance(l, dict) and l.get("id")]
     ids = {l["id"] for l in entries}
     categories = (vocab or {}).get("categories") or ()
+    modern = has_model_2_1(lessons)
+    domains = list(lessons.get("domains") or ()) or list(DOMAINS)
     for lesson in entries:
         at = f"{LESSONS_FILE} {lesson['id']}"
         if not _ID.match(str(lesson["id"])):
@@ -368,6 +479,8 @@ def lesson_problems(lessons, checks, vocab, evidence=None):
         problems += _tests_shape_problems(at, lesson)
         problems += _level_problems(at, lesson, checks)
         problems += _lifecycle_problems(at, lesson, ids, evidence)
+        problems += _model_2_1_problems(at, lesson, domains, modern)
+        problems += classification_problems(at, lesson, checks)
     if evidence is not None:
         for lesson_id, leg in ((evidence or {}).get("lessons") or {}).items():
             source = (leg or {}).get("source") if isinstance(leg, dict) else None
@@ -395,6 +508,12 @@ def file_problems(lessons):
         problems.append(f"{LESSONS_FILE}: lifecycles are {', '.join(LIFECYCLES)}")
     if list(lessons.get("levels") or []) != list(LEVELS):
         problems.append(f"{LESSONS_FILE}: levels are {', '.join(LEVELS)}")
+    if has_model_2_1(lessons):
+        if list(lessons.get("domains") or []) != list(DOMAINS):
+            problems.append(f"{LESSONS_FILE}: domains are {', '.join(DOMAINS)}")
+        if list(lessons.get("classifications") or []) != list(CLASSIFICATIONS):
+            problems.append(f"{LESSONS_FILE}: classifications are "
+                            f"{', '.join(CLASSIFICATIONS)}")
     policy = lessons.get("exceptions")
     if not isinstance(policy, dict):
         return problems + [f"{LESSONS_FILE}: needs the `exceptions` policy"]
@@ -470,6 +589,22 @@ def _policy_problems(previous, current):
     return problems
 
 
+def _revision_problems(at, old, new):
+    """An entry that changed against the base without its revision rising, or whose
+    revision fell. A base entry with no revision (a file before 2.1.0) is the change that
+    introduces revisions: nothing to compare."""
+    before, after = old.get("revision"), new.get("revision")
+    if not isinstance(before, int) or isinstance(before, bool):
+        return []
+    if not isinstance(after, int) or isinstance(after, bool) or after < before:
+        return [f"{at}: revision went from {before} to {after!r} - a revision only rises"]
+    if lesson_digest(old) != lesson_digest(new) and after <= before:
+        return [f"{at}: the entry changed without its revision rising (still r{after}) - "
+                "raise `revision` with every change, so a run pinned to the old entry and a "
+                "run pinned to the new one say which rule each was held to"]
+    return []
+
+
 def weakening_problems(previous, current, previous_checks, current_checks=None):
     """[problem]: what the current lessons file lets a run get away with that the previous
     version (from 2.0.0 on) did not - each side judged by its OWN check tiers
@@ -482,7 +617,8 @@ def weakening_problems(previous, current, previous_checks, current_checks=None):
       * a check a rule named that it no longer names, or whose tier was demoted;
       * a scope narrowed in place (or a successor's narrower than its predecessor's);
       * the exception policy loosened: a level made exceptable, an approver mode added,
-        the window widened.
+        the window widened;
+      * (2.1.0) an entry changed without its `revision` rising, or a revision that fell.
 
     A lesson deprecated with only a reason is held as advisory in every run it applied to
     (run_level), visibly, and never blocks; for a rule that was blocking or required the
@@ -505,6 +641,8 @@ def weakening_problems(previous, current, previous_checks, current_checks=None):
             problems.append(f"{at}: deleted - a lesson id is never deleted or reused; "
                             "deprecate it")
             continue
+        if has_model_2_1(previous):
+            problems += _revision_problems(at, old, new)
         if not modern or is_process(old) or old.get("lifecycle") == "deprecated":
             continue
         carried = _effective(new, now)

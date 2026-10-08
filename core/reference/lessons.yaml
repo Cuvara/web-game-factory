@@ -41,6 +41,23 @@
 #                is derived from the tiers of its checks and is never restated (below)
 #   superseded_by / reason   a deprecated lesson's successor, or why it was withdrawn
 #
+# Since 2.1.0 (docs/knowledge-enforcement.md "K5"), every lesson also carries:
+#   domain         what part of a game it is about - one of `domains` below; orthogonal to
+#                  `category` (the scorecard line its compliance is counted on)
+#   principle      the reusable why, true of any game: "X, because Y"
+#   anti_pattern   what violating it looks like, true of any game
+#   classification how strongly the evidence lets it speak - one of `classifications` below,
+#                  held consistent with the DERIVED level (never stronger): BLOCKING exactly
+#                  when the level is blocking, REQUIRED exactly when required,
+#                  RECOMMENDATION a recommended rule, VALIDATED_PRINCIPLE a validated lesson
+#                  that is not blocking or required, OBSERVATION or HEURISTIC an experimental
+#                  rule (candidate or gap) or a process lesson
+#   revision       an integer from 1, raised whenever the entry changes; a rule version is
+#                  `<id>@r<revision>` (L29@r1). A run's knowledge-contract records each
+#                  rule's revision and the digest of its entry, and check-integrity fails an
+#                  entry that changed against the base commit without its revision rising
+#                  (scripts/wgf_knowledge/model.py lesson_digest).
+#
 # status:
 #   enforced  a check of check-tiers.yaml holds it at the release tier, and a test replays
 #             the failure (on real evidence where the lesson came with some) and shows it caught
@@ -88,13 +105,43 @@
 # evidence lists.
 
 # 2.0.1: L23, L25 and L26 name generalizes tests (tests only; no rule changed).
-version: 2.0.1
+# 2.1.0: domain, principle, anti_pattern, classification and revision on every lesson
+#        (backfilled on L1-L28, no rule changed); L29.
+version: 2.1.0
 
 statuses: [enforced, partial, gap, process]
 
 lifecycles: [candidate, active, validated, deprecated]
 
 levels: [blocking, required, recommended, experimental]
+
+domains:
+  - game-design
+  - level-design
+  - difficulty
+  - pacing
+  - progression
+  - player-feedback
+  - game-feel
+  - ux
+  - ui
+  - content
+  - replayability
+  - art-direction
+  - audio
+  - vfx
+  - performance
+  - accessibility
+  - technical
+  - process
+
+classifications:
+  - OBSERVATION
+  - HEURISTIC
+  - RECOMMENDATION
+  - VALIDATED_PRINCIPLE
+  - REQUIRED
+  - BLOCKING
 
 # Exceptions: a person may accept, for one run, that an applicable rule is not satisfied
 # (core/artifacts/shared/knowledge-exception.schema.json): {rule_id, reason, scope,
@@ -117,6 +164,16 @@ lessons:
   - id: L1
     title: Layered result screens passed a UI overlap check
     category: ui_ux
+    domain: ui
+    classification: REQUIRED
+    revision: 1
+    principle: >-
+      Text is judged by what a player sees behind it, and exactly one screen is active at a
+      time, because element boxes that do not overlap say nothing about the pixels under a
+      label.
+    anti_pattern: >-
+      Inactive screens left drawn beneath the active one, so text sits over other layers
+      while every box-overlap check passes.
     problem: >-
       Text on a result screen was unreadable over other screens drawn beneath it, and every
       layout check passed.
@@ -143,6 +200,14 @@ lessons:
   - id: L2
     title: A difficulty-ramp check decided noise at small margins
     category: gameplay
+    domain: difficulty
+    classification: REQUIRED
+    revision: 1
+    principle: >-
+      A verdict at the edge of its bar is measured again or reported unmeasured, because a
+      few short samples near a threshold decide noise, not the game.
+    anti_pattern: >-
+      A ramp or pacing verdict that flips between builds whose gameplay did not change.
     problem: >-
       A difficulty-ramp verdict flipped between builds whose gameplay had not changed.
     root_cause: >-
@@ -167,6 +232,15 @@ lessons:
   - id: L3
     title: An asset chain check reported only its first broken link
     category: technical
+    domain: technical
+    classification: BLOCKING
+    revision: 1
+    principle: >-
+      A chain of conditions is measured link by link to its end, because a check that stops
+      at the first broken link surfaces the rest one expensive loop at a time.
+    anti_pattern: >-
+      A check that reports only the first failing link of a chain, so each later failure
+      costs another full develop-and-measure cycle.
     problem: >-
       Broken links of a runtime asset chain surfaced one per loop, each loop a full develop
       and measure cycle.
@@ -192,6 +266,15 @@ lessons:
   - id: L4
     title: A design-gap repair was measured only at the end of production
     category: level_design
+    domain: level-design
+    classification: REQUIRED
+    revision: 1
+    principle: >-
+      A design change is measured on the design itself as early as the measurement allows,
+      because a defect found only after production costs the whole loop.
+    anti_pattern: >-
+      A redesign whose content structure is first measured after every expensive step has
+      already run on it.
     problem: >-
       A redesign that answered a content structure failure could fail the same check after the
       whole production loop had run on it.
@@ -217,6 +300,14 @@ lessons:
   - id: L5
     title: A reachability check timed the bot, not the game
     category: level_design
+    domain: technical
+    classification: BLOCKING
+    revision: 1
+    principle: >-
+      A timing measurement excludes the measurer's own latency, because a window that
+      includes the bot's reaction judges the bot and the host, not the game.
+    anti_pattern: >-
+      Identical gameplay that passes on an idle host and fails on a loaded one.
     problem: >-
       Identical gameplay failed unit-to-unit reachability on a loaded host.
     root_cause: >-
@@ -240,6 +331,15 @@ lessons:
   - id: L6
     title: Delegated agents ran with no record the coordinator could audit
     category: process
+    domain: process
+    classification: HEURISTIC
+    revision: 1
+    principle: >-
+      Every delegated piece of work is started through the path that records it, because
+      work no record names cannot be audited or told apart from an orphan.
+    anti_pattern: >-
+      Agents started outside the coordinator's delegation path, which an audit then reports
+      as orphaned.
     problem: >-
       An audit reported live delegated work as orphaned.
     root_cause: >-
@@ -257,6 +357,15 @@ lessons:
   - id: L7
     title: A stalled host was judged as a failing game
     category: gameplay
+    domain: technical
+    classification: REQUIRED
+    revision: 1
+    principle: >-
+      A recording taken on a degraded host is made again or reported unmeasured, because
+      measurement artifacts judged as game behaviour fail good games and pass bad ones.
+    anti_pattern: >-
+      A stalled host's recording or a sample cut short deciding start time, reachability or
+      variety.
     problem: >-
       Start time, win reachability and variety failed on recordings taken while the host
       stalled.
@@ -282,6 +391,15 @@ lessons:
   - id: L8
     title: Nothing compared a candidate with the last accepted build
     category: gameplay
+    domain: game-design
+    classification: OBSERVATION
+    revision: 1
+    principle: >-
+      A candidate build is compared with the build a person accepted, because absolute
+      floors let a build pass every check and still be worse than what was accepted.
+    anti_pattern: >-
+      A build that passes every check the accepted build passed while being smaller, flatter
+      or harder to read.
     problem: >-
       A build passed every check that passed on the accepted build and was still worse than
       it.
@@ -300,6 +418,14 @@ lessons:
   - id: L9
     title: The accepted build is the floor, not the target
     category: level_design
+    domain: game-design
+    classification: OBSERVATION
+    revision: 1
+    principle: >-
+      Bars state what a good game of its kind is, calibrated beyond the Factory's own
+      output, because a floor calibrated on its own games is a floor, not a target.
+    anti_pattern: >-
+      A build that clears every bar and still has lacklustre design and below-standard art.
     problem: >-
       A build that cleared every bar still had lacklustre game and level design and
       below-standard models.
@@ -318,6 +444,15 @@ lessons:
   - id: L10
     title: Specialists passed a gate by changing what it measures
     category: technical
+    domain: technical
+    classification: BLOCKING
+    revision: 1
+    principle: >-
+      A fix changes what the player experiences, never what the gate measures, because a
+      gate met by moving its measured quantity reports a pass while nothing improved.
+    anti_pattern: >-
+      A reachability or visibility finding met by shrinking the play area or drawing sprites
+      larger than their colliders.
     problem: >-
       Specialists met reachability and visibility findings by changing what the gate measures;
       the player felt nothing better.
@@ -343,6 +478,14 @@ lessons:
   - id: L11
     title: Physics collided where nothing was drawn
     category: gameplay
+    domain: game-feel
+    classification: REQUIRED
+    revision: 1
+    principle: >-
+      What the simulation collides with is what the screen draws, because a body turning at
+      nothing reads to a player as an invisible wall.
+    anti_pattern: >-
+      Bounds and colliders the simulation has and the screen never shows.
     problem: >-
       The moving body turned at bounds and colliders the screen never showed: invisible walls.
     root_cause: >-
@@ -370,6 +513,14 @@ lessons:
   - id: L12
     title: A run adopting an accepted game rewrote it
     category: level_design
+    domain: content
+    classification: BLOCKING
+    revision: 1
+    principle: >-
+      Adopting an accepted game extends what it ships, and replacing accepted work is a
+      person's decision, because a rewrite throws away what was already judged good.
+    anti_pattern: >-
+      A run that adopts an accepted game and replaces its units and strips its world.
     problem: >-
       A run adopting a person-accepted game replaced every unit and stripped the world.
     root_cause: >-
@@ -395,6 +546,14 @@ lessons:
   - id: L13
     title: The playability bot only ever played perfectly
     category: gameplay
+    domain: difficulty
+    classification: REQUIRED
+    revision: 1
+    principle: >-
+      A game is played the way a first-time player plays it, imperfectly, because a perfect
+      oracle never falls, drifts or misreads the camera.
+    anti_pattern: >-
+      Difficulty, falls and pace judged only by a bot that plays perfectly.
     problem: >-
       Falls, drift, input alignment and pace under ordinary input were never measured; a
       perfect bot cleared everything.
@@ -423,6 +582,15 @@ lessons:
   - id: L14
     title: Level geometry was never checked
     category: level_design
+    domain: level-design
+    classification: REQUIRED
+    revision: 1
+    principle: >-
+      Level geometry is held to minimums of shape and length per tier, because tight
+      unrailed turns and units cleared in a fraction of their par are invisible to every
+      other gate.
+    anti_pattern: >-
+      Tight turns without rails, and units cleared in a fraction of their par time.
     problem: >-
       Tight turns without rails, and units cleared in a fraction of their par, shipped
       unnoticed.
@@ -448,6 +616,15 @@ lessons:
   - id: L15
     title: 3D models were graded by their own author
     category: art_3d
+    domain: art-direction
+    classification: BLOCKING
+    revision: 1
+    principle: >-
+      A model is judged by someone other than its author, and a spec its author calls bad
+      does not ship, because self-grading passes detail nobody can see.
+    anti_pattern: >-
+      Models with detail sunk inside a shell, flat stacked parts and floating pieces,
+      shipped on their author's own grade.
     problem: >-
       Models shipped with detail sunk inside a shell, flat stacked parts, floating pieces and
       kit nodes never authored.
@@ -474,6 +651,14 @@ lessons:
   - id: L16
     title: Interactions had no required visual feedback
     category: feel
+    domain: player-feedback
+    classification: OBSERVATION
+    revision: 1
+    principle: >-
+      Every interaction the player causes has a designed, proportionate visual response,
+      because a pickup or outcome with no feedback reads as nothing having happened.
+    anti_pattern: >-
+      Pickups, checkpoints and outcomes with no effect, or a flat screen-filling one.
     problem: >-
       Pickups, checkpoints and outcomes had flat, screen-filling or no visual feedback.
     root_cause: >-
@@ -490,6 +675,15 @@ lessons:
   - id: L17
     title: Game and level design were technically complete and dull
     category: gameplay
+    domain: level-design
+    classification: OBSERVATION
+    revision: 1
+    principle: >-
+      What each unit asks of the player is designed, not only the order of its beats,
+      because a technically complete sequence can still be dull.
+    anti_pattern: >-
+      Units whose beats are in order and that ask nothing new, with no climax, while every
+      bar passes.
     problem: >-
       Units introduced many mechanics at once, bosses asked nothing new and nothing climaxed,
       while every bar passed.
@@ -509,6 +703,14 @@ lessons:
   - id: L18
     title: No one judged the levels, and risk never paid
     category: level_design
+    domain: level-design
+    classification: OBSERVATION
+    revision: 1
+    principle: >-
+      A level uses its space, routes and reveals with intent, and optional risk pays over
+      the safe line, because a level nobody judged is just geometry.
+    anti_pattern: >-
+      Levels with no identity or route choice, where taking a risk never pays.
     problem: >-
       No level used its space, routes or reveals with intent, and optional risk never paid.
     root_cause: >-
@@ -525,6 +727,14 @@ lessons:
   - id: L19
     title: An agent's cleanup deleted other agents' work
     category: process
+    domain: process
+    classification: HEURISTIC
+    revision: 1
+    principle: >-
+      An agent deletes only what it created, in a path of its own, because shared scratch
+      space and shared worktrees hold other agents' live work.
+    anti_pattern: >-
+      A cleanup that removes a shared scratch directory or prunes shared worktrees.
     problem: >-
       Live work of other agents was deleted.
     root_cause: >-
@@ -541,6 +751,15 @@ lessons:
   - id: L20
     title: A structure judge read geometry from the wrong place
     category: level_design
+    domain: level-design
+    classification: REQUIRED
+    revision: 1
+    principle: >-
+      A judge reads its input only from the declared place, because a judge that guesses
+      where data lives sees identical units as different once the data moves.
+    anti_pattern: >-
+      A structure judge that reads geometry from one fixed file and counts any list as
+      geometry.
     problem: >-
       Identical units looked different to the structure judge once a game moved its geometry.
     root_cause: >-
@@ -564,6 +783,14 @@ lessons:
   - id: L21
     title: A deferred platform became the default build
     category: platform_compliance
+    domain: technical
+    classification: OBSERVATION
+    revision: 1
+    principle: >-
+      Each platform's package carries only that platform's integration, because a deferred
+      portal's SDK in the default build ships into every other portal's package.
+    anti_pattern: >-
+      One portal's third-party ad SDK shipped in every other portal's package.
     problem: >-
       One portal's third-party ad SDK shipped in every other portal's package, and a smoke
       test loaded the real SDK.
@@ -583,6 +810,14 @@ lessons:
   - id: L22
     title: A design re-entry reused a stale floor
     category: level_design
+    domain: content
+    classification: BLOCKING
+    revision: 1
+    principle: >-
+      A floor is measured on the content a person accepted, never on an intermediate state,
+      because a stale floor makes the pipeline conform the game to the wrong design.
+    anti_pattern: >-
+      A design re-entry that reuses a floor measured on an intermediate commit.
     problem: >-
       Greybox began conforming a restored game to an old design after a design re-entry.
     root_cause: >-
@@ -609,6 +844,15 @@ lessons:
   - id: L23
     title: A larger collider closed the gaps a level is threaded through
     category: level_design
+    domain: level-design
+    classification: REQUIRED
+    revision: 1
+    principle: >-
+      A change to a moving body is measured against the gaps the level threads it through,
+      because a larger collider can close passages while everything drawn looks the same.
+    anti_pattern: >-
+      A larger collider that leaves the passages of a level too tight to thread, while every
+      gate passes.
     problem: >-
       Levels a player could thread before became near-impassable, while every gate passed.
     root_cause: >-
@@ -637,6 +881,14 @@ lessons:
   - id: L24
     title: Console errors and lost WebGL contexts were seen by no gate
     category: technical
+    domain: technical
+    classification: REQUIRED
+    revision: 1
+    principle: >-
+      Gates read the console and the rendering context, not only uncaught exceptions,
+      because a game can log errors or lose its context and keep running.
+    anti_pattern: >-
+      Console errors and a WebGL context lost mid-play that no gate sees.
     problem: >-
       Console errors and a WebGL context lost mid-play passed every check.
     root_cause: >-
@@ -661,6 +913,14 @@ lessons:
   - id: L25
     title: The browser's context menu opened over the game
     category: browser
+    domain: ux
+    classification: REQUIRED
+    revision: 1
+    principle: >-
+      A gate tries the inputs a player brings, including a right click and a long press,
+      because an untried input can open browser UI over play.
+    anti_pattern: >-
+      The browser's context menu opening over play on a right click or long press.
     problem: >-
       The browser's context menu opened over play on a right click or a long press.
     root_cause: >-
@@ -684,6 +944,15 @@ lessons:
   - id: L26
     title: Layout was judged at two viewports, never against what is played
     category: ui_ux
+    domain: ui
+    classification: REQUIRED
+    revision: 1
+    principle: >-
+      UI is judged at the viewports players bring and against what is played, because two
+      viewports and control-to-control overlap miss a HUD that covers the game.
+    anti_pattern: >-
+      A HUD card covering the moving body on some layouts, and pages that scroll or clip at
+      common sizes.
     problem: >-
       A HUD card covered the moving body on tablet and touch layouts, and pages scrolled or
       clipped at common sizes.
@@ -712,6 +981,15 @@ lessons:
   - id: L27
     title: Sound was checked to play, not to play when it should
     category: audio
+    domain: audio
+    classification: REQUIRED
+    revision: 1
+    principle: >-
+      Each sound event is checked to play when it should and stop when it should, because a
+      check that something played passes silence where it matters.
+    anti_pattern: >-
+      A loss with no sound, a one-shot that loops, a mute that does not silence, sound with
+      the page hidden.
     problem: >-
       A loss played no sound, a one-shot looped, mute did not silence, and sound went on with
       the page hidden.
@@ -740,6 +1018,15 @@ lessons:
   - id: L28
     title: Performance was never measured while played, and a loaded host was judged as the game
     category: performance
+    domain: performance
+    classification: REQUIRED
+    revision: 1
+    principle: >-
+      Performance is measured in a real browser over a session, and host degradation is told
+      apart from the game, because a load time on a stalled host is not the game's.
+    anti_pattern: >-
+      Frame stability and memory growth never measured in play, and a stalled host's timing
+      judged as the game's.
     problem: >-
       Frame stability and memory growth were never measured in play, and a stalled host's load
       time could be judged as the game's.

@@ -114,6 +114,7 @@ class ContentSufficiencyStep(WorkflowStep):
     clock = staticmethod(_utc_now)
 
     def execute(self, inputs, context):
+        self._layout_source = None
         missing = [t for t in REQUIRED_INPUTS if t not in inputs]
         if missing:
             return StepResult.waiting_for_input(
@@ -145,6 +146,9 @@ class ContentSufficiencyStep(WorkflowStep):
                     if unreadable:
                         context.logger.warning("the layout source cannot be read",
                                                reason=unreadable)
+                    self._layout_source = (
+                        {"status": "unreadable", "problem": str(unreadable)} if unreadable
+                        else {"status": "read" if found is not None else "none"})
                     result = auditing.audit(design, strategy, data, records,
                                             benchmark=run_benchmark(context),
                                             data_problem=problem, playability=play,
@@ -187,6 +191,8 @@ class ContentSufficiencyStep(WorkflowStep):
             "blocked_reason": blocked,
             "verdict": verdict,
         }
+        if getattr(self, "_layout_source", None) and not blocked:
+            report["layout_source"] = dict(self._layout_source)
         output = ArtifactOutput("content-sufficiency-report", provenance.seal(report),
                                 metadata={"verdict": verdict, "failed": len(failed),
                                           "routes": routes, "commit": commit})

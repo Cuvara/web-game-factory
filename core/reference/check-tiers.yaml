@@ -75,8 +75,13 @@
 #                           BLOCKED report proves nothing)
 #                 ran       an entry whose id starts so exists (the check's family ran)
 #                 render    the run's render facet is one of these
-#                 none_of   {report, path, values}: none of `values` is at `path` in another
-#                           report of the run (the design declares no moving body)
+#                 none_of   {report, path, values, agrees_with?}: `path` holds something in
+#                           another report of the run, and none of it is one of `values` (the
+#                           design declares its assets' roles, and no moving body); a path that
+#                           holds nothing proves nothing. `agrees_with` {file, path}: integrity
+#                           holds `values` equal to that list of a reference file
+#                 one_of    {report, path, values}: `path` in another report holds one of
+#                           `values` (the layout source was read, or none was declared)
 #                 missing   {report, path}: nothing is at `path` in another report (no
 #                           adopted content floor)
 #                 other     {report, list, id, status}: another report carries that check
@@ -301,7 +306,7 @@ sources:
           verdict: [PASS, FAIL]
           ran: runtime.
           render: [2d]
-          none_of: {report: game-design, path: "build_spec.assets[].role", values: [projectile]}
+          none_of: {report: game-design, path: "build_spec.assets[].role", values: [projectile], agrees_with: {file: core/reference/play-realism.yaml, path: physics.roles}}
           why: judged on the bodies the simulation moves (play-realism.yaml physics.roles), and the design declares none
         - checks: [naive.drift, naive.alignment]
           verdict: [PASS, FAIL]
@@ -311,6 +316,7 @@ sources:
         - checks: [level.geometry, level.unit_length, level.clearance]
           verdict: [PASS, FAIL]
           other: {report: content-sufficiency-report, list: checks, id: content.data_present, status: [PASS]}
+          one_of: {report: content-sufficiency-report, path: layout_source.status, values: [read, none]}
           why: judged on the layouts the content data file declares - paths, grids - and it declares none of that kind
     # core/reference/play-realism.yaml: a measured FAIL holds the build at the tiers
     # `enforce.fail_required_at` names (release, premium); an unmeasured one follows

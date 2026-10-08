@@ -140,9 +140,9 @@ group names - never on the absence alone (a group needs `verdict` or `ran`):
 
 | Source | Checks | NOT_APPLICABLE when (all of) |
 |---|---|---|
-| play-realism | physics.* | the report finished (PASS/FAIL), realism ran (a `runtime.*` entry), and the run is 3D - or 2D and the design's `build_spec.assets` declare no `projectile` (the bodies the simulation moves) |
+| play-realism | physics.* | the report finished (PASS/FAIL), realism ran (a `runtime.*` entry), and the run is 3D - or 2D and the design's `build_spec.assets` declare roles, none of them a moving body (`play-realism.yaml` `physics.roles`, held equal by integrity); a design that declares no assets proves nothing |
 | play-realism | naive.drift, naive.alignment | finished, naive play ran (a `naive.*` entry), the run is 2D |
-| play-realism | level.* | finished, and the content-sufficiency-report read the content data file (`content.data_present` PASS) |
+| play-realism | level.* | finished, and the content-sufficiency-report read the content data file (`content.data_present` PASS) and its layout source (`layout_source.status` read or none; `unreadable` is UNMEASURED) |
 | content-sufficiency | content.regression | finished, ran, and the design carries no `existing_content` (no adopted game) |
 | playability | depth.stall | finished, and the ramp ran (`depth.ramp`) |
 | quality-floor | every criterion | the report scored its floor (`floor.*`): a criterion it does not carry is not the build's contract |

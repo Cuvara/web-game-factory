@@ -435,8 +435,8 @@ LOCATOR_KEYS = ("list", "keys", "id", "id_pattern", "id_split", "where", "status
                 "presence", "absent", "attribute", "not_applicable", "covered",
                 "not_reported")
 # What a `not_reported` group may require (check-tiers.yaml 1.2.0).
-NOT_REPORTED_KEYS = ("checks", "why", "verdict", "ran", "render", "none_of", "missing",
-                     "other")
+NOT_REPORTED_KEYS = ("checks", "why", "verdict", "ran", "render", "none_of", "one_of",
+                     "missing", "other")
 
 
 def status_at(tiers, source):
@@ -558,7 +558,7 @@ def _group_holds(group, report, facts):
     if group.get("render"):
         if facts.get("render") not in group["render"]:
             return False
-    for key in ("none_of", "missing", "other"):
+    for key in ("none_of", "one_of", "missing", "other"):
         rule = group.get(key)
         if not rule:
             continue
@@ -567,7 +567,12 @@ def _group_holds(group, report, facts):
             return False
         if key == "none_of":
             found = {str(v) for v in _walk(other, rule.get("path") or "")}
-            if found & {str(v) for v in rule.get("values") or ()}:
+            # Nothing at the path is no evidence that none of the values is declared.
+            if not found or found & {str(v) for v in rule.get("values") or ()}:
+                return False
+        elif key == "one_of":
+            found = [str(v) for v in _walk(other, rule.get("path") or "")]
+            if not found or found[0] not in {str(v) for v in rule.get("values") or ()}:
                 return False
         elif key == "missing":
             if _walk(other, rule.get("path") or ""):
@@ -750,6 +755,23 @@ def status_at_problems(tiers, root=None):
                                 "NOT_APPLICABLE")
             if not _text_of(group.get("why")):
                 problems.append(f"{at}: says why the producer does not report it (`why`)")
+            agree = (group.get("none_of") or {}).get("agrees_with") \
+                if isinstance(group.get("none_of"), dict) else None
+            if isinstance(agree, dict):
+                try:
+                    stated = _walk(_read(root, agree.get("file") or ""),
+                                   agree.get("path") or "")
+                except (OSError, ValueError) as exc:
+                    stated = None
+                    problems.append(f"{at}: none_of.agrees_with {agree.get('file')} cannot be "
+                                    f"read ({exc})")
+                if stated is not None:
+                    want = sorted(str(v) for v in (stated[0] if stated and isinstance(
+                        stated[0], list) else stated))
+                    have = sorted(str(v) for v in group["none_of"].get("values") or ())
+                    if want != have:
+                        problems.append(f"{at}: none_of.values {have} disagree with "
+                                        f"{agree.get('file')} {agree.get('path')} {want}")
         field = (locator.get("absent") or {}).get("field")
         if field and not _schema_has(schema, field):
             problems.append(f"{where}: status_at absent.field {field!r} is not a property of "

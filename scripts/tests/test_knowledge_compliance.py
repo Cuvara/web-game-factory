@@ -157,6 +157,7 @@ def complete_build(family="arcade"):
         if source == "browser-qa":
             for viewport in ("desktop-standard", "mobile"):
                 verification["checks"].append({"id": f"{name}:{viewport}", "status": "PASS"})
+    docs["content-sufficiency-report"]["layout_source"] = {"status": "none"}
     docs["game-design"]["consistency"] = {
         "status": "pass", "rule_results": [
             {"criterion_id": c.partition(":")[2], "breached": False}
@@ -1062,6 +1063,8 @@ class FixtureWorld(unittest.TestCase):
                     api = case.api(case.world(genre))
                     state = case.to_g4(api)
                     section = case.newest(api, state, "quality-report")["compliance"]
+                    sufficiency = case.newest(api, state, "content-sufficiency-report")
+                    self.assertIn(sufficiency["layout_source"]["status"], ("read", "none"))
                 finally:
                     case.doCleanups()
                 self.assertEqual(section["verdict"], "PASS",

@@ -14,6 +14,12 @@ Every command that does work is a slice of one workflow definition, executed by 
     wgf resume <run-id> --budget-sessions N [--budget-cost X]
                                          raise the run's developer-session budget, as a
                                          person (refused from inside a step's process tree)
+    wgf resume <run-id> --except RULE --reason TEXT --expires DATE [--scope KEY=VALUE ...]
+    wgf resume <run-id> --except FILE.json
+                                         grant the run a knowledge exception, as a person:
+                                         an applicable blocking or required rule accepted
+                                         unmet, with a reason and an expiry (refused from
+                                         inside a step's process tree; never by config)
     wgf decide <run-id> CHOICE [--note TEXT] [--findings FILE]
                                          answer a run waiting at a human checkpoint
     wgf <cmd> --resume <run-id> [...]    the same as `wgf resume`, whatever <cmd> is
@@ -235,6 +241,14 @@ def render_quality(quality):
     pending = quality.get("not_yet_enforced") or []
     if pending:
         lines.append(f"         not in this workflow yet, so not enforced: {', '.join(pending)}")
+    # Quality policy rule 8: the knowledge the run was held to, and the Factory that ran it.
+    knowledge = quality.get("knowledge")
+    if isinstance(knowledge, dict) and knowledge:
+        factory = quality.get("factory") or {}
+        made_by = " ".join(str(v)[:12] for v in (factory.get("version"),
+                                                 factory.get("commit")) if v)
+        lines.append("Knowledge: " + ", ".join(str(v) for _, v in sorted(knowledge.items()))
+                     + (f" (Factory {made_by})" if made_by else ""))
     return "\n".join(lines)
 
 
@@ -492,6 +506,20 @@ def build_parser(commands):
     resume.add_argument("--budget-cost", metavar="X", type=float,
                         help="raise the run's developer cost budget to X "
                              "(factory.develop.budget.max_cost), recorded as BUDGET_RAISED")
+    resume.add_argument("--except", metavar="RULE|FILE", dest="except_", action="append",
+                        help="grant a knowledge exception for this rule (a lesson id of "
+                             "core/reference/lessons.yaml), or for every record in this JSON "
+                             "file; recorded as KNOWLEDGE_EXCEPTION_GRANTED")
+    resume.add_argument("--reason", metavar="TEXT",
+                        help="with --except RULE: why the rule is accepted unmet (20+ chars)")
+    resume.add_argument("--expires", metavar="DATE",
+                        help="with --except RULE: when the exception ends (YYYY-MM-DD, the end "
+                             "of that day UTC, or an ISO 8601 date-time); mandatory")
+    resume.add_argument("--scope", metavar="KEY=VALUE", action="append",
+                        help="with --except RULE: narrow it to platform=ID, check=ID or "
+                             "viewport=ID (repeatable; comma-separated values)")
+    resume.add_argument("--approved-by", metavar="NAME", dest="approved_by",
+                        help="with --except: who grants it (default: the login name)")
     resume.add_argument("--json", action="store_true", help="print events as JSON lines")
     resume.add_argument("--quiet", action="store_true", help="print only the final status")
     resume.set_defaults(handler=cmd_resume)
@@ -704,14 +732,45 @@ def cmd_run(args):
     return exit_code(state)
 
 
+def _exception_requests(args):
+    """The knowledge exceptions `wgf resume --except` asks for, as partial records the
+    knowledge module completes and checks (wgf_knowledge.exceptions); [] when none."""
+    given = [v for v in getattr(args, "except_", None) or () if v]
+    loose = [flag for flag, value in (("--reason", args.reason), ("--expires", args.expires),
+                                      ("--scope", args.scope),
+                                      ("--approved-by", args.approved_by)) if value]
+    if not given:
+        if loose:
+            raise UsageError(f"{', '.join(loose)} go with --except RULE")
+        return []
+    from wgf_knowledge import exceptions as knowledge_exceptions
+    files = [v for v in given if v.lower().endswith(".json") or os.path.isfile(v)]
+    rules = [v for v in given if v not in files]
+    try:
+        requests = []
+        for path in files:
+            requests += knowledge_exceptions.requests_from_file(path, args.approved_by)
+        if rules:
+            requests += knowledge_exceptions.request(rules, args.reason, args.expires,
+                                                     args.scope, args.approved_by)
+        elif any(f != "--approved-by" for f in loose):
+            raise UsageError("--reason, --expires and --scope go with --except RULE; an "
+                             "exception file carries its own")
+    except knowledge_exceptions.ExceptionRefused as exc:
+        raise UsageError(f"--except: {exc}")
+    return requests
+
+
 def cmd_resume(args):
     if args.note is not None and not args.decision:
         raise UsageError(_NOTE_NEEDS_DECISION)
+    exceptions = _exception_requests(args)
     progress = Progress(sys.stdout, as_json=args.json)
     api = _api(args, subscribers=() if args.quiet else (progress,))
     request = RunRequest(resume=args.run, from_step=args.from_step,
                          decision=args.decision, note=args.note,
-                         budget_sessions=args.budget_sessions, budget_cost=args.budget_cost)
+                         budget_sessions=args.budget_sessions, budget_cost=args.budget_cost,
+                         exceptions=exceptions)
     return exit_code(_drive(api, args, request))
 
 

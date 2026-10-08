@@ -12,7 +12,7 @@ The rules are data: [core/reference/quality-policy.yaml](../core/reference/quali
 `engine.py`); the test file is
 [scripts/tests/test_quality_inheritance.py](../scripts/tests/test_quality_inheritance.py).
 
-## The policy in eight sentences
+## The policy in nine sentences
 
 1. **Snapshot.** A run records, when it starts, its quality tier (`factory.strategy.quality_tier`,
    default `release`), its class (`release` or `development`) and why, and the policy and
@@ -69,6 +69,26 @@ The rules are data: [core/reference/quality-policy.yaml](../core/reference/quali
 8. **Independent review** (WS-9, quality-policy 1.3.0). Every path an implementer's change (develop, sdk) can take
    to G4 or release passes every judge `independent_review` lists for it; check-integrity
    holds it on the workflow's graph. See docs/specialist-routing.md "Independent review".
+9. **Knowledge** (K2, quality-policy 1.4.0 rule 8, workflow 17, gates 1.7.0). A run records,
+   when it starts, the version of each file under the policy's `knowledge`
+   (`params.quality.knowledge`: `{"lessons": "lessons@2.0.0", "check-tiers":
+   "check-tiers@1.1.0"}`) and the Factory's version and commit (`params.quality.factory`),
+   corroborated like the rest of the snapshot and reported by `wgf status`; runs are
+   comparable across Factory generations by them. A knowledge file that is missing,
+   unreadable, versionless or not shaped as knowledge refuses the run (`ConfigError`, no run
+   created). `new-game` pins every file the knowledge is read with - the lessons, the check
+   tiers and every source they enumerate, the scope vocabularies (genre models, benchmark
+   tiers, floor scorecard, platform profiles) and the policy - and its `knowledge-contract`
+   step, after design and before tech-plan, resolves the rules that apply to the title from
+   those pinned copies into the run's `knowledge-contract`: each rule's level, its checks
+   and the steps that validate them, the regression suite, the genre and platform
+   constraints, the exceptions a person granted. A run that cannot make it - knowledge it
+   did not pin, a pinned copy edited since, versions that are not the ones it recorded,
+   knowledge that breaks its own rules, a blocking or required check no step of its workflow
+   produces - is BLOCKED there, unrouted: nothing is planned or built without it. G3 is
+   decided on it. A person's exception is granted only by `wgf resume <run> --except` (an
+   operator event, refused to automation, never by configuration; docs/workflow-engine.md
+   §7). See docs/knowledge-enforcement.md.
 
 Tests: `scripts/tests/test_no_bypass.py`.
 
@@ -78,7 +98,8 @@ benchmark and the visual-qa rubric (the quality gate, content-sufficiency, visua
 workflow 16 - the bot's viewports and environment bars (`visual-quality.yaml`), play realism
 (`play-realism.yaml`), browser QA (`browser-qa.yaml`, with the values it reads from
 `visual-quality.yaml` through the same pinned copy) and the regression registry
-(`check-tiers.yaml`, `lessons.yaml`). The engine copies them when the run starts and records
+(`check-tiers.yaml`, `lessons.yaml`), and - workflow 17 - everything the knowledge is read
+with (the check sources, genre models, quality policy, platform profiles). The engine copies them when the run starts and records
 their digests in the run's params; playability, verify's browser QA and triage read the run's
 copies (`scripts/wgflib/workflow/references.py read`). So a run resumed on an updated
 Factory gets no new required check and no changed tier: those apply to the next run. A copy
@@ -120,6 +141,9 @@ release without it. Every BYPASS below is closed; the test that proves it is nam
 | 17 | test fixtures (`scripts/wgflib/workflow/fixtures`, tests building an engine directly) | test workflows | - | ALLOWED | a non-shipped workflow is development; an engine built without a policy holds only runs with a snapshot | `test_workflow_engine`, `test_core_workflow` |
 | 18 | a run started before WS-12 (no `params.quality`) | as it was | could never be reported anything | ALLOWED, fail-closed | development (`the run has no quality snapshot`), and held to the current policy's floor; it cannot be submitted live | `LegacyRuns.*` |
 | 19 | an edited `state.json` (`params.quality` changed to `release`) | refused | - | ALLOWED (refused) | `integrity.params_problems` | `Snapshot.test_an_edited_class_is_refused` |
+| 20 | any new run (K2) | the `knowledge-contract` step after design | a run planned and built with no record of which lessons applied to it, and on live knowledge edited mid-run | BYPASS | the snapshot's `knowledge` and `factory`; unreadable knowledge creates no run; the step BLOCKS without a contract; the contract is resolved from the run's pinned copies only | `test_knowledge_run.*` |
+| 21 | a run started before K2 (no `params.quality.knowledge`), resumed | as it was; under workflow 17 its knowledge step runs if it passes design again | - | ALLOWED, advisory | the step makes the contract it can and never blocks it (its compliance is advisory); `knowledge-contract` is not a required step, so no gate is missing. One waiting at G3 waits for the contract (gates 1.7.0), as G4 waited for the quality-report in 1.6.0: `wgf resume <run> --from knowledge-contract` makes it | `test_knowledge_run.OldRuns.*` |
+| 22 | `wgf resume ID --except RULE` | records a person's knowledge exception | - | ALLOWED (a person's act) | refused to automation, for a rule that does not apply or never blocks, without a 20-character reason or an expiry within `exceptions.max_days`, with a created_at in the future, for a platform or viewport the run does not have; `approved_by` (the event's decided_by, mode human) and `created_at` stamped by the grant, never read from the request; `factory.knowledge.exceptions` is reported refused | `test_knowledge_exceptions.*` |
 
 ## What each WS gate looks like through this policy
 
@@ -135,6 +159,7 @@ release without it. Every BYPASS below is closed; the test that proves it is nam
 | regression checks | `verify` | required, current at G4 and release |
 | WS-8 specialist iteration (coming) | `develop` with `with: specialist` | routes into `develop`; every check after `develop` becomes stale and runs again |
 | WS-7 final quality gate | `quality-gate` | required, current at G4 and release; `release` also checks its quality-report passed the build it ships and pins the newest reports of it (`wgf_release/lineage.py`) |
+| K2 knowledge contract | `knowledge-contract` (after design) | every new run records its knowledge versions and makes its contract from its pins or stops; G3 is decided on it. Not yet a required step (rule 1): that is a follow-up once the runs started before it have ended |
 
 ## Residual risks (not closed here)
 

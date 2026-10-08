@@ -10,6 +10,7 @@
     "version": "1.0.0",
     "producer": "title:design",
     "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "release:draft"],
+    "required_for_gates": ["G3"],
     "repo_path": "<game-repo>/release/<release-id>/knowledge-contract.json",
     "run_path": "<storage>/workflows/<run-id>/artifacts/knowledge-contract/v<n>.json"
   },

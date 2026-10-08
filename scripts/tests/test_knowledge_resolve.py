@@ -500,8 +500,10 @@ class Cli(unittest.TestCase):
         with open(config, "w", encoding="utf-8") as handle:
             handle.write("factory:\n  storage:\n    fsync: false\n")
         store = os.path.join(scratch, "store")
+        # A run that has not made its contract: stopped at its knowledge step (K2), the way a
+        # run started before the step existed never made one.
         self.wgf("new-game", "--mock", "--quiet", "--store", store, "--config", config,
-                 expect=3)
+                 "--mock-plan", '{"knowledge-contract": ["blocked"]}', expect=1)
         run_id = next(n for n in os.listdir(os.path.join(store, "workflows"))
                       if n.startswith("new-game-"))
         out = json.loads(self.wgf("knowledge", "contract", run_id, "--store", store,

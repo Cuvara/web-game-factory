@@ -227,7 +227,7 @@ class RunRequest:
     def __init__(self, scope=None, mock=False, mock_plan=None, resume=None, from_step=None,
                  run_id=None, force=False, decision=None, note=None, project_id=None,
                  hold_gates=False, decided_by=None, budget_sessions=None, budget_cost=None,
-                 idea=None):
+                 idea=None, exceptions=None):
         self.scope = scope
         self.mock = mock
         self.mock_plan = mock_plan
@@ -246,6 +246,10 @@ class RunRequest:
         self.budget_cost = budget_cost
         # A new run's game idea (canonical_idea); None is the blank market scan.
         self.idea = idea
+        # With resume: knowledge exceptions a person grants the run (wgf resume --except),
+        # each a partial knowledge-exception record ({rule_id, reason, expires_at, scope,
+        # approved_by?}); completed, checked and recorded by the knowledge module.
+        self.exceptions = list(exceptions or [])
 
 
 class WorkflowAPI:
@@ -336,6 +340,61 @@ class WorkflowAPI:
             **overrides,
         )
 
+    # The knowledge module (scripts/wgf_knowledge) lives outside the kernel too: the kernel
+    # records only that a run's knowledge was read and which versions (quality policy rule 8),
+    # and a person's exception as an operator event. What the files mean, and whether an
+    # exception may be granted, is the module's - imported by name, only when needed, and a
+    # missing module refuses the run rather than starting it unheld.
+    KNOWLEDGE_VERSIONS = "wgf_knowledge.versions"
+    KNOWLEDGE_EXCEPTIONS = "wgf_knowledge.exceptions"
+
+    def _knowledge_module(self, name, why):
+        try:
+            return importlib.import_module(name)
+        except ImportError as exc:
+            raise ConfigError(f"{why}: the knowledge module {name} cannot be imported ({exc})")
+
+    def _knowledge_snapshot(self, policy):
+        """(knowledge versions, factory identity) a new run records (quality policy rule 8).
+        Refused - a ConfigError, no run is created - when a knowledge file the policy lists
+        is missing, unreadable, versionless or not shaped as knowledge."""
+        if not policy.get("knowledge"):
+            return None, None
+        versions = self._knowledge_module(self.KNOWLEDGE_VERSIONS,
+                                          "no run is started without its knowledge")
+        try:
+            versions.knowledge()
+            found = quality.knowledge_versions(policy)
+        except (ValueError, quality.PolicyError) as exc:
+            raise ConfigError(f"the Factory's knowledge cannot be read: {exc}; no run is "
+                              f"started without the lessons and check tiers it is held to "
+                              f"(core/reference/quality-policy.yaml rule 8)")
+        return found, versions.factory()
+
+    def _exception_events(self, existing, request, decided_by):
+        """[(event, data)] for the knowledge exceptions `request` grants `existing`: a
+        person's act, refused to automation and refused whole when any record does not
+        hold (wgf_knowledge.exceptions.grant)."""
+        if not request.exceptions:
+            return []
+        if decided_by == "automation":
+            raise EngineError(
+                "knowledge exception refused: this command runs inside a Factory step's "
+                "process tree (decided_by automation). An exception is a person's act, "
+                "granted from outside the run; an agent never excepts a rule it is held to.")
+        module = self._knowledge_module(self.KNOWLEDGE_EXCEPTIONS,
+                                        "knowledge exception refused")
+        clock = self._overrides.get("clock")
+        try:
+            granted = module.grant(existing, self.store.run_dir(existing.run_id),
+                                   request.exceptions, decided_by,
+                                   now=clock() if clock else None,
+                                   read_artifact=lambda ref: self.store.read_artifact(
+                                       existing.run_id, ref))
+        except module.ExceptionRefused as exc:
+            raise EngineError(f"knowledge exception refused: {exc}")
+        return [(module.EVENT, data) for data in granted]
+
     # The lifecycle bridge lives outside the kernel (it reads workspace/ and runs
     # wgf-state.py's rules), so the kernel names it only here, and imports it only for a
     # run that was started with lifecycle_sync on.
@@ -381,6 +440,9 @@ class WorkflowAPI:
             if raising and not request.resume:
                 raise EngineError("a budget is raised with resume: wgf resume <run-id> "
                                   "--budget-sessions N | --budget-cost X")
+            if request.exceptions and not request.resume:
+                raise EngineError("a knowledge exception is granted with resume: wgf resume "
+                                  "<run-id> --except RULE --reason TEXT --expires DATE")
             if request.resume:
                 decided_by = request.decided_by or default_decider()
                 operator_events = []
@@ -409,6 +471,10 @@ class WorkflowAPI:
                     except budget.BudgetError as exc:
                         raise EngineError(f"budget raise refused: {exc}")
                     operator_events.append((budget.RAISED_EVENT, raised))
+                # A person's knowledge exception, recorded the same way: an operator event
+                # the knowledge step and the quality gate read, corroborated by this
+                # resume's nonce - never an edit of the run's params or contract.
+                operator_events += self._exception_events(existing, request, decided_by)
                 return engine.resume(run_id, from_step=request.from_step,
                                      decision=request.decision, decided_by=decided_by,
                                      note=request.note, operator_events=operator_events)
@@ -461,9 +527,13 @@ class WorkflowAPI:
         # under. Every step that budgets or judges content reads the tier from here, never
         # from a configuration changed since; a later configuration only lowers the class
         # (QUALITY_DOWNGRADED, recorded by the engine when a drive begins).
+        # The knowledge the run is held to (rule 8): its versions and the Factory's own,
+        # recorded the same way; a run whose knowledge cannot be read is never created.
+        knowledge, factory = self._knowledge_snapshot(engine.quality_policy)
         try:
             params[quality.PARAM] = quality.snapshot(engine.quality_policy, self.config.data,
-                                                     engine.definition, mock=request.mock)
+                                                     engine.definition, mock=request.mock,
+                                                     factory=factory, knowledge=knowledge)
             # A run the configuration cannot take to its tier is not started at all - the
             # way a timeout window on an irreversible gate is refused - rather than failing
             # hours later at the step that cannot meet it.
@@ -511,7 +581,11 @@ class WorkflowAPI:
         now: {"tier", "class", "reasons", "refused"}. Read-only; `wgf where` reports it."""
         policy = self.quality_policy()
         definition = self.definition(workflow_ref)
-        taken = quality.snapshot(policy, self.config.data, definition)
+        try:
+            taken = quality.snapshot(policy, self.config.data, definition)
+        except quality.PolicyError as exc:
+            return {"tier": None, "class": quality.DEVELOPMENT, "reasons": [],
+                    "refused": [f"{exc} (core/reference/quality-policy.yaml rule 8)"]}
         try:
             registry = self.registry(False)
         except Exception:  # a module that cannot be imported: the run would say so itself

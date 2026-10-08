@@ -264,12 +264,75 @@ title-strategy, quality tier and pinned knowledge - the pinned check tiers class
 against the pinned copies of the files they enumerate - marked `recorded: false`, and writes
 nothing.
 
+## In a run
+
+A `new-game` run is held to the knowledge it started under (quality-policy 1.4.0 rule 8,
+workflow 17, gates 1.7.0).
+
+**At the start.** The run records `params.quality.knowledge` - `{"lessons": "lessons@2.0.0",
+"check-tiers": "check-tiers@1.1.0"}`, the version of every file under the policy's
+`knowledge` - and `params.quality.factory`, the Factory's `VERSION` and git commit (null
+in an installed runtime). Both are corroborated against `WORKFLOW_STARTED` like the rest of
+the snapshot and reported by `wgf status` (`quality.knowledge`, `quality.factory`), so two
+runs say exactly which knowledge each was held to. A knowledge file that is missing,
+unreadable, versionless or not shaped as knowledge (`versions.knowledge`) refuses the run: a
+`ConfigError`, and no run is created. The workflow pins - copies into the run, digest in its
+params - the lessons, the check tiers, every source file the tiers enumerate, the scope
+vocabularies (genre models, quality benchmark, quality floor, platform profiles), the
+viewports (browser QA, visual quality) and the quality policy.
+
+**After design, before tech-plan.** The step `knowledge-contract` (type `knowledge`,
+`scripts/wgf_knowledge/step.py`) reads the run's game-design and title-strategy, takes the
+facets (`resolve.facets_from`, the tier from the run's snapshot), reads the knowledge from the
+run's pinned copies only - checking each digest, and that the pinned versions are the ones
+the run recorded - validates it (`registry.lesson_problems`, runtime mode), resolves it
+(`resolve.resolve`, with the vocabulary from the same pins and the platform profile versions
+the strategy pinned), and writes the run's `knowledge-contract`. The contract is the run's
+Factory context: versions (with the run's Factory version and commit), facets, the
+applicable rules by level and why, the excluded ones and why not, the validating steps, the
+regression suite, the genre and platform constraints, the exceptions honoured and refused,
+counts. The step follows design, so every pass through design makes it again.
+
+It is BLOCKED - unrouted, so the run stops for a person and nothing is planned or built -
+when the run did not pin a file its knowledge is read with, a pinned copy was edited after
+the start, the pinned versions are not the recorded ones, the knowledge breaks its own
+rules, the run's workflow cannot be read, the facets cannot be read, or a blocking or
+required rule's check is produced by no step of the run's workflow (`missing_validators`).
+G3 is decided on the contract (gates.yaml `required_artifacts`).
+
+**A run started before rule 8** recorded no `knowledge`. It was never held to a contract:
+its step - reached only when a resume under workflow 17 passes design again, or `wgf resume
+<run> --from knowledge-contract` - makes the contract it can from what the run holds (the
+pinned copy where it pinned one, the live file otherwise), says ADVISORY, and never blocks;
+what would have blocked a new run is named in its message. The step is not a required step
+of the quality floor, so no gate is missing from such a run. One waiting at G3 when the
+Factory moves to gates 1.7.0 waits for the contract, as G4 waited for the quality-report in
+1.6.0.
+
+**Exceptions.** `wgf resume <run> --except RULE --reason TEXT --expires DATE [--scope
+platform=ID|check=ID|viewport=ID ...] [--approved-by NAME]`, or `--except FILE.json` (a
+record or a list). The API refuses it from inside a step's process tree (`decided_by`
+automation) and hands it to `exceptions.grant`, which stamps `approved_by` - `identifier`
+the resume's own `decided_by`, `mode: human` - and `created_at` now, never trusting any of
+them from the request (the person's handle, `--approved-by` or the login name, is kept as
+the event's `approver`), and checks every record against
+its schema, the run's pinned knowledge (`model.exception_problems` at now, with the run's
+facets and the pinned vocabulary) and the run itself (a rule its contract lists, platforms
+only once it targets some). Every record holds or none is recorded. A granted exception is
+the operator event `KNOWLEDGE_EXCEPTION_GRANTED`, corroborated by its resume's nonce like a
+budget raise, its data `{"exception": <record>, "approver": <name>}` plus the engine's
+`decided_by`, `decided_at` and `resume_nonce`; `exceptions.granted(events)` reads only those,
+and only where the record's `approved_by.identifier` is the event's `decided_by` and its
+mode human. The next contract the run makes
+lists it under `exceptions`, or under `exceptions_refused` once it has expired. No
+configuration grants one: `factory.knowledge.exceptions` is listed refused in the contract.
+
 ## What is not here yet
 
-This is unit K1 of the learning-enforcement design. Recording the knowledge versions at run
-start, pinning `lessons.yaml` and `check-tiers.yaml`, the `knowledge` step that writes the
-contract and blocks a run that cannot make one, and the `wgf resume --except` operator act
-are K2. Compliance per rule in the quality-report (SATISFIED, FAILED, UNMEASURED, EXCEPTED,
-DEFERRED, NOT_APPLICABLE), triage reading the run's contract, and briefs carrying the
-blocking and required rules are K3. Ingestion of lesson candidates, promotion drafts, the
-regression firewall (`test-core` KNOWLEDGE) and the plugin surfaces are K4.
+This is units K1 (the model and resolver) and K2 (the run: the snapshot, the pins, the
+`knowledge-contract` step and `wgf resume --except`) of the learning-enforcement design.
+Compliance per rule in the quality-report (SATISFIED, FAILED, UNMEASURED, EXCEPTED, DEFERRED,
+NOT_APPLICABLE) - advisory for a run without `params.quality.knowledge` - triage reading the
+run's contract, the G3 and G4 summaries of the contract and the compliance, and briefs
+carrying the blocking and required rules are K3. Ingestion of lesson candidates, promotion
+drafts, the regression firewall (`test-core` KNOWLEDGE) and the plugin surfaces are K4.

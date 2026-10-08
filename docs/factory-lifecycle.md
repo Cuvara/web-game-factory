@@ -248,7 +248,7 @@ input — asking nobody — until the run holds them:
 | Step | Gate | After → before | Decided on | Choices |
 |---|---|---|---|---|
 | `strategy-review` | G2 | strategy → design | `title-strategy` | approve, reject |
-| `tech-plan-review` | G3 | tech-plan → init | `game-design`, `tech-plan` | approve, reject |
+| `tech-plan-review` | G3 | tech-plan → init | `game-design`, `tech-plan`, `knowledge-contract` (gates 1.7.0) | approve, reject |
 | `prototype-review` | G4 | verify (PASS) → store-listing → listing-validation → release | `qa-report`, `verification-report`, `prototype-report` | pass, iterate, kill |
 | `release-review` | G5 | platform-validate → publish-review | `qa-report`, `verification-report`, `release-manifest` | approve, reject |
 | `publish-review` | G6 | release-review → submit | `release-manifest` (the record pins it by hash), `store-listing`, `listing-validation-report` | publish, reject |

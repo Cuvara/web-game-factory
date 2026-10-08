@@ -37,7 +37,8 @@ from wgflib.workflow.store import RunStore  # noqa: E402
 
 # A mock new-game approves G2 and G3 itself and waits at G4 (prototype-review), which only a
 # person decides: its trail holds the wait and then the pass.
-NEW_GAME = ["research", "strategy", "strategy-review", "design", "tech-plan", "tech-plan-review",
+NEW_GAME = ["research", "strategy", "strategy-review", "design", "knowledge-contract", "tech-plan",
+            "tech-plan-review",
             "init", "greybox", "greybox-playability", "assets", "triage", "develop", "playability",
             "production-quality", "visual-qa", "content-sufficiency", "review", "sdk", "sdk-review", "verify",
             "quality-gate", "prototype-review", "prototype-review", "store-listing", "listing-validation", "release"]
@@ -176,7 +177,8 @@ class IndividualCommands(CliCase):
     def test_each_command_runs_only_its_slice(self):
         expected = {
             "research": ["research"],
-            "plan": ["strategy", "strategy-review", "design", "tech-plan", "tech-plan-review"],
+            "plan": ["strategy", "strategy-review", "design", "knowledge-contract", "tech-plan",
+                     "tech-plan-review"],
             "init": ["init"],
             "assets": ["assets"],
             "develop": ["develop"],
@@ -265,7 +267,7 @@ class FailureAndResume(CliCase):
         self.pass_g4()
         state = self.state()
         self.assertEqual(state["status"], "COMPLETED")
-        self.assertEqual([t["step"] for t in state["trail"]][10:],
+        self.assertEqual([t["step"] for t in state["trail"]][11:],
                          ["triage", "develop", "playability", "production-quality", "visual-qa", "content-sufficiency",
                           "review", "sdk", "sdk-review", "verify",
                           "triage", "develop", "playability", "production-quality", "visual-qa", "content-sufficiency",
@@ -284,7 +286,7 @@ class FailureAndResume(CliCase):
         self.pass_g4()
         state = self.state()
         self.assertEqual(state["status"], "COMPLETED")
-        self.assertEqual([t["step"] for t in state["trail"]][10:],
+        self.assertEqual([t["step"] for t in state["trail"]][11:],
                          ["triage", "develop", "playability", "triage", "develop", "playability",
                           "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
                           "sdk-review", "verify", "quality-gate", "prototype-review", "prototype-review",
@@ -302,7 +304,7 @@ class FailureAndResume(CliCase):
         self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
                  '{"greybox-playability": ["fail"]}', expect=3)
         state = self.state()
-        self.assertEqual([t["step"] for t in state["trail"]][7:12],
+        self.assertEqual([t["step"] for t in state["trail"]][8:13],
                          ["greybox", "greybox-playability", "greybox", "greybox-playability",
                           "assets"])
         self.assertEqual(state["steps"]["greybox"]["route_visits"],
@@ -328,7 +330,7 @@ class FailureAndResume(CliCase):
                 state = self.state(run_id)
                 self.assertEqual(state["status"], "COMPLETED")
                 first_gate = gated[:4] if "production-quality" in plan else gated
-                self.assertEqual([t["step"] for t in state["trail"]][9:],
+                self.assertEqual([t["step"] for t in state["trail"]][10:],
                                  ["assets"] + first_gate + back + gated
                                  + ["content-sufficiency", "review", "sdk", "sdk-review", "verify",
                                     "quality-gate", "prototype-review", "prototype-review", "store-listing", "listing-validation", "release"])
@@ -392,7 +394,7 @@ class FailureAndResume(CliCase):
         self.pass_g4()
         state = self.state()
         self.assertEqual(state["status"], "COMPLETED")
-        self.assertEqual([t["step"] for t in state["trail"]][10:],
+        self.assertEqual([t["step"] for t in state["trail"]][11:],
                          ["triage", "develop", "playability", "production-quality", "visual-qa", "content-sufficiency",
                           "review", "sdk", "sdk-review",
                           "triage", "develop", "playability", "production-quality", "visual-qa", "content-sufficiency",
@@ -590,7 +592,8 @@ class RunStatesThroughTheCli(CliCase):
         succeeded = lambda s: sorted(t["step"] for t in s["trail"] if t["outcome"] == "SUCCESS")
         self.assertEqual(succeeded(before),
                          sorted(["research", "strategy", "strategy-review", "design",
-                                 "tech-plan", "tech-plan-review", "init", "greybox",
+                                 "knowledge-contract", "tech-plan", "tech-plan-review", "init",
+                                 "greybox",
                                  "greybox-playability", "assets", "triage"]))
         self.wgf("new-game", "--resume", before["run_id"], "--quiet", expect=3)
         self.pass_g4(before["run_id"])

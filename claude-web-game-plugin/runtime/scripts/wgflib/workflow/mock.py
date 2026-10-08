@@ -447,6 +447,14 @@ class MockListingValidationStep(MockStep):
                 body["blocked_reason"] = "scripted block (mock)"
 
 
+class MockKnowledgeStep(MockStep):
+    """The placeholder knowledge-contract: the contract the real step resolves for the mock
+    design and strategy, as a fixture. `blocked` in a mock plan is the real step's refusal
+    when a run cannot make its contract: the run stops there."""
+
+    type, role = "knowledge", "architect"
+
+
 class MockReleaseStep(MockStep):
     type, role = "release", "release"
 
@@ -537,6 +545,7 @@ MOCK_STEPS = (
     MockResearchStep,
     MockStrategyStep,
     MockDesignStep,
+    MockKnowledgeStep,
     MockTechPlanStep,
     MockInitStep,
     MockAssetsStep,

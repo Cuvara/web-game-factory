@@ -317,8 +317,10 @@ every step type in `new-game` has one: `wgf_discovery` (research), `wgf_strategy
 `wgf_sdk`, `wgf_verification`, `wgf_release`, `wgf_playability`, `wgf_production`
 (production-quality), `wgf_visualqa` (visual-qa), `wgf_sufficiency` (content-sufficiency),
 `wgf_quality` (quality-gate), `wgf_listing` (store-listing and listing-validation),
-`wgf_publish` (platform-validate and publish) and `wgf_triage` (triage: failures as quality
-findings, routed to the specialist that owns them). `--mock` still
+`wgf_publish` (platform-validate and publish), `wgf_triage` (triage: failures as quality
+findings, routed to the specialist that owns them) and `wgf_knowledge` (knowledge-contract:
+the lessons that apply to the title, resolved from the run's pinned knowledge after design;
+a run that cannot make it stops). `--mock` still
 replaces all of them with placeholders for a run. Discovery reads evidence snapshots from
 `workspace/research/snapshots/` and teardown records from `workspace/research/games/`, codes
 every game on `core/reference/research-vocabulary.yaml`, and proposes several opportunities

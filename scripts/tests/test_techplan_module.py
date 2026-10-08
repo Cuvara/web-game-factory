@@ -34,6 +34,7 @@ from wgflib import genre_models  # noqa: E402
 from wgflib import guards, paths  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep  # noqa: E402
+from wgflib.workflow import mock as workflow_mock  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
 from wgflib.workflow.checkpoint import irreversible_gates  # noqa: E402
 from wgflib.workflow.config import FactoryConfig  # noqa: E402
@@ -552,13 +553,18 @@ workflow:
     - id: seed
       type: test.seed-plan-inputs
       outputs: [title-strategy, game-design]
+    # G3 is decided on the knowledge-contract too (gates 1.7.0): the placeholder makes one.
+    - id: knowledge-contract
+      type: knowledge
+      inputs: [game-design, title-strategy]
+      outputs: [knowledge-contract]
     - id: tech-plan
       type: tech-plan
       inputs: [game-design, title-strategy]
       outputs: [tech-plan]
     - id: tech-plan-review
       type: human-checkpoint
-      inputs: [game-design, tech-plan]     # what G3 is decided on (gates.yaml)
+      inputs: [game-design, tech-plan, knowledge-contract]   # what G3 is decided on (gates.yaml)
       with:
         gate: G3
         prompt: Approve the plan?
@@ -594,6 +600,7 @@ class ThroughTheEngine(unittest.TestCase):
                 registry = super().registry(use_mock)
                 assert registry.resolve("tech-plan") is TechPlanStep  # from the module list
                 registry.register(SeedStep.type, SeedStep)
+                registry.register(workflow_mock.MockKnowledgeStep.type, workflow_mock.MockKnowledgeStep)
                 return registry
 
         config = FactoryConfig({"steps": {"modules": ["wgf_techplan"]},

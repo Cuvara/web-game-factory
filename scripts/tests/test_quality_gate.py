@@ -598,7 +598,22 @@ class Pinning(unittest.TestCase):
                           "core/reference/play-realism.yaml",
                           "core/reference/browser-qa.yaml",
                           "core/reference/check-tiers.yaml",
-                          "core/reference/lessons.yaml"])
+                          "core/reference/lessons.yaml",
+                          # 17: what the run's knowledge-contract is resolved from.
+                          "core/reference/content-sufficiency.yaml",
+                          "core/reference/design-consistency-rules.yaml",
+                          "core/reference/gate-gaming.yaml",
+                          "core/reference/genre-models.yaml",
+                          "core/reference/quality-policy.yaml",
+                          "core/reference/platforms/crazygames.yaml",
+                          "core/reference/platforms/gamedistribution.yaml",
+                          "core/reference/platforms/gamemonetize.yaml",
+                          "core/reference/platforms/gamepix.yaml",
+                          "core/reference/platforms/gamevui.yaml",
+                          "core/reference/platforms/generic-web.yaml",
+                          "core/reference/platforms/poki.yaml",
+                          "core/reference/platforms/y8.yaml",
+                          "core/reference/platforms/yandex.yaml"])
 
     def test_a_mid_run_benchmark_edit_does_not_apply_to_the_run(self):
         root = os.path.join(self.base, "factory")

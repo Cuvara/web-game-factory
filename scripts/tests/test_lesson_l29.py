@@ -221,6 +221,50 @@ class LessonL29(unittest.TestCase):
         del units[1]["introduces"]
         self.assertTrue(design_result(design_with(units))[0]["breached"])
 
+    def test_L29_an_empty_introduces_is_counted_by_what_the_unit_shows(self):
+        """`introduces: []` states nothing: the unit is counted by the never-seen elements
+        and mechanics it shows - two new elements, or two new mechanics, breach."""
+        for key in ("elements", "mechanics"):
+            with self.subTest(key=key):
+                units = paced(3)
+                units[2]["elements"] = list(units[1]["elements"])
+                units[2]["introduces"] = []
+                units[2][key] = list(units[2].get(key) or []) + ["new-a", "new-b"]
+                result, status, _ = design_result(design_with(units))
+                self.assertEqual((result["breached"], status), (True, "FAIL"), result)
+                check, status = build_result(units, units)
+                self.assertEqual((check["status"], status), ("FAIL", "FAIL"), check)
+
+    def test_L29_a_build_is_held_to_its_design_whatever_introduces_it_copied(self):
+        """Claimed vs actual: the build shows a never-seen element its design unit does not
+        name - moved a unit early - with the design's `introduces` copied unchanged. The
+        design's count is one debut; the build's is two, and it FAILs (develop)."""
+        design_units = paced(4)
+        design_units[2]["introduces"] = ["e2"]
+        built = copy.deepcopy(design_units)
+        built[2]["elements"] = built[2]["elements"] + ["e3"]
+        self.assertEqual(built[2]["introduces"], ["e2"])
+        result, _status, _ = design_result(design_with(design_units))
+        self.assertFalse(result["breached"])
+        check, status = build_result(design_units, built)
+        self.assertEqual((check["status"], status), ("FAIL", "FAIL"), check)
+        self.assertEqual(check.get("route"), "develop")
+        self.assertIn("units.json u-03 debuts 2 elements at once: e2, e3", check["summary"])
+
+    def test_L29_a_listed_introduction_is_trusted_on_the_design_known_limitation(self):
+        """Documented, accepted: on the DESIGN a non-empty `introduces` is trusted, and new
+        elements listed beside it are not counted there (a boss unit introducing the boss
+        fight, whose parts are new elements). The build's comparison with its design is
+        what holds a build to it - a build that adds a further new element FAILs."""
+        units = paced(3)
+        units[2]["elements"] = list(units[1]["elements"]) + ["boss-shield", "boss-weak-point"]
+        units[2]["introduces"] = ["boss-fight"]
+        self.assertFalse(design_result(design_with(units))[0]["breached"])
+        built = copy.deepcopy(units)
+        built[2]["elements"].append("boss-minion")
+        check, _status = build_result(units, built)
+        self.assertEqual(check["status"], "FAIL", check)
+
     def test_L29_the_accepted_3d_validation_game_passes(self):
         """c340631 (r1-forward of the build accepted at G4): 12 courses, every course after
         the first adds at most one feature (moving platforms, walls, drops, hairpins)."""

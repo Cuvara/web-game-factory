@@ -121,18 +121,28 @@ def _world_class():
                     return unit_id, later[:2 - own]
             return None
 
+        listed = False
+
         def built_units(self, build):
             out = super().built_units(build)
+            # The build states each unit's introductions as its design does.
+            designed = {u["id"]: u for u in self.units}
+            for unit in out:
+                if designed.get(unit["id"], {}).get("introduces"):
+                    unit["introduces"] = list(designed[unit["id"]]["introduces"])
             if DOUBLE in build["defects"] and self.target:
                 unit_id, early = self.target
                 for unit in out:
-                    if unit["id"] == unit_id:
-                        # A real double debut: the unit shows the elements AND states it
-                        # introduces them - its own debut and the early ones at once.
-                        own = [n for u, n in content_rules.unit_debuts(out)
-                               if u is unit][0] or []
-                        unit["elements"] = list(unit.get("elements") or []) + [
-                            e for e in early if e not in (unit.get("elements") or [])]
+                    if unit["id"] != unit_id:
+                        continue
+                    # The developer shows a later unit's elements here, a unit early.
+                    own = [n for u, n in content_rules.unit_debuts(out)
+                           if u is unit][0] or []
+                    unit["elements"] = list(unit.get("elements") or []) + [
+                        e for e in early if e not in (unit.get("elements") or [])]
+                    if self.listed:
+                        # ...and states it introduces them (Session B's violating build);
+                        # otherwise `introduces` stays the design's (Session A).
                         unit["introduces"] = list(own) + [e for e in early if e not in own]
             return out
 
@@ -356,9 +366,11 @@ def run(args):
     scenario = {"defects": [], "fixes": {}}
     if args.session == "a":
         scenario = {"defects": [DOUBLE], "fixes": {}}
-    elif args.developer == "violating":
+    elif args.developer in ("violating", "violating-unlisted"):
         scenario = {"defects": [DOUBLE], "fixes": {"level-designer": {"fixes": [DOUBLE]}}}
     world = _world_class()(scenario, design, checkout)
+    # Session A's defect adds the elements only; Session B's violating build also lists them.
+    world.listed = args.session == "b" and args.developer == "violating"
     accepted = None
     if args.session == "a":
         accepted = os.path.join(args.store, "accepted-play.json")
@@ -442,7 +454,8 @@ def main(argv=None):
     r.add_argument("--hold-g2", action="store_true", help="stop at G2 (a person's gate)")
     r.add_argument("--resume", metavar="RUN_ID", help="approve G2 of this run and go on")
     r.add_argument("--designer", choices=("follow", "violate", "claim"), default="follow")
-    r.add_argument("--developer", choices=("faithful", "violating"), default="faithful")
+    r.add_argument("--developer", choices=("faithful", "violating", "violating-unlisted"),
+                   default="faithful")
     r.add_argument("--family")
     k = sub.add_parser("knowledge")
     k.add_argument("--before-l29", action="store_true",

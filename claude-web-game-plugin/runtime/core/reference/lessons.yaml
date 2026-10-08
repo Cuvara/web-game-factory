@@ -53,7 +53,7 @@
 #                  that is not blocking or required, OBSERVATION or HEURISTIC an experimental
 #                  rule (candidate or gap) or a process lesson
 #   revision       an integer from 1, raised whenever the entry changes; a rule version is
-#                  `<id>@r<revision>` (L29@r3). A run's knowledge-contract records each
+#                  `<id>@r<revision>` (L29@r4). A run's knowledge-contract records each
 #                  rule's revision and the digest of its entry, and check-integrity fails an
 #                  entry that changed against the base commit without its revision rising
 #                  (scripts/wgf_knowledge/model.py lesson_digest).
@@ -1056,7 +1056,7 @@ lessons:
     category: level_design
     domain: level-design
     classification: BLOCKING
-    revision: 3
+    revision: 4
     principle: >-
       After the opening unit, a unit introduces at most one element the player has not met,
       so every new element is first met on its own and practised before it is combined with
@@ -1083,6 +1083,9 @@ lessons:
       catches:
         - scripts/tests/test_lesson_l29.py::test_L29_the_check_fails_the_defect
         - scripts/tests/test_lesson_l29.py::test_L29_a_compliant_design_and_a_violating_build_fail_the_build
+        - scripts/tests/test_lesson_l29.py::test_L29_an_empty_introduces_is_counted_by_what_the_unit_shows
+        - scripts/tests/test_lesson_l29.py::test_L29_a_build_is_held_to_its_design_whatever_introduces_it_copied
+        - scripts/tests/test_lesson_l29.py::test_L29_a_listed_introduction_is_trusted_on_the_design_known_limitation
         - scripts/tests/test_knowledge_transfer.py::test_a_violating_designer_breaches_and_is_repaired
         - scripts/tests/test_knowledge_transfer.py::test_a_violating_build_fails_content_sufficiency_and_is_repaired
       passes:

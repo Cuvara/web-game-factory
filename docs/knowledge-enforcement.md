@@ -537,7 +537,7 @@ level is derived over all of them.
 
 **The snapshot.** knowledge-contract 1.2.0 records, for every rule applicable or not, its
 `revision`, `version` and `digest` (sha256 of the canonical lessons.yaml entry,
-`model.lesson_digest`): a run pinned under `L29@r3` keeps exactly that text when its
+`model.lesson_digest`): a run pinned under `L29@r4` keeps exactly that text when its
 contract is made again after the Factory moves on, and a run started after the move gets
 the new one (`test_knowledge_transfer` Versioning). It also records the design's `trace`.
 The checks are pinned like the rules: the design step judges a design by the run's pinned
@@ -572,10 +572,17 @@ one element the player has not met (`core/craft/content-and-level-design.md`). H
 `design-consistency:content.introductions_one_at_a_time` (the design's units, in index
 order) and `content-sufficiency:content.introductions_one_at_a_time` (the BUILT units.json,
 the same count; a design that claims compliance and a build that breaks it FAILs). What a
-unit debuts is what it states it `introduces`, less what an earlier unit named - an element
-and the mechanic it stands for (an armored brick, armored bricks) are one introduction,
-stated once; a unit that states no `introduces` is counted by every element and mechanic it
-shows that no earlier unit named. A unit that names
+unit debuts is what its non-empty `introduces` lists, less what an earlier unit named - an
+element and the mechanic it stands for (an armored brick, armored bricks) are one
+introduction, stated once; a unit whose `introduces` is empty or absent is counted by every
+element and mechanic it shows that no earlier unit named. On the build (content-sufficiency
+1.6.0) each unit is also held to its design unit: an element or mechanic the built unit
+names that its design unit does not, and no earlier built unit named, is a debut whatever
+`introduces` the build copied - a build that shows an element a unit early FAILs. Known,
+accepted limitation: on the DESIGN a non-empty `introduces` is trusted, and new elements
+listed beside it are not counted there (the 2D validation design's boss level introduces
+the boss fight, whose shield and weak point are new elements); the build's comparison with
+its design is what holds a build to the design. A unit that names
 no element, mechanic or introduction is never skipped - skipped, the next unit would falsely
 debut what it met there - so any such unit leaves the count UNMEASURED: a breach on the
 design (a rule that cannot be checked is never passed), SKIPPED on the build (never a
@@ -626,7 +633,7 @@ held at G3, so nothing was built:
 | Factory | What happened |
 |---|---|
 | this branch (lessons 2.1.0) | The request carried the 27 rules that apply, L29 with its principle, anti-pattern and checks. The agent folded the basic hazards into the opener, debuted one element in each of eight later levels and none in the climaxes, and traced L29 to those eight levels and both checks. The design passed (`content.introductions_one_at_a_time`: none debuts more than one; `knowledge.trace_matches_design`: 13 entries, none contradicted); the knowledge-contract pins L29 at its revision and digest, `why_applicable: [global]`, blocking, with the trace. |
-| main before K5 (lessons 2.0.1) | The first draft also paced one element per level but one (its second level debuted two). No trace. |
+| main before K5 (lessons 2.0.1) | The first draft also paced one element per level but one (its second level debuted two). No trace. The control run itself ended FAILED at the design step - it did not reach G3. |
 
 What it shows: the knowledge reached a session that knew nothing of where it came from,
 through the resolver, the request and the pinned contract, and was applied, recorded and

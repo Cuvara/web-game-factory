@@ -864,9 +864,11 @@ def _audit(design, strategy, data, records, rules=None, benchmark=None, models=N
 def introductions_check(shipped, built_units):
     """content.introductions_one_at_a_time on the BUILT content: the shipped units in the
     design's index order, each as the content data file states it, held to the design rule
-    of the same id (wgf_design.content.unit_debuts: its `introduces`, else every element and
-    mechanic it shows for the first time) - after the opening unit, none debuts more than one
-    element. FAIL routes design-gap when the
+    of the same id (wgf_design.content.unit_debuts: its non-empty `introduces`, else every
+    element and mechanic it shows for the first time; and every element or mechanic its
+    design unit does not name, which the build added or moved) - after the opening unit,
+    none debuts more than one element. The design units are the shipped units the run's
+    design owes, so the comparison always has them. FAIL routes design-gap when the
     design's own units debut two at once, develop when only the build does (a design that
     claims compliance and a build that breaks it). SKIPPED as unmeasured when the content
     data names no elements or mechanics for a shipped unit - any of them: what that unit puts
@@ -886,10 +888,16 @@ def introductions_check(shipped, built_units):
                                       "mechanics or introductions, so what each unit debuts "
                                       "cannot be counted - unmeasured, never a pass",
                       measured={"undeclared": undeclared}, route=None)
-    problems = introduction_breaches(built, at=lambda u: f"units.json {u.get('id')}")
+    # Each built unit is held to its design unit: an element or mechanic the build names
+    # that the design's unit does not is a debut, whatever `introduces` the build copied.
+    designed = {u.get("id"): u for u in shipped}
+    held = unit_debuts(built, designed)
+    problems = introduction_breaches(built, at=lambda u: f"units.json {u.get('id')}",
+                                     designed=designed)
     design_problems = introduction_breaches(shipped, at=lambda u: f"design {u.get('id')}")
-    measured = {"debuts": {str(u.get("id")): new for u, new in debuts if new},
-                "units": len(built), "over_one": problems}
+    measured = {"debuts": {str(u.get("id")): new for u, new in held if new},
+                "units": len(built), "over_one": problems,
+                "held_to_design": True}
     return _judged(cid, problems, design_problems,
                    f"after the opening unit, none of the {len(built)} shipped unit(s) debuts "
                    "more than one element", measured=measured,

@@ -1476,44 +1476,62 @@ def _result(rule_id, measured, breached, note):
 # -- introductions one at a time (design-consistency content.introductions_one_at_a_time) --
 # The same count on the design (here, through consistency.projection `introductions`) and on
 # the built content data file (wgf_sufficiency.audit). What a unit DEBUTS is what it says
-# it introduces: its `introduces`, less anything an earlier unit (in index order) already
-# named. An element and the mechanic it stands for (an armored brick, armored bricks) are one
-# introduction, which a unit's `introduces` states once - so where a unit states its
-# introductions, they are what is counted; content.mechanics_introduced_before_use already
-# holds a unit's mechanics to the introductions before it. A unit that states no
-# `introduces` at all is counted by what it shows: every element and mechanic no earlier
-# unit named. After the opening unit, a unit debuts at most one: every new element is first
-# met on its own and practised before it is combined with another new one.
+# it introduces: a NON-EMPTY `introduces`, less anything an earlier unit (in index order)
+# already named. An element and the mechanic it stands for (an armored brick, armored
+# bricks) are one introduction, which a unit's `introduces` states once. A unit whose
+# `introduces` is empty or absent is counted by what it shows: every element and mechanic
+# no earlier unit named. On the BUILD each unit is also held to its design unit: an element
+# or mechanic the built unit names that its design unit does not, and no earlier built unit
+# named, is a debut too, whatever `introduces` the build copied (claimed vs actual).
+#
+# Known limitation, accepted: on the DESIGN a non-empty `introduces` is trusted - new
+# elements listed beside it (a boss unit introducing the boss fight, whose shield and weak
+# point are new elements) are not counted there. The build's comparison with its design is
+# what holds a build to the design. After the opening unit, a unit debuts at most one: every
+# new element is first met on its own and practised before it is combined with another new
+# one.
 
 
-def unit_debuts(units):
-    """[(unit, [what it debuts])] over `units` in the order given. A unit that states
-    `introduces` (a list, even empty) debuts what it lists that no earlier unit named; one
-    that does not debuts every element and mechanic it names that no earlier unit named. A
-    unit that names none of the three debuts nothing it can be held to (None, not [])."""
+def _names(unit, keys=("elements", "mechanics", "introduces")):
+    return {str(x) for key in keys for x in (unit.get(key) or [])
+            if isinstance(unit.get(key), list)}
+
+
+def unit_debuts(units, designed=None):
+    """[(unit, [what it debuts])] over `units` in the order given.
+
+    A unit whose `introduces` lists something debuts what it lists that no earlier unit
+    named; one whose `introduces` is empty or absent debuts every element and mechanic it
+    names that no earlier unit named. A unit that names none of the three debuts nothing it
+    can be held to (None, not []).
+
+    `designed` ({unit id: the design's unit}): the units are a BUILD's, held to their
+    design - a built unit also debuts every element or mechanic it names that its design
+    unit does not and no earlier built unit named (the build added or moved it: claimed vs
+    actual), whatever its `introduces` says."""
     seen, out = set(), []
     for unit in units:
         if not isinstance(unit, dict):
             continue
-        named = [str(x) for key in ("elements", "mechanics", "introduces")
-                 for x in (unit.get(key) or []) if isinstance(unit.get(key), list)]
-        stated = isinstance(unit.get("introduces"), list)
-        declared = stated or any(isinstance(unit.get(key), list) and unit.get(key)
-                                 for key in ("elements", "mechanics"))
-        if stated:
-            new = sorted(set(map(str, unit["introduces"])) - seen)
-        else:
-            new = sorted(set(named) - seen)
-        seen |= set(named)
-        out.append((unit, new if declared else None))
+        named = _names(unit)
+        shown = _names(unit, ("elements", "mechanics"))
+        listed = unit.get("introduces") if isinstance(unit.get("introduces"), list) else []
+        declared = bool(listed) or bool(shown)
+        new = (set(map(str, listed)) if listed else shown) - seen
+        design = (designed or {}).get(unit.get("id")) if designed is not None else None
+        if isinstance(design, dict):
+            new |= shown - _names(design) - seen
+        seen |= named
+        out.append((unit, sorted(new) if declared else None))
     return out
 
 
-def introduction_breaches(units, at=lambda unit: str(unit.get("id"))):
+def introduction_breaches(units, at=lambda unit: str(unit.get("id")), designed=None):
     """["<where> debuts a, b"] for every unit after the opening one that debuts more than one
-    element the player has not met. `units` in play (index) order."""
+    element the player has not met. `units` in play (index) order; `designed` as for
+    unit_debuts (a build held to its design)."""
     out = []
-    for position, (unit, new) in enumerate(unit_debuts(units)):
+    for position, (unit, new) in enumerate(unit_debuts(units, designed)):
         if position and new and len(new) > 1:
             out.append(f"{at(unit)} debuts {len(new)} elements at once: {', '.join(new)}")
     return out

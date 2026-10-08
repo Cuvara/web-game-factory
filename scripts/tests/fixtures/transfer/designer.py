@@ -34,13 +34,13 @@ def ordered(draft):
 
 def debuts(units):
     """What each unit debuts, as the Factory's rule counts it (its request names the rule's
-    checks; the count is the craft's): a unit's `introduces` when it states one, else every
-    element and mechanic it shows that no earlier unit named."""
+    checks; the count is the craft's): a unit's non-empty `introduces`, else every element
+    and mechanic it shows that no earlier unit named."""
     seen, out = set(), []
     for unit in units:
         named = set(map(str, (unit.get("elements") or []) + (unit.get("mechanics") or [])
                         + (unit.get("introduces") or [])))
-        if isinstance(unit.get("introduces"), list):
+        if isinstance(unit.get("introduces"), list) and unit["introduces"]:
             out.append(sorted(set(map(str, unit["introduces"])) - seen))
         else:
             out.append(sorted(named - seen))
@@ -65,8 +65,6 @@ def naive(draft):
         if own < 2 and len(later) >= 2 - own:
             moved = later[:2 - own]
             units[position].setdefault("elements", []).extend(moved)
-            # and says so: it introduces its own debut and the moved ones at once
-            units[position]["introduces"] = list(news[position]) + moved
             return units[position]["id"], moved
     raise SystemExit("designer: no unit to debut an element early in")
 

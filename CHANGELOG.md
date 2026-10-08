@@ -35,9 +35,13 @@ content-sufficiency its pinned content-sufficiency.yaml, so a run that pinned th
 this change never meets the new design rules or the new build check - not on resume, not
 when design is entered again. A run that pinned nothing - every run started before K2 on
 2026-10-08, the two paused validation runs among them - is judged by the live files: on
-resume it meets the new rules and check. A unit debuts what it states it `introduces` (an
-element and the mechanic it stands for are one introduction); a unit stating none is counted
-by every element and mechanic it shows for the first time.
+resume it meets the new rules and check. A unit debuts what its non-empty `introduces` lists
+(an element and the mechanic it stands for are one introduction); a unit whose `introduces`
+is empty or absent is counted by every element and mechanic it shows for the first time, and
+on the build (content-sufficiency 1.6.0, design-consistency-rules 2.3.0) every built unit is
+also held to its design unit - an element the build shows a unit early is a debut there,
+whatever `introduces` it copied. On the design a non-empty `introduces` is trusted; new
+elements beside it are not counted there (documented, accepted).
 
 **A run is held to its knowledge, and a person's exception is the run's own record**
 (quality-policy 1.4.0 rule 8, new-game 17, gates 1.7.0, knowledge-contract 1.1.0,

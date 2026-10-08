@@ -193,14 +193,20 @@ class SessionAToB(unittest.TestCase):
         check = next(c for c in failed[0]["checks"] if c["id"] == "naive.clear_rate")
         regressed = [c for c in check["measured"]["compared"] if c["regressed"]]
         self.assertTrue(regressed and all(c["unit"] == unit for c in regressed), regressed)
-        # the content data the failing build shipped: that unit states two introductions
+        # the content data the failing build shipped: that unit shows the later elements
+        # a unit early, its `introduces` as the design states it (untouched)
+        designed = next(u for u in self.run_a.newest("game-design")["build_spec"]["content"]
+                        ["units"] if u["id"] == unit)
         shipped = []
         for path in glob.glob(os.path.join(self.run_a.dir, "playability", "*", "out",
                                            "content", "units.json")):
             with open(path, encoding="utf-8") as handle:
                 built = {u["id"]: u for u in json.load(handle)["units"]}
-            shipped.append(built[unit].get("introduces"))
-        self.assertIn(sorted(_early), [sorted(i or []) for i in shipped], shipped)
+            shipped.append(built[unit])
+        doubled_builds = [u for u in shipped if set(_early) <= set(u.get("elements") or [])]
+        self.assertTrue(doubled_builds, shipped)
+        for built_unit in doubled_builds:
+            self.assertEqual(built_unit.get("introduces"), designed.get("introduces"))
         triage = [t for t in self.run_a.versions("triage-report") if t.get("findings")]
         finding = "playability-report:naive.clear_rate@desktop"
         self.assertIn(finding, [f["id"] for f in triage[0]["findings"]])
@@ -420,11 +426,12 @@ class Held(unittest.TestCase):
         first = run.design_file("seen-1-1.json")
         self.assertEqual((first["rule"]["id"], first["paced"], first["repair"]),
                          ("L29", False, False))
-        # its naive plan states the double debut: two introductions in one unit
+        # its naive plan shows the later elements a unit early, `introduces` untouched
         draft = run.design_file("1-1.draft.json")
-        moved_unit = first["moved"][0]
+        moved_unit, moved = first["moved"]
         unit = next(u for u in draft["build_spec"]["content"]["units"] if u["id"] == moved_unit)
-        self.assertEqual(len(unit["introduces"]), 2, unit)
+        self.assertTrue(set(moved) <= set(unit["elements"]), unit)
+        self.assertFalse(set(moved) & set(unit.get("introduces") or []), unit)
         repair = run.design_file("1-1-repair1.request.json")
         self.assertTrue(any(f"consistency {CHECK}" in p for p in repair["repair"]["problems"]),
                         repair["repair"]["problems"])
@@ -434,7 +441,14 @@ class Held(unittest.TestCase):
         self.assertTrue(run.summary["waiting_at_g4"], run.summary["message"])
 
     def test_a_violating_build_fails_content_sufficiency_and_is_repaired(self):
-        run = Run(session(self.tmp, "build", "--session", "b", "--developer", "violating"))
+        # two builds: one that shows a later unit's elements a unit early and lists them in
+        # `introduces`, one that shows them with `introduces` left as the design states it
+        for mode in ("violating", "violating-unlisted"):
+            with self.subTest(mode=mode):
+                self.violating_build(mode)
+
+    def violating_build(self, mode):
+        run = Run(session(self.tmp, f"build-{mode}", "--session", "b", "--developer", mode))
         reports = run.versions("content-sufficiency-report")
         failed = reports[0]
         check = check_of(failed, CHECK)

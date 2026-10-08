@@ -847,7 +847,11 @@ class TheContract(unittest.TestCase):
         self.assertEqual(checks["naive."], "difficulty")
         self.assertEqual(checks["naive.alignment"], "gameplay")
         self.assertEqual(checks["level."], "level-design")
-        self.assertEqual(checks["runtime."], "gameplay")
+        self.assertEqual(checks["naive.pace"], "level-design")
+        self.assertEqual(checks["naive.unit_duration"], "level-design")
+        # A console error is browser QA's, as a page error is; a lost context performance's.
+        self.assertEqual(checks["runtime."], "browser")
+        self.assertEqual(checks["runtime.webgl_context"], "performance")
 
     def test_a_degraded_host_re_records_naive_play(self):
         self.assertIn("naive", analysis.RETRIED_RECORDS)

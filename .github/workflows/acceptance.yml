@@ -43,6 +43,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The whole history: check-integrity compares core/reference/lessons.yaml with the
+          # knowledge at the base commit (a pull request's merge base, a push's previous
+          # tip), which a depth-1 checkout does not have.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -65,6 +70,12 @@ jobs:
           git --version
 
       - name: Referential integrity
+        # The knowledge base: a pull request's base branch (its merge base with the head), a
+        # push's previous tip; a manual run compares with HEAD's parent. Strict: a base that
+        # cannot be found fails integrity here, where locally it is only a note.
+        env:
+          WGF_KNOWLEDGE_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before || 'HEAD^' }}
+          WGF_KNOWLEDGE_STRICT: '1'
         run: python3 scripts/check-integrity.py
 
       - name: Content hashes and pins

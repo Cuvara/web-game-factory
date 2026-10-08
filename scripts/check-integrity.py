@@ -537,18 +537,131 @@ def check_template_pin():
     return lock
 
 
+# The ref the knowledge is compared with (WGF_KNOWLEDGE_BASE overrides it): see
+# knowledge_base.
+KNOWLEDGE_BASE = "origin/main"
+
+
+def _git(*args):
+    """(returncode, stdout bytes) of a git command in the working directory; (None, b"")
+    when git cannot run."""
+    # Through wgflib.procs, like every child the Factory starts: its tree is owned and
+    # ended on a timeout (test_core_process).
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from wgflib import procs
+    done = procs.run(["git", *args], timeout=60, heartbeat_seconds=0)
+    if done.error or done.returncode is None or done.timed_out:
+        return None, b""
+    return done.returncode, (done.stdout or "").encode("utf-8")
+
+
+def _commit(ref):
+    code, out = _git("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+    return out.decode("utf-8", "replace").strip() if code == 0 and out.strip() else None
+
+
+def knowledge_base(ref=None):
+    """(commit, why): the commit the knowledge is compared with - the merge base of `ref`
+    (WGF_KNOWLEDGE_BASE, else KNOWLEDGE_BASE) and HEAD: a pull request's base, a push's
+    previous tip. A base that IS HEAD (a push to the base branch itself, a run on it) is
+    HEAD's first parent, never HEAD compared with itself. (None, why) when there is none."""
+    ref = ref or os.environ.get("WGF_KNOWLEDGE_BASE") or KNOWLEDGE_BASE
+    head = _commit("HEAD")
+    target = _commit(ref)
+    if head is None or target is None:
+        return None, f"{ref} is not a commit in this checkout"
+    code, out = _git("merge-base", target, head)
+    base = out.decode("utf-8", "replace").strip() if code == 0 and out.strip() else target
+    if base == head:
+        base = _commit("HEAD^")
+        if base is None:
+            return None, "HEAD has no parent to compare with"
+    return base, f"{ref} ({base[:12]})"
+
+
+def _at(commit, relative):
+    """("ok", bytes) | ("absent", None) | ("error", why) for a file at `commit`."""
+    code, _ = _git("cat-file", "-e", f"{commit}:{relative}")
+    if code is None:
+        return "error", "git cannot run"
+    if code != 0:
+        return "absent", None
+    code, out = _git("show", f"{commit}:{relative}")
+    return ("ok", out) if code == 0 else ("error", f"git show {commit}:{relative} failed")
+
+
+def previous_knowledge(commit):
+    """(lessons, checks) at `commit`, each side's own: the lessons file, and its check
+    tiers classified against the files they enumerate AS THEY WERE at that commit. lessons
+    is None when the commit has no lessons file (it is being introduced). Raises ValueError
+    when the files exist but cannot be read."""
+    from wgf_quality import registry
+    from wgflib.yamllite import load as load_yaml
+
+    state, data = _at(commit, registry.LESSONS_FILE)
+    if state == "error":
+        raise ValueError(data)
+    if state == "absent":
+        return None, None
+    lessons = load_yaml(data.decode("utf-8"))
+    state, data = _at(commit, registry.TIERS_FILE)
+    if state != "ok":
+        return lessons, None
+    tiers = load_yaml(data.decode("utf-8"))
+
+    def reader(relative):
+        found, content = _at(commit, relative)
+        if found != "ok":
+            raise OSError(f"{relative} is not at {commit[:12]}")
+        return load_yaml(content.decode("utf-8"))
+
+    checks, _ = registry.classify(tiers, os.getcwd(), reader=reader)
+    return lessons, checks
+
+
 def check_regression_registry():
     """WS-9: every check the reference files and producer tables declare has a tier
-    (core/reference/check-tiers.yaml), and every lesson (core/reference/lessons.yaml) marked
-    enforced or partial points at a classified check and a test that exists, a gap says what
-    is missing, and no lesson names a game. A new check without a tier fails here."""
+    (core/reference/check-tiers.yaml) and a place its result is read (`status_at`), and every
+    lesson (core/reference/lessons.yaml) marked enforced or partial points at a classified
+    check and a test that exists, a gap says what is missing, and no lesson names a game. A
+    new check without a tier fails here.
+
+    The knowledge model (lessons.yaml 2.0.0, docs/knowledge-enforcement.md): every lesson has
+    a category, a scope in its vocabularies, a problem, a root cause and a derivable level;
+    a declared level is only ever stronger than the derived one; the lifecycle's
+    requirements and the exception policy hold. Against the knowledge at the base commit
+    (knowledge_base: a pull request's merge base, a push's previous tip) - each side judged
+    by its own check tiers - no lesson was deleted, held weaker in a run, stripped of a
+    check, narrowed in scope, and the exception policy was not loosened, in place. With
+    WGF_KNOWLEDGE_STRICT=1 (CI) a base that cannot be found is an error; a base without a
+    lessons file is the change that introduces it, and is allowed."""
     sys.path.insert(0, "scripts")
     from wgf_quality import registry
+    from wgf_knowledge import model
 
     problems = registry.problems(os.getcwd())
     ERRORS.extend(problems)
     data = registry.load(os.getcwd())
     checks, _ = registry.classify(data["tiers"], os.getcwd())
+    strict = os.environ.get("WGF_KNOWLEDGE_STRICT") == "1"
+    base, why = knowledge_base()
+    if base is None:
+        (ERRORS if strict else NOTES).append(
+            f"lessons: no base to compare the knowledge with ({why})"
+            + ("" if strict else " - not compared; CI holds it"))
+    else:
+        try:
+            previous, previous_checks = previous_knowledge(base)
+        except (OSError, ValueError) as exc:
+            ERRORS.append(f"lessons: the knowledge at {why} cannot be read ({exc})")
+        else:
+            if previous is None:
+                NOTES.append(f"lessons: {registry.LESSONS_FILE} is introduced by this change "
+                             f"(none at {why})")
+            else:
+                ERRORS.extend(model.weakening_problems(
+                    previous, data["lessons"], previous_checks or checks, checks))
+                NOTES.append(f"lessons: compared with {why}")
     lessons = (data["lessons"] or {}).get("lessons") or []
     return checks, lessons
 

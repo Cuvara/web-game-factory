@@ -288,6 +288,12 @@ class RunState:
     only `{"kind": "loop-limit", "step", "route", "scope": "step"|"route", "limit",
     "entered", "from"}` - and is None otherwise. What resume does with a blocked run is
     decided from it, never from the wording of `message`.
+
+    `resume_nonces` maps every nonce the engine issued to a resume that recorded operator
+    events (a budget raise, a knowledge exception) to the digest of exactly those events
+    (engine.operator_digest): a reader honours an operator event only when its nonce is
+    one of these and the events carrying it still digest to it, so neither a made-up nonce
+    nor a real one copied onto new lines of events.jsonl is a person's act.
     """
 
     run_id: str
@@ -308,6 +314,7 @@ class RunState:
     exit: dict = None
     message: str = None
     blocked_reason: dict = None
+    resume_nonces: dict = field(default_factory=dict)
     format: int = STATE_FORMAT
 
     def step(self, step_id):
@@ -368,6 +375,9 @@ class RunState:
             "decisions": self.decisions,
             "trail": self.trail,
         }
+        if self.resume_nonces:
+            # Only once one was issued: a run without operator events keeps its shape.
+            data["resume_nonces"] = dict(self.resume_nonces)
         return data
 
     @classmethod
@@ -380,6 +390,10 @@ class RunState:
         state = cls(**_fields(cls, {
             key: value for key, value in data.items() if key not in ("steps", "artifacts")
         }))
+        if not isinstance(state.resume_nonces, dict):
+            # A list (k/integ before the digests): nonces with nothing to check them by.
+            state.resume_nonces = {n: None for n in state.resume_nonces or ()
+                                   if isinstance(n, str)}
         state.steps = {
             key: StepState.from_dict(value) for key, value in (data.get("steps") or {}).items()
         }

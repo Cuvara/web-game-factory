@@ -320,6 +320,13 @@ to the reviewer as notes and never blockers by themselves (a probe change that o
 code), and `truncated`, whether the change held more commits than the pre-check reads.
 Additive; 1.2.0 artifacts remain valid.
 
+**`review-report` 1.4.0** adds optional `lesson_candidates`
+(`shared/quality-finding.schema.json#/$defs/lesson_candidate`): systemic issues the reviewer
+saw. `wgf knowledge ingest` collects them as subjective evidence - a reviewer's judgment is
+never a measurement, and never becomes a blocking or required rule by itself
+([knowledge-enforcement.md](knowledge-enforcement.md#the-learning-loop)). The review brief does
+not ask for them yet. Additive; 1.3.0 artifacts remain valid.
+
 ---
 
 ## Shared primitives

@@ -90,7 +90,19 @@
         "route": { "$ref": "#/$defs/route" },
         "assets": { "type": "array", "items": { "type": "string" }, "description": "Asset ids it concerns, when the producer names them." },
         "build": { "$ref": "#/$defs/build" },
-        "guarded_by": { "type": "array", "items": { "$ref": "#/$defs/guard" }, "description": "Since quality-report 1.2.0 / triage-report 1.2.0. The regression guards this failure already has: the lessons of core/reference/lessons.yaml whose check this finding's check is, with the tests that prove the check catches it. Empty or absent: no lesson names it, and a systemic cause is a lesson candidate." }
+        "guarded_by": { "type": "array", "items": { "$ref": "#/$defs/guard" }, "description": "Since quality-report 1.2.0 / triage-report 1.2.0. The regression guards this failure already has: the lessons of core/reference/lessons.yaml whose check this finding's check is, with the tests that prove the check catches it. Empty or absent: no lesson names it, and a systemic cause is a lesson candidate." },
+        "excepted": {
+          "type": "object",
+          "description": "The rule of the run's knowledge-contract this failure falls under is excepted by a person for this run (an active knowledge exception, core/artifacts/shared/knowledge-exception.schema.json): the triage lists the finding and does not route it. The producer's verdict is unchanged.",
+          "required": ["rule_id", "expires_at"],
+          "properties": {
+            "rule_id": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9-]*$" },
+            "approved_by": { "type": ["string", "null"] },
+            "reason": { "type": ["string", "null"] },
+            "expires_at": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },
@@ -103,6 +115,7 @@
         "lesson": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9-]*$" },
         "check": { "type": "string", "pattern": "^[a-z0-9-]+:[A-Za-z0-9._*-]+$" },
         "status": { "enum": ["enforced", "partial"] },
+        "level": { "enum": ["blocking", "required", "recommended", "experimental"], "description": "The rule's enforcement level in the run's knowledge-contract (derived from its checks' tiers)." },
         "tests": { "type": "array", "items": { "type": "string" } }
       },
       "additionalProperties": false
@@ -118,7 +131,93 @@
         "proposed_check": { "type": "string", "description": "The check that would hold it: an existing check id of core/reference/check-tiers.yaml to strengthen, or a new one to add." },
         "finding": { "type": ["string", "null"], "description": "The quality finding id the visit was working when it saw it." },
         "role": { "type": ["string", "null"], "pattern": "^[a-z][a-z0-9-]*$", "description": "The specialist that reported it." },
-        "evidence_refs": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        "evidence_refs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "symptom": { "type": "string", "minLength": 1, "description": "Added for knowledge ingestion (docs/knowledge-enforcement.md). What a player or a person saw on this build - the observation, kept apart from `summary` (the generalized lesson) and `root_cause` (the Factory's cause): symptom -> root cause -> systemic? -> candidate -> enforcement proposal." },
+        "systemic": {
+          "type": "object",
+          "description": "Added for knowledge ingestion. Whether the reporter judges it a class of defect the Factory lets through (true) or this build's own mistake (false), and why. A candidate reported not systemic is stored, and never drafted into a lesson.",
+          "required": ["value"],
+          "properties": {
+            "value": { "type": "boolean" },
+            "why": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "proposed_level": { "enum": ["blocking", "required", "recommended", "experimental"], "description": "Added for knowledge ingestion. The enforcement level the reporter proposes. A proposal only: a level is derived from the tiers of the checks that hold a lesson, and a candidate whose evidence is subjective (a review's judgment, no measured finding) is never drafted as blocking or required." },
+        "proposed_scope": {
+          "type": "object",
+          "description": "Added for knowledge ingestion. Where the reporter thinks it applies, in the vocabulary of a lesson's scope (core/reference/lessons.yaml): keys AND-ed, values OR-ed; empty is global.",
+          "properties": {
+            "families": { "type": "array", "items": { "type": "string" } },
+            "render": { "type": "array", "items": { "enum": ["2d", "3d"] } },
+            "platforms": { "type": "array", "items": { "type": "string" } },
+            "tiers": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "candidate_record": {
+      "type": "object",
+      "description": "One entry of workspace/lessons/candidates.yaml (`wgf knowledge ingest`, scripts/wgf_knowledge/ingest.py): a lesson candidate collected from the run stores, de-duplicated, with every report it was seen in. Append-only: a later sighting adds a source; a person rejects one (`state: rejected`) or promotes it through a pull request that adds the lesson to core/reference/lessons.yaml (never this file, never automatically).",
+      "required": ["id", "state", "key", "summary", "root_cause", "basis", "duplicate_of", "sources"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^C-[1-9][0-9]*$" },
+        "state": { "enum": ["open", "rejected"], "description": "open, or rejected by a person (`wgf knowledge reject`). Promoted is not stored: it is read from workspace/lessons/evidence.yaml, whose lesson entry names the candidate it came from (`candidate`)." },
+        "key": { "type": "string", "minLength": 1, "description": "The de-duplication key: the normalized summary and the proposed check." },
+        "summary": { "type": "string", "minLength": 1 },
+        "symptom": { "type": ["string", "null"] },
+        "root_cause": { "type": "string", "minLength": 1 },
+        "systemic": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/lesson_candidate/properties/systemic" }] },
+        "proposed_check": { "type": ["string", "null"] },
+        "proposed_level": { "enum": ["blocking", "required", "recommended", "experimental", null] },
+        "proposed_scope": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/lesson_candidate/properties/proposed_scope" }] },
+        "basis": { "enum": ["measured", "subjective"], "description": "Derived from the sources, never trusted as written. measured: at least one source from a measuring report resolved its finding to one the run's quality-report or triage-report recorded on the same build commit (a gate's check failed on that build); subjective: only judgments (a reviewer's comment, a person's or agent's opinion). A subjective candidate never becomes blocking or required by itself." },
+        "duplicate_of": { "type": ["string", "null"], "pattern": "^[A-Z][A-Za-z0-9-]*$", "description": "A lesson that already names the proposed check but holds nothing yet (a candidate or gap lesson)." },
+        "related_lessons": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9-]*$" }, "description": "Active lessons that already hold the proposed check while this candidate states another problem (not a regression of them): a person decides whether it strengthens one of them or is a lesson of its own." },
+        "other_root_causes": { "type": "array", "items": { "type": "string" }, "description": "Root causes other sources of the same candidate (same summary and check) gave, kept beside `root_cause` rather than dropped." },
+        "rejected": {
+          "type": ["object", "null"],
+          "properties": { "by": { "type": "string" }, "at": { "type": "string" }, "reason": { "type": "string" } },
+          "additionalProperties": false
+        },
+        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/candidate_source" } }
+      },
+      "additionalProperties": false
+    },
+
+    "candidate_source": {
+      "type": "object",
+      "description": "Where a lesson candidate (or a regression observation) was seen: the run, the report by id, type, version and hash, the build commit, the reporter.",
+      "required": ["run", "artifact_id", "artifact_type", "report_hash"],
+      "properties": {
+        "run": { "type": "string" },
+        "artifact_id": { "type": "string" },
+        "artifact_type": { "type": "string" },
+        "version": { "type": ["integer", "null"] },
+        "report_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$", "description": "The digest of the report file's bytes in the run store." },
+        "content_hash": { "type": ["string", "null"], "description": "The report's provenance content hash, when it carries one." },
+        "commit": { "type": ["string", "null"] },
+        "role": { "type": ["string", "null"] },
+        "finding": { "type": ["string", "null"] },
+        "basis": { "enum": ["measured", "subjective"] },
+        "resolved_in": {
+          "type": ["object", "null"],
+          "description": "For a measured source: the measuring report (quality-report or triage-report) of the same run that recorded the finding on the same build - by id, version and the digest of its file - so promote can re-verify it against the run store. A source a promote cannot re-verify (run store gone, a digest that no longer matches, the finding absent) is subjective.",
+          "required": ["artifact_id", "version", "report_hash"],
+          "properties": {
+            "artifact_id": { "type": "string" },
+            "artifact_type": { "type": "string" },
+            "version": { "type": "integer" },
+            "report_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+          },
+          "additionalProperties": false
+        },
+        "evidence_refs": { "type": "array", "items": { "type": "string" } },
+        "date": { "type": ["string", "null"] },
+        "ingested_at": { "type": "string" }
       },
       "additionalProperties": false
     },

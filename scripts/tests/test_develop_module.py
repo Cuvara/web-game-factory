@@ -2389,14 +2389,14 @@ class ThroughTheEngine(unittest.TestCase):
         # The approved tech plan is consumed (F1: its prototype tasks join the brief), and
         # the greybox's playability report: the loop the production build must keep.
         self.assertEqual(sorted(state.steps["develop"].consumed),
-                         ["asset-manifest@v1", "game-design@v1", "playability-report@v1",
-                          "scaffold-record@v1", "tech-plan@v1", "title-strategy@v1",
-                          "triage-report@v1"])
+                         ["asset-manifest@v1", "game-design@v1", "knowledge-contract@v1",
+                          "playability-report@v1", "scaffold-record@v1", "tech-plan@v1",
+                          "title-strategy@v1", "triage-report@v1"])
         # The greybox ran first, before any asset existed: no asset manifest, and no
         # playability report yet to read.
         self.assertEqual(sorted(state.steps["greybox"].consumed),
-                         ["game-design@v1", "scaffold-record@v1", "tech-plan@v1",
-                          "title-strategy@v1"])
+                         ["game-design@v1", "knowledge-contract@v1", "scaffold-record@v1",
+                          "tech-plan@v1", "title-strategy@v1"])
         order = [t["step"] for t in state.trail]
         self.assertLess(order.index("greybox"), order.index("assets"))
         # Two developer sessions: the greybox, then the production build on top of it.
@@ -2421,7 +2421,8 @@ class ThroughTheEngine(unittest.TestCase):
                                             "title-strategy", "tech-plan", "qa-report",
                                             "review-report", "playability-report",
                                             "production-quality-report", "visual-qa-report",
-                                            "content-sufficiency-report", "triage-report"})
+                                            "content-sufficiency-report", "triage-report",
+                                        "knowledge-contract"})
         self.assertEqual(list(step.outputs), ["prototype-report"])
 
 

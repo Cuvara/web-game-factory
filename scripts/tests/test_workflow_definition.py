@@ -58,8 +58,8 @@ class ParsesValidDefinitions(unittest.TestCase):
         definition = load_definition("new-game")
         self.assertEqual(
             definition.step_ids,
-            ["research", "strategy", "strategy-review", "design", "tech-plan",
-             "tech-plan-review", "init", "greybox", "greybox-playability", "assets", "triage", "develop",
+            ["research", "strategy", "strategy-review", "design", "knowledge-contract",
+             "tech-plan", "tech-plan-review", "init", "greybox", "greybox-playability", "assets", "triage", "develop",
              "playability", "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
              "sdk-review", "verify", "quality-gate", "prototype-review", "store-listing",
              "listing-validation", "release", "listing-triage", "platform-validate", "release-review",
@@ -131,8 +131,8 @@ class ParsesValidDefinitions(unittest.TestCase):
                                      "review-report", "quality-report"])
         self.assertEqual(definition.step("design").on, {"descope": "$fail"})
         self.assertEqual(definition.resolve_scope("plan"),
-                         ["strategy", "strategy-review", "design", "tech-plan",
-                          "tech-plan-review"])
+                         ["strategy", "strategy-review", "design", "knowledge-contract",
+                          "tech-plan", "tech-plan-review"])
 
     def test_every_shipped_release_requires_the_irreversible_gates_before_it(self):
         # The release step cannot see its workflow; the workflow tells it which gates to

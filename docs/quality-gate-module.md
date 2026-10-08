@@ -165,6 +165,18 @@ The lesson candidates specialist visits reported (prototype-report
 `lesson_candidates` and shown at G4. A person promotes one to `core/reference/lessons.yaml`
 - with the check and the test that hold it - or not; the gate never applies one.
 
+## Knowledge compliance
+
+The `compliance` section (1.3.0, `scripts/wgf_quality/compliance.py`): every rule of the
+run's knowledge-contract (an optional input; a run started before the knowledge model is
+resolved now, advisory) held to the checks that hold it on this build's current reports,
+each cited by its producer's artifact id, content hash and commit. A blocking or required
+rule FAILED or UNMEASURED, not excepted by a person, makes it RELEASE_BLOCKED; enforcing (a
+run with a contract, at a releasable tier) that makes the release decision `not-release` and
+a passing verdict `FAIL`, routed by the producers of what is missing. A run that recorded its
+knowledge but whose contract does not reach this step is RELEASE_BLOCKED, never skipped.
+Details: [knowledge-enforcement.md](knowledge-enforcement.md#compliance-the-build-held-to-its-contract).
+
 ## The release decision
 
 | Tier | Every dimension at its floor | Decision | Verdict |

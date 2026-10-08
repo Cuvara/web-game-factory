@@ -18,7 +18,12 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.12.0
+version: 1.13.0
+# 1.13.0: the learning loop - the `knowledge` skill and command (`wgf knowledge ...`:
+#         validate, show, resolve, contract, report, ingest, promote, firewall,
+#         generations, table); the game-designer and ui agents read the lessons and check
+#         tiers, and the game-designer, gameplay, qa and ui agents their run's
+#         knowledge-contract.
 # 1.12.0: the regression registry (lessons, check tiers) in the gameplay and qa agents - a
 #         specialist reads the lessons its findings may be guarded by; play realism in the
 #         gameplay and qa agents, browser QA in the qa and ui agents.
@@ -97,6 +102,9 @@ agents:
       - core/craft/feature-evaluation.md
       - core/reference/feature-catalogue.yaml
       - core/artifacts/shared/research-opportunity.schema.json
+      - core/reference/lessons.yaml
+      - core/reference/check-tiers.yaml
+      - core/artifacts/knowledge-contract.schema.json
     produces: [title-strategy, game-design]
     consumes: [opportunity, evaluation, claim]
 
@@ -135,6 +143,7 @@ agents:
       - core/reference/check-tiers.yaml
       - core/reference/browser-qa.yaml
       - core/reference/play-realism.yaml
+      - core/artifacts/knowledge-contract.schema.json
     produces: [verification-report, qa-report]
     consumes: [release-manifest, game-design, tech-plan, scaffold-record, asset-manifest, sdk-report]
 
@@ -220,6 +229,7 @@ agents:
       - core/reference/lessons.yaml
       - core/reference/check-tiers.yaml
       - core/reference/play-realism.yaml
+      - core/artifacts/knowledge-contract.schema.json
     produces: [prototype-report]
     consumes: [tech-plan, game-design, review-report, qa-report, triage-report]
 
@@ -241,6 +251,9 @@ agents:
       - core/craft/production-wiring.md
       - core/craft/game-audio.md
       - core/reference/browser-qa.yaml
+      - core/reference/lessons.yaml
+      - core/reference/check-tiers.yaml
+      - core/artifacts/knowledge-contract.schema.json
     produces: []
     consumes: [game-design, tech-plan]
 
@@ -352,6 +365,23 @@ commands:
     role: null
     gate: null
     note: Read-only. Reports portfolio and title state from workspace/.
+  - id: knowledge
+    triggers: null
+    role: null
+    gate: null
+    must_read:
+      - docs/knowledge-enforcement.md
+      - core/reference/lessons.yaml
+      - core/reference/check-tiers.yaml
+    note: >
+      Not a transition: the Factory's knowledge through `wgf knowledge ...` - the rules
+      and their derived levels, a run's knowledge-contract and compliance report, and the
+      learning loop. `ingest <run>` collects a run's lesson candidates into
+      workspace/lessons/candidates.yaml (de-duplicated, with provenance); `promote C-<n>`
+      prints a patch for a person's pull request and never edits core/; `firewall` runs
+      every lesson's regression tests; `generations` compares runs by the knowledge they
+      consumed; `table` is the dry benchmark approval table, every row requiring a
+      person's budget approval. It answers no gate, starts no run and grants no exception.
 
 # ---------------------------------------------------------------------------
 # Workflows → workflow entry-point surfaces.
@@ -710,6 +740,20 @@ skills:
     reads:
       - core/craft/juice.md
       - core/craft/game-feel.md
+  - id: knowledge
+    supports: [game-designer, gameplay, qa, ui]
+    covers: >
+      The Factory's lessons as rules: which apply to a run and at what level, the run's
+      knowledge-contract and compliance, and the learning loop - lesson candidates stated
+      as symptom, root cause and whether it is systemic, collected with `wgf knowledge
+      ingest`, drafted for a person's review with `wgf knowledge promote`, held by the
+      regression firewall.
+    reads:
+      - docs/knowledge-enforcement.md
+      - core/reference/lessons.yaml
+      - core/reference/check-tiers.yaml
+      - core/artifacts/knowledge-contract.schema.json
+      - core/artifacts/shared/quality-finding.schema.json
   - id: production-wiring
     supports: [gameplay, ui, asset]
     covers: >

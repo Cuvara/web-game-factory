@@ -25,6 +25,14 @@ SUITE = {
     "QUALITY": ["test_quality_consistency"],
     "2D GOLDEN": ["test_golden_2d"],
     "3D GOLDEN": ["test_golden_3d"],
+    # The knowledge the Factory learned holds: every lesson's catches, passes and generalizes
+    # tests exist and pass (the regression firewall), the model and the resolver, a run held
+    # to its contract and its compliance, and the learning loop - ingestion, promotion
+    # drafts, generations (docs/knowledge-enforcement.md).
+    "KNOWLEDGE": ["test_knowledge_firewall", "test_knowledge_generalization",
+                  "test_knowledge_ingest", "test_knowledge_generations",
+                  "test_knowledge_model", "test_knowledge_resolve",
+                  "test_knowledge_exceptions", "test_knowledge_compliance"],
     "PROCESS CLEANUP": ["test_core_process"],
     "SECURITY": ["test_core_security"],
 }

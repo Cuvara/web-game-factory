@@ -167,8 +167,8 @@ def fast_case(key):
             state = api.run(RunRequest(scope="research", project_id=game.title_id))
             self.assertEqual(state.steps["research"].status, "SUCCESS", state.message)
             state = api.run(RunRequest(scope="plan", run_id=state.run_id))
-            for step_id in ("strategy", "strategy-review", "design", "tech-plan",
-                            "tech-plan-review"):
+            for step_id in ("strategy", "strategy-review", "design", "knowledge-contract",
+                            "tech-plan", "tech-plan-review"):
                 self.assertEqual(state.steps[step_id].status, "SUCCESS",
                                  f"{step_id}: {state.steps[step_id].error}")
             design = api.store.read_artifact(state.run_id, state.latest_of_type("game-design"))

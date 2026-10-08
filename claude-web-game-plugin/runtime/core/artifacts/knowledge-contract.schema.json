@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/knowledge-contract.schema.json",
+  "title": "Knowledge contract",
+  "description": "The Applicable Knowledge Contract of one run: which rules of the Factory's knowledge (core/reference/lessons.yaml, with the check tiers of core/reference/check-tiers.yaml) apply to this title, at which enforcement level, held by which checks of which validating steps, and proven by which tests - resolved from the run's pinned knowledge and its facets (genre family, rendering dimension, targeted platforms, quality tier; complexity profile and archetype once they exist) by scripts/wgf_knowledge/resolve.py. Levels are derived from the checks' tiers, never chosen. A facet the run has not determined never excludes a rule. Every rule that does not apply is listed with why; an agent never decides scope. A run's contract is made after design and before implementation; a run that cannot make it stops. Blocking and required rules must be satisfied by the build's current evidence at the quality gate, or excepted by a person (`exceptions`). The contract is the versioned Factory context the run is held to: `versions` records every file it was resolved from. See docs/knowledge-enforcement.md. Added in Factory 2.8.0.",
+  "x-wgf": {
+    "id": "knowledge-contract",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.1.0",
+    "producer": "title:design",
+    "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "release:draft"],
+    "required_for_gates": ["G3"],
+    "repo_path": "<game-repo>/release/<release-id>/knowledge-contract.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/knowledge-contract/v<n>.json"
+  },
+  "type": "object",
+  "required": ["provenance", "title_id", "versions", "facets", "rules", "not_applicable", "experimental", "required_validators", "regression_suite", "exceptions", "counts"],
+  "properties": {
+    "provenance": { "$ref": "shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": "string", "minLength": 1 },
+    "versions": {
+      "type": "object",
+      "description": "What the contract was resolved from, as the run pinned it (scripts/wgf_knowledge/versions.py).",
+      "required": ["factory", "lessons", "check_tiers"],
+      "properties": {
+        "factory": {
+          "type": "object",
+          "required": ["version", "commit"],
+          "properties": {
+            "version": { "type": ["string", "null"] },
+            "commit": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$" }
+          },
+          "additionalProperties": false
+        },
+        "lessons": { "$ref": "#/$defs/versionedFile" },
+        "check_tiers": { "$ref": "#/$defs/versionedFile" },
+        "quality_policy": { "$ref": "#/$defs/version" },
+        "quality_benchmark": { "$ref": "#/$defs/version" },
+        "quality_floor": { "$ref": "#/$defs/version" },
+        "genre_models": { "$ref": "#/$defs/version" },
+        "workflow": {
+          "type": ["object", "null"],
+          "required": ["id", "version"],
+          "properties": {
+            "id": { "type": "string", "minLength": 1 },
+            "version": { "type": ["integer", "string"] },
+            "sha256": { "$ref": "shared/provenance.schema.json#/$defs/hash", "description": "1.1.0: the digest of the workflow file the validators were named from, as it read when the contract was made (a run does not pin its workflow)." }
+          },
+          "additionalProperties": false
+        },
+        "platform_profiles": {
+          "type": "object",
+          "description": "Targeted platform id -> its profile as `<id>@<version>` (null: no readable profile).",
+          "additionalProperties": { "type": ["string", "null"] }
+        }
+      },
+      "additionalProperties": false
+    },
+    "facets": {
+      "type": "object",
+      "description": "The run's facets. null (or an empty list) is undetermined, which never excludes a rule.",
+      "required": ["family", "render", "platforms", "tier"],
+      "properties": {
+        "family": { "type": ["string", "null"] },
+        "genre": { "type": ["string", "null"] },
+        "render": { "enum": ["2d", "3d", null] },
+        "platforms": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "tier": { "type": ["string", "null"] },
+        "profile": { "type": ["string", "null"], "description": "Reserved: the complexity profile, once its registry exists." },
+        "archetype": { "type": ["string", "null"], "description": "Reserved: the archetype, once its registry exists." }
+      },
+      "additionalProperties": false
+    },
+    "rules": { "type": "array", "items": { "$ref": "#/$defs/rule" }, "description": "Every rule that applies to the run, whatever its level." },
+    "not_applicable": {
+      "type": "array",
+      "description": "Every rule that does not apply, with the facet that excluded it - or why it is never in a run (a process lesson, a deprecated one).",
+      "items": {
+        "type": "object",
+        "required": ["id", "why_not"],
+        "properties": {
+          "id": { "$ref": "#/$defs/ruleId" },
+          "why_not": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "experimental": {
+      "type": "array",
+      "description": "The applicable experimental rules and what is not enforced of each yet: guidance, never blocking.",
+      "items": {
+        "type": "object",
+        "required": ["id", "gap"],
+        "properties": {
+          "id": { "$ref": "#/$defs/ruleId" },
+          "gap": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "required_validators": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "description": "The run's workflow steps that produce the applicable blocking and required rules' checks." },
+    "missing_validators": {
+      "type": "array",
+      "maxItems": 0,
+      "description": "A blocking or required check whose producer no step of the run's workflow outputs. The contract cannot be made while one exists: always empty in a contract.",
+      "items": { "type": "object" }
+    },
+    "regression_suite": { "type": "array", "items": { "type": "string", "pattern": "^scripts/tests/[A-Za-z0-9_]+\\.py::[A-Za-z_][A-Za-z0-9_]*$" }, "uniqueItems": true, "description": "The tests of the applicable rules (catches, passes, generalizes): what a Factory change must keep green for this title's rules." },
+    "constraints": {
+      "type": "object",
+      "properties": {
+        "genre": { "type": ["string", "null"], "description": "The genre family's contract, `genre-models@<version>#<family>`." },
+        "platforms": { "type": "array", "items": { "type": "string" }, "description": "Each targeted platform's profile, `<id>@<version>`." }
+      },
+      "additionalProperties": false
+    },
+    "exceptions": { "type": "array", "items": { "$ref": "shared/knowledge-exception.schema.json" }, "description": "The exceptions a person granted that held when the contract was made." },
+    "exceptions_refused": {
+      "type": "array",
+      "description": "Exceptions offered that do not hold (expired, unauthorized, a rule that cannot be excepted or does not apply), with why. Never honoured.",
+      "items": {
+        "type": "object",
+        "required": ["exception", "problems"],
+        "properties": {
+          "exception": { "type": "object" },
+          "problems": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "advisory": {
+      "type": "object",
+      "description": "1.1.0: present only on the contract of a run started before the knowledge model (no params.quality.knowledge): it is reported, never enforced, and lists every problem that would have stopped a run held to its knowledge.",
+      "required": ["reason", "problems"],
+      "properties": {
+        "reason": { "type": "string", "minLength": 1 },
+        "problems": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "counts": {
+      "type": "object",
+      "required": ["blocking", "required", "recommended", "experimental", "not_applicable"],
+      "properties": {
+        "blocking": { "type": "integer", "minimum": 0 },
+        "required": { "type": "integer", "minimum": 0 },
+        "recommended": { "type": "integer", "minimum": 0 },
+        "experimental": { "type": "integer", "minimum": 0 },
+        "not_applicable": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "ruleId": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9-]*$" },
+    "version": { "type": ["string", "null"], "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "versionedFile": {
+      "type": "object",
+      "required": ["version", "sha256"],
+      "properties": {
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "sha256": { "$ref": "shared/provenance.schema.json#/$defs/hash" }
+      },
+      "additionalProperties": false
+    },
+    "level": { "enum": ["blocking", "required", "recommended", "experimental"] },
+    "testList": { "type": "array", "items": { "type": "string" } },
+    "rule": {
+      "type": "object",
+      "required": ["id", "level", "category", "status", "lifecycle", "checks", "tests", "why_applicable"],
+      "properties": {
+        "id": { "$ref": "#/$defs/ruleId" },
+        "title": { "type": ["string", "null"] },
+        "level": { "$ref": "#/$defs/level" },
+        "derived_level": { "anyOf": [{ "$ref": "#/$defs/level" }, { "type": "null" }], "description": "The level its checks' tiers give; `level` is stronger only where the lesson declares so." },
+        "category": { "type": "string", "minLength": 1, "description": "The quality-floor scorecard line." },
+        "status": { "enum": ["enforced", "partial", "gap"] },
+        "lifecycle": { "enum": ["candidate", "active", "validated", "deprecated"], "description": "deprecated: retired with only a reason - held as recommended, reported, never blocking." },
+        "lesson": { "type": ["string", "null"] },
+        "gap": { "type": "string", "description": "What is not held yet (partial and gap lessons)." },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["check", "tier", "producer", "steps"],
+            "properties": {
+              "check": { "type": "string", "pattern": "^[a-z0-9-]+:[A-Za-z0-9._*-]+$" },
+              "tier": { "enum": ["hard", "quality", "advisory"] },
+              "source": { "type": "string" },
+              "producer": { "type": ["string", "null"], "description": "The artifact type that reports the check." },
+              "steps": { "type": "array", "items": { "type": "string" }, "description": "The run's workflow steps that output that artifact." }
+            },
+            "additionalProperties": false
+          }
+        },
+        "tests": {
+          "type": "object",
+          "required": ["catches", "passes", "generalizes"],
+          "properties": {
+            "catches": { "$ref": "#/$defs/testList" },
+            "passes": { "$ref": "#/$defs/testList" },
+            "generalizes": { "$ref": "#/$defs/testList" }
+          },
+          "additionalProperties": false
+        },
+        "why_applicable": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

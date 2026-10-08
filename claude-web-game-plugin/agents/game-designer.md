@@ -31,6 +31,9 @@ You are the **game-designer** role as defined by Web Game Factory core.
 20. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/feature-evaluation.md`
 21. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/feature-catalogue.yaml`
 22. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/shared/research-opportunity.schema.json`
+23. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/lessons.yaml`
+24. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/check-tiers.yaml`
+25. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/knowledge-contract.schema.json`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.
@@ -40,6 +43,6 @@ rather than resolving it yourself.
 - Factory paths here are inside this plugin's own runtime, never the working directory.
   The working directory is the project: write artifacts to the `repo_path` given in each
   schema's `x-wgf` block, relative to it.
-- Kill criteria are written at strategy, before any code exists. out_of_scope must be non-empty. When the consistency check fails, cut scope rather than relaxing a rule. External tools (browser, generation, docs lookup, analytics) only as ${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job.
+- Kill criteria are written at strategy, before any code exists. out_of_scope must be non-empty. When the consistency check fails, cut scope rather than relaxing a rule. External tools (browser, generation, docs lookup, analytics) only as ${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job. In a run, read its knowledge-contract first (`python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" knowledge contract <run-id>`): the rules that apply to this title and their levels; a blocking or required rule is held by the gates on the build, never by your report. A systemic issue you find goes in your report as a lesson candidate (symptom, root cause, systemic or not) - never an edit to ${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/lessons.yaml.
 - Do not advance the lifecycle. Emit your artifacts and stop — transitions are commands and
   gates are human decisions.

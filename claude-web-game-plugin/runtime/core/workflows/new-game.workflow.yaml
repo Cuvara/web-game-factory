@@ -95,7 +95,18 @@ workflow:
   # (quality-policy 1.3.0 rule 6, checked on this graph). It also pins the bars the
   # producers read - visual-quality, play-realism, browser-qa, check-tiers, lessons - so a
   # resumed run is held to the checks and tiers it started under.
-  version: 16
+  # 17: knowledge - after design and before tech-plan, the `knowledge-contract` step resolves the rules
+  # of core/reference/lessons.yaml that apply to the title (its genre family, rendering,
+  # platforms and quality tier) into the run's knowledge-contract: each rule's enforcement
+  # level, the checks and the validating steps that hold it, the regression tests that prove
+  # it, the exceptions a person granted. A run that cannot make its contract stops there
+  # (BLOCKED, unrouted) - nothing is planned or built on knowledge it cannot state - and G3 is
+  # decided on the contract too. The run pins every file its knowledge is read with (the
+  # check sources, the scope vocabularies, the quality policy, the platform profiles), so the
+  # contract is the knowledge it started under (docs/knowledge-enforcement.md). greybox,
+  # develop and triage read the contract (the rules a brief carries, the lessons a finding is
+  # guarded by), the quality gate holds the build to it, and release ships it.
+  version: 17
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -114,6 +125,22 @@ workflow:
     - core/reference/browser-qa.yaml
     - core/reference/check-tiers.yaml
     - core/reference/lessons.yaml
+    # 17: what the knowledge is read with - the check sources check-tiers.yaml enumerates
+    # that are not pinned above, the scope vocabularies, the policy, the platform profiles.
+    - core/reference/content-sufficiency.yaml
+    - core/reference/design-consistency-rules.yaml
+    - core/reference/gate-gaming.yaml
+    - core/reference/genre-models.yaml
+    - core/reference/quality-policy.yaml
+    - core/reference/platforms/crazygames.yaml
+    - core/reference/platforms/gamedistribution.yaml
+    - core/reference/platforms/gamemonetize.yaml
+    - core/reference/platforms/gamepix.yaml
+    - core/reference/platforms/gamevui.yaml
+    - core/reference/platforms/generic-web.yaml
+    - core/reference/platforms/poki.yaml
+    - core/reference/platforms/y8.yaml
+    - core/reference/platforms/yandex.yaml
 
   # Every artifact a step names has a schema in core/artifacts/. A workflow MAY list types
   # without one under `untyped_artifacts`, as a visible, temporary gap: check-integrity.py
@@ -151,7 +178,7 @@ workflow:
   # separately and is not reset by a resume: factory.develop.budget.
 
   groups:
-    plan: [strategy, strategy-review, design, tech-plan, tech-plan-review]
+    plan: [strategy, strategy-review, design, knowledge-contract, tech-plan, tech-plan-review]
     # Publication of a drafted release, in the run that drafted it: `wgf publish --run <id>`.
     publish: [platform-validate, release-review, publish-review, submit]
 
@@ -206,6 +233,28 @@ workflow:
       on:
         descope: $fail
 
+    # The Applicable Knowledge Contract (scripts/wgf_knowledge/step.py): the rules of the
+    # run's pinned knowledge that apply to this design and strategy, resolved before any plan
+    # or code exists, and re-resolved on every pass through design (it follows design). A run
+    # that cannot make it - knowledge it did not pin or that was edited since, a version it
+    # did not record, a blocking or required rule no step of this workflow validates - is
+    # BLOCKED here, unrouted: the run stops for a person and never continues without it.
+    # A run started before the knowledge model makes the contract it can, marked advisory
+    # with what would have stopped a new run, and is blocked only when no contract can be
+    # made at all (quality-policy.yaml rule 8). Its workflow is not pinned: the contract
+    # records the version and digest of the definition that named the validators.
+    # The step id is not `knowledge`: that is the `wgf knowledge` command, and every step id
+    # is a run command too.
+    - id: knowledge-contract
+      type: knowledge
+      stage: title:design
+      description: Resolve the Factory knowledge that applies to this title into the run's contract.
+      inputs: [game-design, title-strategy]
+      outputs: [knowledge-contract]
+      # Follows design on each of its passes (design's max_visits is 5), plus one: a person's
+      # `wgf resume --from knowledge-contract` after an exception or a fix to the pins.
+      max_visits: 6
+
     - id: tech-plan
       type: tech-plan
       stage: title:tech-plan
@@ -218,11 +267,11 @@ workflow:
     - id: tech-plan-review
       type: human-checkpoint
       stage: title:tech-plan
-      inputs: [game-design, tech-plan]
+      inputs: [game-design, tech-plan, knowledge-contract]
       outputs: [decision-record]
       with:
         gate: G3
-        prompt: Approve the design and technical plan before the repository is created?
+        prompt: Approve the design, the technical plan and the knowledge contract the build will be held to (wgf knowledge contract <run-id>) before the repository is created?
         choices: [approve, reject]
 
     - id: init
@@ -244,7 +293,7 @@ workflow:
       type: develop
       stage: title:prototype
       description: Build the whole MVP loop with primitives, before any asset exists.
-      inputs: [game-design, scaffold-record, title-strategy, tech-plan, playability-report]
+      inputs: [game-design, scaffold-record, title-strategy, tech-plan, playability-report, knowledge-contract]
       outputs: [prototype-report]
       with:
         phase: greybox
@@ -309,7 +358,7 @@ workflow:
       type: triage
       stage: title:prototype
       description: Normalize the current build's failures into quality findings and route them to the specialist that owns them.
-      inputs: [game-design, prototype-report, asset-manifest, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, review-report, qa-report, verification-report, quality-report, decision-record, triage-report]
+      inputs: [game-design, prototype-report, asset-manifest, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, review-report, qa-report, verification-report, quality-report, decision-record, triage-report, knowledge-contract]
       outputs: [triage-report]
       # 1 + 6 assets passes + the sending routes' budgets, each followed by at most one visit
       # per specialist through next-specialist; the specialists' own budgets on develop are
@@ -358,7 +407,7 @@ workflow:
       # triage-report: entered through triage with a specialist's label, the visit is that
       # specialist's - its focus, craft playbooks, writable scope and only the findings it
       # owns (docs/specialist-routing.md).
-      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, triage-report]
+      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, triage-report, knowledge-contract]
       outputs: [prototype-report]
       with:
         phase: production
@@ -552,7 +601,7 @@ workflow:
     - id: quality-gate
       type: quality-gate
       stage: title:prototype
-      inputs: [playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, qa-report, verification-report, prototype-report, game-design, sdk-report, review-report, asset-manifest, title-strategy, triage-report, decision-record]
+      inputs: [playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, qa-report, verification-report, prototype-report, game-design, sdk-report, review-report, asset-manifest, title-strategy, triage-report, decision-record, knowledge-contract]
       outputs: [quality-report]
       max_visits: 71
       on:
@@ -659,7 +708,7 @@ workflow:
     - id: release
       type: release
       stage: release:draft
-      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report, store-listing, listing-validation-report, quality-report, playability-report, content-sufficiency-report, triage-report, decision-record, game-design]
+      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report, store-listing, listing-validation-report, quality-report, playability-report, content-sufficiency-report, triage-report, decision-record, game-design, knowledge-contract]
       outputs: [release-manifest]
       with:
         required_gates: [G4]

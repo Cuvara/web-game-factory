@@ -8,7 +8,7 @@
     "id": "release-manifest",
     "kind": "artifact",
     "format": "json",
-    "version": "1.6.0",
+    "version": "1.7.0",
     "template": "templates/release-report.md",
     "producer": "release:draft",
     "frozen_at": "release:rc",
@@ -228,6 +228,38 @@
             "quality_tier": { "enum": ["mvp", "release", null] },
             "floor_version": { "type": ["string", "null"] },
             "benchmark_version": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        },
+        "knowledge": {
+          "type": "object",
+          "description": "Since 1.7.0. The knowledge the build was held to, shipped beside the packages under release/<release-id>/ (docs/knowledge-enforcement.md): the run's knowledge-contract (null for a run that made none) and the quality-report's knowledge compliance - its verdict, whether it was enforcing or advisory, and the files it is rendered to for a person.",
+          "required": ["contract", "compliance"],
+          "properties": {
+            "contract": {
+              "type": ["object", "null"],
+              "required": ["artifact_id", "content_hash", "path"],
+              "properties": {
+                "artifact_id": { "$ref": "./shared/provenance.schema.json#/$defs/artifactId" },
+                "content_hash": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+                "path": { "type": "string", "description": "Relative to release/<release-id>/." }
+              },
+              "additionalProperties": false
+            },
+            "compliance": {
+              "type": ["object", "null"],
+              "required": ["verdict", "mode", "path", "report"],
+              "properties": {
+                "verdict": { "enum": ["PASS", "RELEASE_BLOCKED"] },
+                "mode": { "enum": ["enforcing", "advisory"] },
+                "retroactive": { "type": "boolean" },
+                "lessons_applied": { "type": "array", "items": { "type": "string" } },
+                "exceptions": { "type": "array", "items": { "type": "string" }, "description": "`<rule> <status>` for every exception the run was offered." },
+                "path": { "type": "string", "description": "The section as JSON, relative to release/<release-id>/." },
+                "report": { "type": "string", "description": "The same, rendered for a person (markdown), relative to release/<release-id>/." }
+              },
+              "additionalProperties": false
+            }
           },
           "additionalProperties": false
         },

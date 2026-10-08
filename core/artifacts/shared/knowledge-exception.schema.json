@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/knowledge-exception.schema.json",
+  "title": "Knowledge exception",
+  "description": "A person's explicit, expiring acceptance that one rule of core/reference/lessons.yaml applicable to a run is not satisfied by it. Only a rule whose level the lessons file's `exceptions.levels` lists can be excepted (blocking and required: the others never block). `approved_by.mode` must be one the file's `exceptions.approvers` accepts for the rule's level - `human` (a person) for both as shipped; a blocking rule is a person's to except, never automation's (check-integrity refuses `automation` there). An exception is run-scoped: it is granted for one run as an operator act, never by configuration; it expires (at most `exceptions.max_days` after `created_at`), and one expired at the moment it is read counts as not granted. It never makes a rule satisfied: the rule is reported EXCEPTED, and the exception is listed wherever the rule's compliance is. The rules beyond this shape (rule exists, level, approver, window, expiry) are checked by scripts/wgf_knowledge/model.py exception_problems. See docs/knowledge-enforcement.md.",
+  "type": "object",
+  "required": ["rule_id", "reason", "scope", "approved_by", "created_at", "expires_at"],
+  "properties": {
+    "rule_id": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9-]*$", "description": "The lesson id of core/reference/lessons.yaml the exception is for." },
+    "reason": { "type": "string", "minLength": 20, "description": "Why the rule is accepted unmet for this run, in a person's words: what was seen, why it is acceptable now, and what will close it." },
+    "scope": {
+      "type": "object",
+      "description": "What the exception covers within the run. Empty: every check of the rule on every targeted platform and viewport.",
+      "properties": {
+        "platforms": { "type": "array", "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }, "uniqueItems": true, "description": "Platform ids (core/reference/platforms/<id>.yaml) it covers." },
+        "checks": { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9-]+:[A-Za-z0-9._*-]+$" }, "uniqueItems": true, "description": "Check ids of the rule (core/reference/check-tiers.yaml) it covers." },
+        "viewports": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "description": "Viewport or project names it covers." }
+      },
+      "additionalProperties": false
+    },
+    "approved_by": {
+      "type": "object",
+      "required": ["identifier", "mode"],
+      "properties": {
+        "identifier": { "type": "string", "minLength": 1, "description": "Who approved it: a person's handle or name." },
+        "mode": { "enum": ["human", "automation"], "description": "human: a person, from outside the run. automation: a decision made inside a Factory step's process tree - refused for every level as shipped, and always for a blocking rule. Never trusted from the record alone: the operator act that grants the exception stamps the mode from who runs it." }
+      },
+      "additionalProperties": false
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time", "description": "Mandatory. After it the exception does not hold." },
+    "run_id": { "type": "string", "minLength": 1, "description": "The run it was granted in, when recorded outside the run's own events." }
+  },
+  "additionalProperties": false
+}

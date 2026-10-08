@@ -59,6 +59,7 @@ Invariants the engine keeps:
 import contextlib
 import copy
 import datetime
+import hashlib
 import json
 import re
 import secrets
@@ -341,6 +342,10 @@ class WorkflowEngine:
                     data["advanced_past"] = state.cursor
                     self._advance_past(state, state.cursor, current)
                     if state.cursor is None or state.status in RunStatus.TERMINAL:
+                        # The run ended by advancing past its last step: a person's acts
+                        # passed with this resume are still recorded, never dropped.
+                        self._record_operator_events(state, data, operator_events,
+                                                     decided_by)
                         self._emit(state, Events.WORKFLOW_RESUMED, data=data)
                         return state
                     current = state.step(state.cursor)
@@ -354,18 +359,30 @@ class WorkflowEngine:
 
         if decision is not None:
             self.record_decision(state, state.cursor, decision, decided_by, note)
-        if operator_events:
-            # One nonce ties this resume's operator events to the WORKFLOW_RESUMED that
-            # follows them: a reader (wgflib.budget.effective) honours an operator event only
-            # when the engine's own resume record corroborates it, so a lone line appended
-            # to events.jsonl is not a person's act.
-            data["resume_nonce"] = secrets.token_hex(8)
-        for event, event_data in operator_events:
-            self.record_operator_event(state, event, event_data, decided_by,
-                                       resume_nonce=data["resume_nonce"])
+        self._record_operator_events(state, data, operator_events, decided_by)
 
         self._emit(state, Events.WORKFLOW_RESUMED, data=data)
         return state
+
+    def _record_operator_events(self, state, data, operator_events, decided_by):
+        """Record this resume's operator events, tied by one nonce to the WORKFLOW_RESUMED
+        that follows them (`data`). A reader honours an operator event only when the
+        engine's own resume record corroborates it - so a lone line appended to
+        events.jsonl is not a person's act - and, for a knowledge exception, only when the
+        nonce is one the engine issued AND the events carrying it are exactly the ones it
+        recorded (`state.resume_nonces`: {nonce: operator_digest of them}, kept in
+        state.json), so neither a made-up nonce nor a real one copied onto new lines makes
+        a person's act."""
+        if not operator_events:
+            return
+        data["resume_nonce"] = secrets.token_hex(8)
+        issued = dict(state.resume_nonces or {})
+        issued[data["resume_nonce"]] = operator_digest(operator_events)
+        state.resume_nonces = issued
+        for event, event_data in operator_events:
+            self.record_operator_event(state, event, event_data, decided_by,
+                                       resume_nonce=data["resume_nonce"])
+        self._save(state)  # the issued nonce is the run's own record, before anything runs
 
     def _refill_route(self, state, limited):
         """Grant the route limit a loop-blocked run stopped at a fresh budget: every entry
@@ -1627,6 +1644,21 @@ def _route_used(step_state, limit_key):
     visits, base = step_state.route_visits or {}, step_state.route_base or {}
     return sum(count - base.get(key, 0) for key, count in visits.items()
                if _limit_counts(limit_key, key))
+
+
+# What the engine stamps on an operator event itself: left out of its digest.
+OPERATOR_STAMPS = ("decided_by", "decided_at", "resume_nonce")
+
+
+def operator_digest(acts):
+    """`sha256:<hex>` of a resume's operator events, [(event, data)] in the order they were
+    recorded, each data without the engine's own stamps (OPERATOR_STAMPS): canonical JSON
+    (sorted keys, no whitespace, UTF-8). A reader recomputes it from the events carrying
+    the resume's nonce and compares it with the one state.json kept."""
+    canonical = [[str(event), {k: v for k, v in (data or {}).items()
+                               if k not in OPERATOR_STAMPS}] for event, data in acts]
+    text = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def check_operator_event(event, data, decided_by):

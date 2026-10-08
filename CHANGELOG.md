@@ -9,6 +9,18 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**A run is held to its knowledge, and a person's exception is the run's own record**
+(quality-policy 1.4.0 rule 8, new-game 17, gates 1.7.0, knowledge-contract 1.1.0,
+[docs/knowledge-enforcement.md](docs/knowledge-enforcement.md)). A new run records the
+lessons and check-tiers versions and the Factory's version and commit, pins what its
+knowledge is read with, and makes its knowledge-contract after design (`knowledge-contract`
+step) or stops; G3 is decided on it. `wgf resume <run> --except` grants a person's
+exception: an operator event whose resume nonce, and the digest of what that resume
+recorded, the engine keeps in state.json (`resume_nonces`). **Exceptions granted on
+`k/integ` before the digests were kept (up to e81a941) are refused**: their nonces were
+kept without a digest, or not at all, so nothing can tell them from a forged line - grant
+them again. Runs started before rule 8 are advisory and keep their workflow.
+
 **A measurement's validity no longer softens a failure** (visual-quality.yaml 1.2.0,
 specialist-routing.yaml 1.5.0, [docs/playability-module.md](docs/playability-module.md)).
 Three gaps a review of the validity rules found, closed without loosening a bar. A unit the

@@ -886,7 +886,10 @@ class _Judge:
         if not isinstance(hidden, dict) or not hidden.get("tried"):
             self.emit("audio-hidden", None, "blocked" if isinstance(vp, dict) and
                       (vp.get("started") or {}).get("playing_ms") is not None else "unmeasured",
-                      f"the page was not hidden during play on {vid}")
+                      f"the page was not hidden during play on {vid}: "
+                      f"{(hidden or {}).get('reason') or 'not tried'}"
+                      + (f" (back into play: {hidden.get('reentered')})"
+                         if isinstance(hidden, dict) and hidden.get("reentered") else ""))
         elif hidden.get("audio_hidden") is None:
             self.emit("audio-hidden", None, "omitted", "the play probe reports no audio")
         else:

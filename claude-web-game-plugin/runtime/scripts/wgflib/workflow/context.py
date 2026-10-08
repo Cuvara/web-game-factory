@@ -67,6 +67,12 @@ class WorkflowContext:
     `read_events()` returns the run's recorded events (events.jsonl), oldest first, read
     fresh on every call: durable run history a step may count from - its own earlier
     executions, a person's recorded act - where nothing in memory survives a resume.
+
+    `missing_gates` lists the gates the Factory's quality policy requires before this step
+    that the run's own workflow does not have - [{"step", "stage", "type"}], [] when none
+    (quality.missing_gates): a run started under an older definition, or a workflow from
+    elsewhere. A gate or a checkpoint names them rather than letting a person decide
+    believing they ran.
     """
 
     def __init__(self, *, workflow_id, workflow_version, run_id, project_id, step_id,
@@ -74,7 +80,7 @@ class WorkflowContext:
                  decision, previous_outputs, logger, emit, run_dir, mock,
                  progress=None, should_stop=None, now=None, waiting_since=None,
                  record_decision=None, gates_passed=(), entered_by=None,
-                 visit_budget=None, read_events=None):
+                 visit_budget=None, read_events=None, missing_gates=()):
         self.workflow_id = workflow_id
         self.workflow_version = workflow_version
         self.run_id = run_id
@@ -102,6 +108,7 @@ class WorkflowContext:
         self.entered_by = entered_by
         self.visit_budget = visit_budget
         self._read_events = read_events
+        self.missing_gates = [dict(g) for g in missing_gates or () if isinstance(g, dict)]
 
     def read_events(self):
         """The run's recorded events, oldest first; [] when the engine gave none."""

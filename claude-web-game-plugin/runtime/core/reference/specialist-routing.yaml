@@ -24,10 +24,16 @@
 # 1.4.0: a producer's `split` - a check whose failing items have different routes becomes
 #        one finding per route (production-quality's assets.runtime).
 # 1.5.0: playability `depth.` stated (gameplay), which only `default_dimension` routed before.
+# WS-9 (version bump at integration): four specialists - art-director (art-direction: one
+#        coherent look, judged before and apart from the artists who make it),
+#        performance-engineer (performance), browser-qa (browser: page errors, viewports,
+#        focus and visibility) and publishing-compliance (compliance: what each platform's
+#        rules require of the package and listing); quality-report `criteria`, a criterion
+#        routed by its own id whatever dimension scores it.
 version: 1.5.0
 
 # The quality dimensions, as the quality-finding schema enumerates them.
-dimensions: [content, level-design, difficulty, progression, gameplay, art-2d, environment-3d, lighting-material, ui, audio, feel, store-copy, platform]
+dimensions: [content, level-design, difficulty, progression, gameplay, art-2d, environment-3d, lighting-material, ui, audio, feel, store-copy, platform, art-direction, performance, browser, compliance]
 
 # Owners, in VISIT ORDER: when one build has findings for several specialists, the develop
 # visits run in this order, one specialist per visit, before the gates measure the build
@@ -49,6 +55,11 @@ specialists:
   - role: gameplay
     dimensions: [gameplay, feel]
     route: develop
+  # The art direction - one palette, shape language and rendering style across every asset -
+  # is set before the artists who work inside it: a coherence fix after them redoes theirs.
+  - role: art-director
+    dimensions: [art-direction]
+    route: develop
   - role: environment-artist
     dimensions: [environment-3d, lighting-material]
     route: develop
@@ -61,9 +72,22 @@ specialists:
   - role: audio-designer
     dimensions: [audio]
     route: develop
+  # Performance and the browser after the look and the sound exist: what is optimized and
+  # tested across browsers is what ships.
+  - role: performance-engineer
+    dimensions: [performance]
+    route: develop
+  - role: browser-qa
+    dimensions: [browser]
+    route: develop
   - role: sdk
     dimensions: [platform]
     route: develop
+  # What each platform's rules require of the package and its listing is checked on the
+  # listing, after G4, with the store copy.
+  - role: publishing-compliance
+    dimensions: [compliance]
+    route: listing
   - role: copywriter
     dimensions: [store-copy]
     route: listing
@@ -120,6 +144,8 @@ producers:
       # more as it goes, is the game loop's.
       depth.: gameplay
       act.acknowledged: feel
+      # An uncaught page error while played is the browser QA engineer's (WS-9).
+      page.: browser
       start.objective: ui
       restart.works: ui
       entities.: art
@@ -161,7 +187,7 @@ producers:
       ui: ui
       composition: composition
       readability: lighting
-      consistency: art
+      consistency: art-direction
       debug: gameplay
     scores:
       art_completeness: art
@@ -170,7 +196,7 @@ producers:
       ui_polish: ui
       typography: ui
       composition: composition
-      consistency: art
+      consistency: art-direction
       no_debug: gameplay
     states:
       entities_recognisable: art
@@ -213,7 +239,7 @@ producers:
     sections:
       metadata: store-copy
       grounding: store-copy
-      platforms: platform
+      platforms: compliance
       screenshots: art-2d
       video: art-2d
       assets: art-2d
@@ -233,11 +259,15 @@ producers:
       visual: art
       ui: ui
       audio: audio
-      consistency: art
+      consistency: art-direction
       polish: feel
       technical: gameplay
       platform: platform
       store: store-copy
+    # A criterion routed by its own id, whatever dimension scores it (WS-9).
+    criteria:
+      floor.performance: performance
+      floor.stable_runtime: browser
     default: gameplay
     acceptance: the quality gate scores the next build and `{check}` meets its minimum{bar_clause}.
 

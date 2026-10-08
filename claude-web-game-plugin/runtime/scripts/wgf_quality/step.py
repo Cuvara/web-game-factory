@@ -10,8 +10,14 @@
          nearest ancestor, 3D), the bars of core/reference/quality-benchmark.yaml and the
          visual-qa rubric - the copies the run pinned when it started
       -> scoring.score: every criterion, every dimension against its floor, typed findings
-         with their lifecycle against the run's previous quality-report, regression, and
-         the release decision
+         with their lifecycle against the run's previous quality-report, regression, the
+         scorecard (one line per discipline, the hard blockers listed on their own) and the
+         release decision
+      -> the gates the run's workflow lacks that the Factory now requires before this one
+         (`context.missing_gates`, an old run resumed): named, and never a release
+      -> the lesson candidates specialist visits reported (prototype-report
+         `specialist.lesson_candidates`, triage-report `lesson_candidates`): surfaced to the
+         person deciding G4, who promotes one to core/reference/lessons.yaml or not
       -> the run's finding ledger (wgf_triage.ledger.remeasure), advanced on every report
          of this build and this report itself: a finding a specialist fixed is verified or
          regressed here, by the producer that raised it, though no triage runs after the
@@ -43,7 +49,7 @@ from wgflib.yamllite import YamlError, load as load_yaml
 from . import scoring
 
 __all__ = ["QualityGateStep", "REQUIRED_INPUTS", "OPTIONAL_INPUTS", "FLOOR", "BENCHMARK",
-           "RUBRIC", "load_contract", "advance_ledger"]
+           "RUBRIC", "load_contract", "advance_ledger", "missing_gates", "lesson_candidates"]
 
 REQUIRED_INPUTS = ("playability-report", "production-quality-report", "visual-qa-report",
                    "content-sufficiency-report", "qa-report", "verification-report",
@@ -133,6 +139,47 @@ def _render(design):
         return None
 
 
+def missing_gates(context):
+    """[{"step", "stage", "type"}]: the gates the Factory's quality policy requires before this
+    step that the run's workflow does not have (an old run resumed under a newer Factory, or a
+    workflow from elsewhere) - the engine's `missing_gates`, [] when it says none."""
+    gates = getattr(context, "missing_gates", None)
+    if not isinstance(gates, (list, tuple)):
+        return []
+    out = []
+    for gate in gates:
+        if isinstance(gate, dict) and gate.get("step"):
+            out.append({"step": str(gate["step"]), "stage": gate.get("stage"),
+                        "type": gate.get("type")})
+        elif isinstance(gate, str):
+            out.append({"step": gate, "stage": None, "type": None})
+    return out
+
+
+def lesson_candidates(loaded):
+    """The lesson candidates specialist visits reported, deduplicated by summary: the newest
+    prototype-report's `specialist.lesson_candidates` and the triage-report's
+    `lesson_candidates` (every visit the triage collected). A candidate is surfaced, never
+    applied: a person promotes it to core/reference/lessons.yaml with its check and test."""
+    found, seen = [], set()
+    sources = []
+    prototype = loaded.get("prototype-report") or {}
+    specialist = prototype.get("specialist") if isinstance(prototype, dict) else None
+    if isinstance(specialist, dict):
+        sources += [dict(c, role=c.get("role") or specialist.get("role"))
+                    for c in specialist.get("lesson_candidates") or [] if isinstance(c, dict)]
+    triage = loaded.get("triage-report") or {}
+    if isinstance(triage, dict):
+        sources += [c for c in triage.get("lesson_candidates") or [] if isinstance(c, dict)]
+    for candidate in sources:
+        key = " ".join(str(candidate.get("summary") or "").lower().split())
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        found.append(candidate)
+    return found
+
+
 class QualityGateStep(WorkflowStep):
     type = "quality-gate"
     clock = staticmethod(_utc_now)
@@ -158,7 +205,8 @@ class QualityGateStep(WorkflowStep):
             return self._blocked(context, inputs, title_id, build, tier, None, None,
                                  f"the quality contract cannot be read ({exc}): nothing is "
                                  "held to it, and no bar is defaulted in code")
-        criteria, summary = scoring.derive(spec, design, render=_render(design),
+        render = _render(design)
+        criteria, summary = scoring.derive(spec, design, render=render,
                                            family_of_node=_family_of_node())
         entries = scoring.evidence(spec, loaded, refs, build)
         stale = [e for e in entries if e["status"] == "stale"]
@@ -173,10 +221,22 @@ class QualityGateStep(WorkflowStep):
         previous = self._previous(context)
         try:
             result = scoring.score(spec, criteria, loaded, refs, tier, build,
-                                   previous=previous, evidence_entries=entries)
+                                   previous=previous, evidence_entries=entries,
+                                   render=summary.get("render") or render)
         except scoring.ContractError as exc:
             return self._blocked(context, inputs, title_id, build, tier, record, summary,
                                  f"the quality contract is malformed ({exc})", entries=entries)
+        result["missing_gates"] = missing_gates(context)
+        result["lesson_candidates"] = lesson_candidates(loaded)
+        if result["missing_gates"]:
+            names = ", ".join(g["step"] for g in result["missing_gates"])
+            decision = result["release_decision"]
+            decision["reasons"].insert(0, (
+                f"this run's workflow lacks gate(s) the Factory now requires before this one: "
+                f"{names} - their evidence does not exist, so this build is never a release; "
+                f"start a new run, or a person decides G4 knowing they did not run"))
+            if decision["decision"] == "release":
+                decision["decision"] = "not-release"
         return self._finish(context, inputs, title_id, build, tier, record, summary, entries,
                             result, previous)
 
@@ -247,6 +307,14 @@ class QualityGateStep(WorkflowStep):
             "blocked_reason": blocked,
             "verdict": "BLOCKED" if blocked else (result or {}).get("verdict"),
         }
+        for key in ("scorecard", "missing_gates", "lesson_candidates"):
+            value = (result or {}).get(key)
+            if value:
+                report[key] = value
+        if blocked and "missing_gates" not in report:
+            gates = missing_gates(context)
+            if gates:
+                report["missing_gates"] = gates
         return provenance.seal(report) if seal else report
 
     def _blocked(self, context, inputs, title_id, build, tier, record, summary, reason,

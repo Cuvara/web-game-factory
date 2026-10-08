@@ -73,6 +73,33 @@ dimensions:
   platform:     {label: Platform readiness,     owner: engineering,  min_score: {release: 75}, preferred: 95, basis: proposed}
   store:        {label: Store,                  owner: release,      min_score: {release: 75}, preferred: 95, basis: proposed, phase: listing}
 
+# The scorecard (WS-9: version bump at integration): the same criteria, read per discipline
+# a person judges a game by - gameplay, game feel, level design, 2D art, 3D art, UI/UX, audio,
+# performance, accessibility and readability, platform compliance and publishing readiness -
+# each with its own score, and every hard blocker listed on its own. A line takes every
+# criterion of the floor `dimensions` it lists, except one that names another line in its own
+# `scorecard` field; `render` limits a line to games of that rendering dimension (art_2d and
+# art_3d read the same criteria, and a game is scored on the one its dimension is). Every
+# floor dimension feeds exactly one line per rendering dimension, so every criterion is on
+# the scorecard. A line is BELOW_FLOOR when a blocker criterion of it is below its minimum or
+# unmeasured - whatever its other criteria score - or, where it states a `min_score`, when its
+# mean is below it; no average carries a line past a blocker, and a line BELOW_FLOOR fails
+# the gate whatever every other line scores. A line no criterion measures is UNMEASURED:
+# reported as a gap, never a pass. The floor `dimensions` above still route the findings.
+scorecard:
+  gameplay:             {label: Gameplay,                        dimensions: [gameplay, progression]}
+  feel:                 {label: Game feel and polish,            dimensions: [polish]}
+  level_design:         {label: Level design and content,        dimensions: [content, variety]}
+  art_2d:               {label: 2D art,                          dimensions: [visual, consistency], render: 2d}
+  art_3d:               {label: 3D art,                          dimensions: [visual, consistency], render: 3d}
+  ui_ux:                {label: UI/UX,                           dimensions: [ui]}
+  audio:                {label: Audio,                           dimensions: [audio]}
+  performance:          {label: Performance and runtime,         dimensions: []}
+  technical:            {label: Technical integrity,             dimensions: [technical]}
+  accessibility:        {label: Accessibility and readability,   dimensions: []}
+  platform_compliance:  {label: Platform compliance,             dimensions: [platform]}
+  publishing_readiness: {label: Publishing readiness,            dimensions: [store]}
+
 # Which report must describe which commit of the build. `development` is the commit develop
 # made (the prototype-report's, the sdk-report's base): the gates that play and judge the
 # build before sdk commits on top of it name it. `shipped` is the verified commit release
@@ -119,6 +146,7 @@ universal:
     basis: measured-2
   - id: floor.controls
     dimension: gameplay
+    scorecard: feel
     metric: share of viewports on which every action is acknowledged and the opening grace holds
     evaluate: {kind: checks, report: playability-report, checks: [act.acknowledged, idle.grace], projects: [desktop, mobile]}
     minimum: 1.0
@@ -299,6 +327,7 @@ universal:
     basis: measured-2
   - id: floor.stable_runtime
     dimension: technical
+    scorecard: performance
     metric: share of the runtime checks that pass - no page error while played, the game boots
     evaluate: {kind: checks, report: playability-report, checks: [page.errors], required_only: false}
     minimum: 1.0
@@ -333,6 +362,7 @@ universal:
     basis: measured-2
   - id: floor.performance
     dimension: technical
+    scorecard: performance
     metric: share of the measured device classes within the performance budget
     evaluate: {kind: all, report: qa-report, field: perf_results, key: within_budget, equals: true}
     minimum: 1.0
@@ -607,6 +637,7 @@ genres:
     criteria:
       - id: genre.feedback
         dimension: polish
+        scorecard: feel
         metric: share of viewports on which every action is visibly acknowledged
         evaluate: {kind: checks, report: playability-report, checks: [act.acknowledged], projects: [desktop, mobile]}
         minimum: 1.0
@@ -619,6 +650,7 @@ genres:
         basis: measured-2
       - id: genre.responsiveness
         dimension: gameplay
+        scorecard: feel
         metric: share of viewports on which play starts at once and the opening grace holds
         evaluate: {kind: checks, report: playability-report, checks: [start.playable, idle.grace], projects: [desktop, mobile]}
         minimum: 1.0
@@ -685,6 +717,7 @@ genres:
     criteria:
       - id: genre.movement
         dimension: gameplay
+        scorecard: feel
         metric: share of viewports on which every movement input is acknowledged and the opening grace holds
         evaluate: {kind: checks, report: playability-report, checks: [act.acknowledged, idle.grace], projects: [desktop, mobile]}
         minimum: 1.0
@@ -712,6 +745,7 @@ genres:
     criteria:
       - id: genre.projectiles_readable
         dimension: visual
+        scorecard: accessibility
         metric: share of viewports on which projectiles read at their size
         evaluate: {kind: checks, report: playability-report, checks: [entities.projectile], required_only: false}
         minimum: 1.0
@@ -724,6 +758,7 @@ genres:
         basis: proposed
       - id: genre.feedback
         dimension: polish
+        scorecard: feel
         metric: share of viewports on which every action is visibly acknowledged
         evaluate: {kind: checks, report: playability-report, checks: [act.acknowledged], projects: [desktop, mobile]}
         minimum: 1.0
@@ -763,6 +798,7 @@ genres:
         basis: measured-2
       - id: genre.course_readable
         dimension: visual
+        scorecard: accessibility
         metric: the lowest of the readability scores (entities, composition)
         evaluate: {kind: scores, report: visual-qa-report, field: scores, aggregate: min, keys: [character_readability, composition]}
         minimum: {mvp: "visual-qa-rubric:pass_bar", release: "quality-benchmark:presentation.visual_qa.min_dimension"}
@@ -851,6 +887,7 @@ dimensions_contracts:
     criteria:
       - id: render.spatial_readability
         dimension: visual
+        scorecard: accessibility
         metric: the lowest of the spatial readability scores (entities, composition) under the chase camera
         evaluate: {kind: scores, report: visual-qa-report, field: scores, aggregate: min, keys: [character_readability, composition]}
         minimum: {mvp: "visual-qa-rubric:pass_bar", release: "quality-benchmark:presentation.visual_qa.min_dimension"}

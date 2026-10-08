@@ -18,6 +18,8 @@ You are the **qa** role as defined by Web Game Factory core.
 7. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/playtesting.md`
 8. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/web-performance.md`
 9. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/accessibility.md`
+10. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/lessons.yaml`
+11. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/check-tiers.yaml`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

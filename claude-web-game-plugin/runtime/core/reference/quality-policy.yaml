@@ -49,6 +49,21 @@
 #      platforms. At any other tier it is reported as SKIPPED and does not hold the build up.
 #      A real failure is never turned into a skip.
 #
+#   6. Independent review (WS-9). The implementer of a change is never its only judge: every
+#      path a shipped workflow can take from a step of an `independent_review.implementers`
+#      type to a step at a stage under `independent_review.before` passes a step of every
+#      judge type listed for it - steps that do not share the implementer's brief and do not
+#      write its checkout - and then a person at G4. Checked on the workflow's graph by
+#      check-integrity (scripts/wgf_quality/registry.py independent_review_problems), so a
+#      workflow edit that lets a change reach G4 or release without them fails.
+#
+#   7. No bypass for a small game (WS-9). No tier, profile or configuration removes a
+#      required step: the tier changes a run's class and its bars, never the steps it runs
+#      (rule 2 makes a run that lacks one development). A run whose workflow predates a
+#      required step (an old run resumed) is named at G4 and in the quality-report as
+#      missing that gate (scripts/wgflib/workflow/quality.py missing_gates), recorded
+#      development, and never released.
+#
 # `pending` names the required steps that no workflow contains yet. They are enforced by
 # rule 1 from the first definition that adds them, with nothing else to change, and until
 # then `wgf status` lists them as not yet enforced.
@@ -167,6 +182,15 @@ preflight:
       Set factory.design.author to agent (as the autonomous profile does,
       workspace/config/profiles/autonomous.yaml), or set factory.strategy.quality_tier to mvp
       - which makes the run development, never a release
+
+# Rule 6. Keyed by the implementing step's type; the judges are step types too. `before`:
+# the stages no implementer's change may reach unjudged.
+# WS-9: version bump at integration.
+independent_review:
+  before: [title:prototype-review, release:draft]
+  implementers:
+    develop: [playability, production-quality, visual-qa, content-sufficiency, review, verify, quality-gate]
+    sdk: [review, verify, quality-gate]
 
 # A workflow the Factory does not ship (`--workflow PATH`, or factory.workflow.default naming
 # a file outside core/workflows/) may weaken any step through its `with:` blocks, so a run of

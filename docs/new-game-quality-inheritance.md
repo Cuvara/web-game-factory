@@ -12,7 +12,7 @@ The rules are data: [core/reference/quality-policy.yaml](../core/reference/quali
 `engine.py`); the test file is
 [scripts/tests/test_quality_inheritance.py](../scripts/tests/test_quality_inheritance.py).
 
-## The policy in six sentences
+## The policy in eight sentences
 
 1. **Snapshot.** A run records, when it starts, its quality tier (`factory.strategy.quality_tier`,
    default `release`), its class (`release` or `development`) and why, and the policy and
@@ -51,6 +51,26 @@ The rules are data: [core/reference/quality-policy.yaml](../core/reference/quali
    `dev_plan.develop_budget.shortfall`, WS-3) is not auto-approved, not approved on a
    timeout, and not answered by automation: it waits for a person, as G4 does, and `wgf
    status` says why (`Held:`; `pending.held_for_person`, with no timeout eligibility).
+
+7. **No bypass for a small game; missing gates are named** (WS-9). No tier, profile or
+   configuration removes a required step: the tier changes a run's class and its bars,
+   never the steps it runs, and no step of new-game carries a condition that could skip it.
+   Rule 2 holds only the required steps a workflow *contains*, so a run whose workflow lacks
+   one (started under an older definition, or a workflow from elsewhere) used to pass that
+   gate without a word. Now `quality.missing_gates` names every required step the run's
+   workflow lacks that the Factory's shipped definition places before the step about to run;
+   the engine hands it to the step (`context.missing_gates`) at every stage the floor holds
+   and to the quality gate. A checkpoint puts `MISSING GATES: ...` in front of its prompt,
+   never decides automatically (no auto-approval, no timeout approval, no automation
+   decision), and records them in the decision's note; the quality-report names them and is
+   never a release; the run is recorded development (`QUALITY_DOWNGRADED`, "lacks required
+   step(s)"). A resume reads the workflow by id - the current definition - so a resumed run
+   meets the gate and the floor (rule 2) holds G4 until it passed.
+8. **Independent review** (WS-9). Every path an implementer's change (develop, sdk) can take
+   to G4 or release passes every judge `independent_review` lists for it; check-integrity
+   holds it on the workflow's graph. See docs/specialist-routing.md "Independent review".
+
+Tests: `scripts/tests/test_no_bypass.py`.
 
 `content-sufficiency` (WS-4) and `quality-gate` (WS-7, workflow 10,
 [quality-gate-module.md](quality-gate-module.md)) are in the workflow and enforced like every

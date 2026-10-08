@@ -90,6 +90,13 @@
       },
       "additionalProperties": false
     },
+    "lesson_candidates": {
+      "type": "array",
+      "description": "Added by WS-9. The lesson candidates of the specialist visits this triage read (prototype-report specialist.lesson_candidates), carried forward from the run's previous triage-report: surfaced to the quality gate and the person deciding G4, never applied by themselves.",
+      "items": {
+        "$ref": "./shared/quality-finding.schema.json#/$defs/lesson_candidate"
+      }
+    },
     "verdict": {
       "enum": ["routed", "clear", "held"],
       "description": "routed: `selected` names the route this visit takes. clear: nothing failed (the first pass). held: findings exist and no route of this loop can take any of them - the run stops for a person."

@@ -419,7 +419,11 @@ seen by the engine — validate what you write there with ajv.
 - `docs/specialist-routing.md` — quality findings (`shared/quality-finding.schema.json`)
   routed to the specialist that owns each dimension (`core/reference/specialist-routing.yaml`,
   `core/roles/specialists.md`): the `triage` step, specialist develop visits, their loop
-  budgets and ledger, and G4's `iterate --findings`
+  budgets and ledger, and G4's `iterate --findings`; and (WS-9) independent review, the
+  check tiers (`core/reference/check-tiers.yaml`: Hard Gate / Quality Gate / Advisory for
+  every declared check), the lessons registry (`core/reference/lessons.yaml`, each lesson's
+  check and test or GAP; game evidence in `workspace/lessons/`), `guarded_by` and the
+  specialists' lesson candidates - all held by check-integrity
 - `docs/plugin-runtime.md` — the installed plugin is the Factory runtime and the working
   directory the project: what the plugin ships, how `ROOT` and `PROJECT` resolve, `wgf where`
 - `docs/autonomous-runs.md` — why the shipped config is supervised, the opt-in autonomous

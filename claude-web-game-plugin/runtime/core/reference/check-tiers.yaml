@@ -1,0 +1,181 @@
+# Check tiers: what each check the Factory declares does to a build, in one vocabulary.
+#
+# Every validator states its own severities - the quality floor `blocker | warning` per tier,
+# content-sufficiency `blocker | major`, the design rules `blocking | warning`, the visual
+# judge's blockers and pass bars, the review's gate-gaming flags. Read one at a time, nothing
+# said which of them a build must pass, which hold it to a calibrated bar and which only
+# inform. This file classifies every one of them into three tiers, stated at the tier a build
+# ships at (`applies_at`; a tier-mvp run is a development build, core/reference/
+# quality-policy.yaml, and is never released):
+#
+#   hard      Hard Gate. A pass/fail condition: any failure holds the build. No score, average
+#             or other dimension lifts it, and it is never recalibrated to let a build pass.
+#   quality   Quality Gate. A measured score or count held to a calibrated bar - a dimension's
+#             `min_score`, a benchmark bar, a rubric pass bar. Below the bar it holds the
+#             build like a hard gate; the bar moves only by a new version of the file that
+#             states it (docs/factory-quality-benchmark.md), never for one build.
+#   advisory  Advisory. Reported, and at most routed as a finding (a warning counts toward its
+#             dimension's score, which that dimension's quality gate holds); never holds a
+#             build on its own.
+#
+# A check's id here is `<source>:<id>` (`quality-floor:floor.core_loop`,
+# `playability:depth.ramp`): the source names the file or producer that defines it. Sources
+# are enumerated two ways:
+#
+#   derived   the source file is read (`file`, `enumerate`) and each entry's tier follows from
+#             a field it already carries (`tier.by` through `tier.map`), or is one constant
+#             (`tier.all`), or follows the named `tier.rule`. Nothing is restated: a new entry
+#             in the file is classified by the same rule, and an entry whose field the map
+#             does not cover fails check-integrity.
+#   explicit  `checks` lists each id and its tier. Used for a producer whose checks are
+#             defined in code (`defined_in`: each id must appear there as a string literal)
+#             and for a file whose own fields do not say which tier a check is. An entry the
+#             source file has and this table does not - or the reverse - fails integrity.
+#
+# Integrity (scripts/check-integrity.py, scripts/wgf_quality/registry.py) also holds that
+# every check a quality-floor criterion reads from a producer is listed under that producer,
+# and that a producer check a release-tier blocker reads is `hard` or `quality`, never
+# advisory. core/reference/lessons.yaml names checks by these ids.
+#
+# Read by: scripts/check-integrity.py, scripts/wgf_quality/registry.py (the lessons registry
+# and triage's `guarded_by`). Add a check to a source file and it is classified here, or the
+# integrity check fails.
+
+version: 1.0.0  # WS-9: version bump at integration
+
+applies_at: release
+
+tiers:
+  hard:
+    label: Hard Gate
+    blocks: true
+    meaning: A pass/fail condition. Any failure holds the build; nothing averages past it.
+  quality:
+    label: Quality Gate
+    blocks: true
+    meaning: A measured score or count held to a calibrated bar; below the bar it holds the build, and the bar moves only by a new version.
+  advisory:
+    label: Advisory
+    blocks: false
+    meaning: Reported and routed as a finding at most; never holds a build on its own.
+
+sources:
+  # ---------------------------------------------------------------- derived from data
+  quality-floor:
+    file: core/reference/quality-floor.yaml
+    producer: quality-report
+    enumerate: floor-criteria        # universal + genres.*.criteria + dimensions_contracts.*.criteria
+    # A release blocker is hard when it is pass/fail (a check share, a verdict, a count of
+    # zero) and quality when it reads a calibrated bar (a `quality-benchmark:` or
+    # `visual-qa-rubric:` reference, or a rubric score); a release warning is advisory; a
+    # criterion with no release severity does not apply at the release tier: advisory.
+    tier: {rule: floor-criterion}
+  quality-dimension:
+    file: core/reference/quality-floor.yaml
+    producer: quality-report
+    enumerate: {keys: dimensions}
+    tier: {all: quality}
+  visual-qa-blocker:
+    file: core/reference/visual-qa-rubric.yaml
+    producer: visual-qa-report
+    enumerate: {list: blockers}
+    tier: {all: hard}
+  visual-qa-score:
+    file: core/reference/visual-qa-rubric.yaml
+    producer: visual-qa-report
+    enumerate: {keys: dimensions}
+    tier: {all: quality}
+  gate-gaming:
+    file: core/reference/gate-gaming.yaml
+    producer: review-report
+    enumerate: {keys: patterns}
+    # A flag is a review blocker routed back to the visit's owner (docs/review-module.md).
+    tier: {all: hard}
+  design-consistency:
+    file: core/reference/design-consistency-rules.yaml
+    producer: game-design
+    enumerate: {list: rules}
+    tier: {by: severity, map: {blocking: hard, warning: advisory}}
+
+  # ---------------------------------------------------------------- explicit tables
+  content-sufficiency:
+    file: core/reference/content-sufficiency.yaml
+    producer: content-sufficiency-report
+    enumerate: {keys: checks}
+    # Required at the release tier, every one fails the step's verdict. Pass/fail ones are
+    # hard; one that counts the build against a tier's bar (the benchmark) is quality.
+    checks:
+      content.contract: hard
+      content.data_present: hard
+      content.units_shipped: quality
+      content.units_reachable: hard
+      content.entity_kinds: quality
+      content.elements: quality
+      content.combinations: quality
+      content.structure: quality
+      content.groups: quality
+      content.difficulty: quality
+      content.objectives: quality
+      content.climax: quality
+      content.progression: hard
+      content.playtime: quality
+      content.drift: hard
+      content.regression: hard
+  playability:
+    producer: playability-report
+    defined_in: scripts/wgf_playability
+    checks:
+      probe.present: hard
+      start.playable: hard
+      start.objective: hard
+      win.reachable: hard
+      lose.reachable: hard
+      restart.works: hard
+      act.acknowledged: hard
+      idle.grace: hard
+      page.errors: hard
+      progression.persists: hard
+      content.variety: quality
+      content.win_lose_per_unit: hard
+      content.units_reachable: hard
+      difficulty.axes_progress: quality
+      frames.readable: quality
+      entities.projectile: quality
+      depth.ramp: quality
+      depth.session_length: quality
+      depth.stall: hard
+  production-quality:
+    producer: production-quality-report
+    defined_in: scripts/wgf_production
+    checks:
+      assets.present: hard
+      assets.runtime: hard
+      assets.loaded: hard
+      assets.used: hard
+      scene.no_primitives: hard
+      scene.contrast: quality
+      audio.plays: hard
+      ui.text: quality
+      ui.targets: quality
+      ui.overlap: hard
+      ui.styled: hard
+      ui.states: hard
+  model-review:
+    producer: asset-manifest
+    defined_in: scripts/wgf_assets
+    # The deterministic model checks (core/reference/asset-quality.yaml `models`): a spec
+    # that fails one is not shipped as the model.
+    checks:
+      model.valid: hard
+      model.parts: hard
+      model.primitive: hard
+      model.bounds: hard
+      model.normals: hard
+      model.triangles: quality
+      model.palette: quality
+      model.contrast: quality
+      model.silhouette: quality
+
+# `<source>:<id>: <tier>` - a classification the source's rule gets wrong, stated with why.
+# Empty as shipped.
+overrides: {}

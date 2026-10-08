@@ -187,6 +187,7 @@ class PlatformCheckTest(unittest.TestCase):
                           "check_plugin_runtime", "check_template_pin"):
                 setattr(self.ci, check, mock.Mock(return_value=set()))
             self.ci.check_template_pin.return_value = None
+            self.ci.check_regression_registry = mock.Mock(return_value=({}, []))
             write(os.path.join("core", "lifecycle", "gates.yaml"), "")
             status = self.ci.main()
         self.assertEqual(status, 0)

@@ -43,6 +43,12 @@ from wgflib import jsonschema_lite as js, provenance  # noqa: E402
 from wgflib.workflow.contracts import load_registry  # noqa: E402
 from wgflib.yamllite import load as load_yaml  # noqa: E402
 
+# The shipped lessons.yaml version, read rather than restated: a patch release of the file
+# (tests added, no rule changed) must not break these assertions.
+from wgflib.yamllite import load_file as _load_file  # noqa: E402
+LESSONS_VERSION = _load_file(os.path.join(ROOT, "core", "reference", "lessons.yaml"))["version"]
+
+
 DATA = registry.load(ROOT)
 CHECKS, _ = registry.classify(DATA["tiers"], ROOT)
 TIERS = DATA["tiers"]
@@ -475,7 +481,7 @@ class Cli(unittest.TestCase):
                                   "2d", "--platform", "yandex", "--tier", "release",
                                   "--json").stdout)
         self.assertEqual(out["counts"]["blocking"], 5)
-        self.assertEqual(out["versions"]["lessons"]["version"], "2.0.0")
+        self.assertEqual(out["versions"]["lessons"]["version"], LESSONS_VERSION)
         text = self.wgf("knowledge", "resolve", "--render", "2d").stdout
         self.assertIn("excluded     L15: render 2d is not in its scope (3d)", text)
 
@@ -513,7 +519,7 @@ class Cli(unittest.TestCase):
         self.assertEqual(out["facets"]["tier"], "release")
         self.assertEqual(out["missing_validators"], [])
         # resolved from the knowledge the run pinned when it started
-        self.assertEqual(out["versions"]["lessons"]["version"], "2.0.0")
+        self.assertEqual(out["versions"]["lessons"]["version"], LESSONS_VERSION)
 
     def test_the_python_entry_point_matches(self):
         done = subprocess.run([sys.executable, os.path.join(SCRIPTS, "wgf-knowledge.py"),

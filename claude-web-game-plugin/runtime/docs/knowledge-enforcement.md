@@ -377,7 +377,7 @@ nothing.
 A `new-game` run is held to the knowledge it started under (quality-policy 1.4.0 rule 8,
 workflow 17, gates 1.7.0).
 
-**At the start.** The run records `params.quality.knowledge` - `{"lessons": "lessons@2.0.0",
+**At the start.** The run records `params.quality.knowledge` - `{"lessons": "lessons@2.0.1",
 "check-tiers": "check-tiers@1.1.0"}`, the version of every file under the policy's
 `knowledge` - and `params.quality.factory`, the Factory's `VERSION` and git commit (null
 in an installed runtime). Both are corroborated against `WORKFLOW_STARTED` like the rest of

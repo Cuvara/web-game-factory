@@ -71,7 +71,7 @@ The rules are data: [core/reference/quality-policy.yaml](../core/reference/quali
    holds it on the workflow's graph. See docs/specialist-routing.md "Independent review".
 9. **Knowledge** (K2, quality-policy 1.4.0 rule 8, workflow 17, gates 1.7.0). A run records,
    when it starts, the version of each file under the policy's `knowledge`
-   (`params.quality.knowledge`: `{"lessons": "lessons@2.0.0", "check-tiers":
+   (`params.quality.knowledge`: `{"lessons": "lessons@2.0.1", "check-tiers":
    "check-tiers@1.1.0"}`) and the Factory's version and commit (`params.quality.factory`),
    corroborated like the rest of the snapshot and reported by `wgf status`; runs are
    comparable across Factory generations by them. A knowledge file that is missing,

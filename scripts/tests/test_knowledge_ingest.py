@@ -486,6 +486,17 @@ class Promote(Base):
             self.draft(self.record(proposed_check="nothing:holds-it", proposed_level="required"),
                        category="ui_ux")
 
+    def test_an_installed_runtime_refuses_promote_and_says_why(self):
+        from unittest import mock
+        from wgflib import paths
+        run = kr.add_run(self.store, "run-rt")
+        kr.add_report(self.store, run, "quality-report", kr.quality_report([kr.candidate()]))
+        self.ingest("run-rt")
+        with mock.patch.object(paths, "INSTALLED", True):
+            code, _, err = run_cli("promote", "C-1", "--candidates", self.candidates)
+        self.assertEqual(code, 2)
+        self.assertIn("web-game-factory checkout", err)
+
     def test_promote_never_writes_core(self):
         before = {p: open(os.path.join(ROOT, p), "rb").read()
                   for p in (promote.LESSONS_PATH, promote.EVIDENCE_PATH)}

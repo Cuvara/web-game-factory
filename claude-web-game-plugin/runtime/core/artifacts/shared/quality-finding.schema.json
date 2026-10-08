@@ -174,8 +174,10 @@
         "proposed_check": { "type": ["string", "null"] },
         "proposed_level": { "enum": ["blocking", "required", "recommended", "experimental", null] },
         "proposed_scope": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/lesson_candidate/properties/proposed_scope" }] },
-        "basis": { "enum": ["measured", "subjective"], "description": "measured: at least one source is a measured finding (a gate's check failed on a build); subjective: only judgments (a reviewer's comment, a person's or agent's opinion). A subjective candidate never becomes blocking or required by itself." },
+        "basis": { "enum": ["measured", "subjective"], "description": "Derived from the sources, never trusted as written. measured: at least one source from a measuring report resolved its finding to one the run's quality-report or triage-report recorded on the same build commit (a gate's check failed on that build); subjective: only judgments (a reviewer's comment, a person's or agent's opinion). A subjective candidate never becomes blocking or required by itself." },
         "duplicate_of": { "type": ["string", "null"], "pattern": "^[A-Z][A-Za-z0-9-]*$", "description": "A lesson that already names the proposed check but holds nothing yet (a candidate or gap lesson)." },
+        "related_lessons": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9-]*$" }, "description": "Active lessons that already hold the proposed check while this candidate states another problem (not a regression of them): a person decides whether it strengthens one of them or is a lesson of its own." },
+        "other_root_causes": { "type": "array", "items": { "type": "string" }, "description": "Root causes other sources of the same candidate (same summary and check) gave, kept beside `root_cause` rather than dropped." },
         "rejected": {
           "type": ["object", "null"],
           "properties": { "by": { "type": "string" }, "at": { "type": "string" }, "reason": { "type": "string" } },

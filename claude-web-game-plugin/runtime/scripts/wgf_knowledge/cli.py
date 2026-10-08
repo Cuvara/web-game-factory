@@ -571,7 +571,19 @@ def cmd_promote(args):
     record = next((c for c in store["candidates"] if c.get("id") == args.candidate), None)
     if record is None:
         raise Unusable(f"no candidate {args.candidate} in {path}")
+    problems = ingest.store_problems(store)
+    if problems:
+        print(f"refused  {path} is not a valid candidate store (fix it before promoting): "
+              + "; ".join(problems[:5]))
+        return EXIT_PROBLEMS
+    from wgflib import paths
     root = _root()
+    if paths.INSTALLED or not os.path.isfile(
+            os.path.join(root, *promote.EVIDENCE_PATH.split("/"))):
+        raise Unusable("promote drafts a patch against the Factory repository itself "
+                       f"({promote.LESSONS_PATH}, {promote.EVIDENCE_PATH}, scripts/tests/): run "
+                       "it from a web-game-factory checkout - an installed plugin runtime does "
+                       "not ship them")
     data, checks = _load(root)
     try:
         with open(os.path.join(root, *promote.LESSONS_PATH.split("/")),

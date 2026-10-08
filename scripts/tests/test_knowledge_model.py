@@ -41,6 +41,12 @@ from wgf_quality import registry  # noqa: E402
 from wgflib import jsonschema_lite as js  # noqa: E402
 from wgflib.workflow.contracts import load_registry  # noqa: E402
 
+# The shipped lessons.yaml version, read rather than restated: a patch release of the file
+# (tests added, no rule changed) must not break these assertions.
+from wgflib.yamllite import load_file as _load_file  # noqa: E402
+LESSONS_VERSION = _load_file(os.path.join(ROOT, "core", "reference", "lessons.yaml"))["version"]
+
+
 DATA = registry.load(ROOT)
 CHECKS, _ = registry.classify(DATA["tiers"], ROOT)
 LESSONS = DATA["lessons"]
@@ -576,7 +582,7 @@ class Exceptions(unittest.TestCase):
 class Versions(unittest.TestCase):
     def test_the_knowledge_versions_a_run_records(self):
         self.assertEqual(versions.knowledge(root=ROOT),
-                         {"lessons": "lessons@2.0.0", "check-tiers": "check-tiers@1.2.0"})
+                         {"lessons": f"lessons@{LESSONS_VERSION}", "check-tiers": "check-tiers@1.2.0"})
 
     def test_collect_records_every_version_and_the_knowledge_digests(self):
         import hashlib
@@ -587,7 +593,7 @@ class Versions(unittest.TestCase):
             with open(os.path.join(ROOT, *relpath.split("/")), "rb") as handle:
                 digest = "sha256:" + hashlib.sha256(handle.read()).hexdigest()
             self.assertEqual(found[key]["sha256"], digest)
-        self.assertEqual(found["lessons"]["version"], "2.0.0")
+        self.assertEqual(found["lessons"]["version"], LESSONS_VERSION)
         self.assertEqual(found["check_tiers"]["version"], "1.2.0")
         with open(os.path.join(ROOT, "VERSION"), encoding="utf-8") as handle:
             self.assertEqual(found["factory"]["version"], handle.read().strip())

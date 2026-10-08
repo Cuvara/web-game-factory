@@ -79,14 +79,24 @@ def _module(root, relpath):
 
 
 def _cases(module, name):
-    """The TestCase instances that define `name` in the module (every class that does)."""
+    """The TestCase instances unittest discovery would run for `name` in the module: every
+    TestCase class of the module that has it - defined there or inherited - and not switched
+    off (a subclass that sets an inherited test to None does not run it)."""
     found = []
     for value in vars(module).values():
         if isinstance(value, type) and issubclass(value, unittest.TestCase) \
-                and value.__module__ == module.__name__ and callable(vars(value).get(name)):
-            # A subclass that sets an inherited test to None switches it off there.
+                and value.__module__ == module.__name__ and callable(getattr(value, name, None)):
             found.append(value(name))
     return found
+
+
+def _switched_off(module, name):
+    """True when a TestCase class of the module has `name` set to something not callable
+    (None): the test is defined, and disabled where discovery would run it."""
+    return any(isinstance(value, type) and issubclass(value, unittest.TestCase)
+               and value.__module__ == module.__name__ and hasattr(value, name)
+               and not callable(getattr(value, name, None))
+               for value in vars(module).values())
 
 
 def run_ref(ref, root):
@@ -104,6 +114,11 @@ def run_ref(ref, root):
         return {"ref": ref, "status": FAIL, "detail": f"{relpath} does not import: {exc}"}
     cases = _cases(module, name)
     if not cases:
+        if _switched_off(module, name):
+            # The test exists, and every class that would run it switched it off: a lesson
+            # whose proof never runs is not held.
+            return {"ref": ref, "status": FAIL,
+                    "detail": f"{name} is switched off in every class that would run it"}
         return {"ref": ref, "status": MISSING, "detail": f"{relpath} has no test {name}"}
     result = unittest.TestResult()
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -121,9 +136,14 @@ def run_ref(ref, root):
     return {"ref": ref, "status": PASS, "detail": ""}
 
 
-def _verdict(lesson, results):
+def _verdict(lesson, results, kinds=model.TEST_KINDS):
     lifecycle = lesson.get("lifecycle")
+    every_kind = tuple(kinds) == tuple(model.TEST_KINDS)
     if not results:
+        named = any(model.tests_of(lesson).values())
+        if not every_kind and named:
+            # Asked for one kind the lesson does not name: nothing to run, nothing failed.
+            return NO_TESTS, f"names no {', '.join(kinds)} test"
         if lifecycle in HOLDING and not model.is_process(lesson):
             return FAIL, f"an {lifecycle} lesson names the tests that prove its check"
         return NO_TESTS, "names no test"
@@ -132,7 +152,7 @@ def _verdict(lesson, results):
         if status in statuses:
             bad = [r for r in results if r["status"] == status]
             return status, "; ".join(f"{r['ref']}: {r['detail']}" for r in bad[:3])
-    if lifecycle == "validated":
+    if lifecycle == "validated" and every_kind:
         kinds = {r["kind"] for r in results}
         lacking = [k for k in model.TEST_KINDS if k not in kinds]
         if lacking:
@@ -167,7 +187,7 @@ def run(lessons, root, ids=None, kinds=model.TEST_KINDS, runner=run_ref):
                 if ref not in cache:
                     cache[ref] = runner(ref, root)
                 results.append(dict(cache[ref], kind=kind, case=CASES[kind]))
-        verdict, why = _verdict(lesson, results)
+        verdict, why = _verdict(lesson, results, kinds)
         rows.append({"id": lesson["id"], "lifecycle": lesson.get("lifecycle"),
                      "status": lesson.get("status"), "verdict": verdict, "why": why,
                      "tests": results})

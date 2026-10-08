@@ -58,6 +58,12 @@ from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
 from wgflib.workflow.model import StepOutcome  # noqa: E402
 from wgflib.yamllite import load_file  # noqa: E402
 
+# The shipped lessons.yaml version, read rather than restated: a patch release of the file
+# (tests added, no rule changed) must not break these assertions.
+from wgflib.yamllite import load_file as _load_file  # noqa: E402
+LESSONS_VERSION = _load_file(os.path.join(ROOT, "core", "reference", "lessons.yaml"))["version"]
+
+
 DATA = registry.load(ROOT)
 CHECKS, _ = registry.classify(DATA["tiers"], ROOT)
 TIERS = DATA["tiers"]
@@ -421,7 +427,7 @@ class Gate(unittest.TestCase):
                 self.assertIn(entry["status"], ("SATISFIED", "NOT_APPLICABLE"), entry)
         self.assertGreater(section["counts"]["by_level"]["blocking"]["satisfied"], 0)
         self.assertGreater(section["counts"]["by_level"]["required"]["satisfied"], 0)
-        self.assertEqual(section["versions"]["lessons"]["version"], "2.0.0")
+        self.assertEqual(section["versions"]["lessons"]["version"], LESSONS_VERSION)
         self.assertTrue(section["regression"]["suite"])
 
     def test_every_satisfied_check_cites_its_evidence_by_hash_and_commit(self):
@@ -588,7 +594,7 @@ class Gate(unittest.TestCase):
         self.assertIn("knowledge compliance: RELEASE_BLOCKED (enforcing, holds the release)",
                       lines)
         self.assertIn("! L2 (required) UNMEASURED: playability:depth.ramp", lines)
-        self.assertIn("lessons 2.0.0", lines)
+        self.assertIn(f"lessons {LESSONS_VERSION}", lines)
 
 
 # ----------------------------------------------------------------------------- firewall
@@ -914,7 +920,7 @@ class Rendering(unittest.TestCase):
                         "## Exceptions", "## Not applicable to this run", "## Regression",
                         "## Lessons applied", "## New lesson candidates"):
             self.assertIn(heading, md)
-        self.assertIn("lessons 2.0.0", md)
+        self.assertIn(f"lessons {LESSONS_VERSION}", md)
         self.assertIn("L26: **honoured**", md)
         self.assertIn("time-out", md)
         self.assertIn("| L2 | required |", md)

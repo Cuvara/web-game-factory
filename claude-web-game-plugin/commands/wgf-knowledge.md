@@ -4,7 +4,7 @@ description: The Factory's knowledge and its learning loop through wgf knowledge
 
 # /wgf-knowledge
 
-**Transition** `read-only (ingest writes workspace/lessons/candidates.yaml)`
+**Not a transition** - read-only (ingest writes workspace/lessons/candidates.yaml)
 **Role** `-`
 
 
@@ -12,16 +12,11 @@ The Factory's knowledge and its learning loop through wgf knowledge - rules, a r
 
 ## Procedure
 
-1. Read `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/` for the machine that owns this transition, and the
-   `procedure` file named on the source state.
-2. Read the `x-wgf` block of every artifact schema this transition produces or consumes.
-3. Check the transition's guards before acting. A guard that cannot be evaluated is a
-   blocker to report, not one to assume.
-4. Run the `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" knowledge` subcommand the user asks for and report what it prints; see *The learning loop* below.
-5. Write nothing yourself: only `ingest` and `reject` write, to the project's `workspace/lessons/candidates.yaml`; `promote` prints a patch for a person's pull request.
+1. Read `${CLAUDE_PLUGIN_ROOT}/runtime/docs/knowledge-enforcement.md` and `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/lessons.yaml`.
+2. Run the `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" knowledge` subcommand the user asks for and report what it prints; see *The learning loop* below.
+3. Write nothing yourself: only `ingest` and `reject` write, to the project's `workspace/lessons/candidates.yaml`; `promote` prints a patch for a person's pull request.
 
-Commands map to transitions rather than to stages, so this file stays correct as long as
-the machine does.
+This command moves no lifecycle state, answers no gate and grants no exception.
 
 ## The learning loop
 
@@ -44,7 +39,11 @@ place.
 - **Promotion is a person's pull request.** `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" knowledge promote C-<n> [--out FILE]`
   prints a patch - the lessons.yaml entry, the evidence.yaml entry, failing test stubs - and
   writes nothing to `${CLAUDE_PLUGIN_ROOT}/runtime/core/`. A candidate whose evidence is only subjective (a review's
-  comment) is never drafted blocking or required. Never apply the patch to `${CLAUDE_PLUGIN_ROOT}/runtime/core/` yourself.
+  comment, or a finding no gate of that run recorded on that build) is never drafted
+  blocking or required. Never apply the patch to `${CLAUDE_PLUGIN_ROOT}/runtime/core/` yourself. Promote drafts against
+  the Factory repository's own `lessons.yaml`, `evidence.yaml` and tests, so it runs only
+  from a web-game-factory checkout; from an installed plugin it refuses and says so, while
+  `ingest`, `candidates` and `reject` work in the project.
 - **The firewall.** `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" knowledge firewall [ID ...] [--run <run-id>]` runs every lesson's
   catches (the check fails the defect), passes (it passes the fix) and generalizes tests; a
   missing or skipped test is never a pass. It needs a Factory checkout: an installed runtime

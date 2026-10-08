@@ -235,7 +235,14 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
           lesson_id=None, level=None, check=None, category=None, title=None, scope=None,
           version=None, today=None, promoted=None):
     """The Draft of one stored candidate (a candidate_record), or PromoteRefused."""
+    from . import ingest
     cid = candidate.get("id")
+    # The record is read as stored, so it is checked as stored: a hand edit that breaks the
+    # record's shape is not drafted.
+    shape = ingest.record_problems(candidate)
+    if shape:
+        raise PromoteRefused(f"{cid}: the stored candidate is not a candidate record - "
+                             + "; ".join(shape[:3]))
     if candidate.get("state") == "rejected":
         raise PromoteRefused(f"{cid} was rejected by a person "
                              f"({(candidate.get('rejected') or {}).get('reason')})")
@@ -250,7 +257,8 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
     wanted = level or candidate.get("proposed_level")
     if wanted is not None and wanted not in model.LEVELS:
         raise PromoteRefused(f"level {wanted!r} is not one of {', '.join(model.LEVELS)}")
-    basis = candidate.get("basis")
+    # Derived from the sources, never the record's own `basis` (which a hand edit can set).
+    basis = ingest.basis_of(candidate)
     if wanted in STRONG and basis != "measured":
         raise PromoteRefused(
             f"{cid}: a {wanted} rule holds every build it applies to, and this candidate's "

@@ -56,7 +56,7 @@ restates none of it and never answers a gate.
 |---|---|---|---|
 | `/new-game` | `claude-web-game-plugin/commands/new-game.md` | `core/workflows/new-game.workflow.yaml` | covered |
 
-## Skills (29 of 29)
+## Skills (30 of 30)
 
 | Skill | File | Status |
 |---|---|---|
@@ -402,6 +402,12 @@ the learning-enforcement design), and the surfaces point agents and people at it
   reported as a lesson candidate (symptom, root cause, systemic or not), never as an edit to
   `lessons.yaml`.
 - The runtime ships `docs/knowledge-enforcement.md` (`scripts/build-plugin-runtime.py`).
+- `/wgf-knowledge` is not a transition, so it does not carry the transition procedure
+  (machine, schemas, guards): its own three steps read the knowledge documents, run the
+  subcommand and write nothing but the candidate store. `promote` and `firewall` need a
+  web-game-factory checkout (the Factory's own lessons, evidence and tests); from an
+  installed plugin they refuse and say so, while `ingest`, `candidates` and `reject` work
+  in the project.
 
 ## The portal publisher as built (binding manifest 1.11.0)
 

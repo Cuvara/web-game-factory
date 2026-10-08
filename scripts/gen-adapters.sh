@@ -169,7 +169,11 @@ place.
 - **Promotion is a person's pull request.** `bin/wgf knowledge promote C-<n> [--out FILE]`
   prints a patch - the lessons.yaml entry, the evidence.yaml entry, failing test stubs - and
   writes nothing to `core/`. A candidate whose evidence is only subjective (a review's
-  comment) is never drafted blocking or required. Never apply the patch to `core/` yourself.
+  comment, or a finding no gate of that run recorded on that build) is never drafted
+  blocking or required. Never apply the patch to `core/` yourself. Promote drafts against
+  the Factory repository's own `lessons.yaml`, `evidence.yaml` and tests, so it runs only
+  from a web-game-factory checkout; from an installed plugin it refuses and says so, while
+  `ingest`, `candidates` and `reject` work in the project.
 - **The firewall.** `bin/wgf knowledge firewall [ID ...] [--run <run-id>]` runs every lesson's
   catches (the check fails the defect), passes (it passes the fix) and generalizes tests; a
   missing or skipped test is never a pass. It needs a Factory checkout: an installed runtime
@@ -260,12 +264,27 @@ for row in "${commands[@]}"; do
       codex_step="Follow \`$X/agents/$role.md\`."
       record_step="Record the outcome: artifacts at their \`repo_path\`, and the title's \`state.json\`." ;;
   esac
-  # knowledge is not a transition either: the engine's knowledge command, read-only but for
-  # the candidate store a run's lesson candidates are collected into.
+  head_line="**Transition** \`$triggers\`"
+  steps="1. Read \`core/lifecycle/\` for the machine that owns this transition, and the
+   \`procedure\` file named on the source state.
+2. Read the \`x-wgf\` block of every artifact schema this transition produces or consumes.
+3. Check the transition's guards before acting. A guard that cannot be evaluated is a
+   blocker to report, not one to assume.
+4. STEP
+5. $record_step"
+  closing="Commands map to transitions rather than to stages, so this file stays correct as long as
+the machine does."
+  # knowledge is not a transition: the engine's knowledge command, read-only but for the
+  # candidate store a run's lesson candidates are collected into. No machine, no guards.
   if [ "$id" = knowledge ]; then
+    head_line="**Not a transition** - $triggers"
     claude_step="Run the \`bin/wgf knowledge\` subcommand the user asks for and report what it prints; see *The learning loop* below."
     codex_step="$claude_step"
     record_step="Write nothing yourself: only \`ingest\` and \`reject\` write, to the project's \`workspace/lessons/candidates.yaml\`; \`promote\` prints a patch for a person's pull request."
+    steps="1. Read \`docs/knowledge-enforcement.md\` and \`core/reference/lessons.yaml\`.
+2. STEP
+3. $record_step"
+    closing="This command moves no lifecycle state, answers no gate and grants no exception."
   fi
 
   claude_paths > "$C/commands/wgf-$id.md" <<EOF
@@ -275,7 +294,7 @@ description: $summary
 
 # /wgf-$id
 
-**Transition** \`$triggers\`
+$head_line
 **Role** \`$role\`
 $gate_line
 
@@ -283,22 +302,15 @@ $summary
 
 ## Procedure
 
-1. Read \`core/lifecycle/\` for the machine that owns this transition, and the
-   \`procedure\` file named on the source state.
-2. Read the \`x-wgf\` block of every artifact schema this transition produces or consumes.
-3. Check the transition's guards before acting. A guard that cannot be evaluated is a
-   blocker to report, not one to assume.
-4. $claude_step
-5. $record_step
+${steps/STEP/$claude_step}
 
-Commands map to transitions rather than to stages, so this file stays correct as long as
-the machine does.$(command_extra "$id")
+$closing$(command_extra "$id")
 EOF
 
   cat > "$X/commands/wgf-$id.md" <<EOF
 # /wgf-$id (Web Game Factory)
 
-**Transition** \`$triggers\`
+$head_line
 **Role** \`$role\`
 $gate_line
 
@@ -306,16 +318,9 @@ $summary
 
 ## Procedure
 
-1. Read \`core/lifecycle/\` for the machine that owns this transition, and the
-   \`procedure\` file named on the source state.
-2. Read the \`x-wgf\` block of every artifact schema this transition produces or consumes.
-3. Check the transition's guards before acting. A guard that cannot be evaluated is a
-   blocker to report, not one to assume.
-4. $codex_step
-5. $record_step
+${steps/STEP/$codex_step}
 
-Commands map to transitions rather than to stages, so this file stays correct as long as
-the machine does.$(command_extra "$id")
+$closing$(command_extra "$id")
 EOF
 done
 

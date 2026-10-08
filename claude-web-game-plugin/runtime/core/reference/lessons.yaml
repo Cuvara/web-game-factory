@@ -87,7 +87,8 @@
 # derived one; the lifecycle's requirements hold; no lesson names a game the instance
 # evidence lists.
 
-version: 2.0.0
+# 2.0.1: L23, L25 and L26 name generalizes tests (tests only; no rule changed).
+version: 2.0.1
 
 statuses: [enforced, partial, gap, process]
 

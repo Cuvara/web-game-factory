@@ -27,15 +27,49 @@ def _latest(store, state, kind):
     return ref, store.read_artifact(state.run_id, ref)
 
 
+def _from_versions(versions):
+    """(factory, knowledge) of a contract's `versions` block, or None when it holds neither."""
+    if not isinstance(versions, dict):
+        return None
+    knowledge = {}
+    for key, stem in (("lessons", "lessons"), ("check_tiers", "check-tiers")):
+        entry = versions.get(key)
+        version = entry.get("version") if isinstance(entry, dict) else entry
+        if version:
+            knowledge[stem] = f"{stem}@{version}"
+    factory = versions.get("factory") if isinstance(versions.get("factory"), dict) else {}
+    if not knowledge and not factory:
+        return None
+    return {"version": factory.get("version"), "commit": factory.get("commit")}, knowledge
+
+
 def row(store, state):
-    """One run's generation row."""
+    """One run's generation row.
+
+    The outcome is attributed to the knowledge the outcome was judged by: the versions the
+    newest quality-report's compliance section names (the contract it judged the build
+    against), else the run's knowledge-contract's, else what the run recorded at start
+    (`params.quality`) - a run resumed under newer knowledge is counted where its judged build
+    belongs, not where it started. `attributed_from` says which."""
     quality = (state.params or {}).get("quality") or {}
-    knowledge = quality.get("knowledge") if isinstance(quality.get("knowledge"), dict) else {}
-    factory = quality.get("factory") if isinstance(quality.get("factory"), dict) else {}
+    started = quality.get("knowledge") if isinstance(quality.get("knowledge"), dict) else {}
+    started_factory = quality.get("factory") if isinstance(quality.get("factory"), dict) else {}
     _, contract = _latest(store, state, "knowledge-contract")
     report_ref, report = _latest(store, state, "quality-report")
     compliance = (report or {}).get("compliance") if isinstance(report, dict) else None
     compliance = compliance if isinstance(compliance, dict) else None
+    factory, knowledge, attributed = started_factory, dict(started), "run-params"
+    for source, block in (("quality-report", (compliance or {}).get("versions")),
+                          ("knowledge-contract", (contract or {}).get("versions"))):
+        found = _from_versions(block)
+        if found is not None:
+            factory, knowledge = found
+            attributed = source
+            break
+    provenance = (report or {}).get("provenance") if isinstance(report, dict) else None
+    provenance = provenance if isinstance(provenance, dict) else {}
+    build = (report or {}).get("build") if isinstance(report, dict) else None
+    build = build if isinstance(build, dict) else {}
     rules = [r for r in (contract or {}).get("rules") or () if isinstance(r, dict)]
     by_level = collections.OrderedDict()
     for rule in rules:
@@ -49,6 +83,9 @@ def row(store, state):
         "run_id": state.run_id, "created_at": state.created_at, "status": state.status,
         "factory": {"version": factory.get("version"), "commit": factory.get("commit")},
         "knowledge": dict(sorted(knowledge.items())),
+        "attributed_from": attributed,
+        "started_with": {"factory": started_factory or None,
+                         "knowledge": dict(sorted(started.items())) or None},
         "tier": quality.get("tier"), "class": quality.get("class"),
         "facets": (contract or {}).get("facets"),
         "contract": contract is not None,
@@ -64,6 +101,9 @@ def row(store, state):
             "new_lessons": len(compliance.get("new_lessons") or [])},
         "quality_report": None if report_ref is None else {
             "artifact": f"{report_ref.id} v{report_ref.version}",
+            "artifact_id": provenance.get("artifact_id"),
+            "content_hash": provenance.get("content_hash"),
+            "build_commit": build.get("commit") or build.get("development_commit"),
             "verdict": (report or {}).get("verdict"),
             "release_decision": (report or {}).get("release_decision")},
     }

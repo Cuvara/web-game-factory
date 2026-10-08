@@ -207,6 +207,48 @@ class ColliderSize(unittest.TestCase):
         self.assertEqual(result["status"], "WARNING")
         self.assertEqual(result["measured"]["unmeasured"], realism.UNREPORTED)
 
+    def body_ball(self, drawn, body, collider, halo=None):
+        """A ball drawn `drawn` px across (a glow) around an opaque `body` px across (None: no
+        body reported), colliding `collider` px across, all centred at (600, y)."""
+        frames = []
+        for i in range(5):
+            y = 300 - i
+            sample = ball(600, y, drawn, ["circle", 600 - collider / 2, y - collider / 2,
+                                          collider, collider])
+            sample += [[600 - body / 2, y - body / 2, body, body] if body is not None else None,
+                       halo]
+            frames.append([sample])
+        return frames
+
+    def test_r1_forward_passes_on_its_body_inside_r1s_glow(self):
+        # 2D r1-forward: a solid disc exactly the collider (40 board units) inside r1's glow
+        # (56.8), at a board scale of 0.542 - 21.7 px inside 30.8 px. On the whole sprite it
+        # would be 1.42 x; on its body it is 1.0.
+        scale = 0.542
+        frames = self.body_ball(56.8 * scale, 40 * scale, 40 * scale, halo=True)
+        result = self.judge(frames)
+        self.assertEqual(result["status"], "PASS", result)
+        self.assertEqual(result["measured"]["judged_on"], {"ball": ["body"]})
+        self.assertEqual(result["measured"]["ratios"]["ball"], [1.0, 1.0])
+        # The same sprite reporting no body is judged on its whole drawn box, and fails.
+        self.assertEqual(self.judge(self.body_ball(56.8 * scale, None, 40 * scale))["status"], "FAIL")
+
+    def test_a_sprite_enlarged_with_the_collider_unchanged_still_fails(self):
+        scale = 0.542
+        # The body grew with the sprite (a 60-unit disc in a 85-unit glow), the collider did not.
+        result = self.judge(self.body_ball(85 * scale, 60 * scale, 40 * scale, halo=True))
+        self.assertEqual(result["status"], "FAIL", result)
+        self.assertEqual(result["measured"]["out_of_bounds"], ["ball"])
+
+    def test_a_collider_is_never_passed_without_a_drawn_body(self):
+        # A halo declared without a body leaves nothing to hold the collider to.
+        result = self.judge(self.body_ball(30, None, 21, halo=True))
+        self.assertEqual(result["status"], "FAIL", result)
+        self.assertIn("ball", result["measured"]["no_drawn_body"])
+        # An empty body, or a body outside the drawn box, is no drawn body either.
+        self.assertEqual(self.judge(self.body_ball(30, 0, 21, halo=True))["status"], "FAIL")
+        self.assertEqual(self.judge(self.body_ball(16, 21, 21, halo=True))["status"], "FAIL")
+
     def test_the_two_builds_would_fail_once_they_report_colliders(self):
         # From their own tuning (play-realism.yaml): r1 draws 32.5 px over 11.9 px, 894b4b8
         # over 21.7 px. The bar is the ledger's; neither build reports a collider yet.
@@ -484,6 +526,47 @@ class Clearance(unittest.TestCase):
         self.assertEqual(self.judge(data)["status"], "FAIL")
 
 
+class ClearanceGate(unittest.TestCase):
+    """level.clearance is a proxy: it blocks a unit only where its clear rate against the
+    accepted build was not measured."""
+
+    def checks(self, compared, strength=RELEASE):
+        units = [{"id": "a", "layout": {"rows": ["SS.S.S.SS", "#########"]}},
+                 {"id": "b", "layout": {"rows": ["S.S.S.S.S", "#########"]}}]
+        large = {"grid": {"key": "rows", "cell": [72, 32], "solid": "S"}, "body": {"radius": 20}}
+        out = realism.judge_layouts(content(units, play_geometry=large), RULES, strength)
+        out.append({"id": "naive.clear_rate", "project": "desktop", "status": "PASS",
+                    "required": True, "summary": "", "measured": {"compared": compared}})
+        return realism.gate_clearance(out, strength)
+
+    def test_unmeasured_clear_rate_leaves_the_clearance_blocking(self):
+        result = check(self.checks([]), "level.clearance")
+        self.assertEqual(result["status"], "FAIL")
+        self.assertTrue(result["required"])
+        self.assertEqual(result["measured"]["gate"], {"a": "quality-gate", "b": "quality-gate"})
+
+    def test_a_passing_clear_rate_makes_the_clearance_advisory_unit_by_unit(self):
+        result = check(self.checks([{"unit": "a", "regressed": False}]), "level.clearance")
+        self.assertEqual(result["measured"]["gate"], {"a": "advisory", "b": "quality-gate"})
+        self.assertTrue(result["required"])
+        both = check(self.checks([{"unit": "a", "regressed": False},
+                                  {"unit": "b", "regressed": False}]), "level.clearance")
+        self.assertEqual(both["status"], "WARNING")
+        self.assertFalse(both["required"])
+
+    def test_a_failing_clear_rate_is_what_blocks_and_both_are_reported(self):
+        result = check(self.checks([{"unit": "a", "regressed": True},
+                                    {"unit": "b", "regressed": False}]), "level.clearance")
+        self.assertEqual(result["status"], "WARNING")
+        self.assertEqual(result["measured"]["gate"]["a"], "clear-rate-failed")
+        self.assertIn("also fail naive.clear_rate", result["summary"])
+
+    def test_below_the_release_tier_nothing_blocks(self):
+        result = check(self.checks([], strength=MVP), "level.clearance")
+        self.assertEqual(result["status"], "WARNING")
+        self.assertFalse(result["required"])
+
+
 class Runtime(unittest.TestCase):
     def judge(self, records, strength=RELEASE):
         return {c["id"]: c for c in realism.judge_runtime(records, RULES, "desktop", strength)}
@@ -677,6 +760,46 @@ class RealEvidence(unittest.TestCase):
         self.assertEqual([c for c in control if c["regressed"]], [])
         self.assertEqual(len(control), 32)
 
+    def steel(self, variant, units=("w3-l7", "w4-l7")):
+        """naive.clear_rate of one steel-gaps variant against the r1 reference, every model."""
+        levels = real("clear-rates-2d-steel-gaps.json")["levels"]
+        current = {u: levels[u][variant] for u in units}
+        accepted = {u: levels[u]["r1_ref11"] for u in units}
+        runs = [naive_run(model, u, asked=u, won=i < cell["won"])
+                for u, cells in current.items() for model, cell in cells.items()
+                for i in range(cell["n"])]
+        return check(realism.judge(naive(*runs), D2, RULES, "desktop", RELEASE, (),
+                                   {"units": accepted}), "naive.clear_rate")
+
+    def gated(self, commit, variant):
+        layout = realism.judge_layouts(self.grid(commit), RULES, RELEASE)
+        return {c["id"]: c for c in realism.gate_clearance(layout + [self.steel(variant)], RELEASE)}
+
+    def test_M1_the_steel_gaps_fix_is_advisory_on_clearance_at_r1_clear_rate(self):
+        # fix/steel-gaps (03f88ad) keeps w3-l7's one-cell steel lanes (1.8 x a 40 px ball) and
+        # brought its clear rate back to r1's: the proxy is advisory, nothing blocks.
+        checks = self.gated("03f88ad", "fixed")
+        self.assertEqual(checks["naive.clear_rate"]["status"], "PASS", checks["naive.clear_rate"]["summary"])
+        clearance = checks["level.clearance"]
+        self.assertEqual(clearance["measured"]["gate"]["w3-l7"], "advisory")
+        self.assertIn(1.8, [f["widest_to_body"] for f in clearance["measured"]["failing"]
+                            if f["unit"] == "w3-l7"])
+        self.assertEqual(clearance["status"], "WARNING")
+        self.assertFalse(clearance["required"])
+
+    def test_M1_894b4b8_is_blocked_by_its_clear_rate(self):
+        checks = self.gated("894b4b8", "main_894b4b8")
+        self.assertEqual(checks["naive.clear_rate"]["status"], "FAIL")
+        self.assertTrue(checks["naive.clear_rate"]["required"])
+        regressed = {c["unit"] for c in checks["naive.clear_rate"]["measured"]["compared"] if c["regressed"]}
+        self.assertIn("w4-l7", regressed)
+        self.assertEqual(checks["level.clearance"]["measured"]["gate"]["w4-l7"], "clear-rate-failed")
+        # Without the clear rate, the same clearance finding blocks on its own.
+        alone = check(realism.gate_clearance(realism.judge_layouts(self.grid("894b4b8"), RULES, RELEASE),
+                                             RELEASE), "level.clearance")
+        self.assertEqual(alone["status"], "FAIL")
+        self.assertTrue(alone["required"])
+
     def test_M1_a_steel_gap_variant_that_restores_the_clear_rate_passes(self):
         rates = real("clear-rates-2d.json")
         accepted = self.table(rates["focus-nudge-r1"])
@@ -739,12 +862,29 @@ class TheContract(unittest.TestCase):
         self.assertIn('test("naive: the build played by someone who is not perfect"', bot)
         self.assertIn('"naive: the build played by someone who is not perfect": "naive"', bot)
         self.assertIn("e.collider ?", bot)
+        self.assertIn("e.body ?", bot)
         self.assertIn("playfields", bot)
         self.assertIn('await finish(page, info, "naive"', bot)
         self.assertIn('test("risk: the oracle', bot)
         self.assertIn('page.on("console"', bot)
         self.assertIn("webglcontextlost", bot)
         self.assertIn("addInitScript(installContextWatch)", bot)
+
+
+class Viewports(unittest.TestCase):
+    def test_the_viewports_are_data(self):
+        from wgf_playability import step
+        data = load_file(os.path.join(paths.REFERENCE, "visual-quality.yaml"))
+        listed = [(v["id"], v["width"], v["height"]) for v in data["viewports"]]
+        self.assertEqual(list(step.PROJECTS), listed)
+        config = step.projects_config()
+        for vid, width, height in listed:
+            self.assertIn(f'name: "{vid}"', config)
+            self.assertIn(f"width: {width}, height: {height}", config)
+        self.assertIn('devices["Pixel 5"]', config)
+        rendered = step.CONFIG.format(port=1, proxy_var="X", bypass="", retries=0).replace(
+            "__WGF_PROJECTS__", config)
+        self.assertIn('devices["Desktop Chrome"]', rendered)
 
 
 class TheStep(unittest.TestCase):

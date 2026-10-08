@@ -61,7 +61,8 @@ interface Snapshot {
   state: string;
   metrics: Record<string, number>;
   content?: Content;
-  entities: { id: string; kind?: string; role: string; x: number; y: number; w: number; h: number; visible: boolean; asset?: string | null; render?: string; collider?: Collider }[];
+  entities: { id: string; kind?: string; role: string; x: number; y: number; w: number; h: number; visible: boolean; asset?: string | null; render?: string; collider?: Collider;
+              body?: { x: number; y: number; w: number; h: number }; halo?: boolean }[];
   // Optional play-realism fields (core/reference/play-realism.yaml): the drawn board, where the
   // player is across its path, camera and control forward, falls and respawns so far.
   playfield?: { x: number; y: number; w: number; h: number };
@@ -1117,8 +1118,11 @@ test("win: the oracle plays well", async ({ page }, info) => {
     // With each entity, the body it collides with when the probe reports one ([shape, x, y,
     // w, h], else null), and per frame the drawn board (playfield) when it reports one: the
     // physics checks hold every turn of a mover to something drawn (play-realism.yaml).
+    // With the collider, the opaque drawn body inside a glow when the probe reports one
+    // ([x, y, w, h], else null) and whether it declares a halo (else null).
     type Sample = [string, string, number, number, number, number, number, string | null, string | null,
-                   [string, number, number, number, number] | null];
+                   [string, number, number, number, number] | null, [number, number, number, number] | null,
+                   boolean | null];
     const sampler = page.evaluate(async (ms: number) => {
       const out: Sample[][] = [];
       const playfields: ({ x: number; y: number; w: number; h: number } | null)[] = [];
@@ -1129,7 +1133,9 @@ test("win: the oracle plays well", async ({ page }, info) => {
         const s = play?.snapshot();
         if (s) {
           out.push(s.entities.map((e) => [e.id, e.role, e.visible ? 1 : 0, e.x, e.y, e.w, e.h, e.asset ?? null, e.render ?? null,
-                                          e.collider ? [e.collider.shape, e.collider.x, e.collider.y, e.collider.w, e.collider.h] : null]));
+                                          e.collider ? [e.collider.shape, e.collider.x, e.collider.y, e.collider.w, e.collider.h] : null,
+                                          e.body ? [e.body.x, e.body.y, e.body.w, e.body.h] : null,
+                                          typeof e.halo === "boolean" ? e.halo : null]));
           playfields.push(s.playfield ? { x: s.playfield.x, y: s.playfield.y, w: s.playfield.w, h: s.playfield.h } : null);
         }
       }

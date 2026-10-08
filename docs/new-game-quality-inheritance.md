@@ -52,7 +52,7 @@ The rules are data: [core/reference/quality-policy.yaml](../core/reference/quali
    timeout, and not answered by automation: it waits for a person, as G4 does, and `wgf
    status` says why (`Held:`; `pending.held_for_person`, with no timeout eligibility).
 
-7. **No bypass for a small game; missing gates are named** (WS-9). No tier, profile or
+7. **No bypass for a small game; missing gates are named** (WS-9, quality-policy 1.3.0). No tier, profile or
    configuration removes a required step: the tier changes a run's class and its bars,
    never the steps it runs, and no step of new-game carries a condition that could skip it.
    Rule 2 holds only the required steps a workflow *contains*, so a run whose workflow lacks
@@ -66,7 +66,7 @@ The rules are data: [core/reference/quality-policy.yaml](../core/reference/quali
    never a release; the run is recorded development (`QUALITY_DOWNGRADED`, "lacks required
    step(s)"). A resume reads the workflow by id - the current definition - so a resumed run
    meets the gate and the floor (rule 2) holds G4 until it passed.
-8. **Independent review** (WS-9). Every path an implementer's change (develop, sdk) can take
+8. **Independent review** (WS-9, quality-policy 1.3.0). Every path an implementer's change (develop, sdk) can take
    to G4 or release passes every judge `independent_review` lists for it; check-integrity
    holds it on the workflow's graph. See docs/specialist-routing.md "Independent review".
 

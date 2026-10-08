@@ -221,7 +221,7 @@
     "scripts/wgf_assets/step.py": "sha256:5514e84f505166c7a7dcd03795b81d66a22c54b06d45dfcb417f3683410c5c32",
     "scripts/wgf_assets/tools/render-svgs.mjs": "sha256:29e34163fe9bcc33a0133168b75052ac517b288870586dbef81b0339064419c7",
     "scripts/wgf_design/__init__.py": "sha256:4f07881b7e14b7d0b0d274f7ffe7f800c312aeeb2df4677faa62d9e333db8f67",
-    "scripts/wgf_design/agent.py": "sha256:fe604ba5ad9b9f59f02714e7315dfc4bf0491b1ddc7c23a46092aed7134b50b2",
+    "scripts/wgf_design/agent.py": "sha256:4d14d918a4ba930e5bb439d5e389fd2d2fd09f2f9d3357d023979cb19bdb73ad",
     "scripts/wgf_design/archetypes.py": "sha256:32fb3825f27200a8fb6bc61b0d0c06998e3afa936b662ae12e7eb2f5b987c12e",
     "scripts/wgf_design/authors.py": "sha256:f3e4a15cc2c919da9e313099e9e554de496c3726e58536f23af1a5296246c0b3",
     "scripts/wgf_design/commitments.py": "sha256:4a2bec76452860bf562547938f0d59cf3b68d1816e37059d4bfd9ed2ca43ed53",

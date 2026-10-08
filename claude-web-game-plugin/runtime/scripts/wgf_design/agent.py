@@ -325,6 +325,31 @@ PROMPT_REPAIR = (
     " nothing else changed."
 )
 
+# The problems are also written into the prompt itself. The request that carries them holds
+# the previous draft and every bar - hundreds of kilobytes, more than an agent reads whole -
+# and in the K5 fresh-session experiment (2026-10-08) two real design agents read its start,
+# its end and some middle, never found `repair`, and stopped without repairing anything.
+_REPAIR_LIST_MAX = 30
+_REPAIR_ITEM_MAX = 1200
+
+
+def _repair_list(problems):
+    """The repair problems as numbered prompt text (each cut at _REPAIR_ITEM_MAX, at most
+    _REPAIR_LIST_MAX of them; the request always carries every one in full)."""
+    problems = [str(p) for p in problems or []]
+    if not problems:
+        return ""
+    lines = []
+    for number, problem in enumerate(problems[:_REPAIR_LIST_MAX], 1):
+        text = " ".join(problem.split())
+        if len(text) > _REPAIR_ITEM_MAX:
+            text = text[:_REPAIR_ITEM_MAX] + " ..."
+        lines.append(f"({number}) {text}")
+    more = len(problems) - _REPAIR_LIST_MAX
+    tail = (f" ... and {more} more in the request's `repair.problems`." if more > 0 else "")
+    return " The problems to fix: " + " ".join(lines) + tail
+
+
 # What a revision keeps unless the strategy's change requires it - named in the request.
 KEEP = ("identity", "palette", "fonts", "assets", "controls", "ui")
 
@@ -722,7 +747,7 @@ class AgentAuthor(DesignAuthor):
             if derived:
                 values["prompt"] += PROMPT_ADOPTION_DERIVED.format(derived=derived)
         if repair:
-            values["prompt"] += PROMPT_REPAIR
+            values["prompt"] += PROMPT_REPAIR + _repair_list(repair.get("problems"))
         try:
             command = permpath.format_argv(argv, values, ("request", "draft"))
         except (KeyError, IndexError, ValueError) as exc:

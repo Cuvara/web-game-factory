@@ -177,27 +177,29 @@ software_renderers: [SwiftShader, llvmpipe, softpipe, "Microsoft Basic Render"]
 # The checks. `scope`: `viewport` - one check per viewport (`browser.<id>:<viewport>`);
 # `once` - one check, measured on audio_viewport (audio) or perf_viewport (performance);
 # `outcome` - one per outcomes viewport; `offline` - read from the bundle and the decoded
-# clips. `owner` is the specialist a failure is routed to. `category` is the
-# verification-report's category the check is filed under.
+# clips. `owner` is the quality dimension a failure is routed by - the specialist that
+# owns it in core/reference/specialist-routing.yaml, whose qa-report `verification_checks`
+# table states the same route (scripts/tests/test_browser_qa.py holds that they agree).
+# `category` is the verification-report's category the check is filed under.
 checks:
   # -- loading and menus -------------------------------------------------------------------
   - id: loads
     tier: hard
     scope: viewport
     category: gameplay
-    owner: gameplay
+    owner: browser
     what: "The page loads: the document answers, and nothing the game fetches from its own origin fails"
   - id: canvas
     tier: hard
     scope: viewport
     category: gameplay
-    owner: ui
+    owner: browser
     what: "A canvas is drawn and covers at least bars.load.min_canvas_share of the viewport"
   - id: ready
     tier: hard
     scope: viewport
     category: gameplay
-    owner: gameplay
+    owner: browser
     what: "Loading completes: the play probe leaves `loading` within bars.load.ready_max_s"
   - id: menus
     tier: hard
@@ -224,13 +226,13 @@ checks:
     tier: hard
     scope: viewport
     category: policy
-    owner: gameplay
+    owner: browser
     what: "No uncaught exception or unhandled rejection while loading, playing, pausing and ending"
   - id: console-errors
     tier: quality
     scope: viewport
     category: policy
-    owner: gameplay
+    owner: browser
     what: "No console error from the game's own origin (console.max_errors)"
   - id: webgl-context
     tier: hard
@@ -242,7 +244,7 @@ checks:
     tier: quality
     scope: viewport
     category: policy
-    owner: ui
+    owner: browser
     hard_when_profile: context_menu_suppressed
     what: "A right click (and a long press on a touch device) on the game opens no context menu: the game prevents it. Hard where a targeted platform profile sets requirements.context_menu_suppressed"
   # -- end states and session control ------------------------------------------------------
@@ -274,7 +276,7 @@ checks:
     tier: quality
     scope: viewport
     category: gameplay
-    owner: gameplay
+    owner: browser
     what: "With the page hidden, play holds still (paused, or nothing moves) and can be resumed when it is shown again"
   # -- layout ------------------------------------------------------------------------------
   - id: overflow

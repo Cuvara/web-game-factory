@@ -100,6 +100,12 @@ class Routing:
                     if value not in ROUTES:
                         out.append(f"producers.{kind}.split.{check} routes to {value!r}, "
                                    f"not one of {', '.join(ROUTES)}")
+        for kind, table in (self.data.get("producers") or {}).items():
+            for key in ("verification_checks", "criteria"):
+                for check, word in ((table or {}).get(key) or {}).items():
+                    if self.resolve_word(word) is None:
+                        out.append(f"producers.{kind}.{key}.{check} names {word!r}, not a "
+                                   "dimension")
         for word, table in (self.data.get("by_engine_dimension") or {}).items():
             for value in (table or {}).values():
                 if value not in self.dimensions:

@@ -270,7 +270,7 @@
     "scripts/wgf_listing/__init__.py": "sha256:3a0676d1b6a25f08b86027fac095119b57452106b71284579ad9d3e04f6e517e",
     "scripts/wgf_listing/brand.py": "sha256:6c3af47195c035767b1b009dc750380cb0ba1cb438ea7bd7cf319e323b252c89",
     "scripts/wgf_listing/buildfacts.py": "sha256:e8dac772563a52918781b6b0aba197ffb05ecd7495342278a3babf22bb280804",
-    "scripts/wgf_listing/capture.mjs": "sha256:10b95efb3a2356079abe16ec26fc66945488789787cc606ab5655127e0a99f4e",
+    "scripts/wgf_listing/capture.mjs": "sha256:a4866fdbd592a38c27fc75f4908bb4379082e985bdba4d878560a86c85874439",
     "scripts/wgf_listing/capture.py": "sha256:ab0974a25866eb573aee9f7a02eaa6c6408af3cf4b611a02ac4c5937708e961b",
     "scripts/wgf_listing/copywriter.py": "sha256:3050f7fdefcf2bb91fab38ab9f804608c1df4a00472a4f192395381c71bd5976",
     "scripts/wgf_listing/facts.py": "sha256:1be93676c4e8cf4b9dcd4597f7626f3d59eeca0a3aa04a1e6007693fa240c1ba",

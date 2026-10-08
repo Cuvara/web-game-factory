@@ -323,6 +323,16 @@ function findFfmpeg() {
   return null;
 }
 
+// The MP4 conversion needs libx264, which Playwright's bundled ffmpeg (VP8/WebM only) lacks: the
+// encoder is the first of WGF_FFMPEG, an ffmpeg on PATH, then the bundled one, that lists libx264.
+function findMp4Encoder(bundled) {
+  const candidates = [process.env.WGF_FFMPEG, "ffmpeg", bundled].filter(Boolean);
+  for (const candidate of candidates) {
+    if (/\blibx264\b/.test(ffmpegEncoders(candidate))) return candidate;
+  }
+  return null;
+}
+
 function ffmpegEncoders(ffmpeg) {
   const done = spawnSync(ffmpeg, ["-hide_banner", "-encoders"], { encoding: "utf8", timeout: 20000 });
   return done.status === 0 ? done.stdout : "";
@@ -377,16 +387,17 @@ async function recordTrailer(browser, spec) {
       if (done.status === 0 && fs.existsSync(out)) {
         record.file = out;
         record.trimmed = true;
-        const encoders = ffmpegEncoders(ffmpeg);
-        if (/\blibx264\b/.test(encoders)) {
+        const encoder = findMp4Encoder(ffmpeg);
+        result.mp4_encoder = encoder;
+        if (encoder) {
           const mp4 = path.join(dir, "trailer.mp4");
-          const conv = spawnSync(ffmpeg, ["-y", "-hide_banner", "-loglevel", "error", "-i", out, "-c:v", "libx264",
+          const conv = spawnSync(encoder, ["-y", "-hide_banner", "-loglevel", "error", "-i", out, "-c:v", "libx264",
                                           "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", mp4],
                                  { encoding: "utf8", timeout: 300000 });
           if (conv.status === 0 && fs.existsSync(mp4)) record.derived.push({ format: "mp4", file: mp4 });
           else record.errors.push(`mp4 encode failed: ${(conv.stderr || "").slice(0, 200)}`);
         } else {
-          record.errors.push("no mp4 encoder (libx264) in the bundled ffmpeg");
+          record.errors.push("no mp4 encoder (libx264): set WGF_FFMPEG or put an ffmpeg with libx264 on PATH");
         }
       } else {
         record.errors.push(`ffmpeg trim failed: ${(done.stderr || done.error?.message || "").slice(0, 200)}`);

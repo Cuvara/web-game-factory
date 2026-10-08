@@ -123,6 +123,27 @@ class EveryFamilySeed(unittest.TestCase):
         for family in FAMILIES:
             cls.results[family] = design_for(family)
 
+    def test_mechanics_are_introduced_one_per_unit_never_piled_into_the_opener(self):
+        """core/craft "Introduce one mechanic per unit at most" and L29: after the opening
+        unit each MVP unit debuts at most one mechanic, never on the climax or the last MVP
+        unit; the opener takes only what the MVP has no other unit for (seed._introductions,
+        which caps at the family's MVP unit count)."""
+        for family in FAMILIES:
+            with self.subTest(family=family):
+                design = self.results[family].artifacts[0].content
+                mvp = units(design, "mvp")
+                mechanics = [m["id"] for m in design["build_spec"]["mechanics"]
+                             if m["tier"] == "mvp"]
+                slots = [u for u in mvp[1:-1] if u.get("purpose") in seed.INTRODUCE_IN]
+                for unit in mvp[1:]:
+                    self.assertLessEqual(len(unit.get("introduces") or []), 1, unit["id"])
+                    if unit.get("introduces"):
+                        self.assertNotEqual(unit.get("purpose"), "climax", unit["id"])
+                self.assertFalse(mvp[-1].get("introduces"))
+                self.assertEqual(len(mvp[0]["introduces"]),
+                                 max(1, len(mechanics) - len(slots)))
+                self.assertLessEqual(len(mvp[0]["introduces"]), 2)
+
     def test_every_family_seed_designs_a_valid_design_through_the_step(self):
         for family in FAMILIES:
             with self.subTest(family=family):

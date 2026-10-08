@@ -127,8 +127,13 @@ def _world_class():
                 unit_id, early = self.target
                 for unit in out:
                     if unit["id"] == unit_id:
+                        # A real double debut: the unit shows the elements AND states it
+                        # introduces them - its own debut and the early ones at once.
+                        own = [n for u, n in content_rules.unit_debuts(out)
+                               if u is unit][0] or []
                         unit["elements"] = list(unit.get("elements") or []) + [
                             e for e in early if e not in (unit.get("elements") or [])]
+                        unit["introduces"] = list(own) + [e for e in early if e not in own]
             return out
 
         def records(self, build, project, items):

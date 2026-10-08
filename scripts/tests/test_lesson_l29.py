@@ -11,12 +11,17 @@ The two checks that hold it, on what each producer actually reads:
 
 The lesson's catches and passes tests are the two names `wgf knowledge promote` drafts for
 it (scripts/tests/test_knowledge_transfer.py holds the draft equal to the shipped entry); the
-rest is the person's completion. The real-game grounding replays the content data files of
-the two human-accepted validation games (scripts/tests/fixtures/real/play-realism/): those
-files keep each unit's layout and parameters, not a list of its elements, so each test names
-a unit's elements the way that game's own data does - the 2D game by the tuning section that
-governs each layout symbol and layout key, the 3D game by the course features its parameters
-count. That naming is this test's reading of the data, stated below; the files are unedited.
+rest is the person's completion. The real-game grounding is read two ways
+(scripts/tests/fixtures/real/play-realism/):
+
+  * as written - the 2D validation run's game-design v4, and the content data files the two
+    games ship at 0db72b6 (2D) and 43c08e2 (3D), whose units state their elements,
+    mechanics and introductions: both checks run on them unchanged and pass;
+  * through a reading - the builds accepted at G4 (96f5cea, c340631) predate those lists:
+    their content data keeps each unit's layout and parameters only, so those tests name a
+    unit's elements the way that game's own data does (the 2D game by the tuning section
+    that governs each layout symbol and layout key, the 3D game by the course features its
+    parameters count). That naming is this test's, stated below; the files are unedited.
 
 The generalization replays a synthetic game B of another family and render
 (scripts/tests/fixtures/knowledge/l29-synthetic-3d-racer.json), regressed and fixed.
@@ -171,6 +176,50 @@ class LessonL29(unittest.TestCase):
         self.assertEqual((check["status"], status), ("PASS", "PASS"), check["summary"])
         result, status, _ = design_result(design_with(units))
         self.assertEqual((result["breached"], status), (False, "PASS"))
+
+    def test_L29_the_2d_validation_design_passes_as_written(self):
+        """The 2D validation run's design v4, unchanged: each unit after the first states at
+        most one introduction. An element and the mechanic it stands for (an armored brick,
+        armored bricks; the boss's shield and weak point, the boss fight) are ONE debut - the
+        unit's `introduces` - never two."""
+        data = _read(os.path.join(REAL, "design-2d-v4-units.json"))
+        units = data["units"]
+        self.assertEqual(len(units), 32)
+        w1_l4 = next(u for u in units if u["id"] == "w1-l4")
+        self.assertEqual(w1_l4["introduces"], ["armored-bricks"])
+        self.assertIn("armored-brick", w1_l4["elements"])
+        result, status, _ = design_result(design_with(units))
+        self.assertEqual((result["breached"], status), (False, "PASS"), result)
+        debuts = {u["id"]: new for u, new in content.unit_debuts(units) if new}
+        self.assertEqual((debuts["w1-l4"], debuts["w1-l8"]), (["armored-bricks"], ["boss-fight"]))
+
+    def test_L29_the_2d_and_3d_content_data_pass_as_written(self):
+        """public/content/units.json of the 2D game at 0db72b6 and the 3D game at 43c08e2,
+        unchanged: the build check passes on what they state."""
+        for name, count in (("content-2d-0db72b6-units.json", 32),
+                            ("content-3d-43c08e2-units.json", 16)):
+            with self.subTest(name=name):
+                units = sorted(_read(os.path.join(REAL, name))["units"],
+                               key=lambda u: u["index"])
+                self.assertEqual(len(units), count)
+                check, status = build_result(units, units)
+                self.assertEqual((check["status"], status), ("PASS", "PASS"), check)
+
+    def test_L29_an_element_and_its_mechanic_are_one_debut(self):
+        """A unit that states `introduces` debuts what it lists; one that states none is
+        counted by every element and mechanic it shows that no earlier unit named."""
+        units = paced(2)
+        units[1]["elements"] = units[0]["elements"] + ["armored-brick"]
+        units[1]["mechanics"] = ["move", "armored-bricks"]
+        units[1]["introduces"] = ["armored-bricks"]
+        self.assertFalse(design_result(design_with(units))[0]["breached"])
+        self.assertEqual(build_result(units, units)[0]["status"], "PASS")
+        units[1]["introduces"] = ["armored-bricks", "boss-fight"]
+        self.assertTrue(design_result(design_with(units))[0]["breached"])
+        self.assertEqual(build_result(units, units)[0]["status"], "FAIL")
+        # no `introduces`: what it shows for the first time is what it debuts
+        del units[1]["introduces"]
+        self.assertTrue(design_result(design_with(units))[0]["breached"])
 
     def test_L29_the_accepted_3d_validation_game_passes(self):
         """c340631 (r1-forward of the build accepted at G4): 12 courses, every course after

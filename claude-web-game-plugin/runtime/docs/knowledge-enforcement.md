@@ -537,13 +537,14 @@ level is derived over all of them.
 
 **The snapshot.** knowledge-contract 1.2.0 records, for every rule applicable or not, its
 `revision`, `version` and `digest` (sha256 of the canonical lessons.yaml entry,
-`model.lesson_digest`): a run pinned under `L29@r2` keeps exactly that text when its
+`model.lesson_digest`): a run pinned under `L29@r3` keeps exactly that text when its
 contract is made again after the Factory moves on, and a run started after the move gets
 the new one (`test_knowledge_transfer` Versioning). It also records the design's `trace`.
 The checks are pinned like the rules: the design step judges a design by the run's pinned
 `design-consistency-rules.yaml` and content-sufficiency a build by the run's pinned
-`content-sufficiency.yaml` (the live files only for a run that pinned none), so a run
-started before a rule or check existed never meets it - not on resume, not when design is
+`content-sufficiency.yaml` (the live files only for a run that pinned none - every run
+started before K2 on 2026-10-08 pinned nothing, and is judged by the live files), so a run
+that pinned its files before a rule or check existed never meets it - not on resume, not when design is
 entered again (`test_knowledge_transfer` PinnedBefore).
 
 **The design request.** The `agent` design author's request carries `knowledge`: the
@@ -568,19 +569,24 @@ claim never makes a rule SATISFIED: only its checks do.
 
 **L29, the first transferred principle.** After the opening unit, a unit introduces at most
 one element the player has not met (`core/craft/content-and-level-design.md`). Held by
-`design-consistency:content.introductions_one_at_a_time` (the design's units: their
-`elements`, `mechanics` and `introduces`, in index order) and
-`content-sufficiency:content.introductions_one_at_a_time` (the BUILT units.json, the same
-count; a design that claims compliance and a build that breaks it FAILs). A unit that names
+`design-consistency:content.introductions_one_at_a_time` (the design's units, in index
+order) and `content-sufficiency:content.introductions_one_at_a_time` (the BUILT units.json,
+the same count; a design that claims compliance and a build that breaks it FAILs). What a
+unit debuts is what it states it `introduces`, less what an earlier unit named - an element
+and the mechanic it stands for (an armored brick, armored bricks) are one introduction,
+stated once; a unit that states no `introduces` is counted by every element and mechanic it
+shows that no earlier unit named. A unit that names
 no element, mechanic or introduction is never skipped - skipped, the next unit would falsely
 debut what it met there - so any such unit leaves the count UNMEASURED: a breach on the
 design (a rule that cannot be checked is never passed), SKIPPED on the build (never a
 pass). Both checks are hard, so L29 derives **blocking** and is classified BLOCKING. Its
 grounding is observed, never measured: both human-accepted validation games satisfy it,
-recorded in `workspace/lessons/evidence.yaml` as a `research-principle` source - with a
-caveat stated there too: their content data files do not list elements, so they pass only
-through `test_lesson_l29`'s reading of them (the 2D game's layout symbols and layout keys
-named by its own tuning sections, the 3D game's counted course features). The genre seed
+recorded in `workspace/lessons/evidence.yaml` as a `research-principle` source. As written,
+with no mapping, the 2D validation run's game-design v4 and the content data both games ship
+later (2D 0db72b6, 3D 43c08e2) pass both checks; the builds accepted at G4 (96f5cea,
+c340631) predate those lists and pass only through `test_lesson_l29`'s reading of them (the
+2D game's layout symbols and layout keys named by its own tuning sections, the 3D game's
+counted course features). The genre seed
 author debuted two mechanics in its second teaching unit for five families (puzzle,
 platformer, shooter, strategy, simulation); it now introduces one mechanic per MVP unit -
 the opener the first, then teach, breather, twist, then test units, never the climax or the

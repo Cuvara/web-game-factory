@@ -193,7 +193,14 @@ class SessionAToB(unittest.TestCase):
         check = next(c for c in failed[0]["checks"] if c["id"] == "naive.clear_rate")
         regressed = [c for c in check["measured"]["compared"] if c["regressed"]]
         self.assertTrue(regressed and all(c["unit"] == unit for c in regressed), regressed)
-        # the content data the failing build shipped debuts two elements in that unit
+        # the content data the failing build shipped: that unit states two introductions
+        shipped = []
+        for path in glob.glob(os.path.join(self.run_a.dir, "playability", "*", "out",
+                                           "content", "units.json")):
+            with open(path, encoding="utf-8") as handle:
+                built = {u["id"]: u for u in json.load(handle)["units"]}
+            shipped.append(built[unit].get("introduces"))
+        self.assertIn(sorted(_early), [sorted(i or []) for i in shipped], shipped)
         triage = [t for t in self.run_a.versions("triage-report") if t.get("findings")]
         finding = "playability-report:naive.clear_rate@desktop"
         self.assertIn(finding, [f["id"] for f in triage[0]["findings"]])
@@ -413,6 +420,11 @@ class Held(unittest.TestCase):
         first = run.design_file("seen-1-1.json")
         self.assertEqual((first["rule"]["id"], first["paced"], first["repair"]),
                          ("L29", False, False))
+        # its naive plan states the double debut: two introductions in one unit
+        draft = run.design_file("1-1.draft.json")
+        moved_unit = first["moved"][0]
+        unit = next(u for u in draft["build_spec"]["content"]["units"] if u["id"] == moved_unit)
+        self.assertEqual(len(unit["introduces"]), 2, unit)
         repair = run.design_file("1-1-repair1.request.json")
         self.assertTrue(any(f"consistency {CHECK}" in p for p in repair["repair"]["problems"]),
                         repair["repair"]["problems"])

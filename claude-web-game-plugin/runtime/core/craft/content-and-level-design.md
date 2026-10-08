@@ -73,8 +73,9 @@ player never gets to be good at it, and the timebox paid for it anyway.
 
 - Introduce one mechanic per unit at most, during a `teach`, a `breather` or the opening of a
   `twist` — never on a peak. After the opening unit, a unit debuts at most one element the
-  player has not met — counting its `elements`, `mechanics` and `introduces` together — so
-  every new element is met on its own and practised before it is combined with another new
+  player has not met — what it states it `introduces` (an element and the mechanic it stands
+  for are one introduction, stated once), or, where a unit states none, every element and
+  mechanic it shows for the first time — so every new element is met on its own and practised before it is combined with another new
   one. This is held on the design (design-consistency `content.introductions_one_at_a_time`)
   and on the built content data file (content-sufficiency, same id).
 - The reuse recombines rather than repeats: the mechanic meets a different other mechanic, a

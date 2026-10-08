@@ -1475,26 +1475,35 @@ def _result(rule_id, measured, breached, note):
 
 # -- introductions one at a time (design-consistency content.introductions_one_at_a_time) --
 # The same count on the design (here, through consistency.projection `introductions`) and on
-# the built content data file (wgf_sufficiency.audit): what a unit puts in front of the
-# player is every element, mechanic and introduction it names; what it DEBUTS is the part of
-# that no earlier unit (in index order) named. After the opening unit, a unit debuts at most
-# one: every new element is first met on its own and practised before it is combined with
-# another new one.
+# the built content data file (wgf_sufficiency.audit). What a unit DEBUTS is what it says
+# it introduces: its `introduces`, less anything an earlier unit (in index order) already
+# named. An element and the mechanic it stands for (an armored brick, armored bricks) are one
+# introduction, which a unit's `introduces` states once - so where a unit states its
+# introductions, they are what is counted; content.mechanics_introduced_before_use already
+# holds a unit's mechanics to the introductions before it. A unit that states no
+# `introduces` at all is counted by what it shows: every element and mechanic no earlier
+# unit named. After the opening unit, a unit debuts at most one: every new element is first
+# met on its own and practised before it is combined with another new one.
 
 
 def unit_debuts(units):
-    """[(unit, [what it debuts])] over `units` in the order given: each unit's elements,
-    mechanics and introductions that no earlier unit named. A unit that names none of them
-    debuts nothing it can be held to (None, not [])."""
+    """[(unit, [what it debuts])] over `units` in the order given. A unit that states
+    `introduces` (a list, even empty) debuts what it lists that no earlier unit named; one
+    that does not debuts every element and mechanic it names that no earlier unit named. A
+    unit that names none of the three debuts nothing it can be held to (None, not [])."""
     seen, out = set(), []
     for unit in units:
         if not isinstance(unit, dict):
             continue
         named = [str(x) for key in ("elements", "mechanics", "introduces")
                  for x in (unit.get(key) or []) if isinstance(unit.get(key), list)]
-        declared = any(isinstance(unit.get(key), list) and unit.get(key)
-                       for key in ("elements", "mechanics", "introduces"))
-        new = sorted(set(named) - seen)
+        stated = isinstance(unit.get("introduces"), list)
+        declared = stated or any(isinstance(unit.get(key), list) and unit.get(key)
+                                 for key in ("elements", "mechanics"))
+        if stated:
+            new = sorted(set(map(str, unit["introduces"])) - seen)
+        else:
+            new = sorted(set(named) - seen)
         seen |= set(named)
         out.append((unit, new if declared else None))
     return out

@@ -1,0 +1,388 @@
+{
+ "_source": "the 3D game's public/content/units.json at 43c08e2, units trimmed to id, index, tier, elements, mechanics, introduces",
+ "schema": "wgf-content/1",
+ "units": [
+  {
+   "id": "first-roll",
+   "index": 1,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "rail",
+    "ramp",
+    "gap",
+    "bumper"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems"
+   ],
+   "introduces": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "rail",
+    "ramp",
+    "gap",
+    "bumper"
+   ]
+  },
+  {
+   "id": "twin-bends",
+   "index": 2,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "ramp",
+    "gap"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "drifting-isles",
+   "index": 3,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "ramp",
+    "gap",
+    "moving-platform"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems"
+   ],
+   "introduces": [
+    "moving-platform"
+   ]
+  },
+  {
+   "id": "gem-meadow",
+   "index": 4,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "rail",
+    "ramp",
+    "gap"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems",
+    "gem-gate"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "bumper-garden",
+   "index": 5,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "ramp",
+    "gap",
+    "moving-platform",
+    "bumper"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems",
+    "gem-gate"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "narrow-way",
+   "index": 6,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "ramp",
+    "gap",
+    "moving-platform",
+    "narrow-bridge"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems",
+    "gem-gate"
+   ],
+   "introduces": [
+    "narrow-bridge"
+   ]
+  },
+  {
+   "id": "stone-chicane",
+   "index": 7,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "ramp",
+    "gap",
+    "low-wall",
+    "narrow-bridge"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems"
+   ],
+   "introduces": [
+    "low-wall"
+   ]
+  },
+  {
+   "id": "cliff-steps",
+   "index": 8,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "ramp",
+    "gap",
+    "moving-platform",
+    "bumper",
+    "cliff-drop",
+    "narrow-bridge"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems",
+    "gem-gate"
+   ],
+   "introduces": [
+    "cliff-drop"
+   ]
+  },
+  {
+   "id": "lantern-ledges",
+   "index": 9,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "rail",
+    "ramp",
+    "gap",
+    "low-wall",
+    "cliff-drop",
+    "narrow-bridge"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems",
+    "gem-gate"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "sunset-run",
+   "index": 10,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "ramp",
+    "gap",
+    "moving-platform",
+    "bumper",
+    "low-wall",
+    "cliff-drop",
+    "narrow-bridge"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "hairpin-rise",
+   "index": 11,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "ramp",
+    "gap",
+    "bumper",
+    "narrow-bridge",
+    "hairpin"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems"
+   ],
+   "introduces": [
+    "hairpin"
+   ]
+  },
+  {
+   "id": "switchbacks",
+   "index": 12,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "ramp",
+    "gap",
+    "moving-platform",
+    "low-wall",
+    "cliff-drop",
+    "narrow-bridge",
+    "hairpin"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems",
+    "gem-gate"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "storm-vault",
+   "index": 13,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "ramp",
+    "gap",
+    "moving-platform",
+    "bumper",
+    "narrow-bridge",
+    "hairpin"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems",
+    "gem-gate"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "the-gauntlet",
+   "index": 14,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "ramp",
+    "gap",
+    "moving-platform",
+    "bumper",
+    "low-wall",
+    "narrow-bridge",
+    "hairpin"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "the-summit",
+   "index": 15,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "ramp",
+    "gap",
+    "moving-platform",
+    "bumper",
+    "low-wall",
+    "cliff-drop",
+    "narrow-bridge",
+    "hairpin"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "crown-descent",
+   "index": 16,
+   "tier": "mvp",
+   "elements": [
+    "goal-gate",
+    "checkpoint",
+    "gem",
+    "rail",
+    "ramp",
+    "gap",
+    "moving-platform",
+    "low-wall",
+    "cliff-drop",
+    "narrow-bridge",
+    "hairpin"
+   ],
+   "mechanics": [
+    "steering",
+    "par-timer",
+    "checkpoints",
+    "gems",
+    "gem-gate"
+   ],
+   "introduces": []
+  }
+ ]
+}

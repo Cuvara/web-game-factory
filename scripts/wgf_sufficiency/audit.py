@@ -863,9 +863,10 @@ def _audit(design, strategy, data, records, rules=None, benchmark=None, models=N
 
 def introductions_check(shipped, built_units):
     """content.introductions_one_at_a_time on the BUILT content: the shipped units in the
-    design's index order, each as the content data file states it (its `elements`,
-    `mechanics` and `introduces`), held to the design rule of the same id - after the
-    opening unit, none debuts more than one element. FAIL routes design-gap when the
+    design's index order, each as the content data file states it, held to the design rule
+    of the same id (wgf_design.content.unit_debuts: its `introduces`, else every element and
+    mechanic it shows for the first time) - after the opening unit, none debuts more than one
+    element. FAIL routes design-gap when the
     design's own units debut two at once, develop when only the build does (a design that
     claims compliance and a build that breaks it). SKIPPED as unmeasured when the content
     data names no elements or mechanics for a shipped unit - any of them: what that unit puts

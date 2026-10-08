@@ -92,8 +92,13 @@ def _title(candidate, given):
     return first if len(first) <= 100 else first[:97].rstrip() + "..."
 
 
+def _one_line(text):
+    return " ".join(str(text).split())
+
+
 def _folded(key, text):
-    lines = textwrap.wrap(" ".join(str(text).split()), width=86) or [""]
+    lines = textwrap.wrap(" ".join(str(text).split()), width=86, break_on_hyphens=False,
+                          break_long_words=False) or [""]
     return [f"    {key}: >-"] + [f"      {line}" for line in lines]
 
 
@@ -111,7 +116,7 @@ def _entry_text(entry):
     out += _folded("problem", entry["problem"])
     out += _folded("root_cause", entry["root_cause"])
     out += _folded("lesson", entry["lesson"])
-    out.append("    scope: " + ("global" if not entry["scope"] else _flow(entry["scope"])))
+    out.append("    scope: " + ("global" if entry["scope"] in ("global", {}) else _flow(entry["scope"])))
     out += [f"    status: {entry['status']}", f"    lifecycle: {entry['lifecycle']}"]
     if entry.get("level"):
         out.append(f"    level: {entry['level']}")
@@ -272,10 +277,12 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
          if isinstance(l, dict) and isinstance(l.get("introduced"), dict)] or ["0.0.0"],
         key=_version_key)
     today = today or datetime.date.today().isoformat()
-    entry = {"id": entry_id, "title": _title(candidate, title), "category": category,
-             "problem": candidate.get("symptom") or candidate["summary"],
-             "root_cause": candidate["root_cause"], "lesson": candidate["summary"],
-             "scope": dict(scope if scope is not None else candidate.get("proposed_scope") or {}),
+    entry = {"id": entry_id, "title": _one_line(_title(candidate, title)), "category": category,
+             "problem": _one_line(candidate.get("symptom") or candidate["summary"]),
+             "root_cause": _one_line(candidate["root_cause"]),
+             "lesson": _one_line(candidate["summary"]),
+             "scope": dict(scope if scope is not None else candidate.get("proposed_scope") or {})
+             or "global",
              "introduced": {"version": introduced_version, "date": today}}
     notes, files = [], {}
     held = classified and basis == "measured"

@@ -1,0 +1,23 @@
+# Lesson candidates: what runs observed, collected by `wgf knowledge ingest <run-id>`.
+#
+# Instance data, append-only (docs/knowledge-enforcement.md). Each entry is a lesson
+# candidate a run's producers reported (prototype-report specialist.lesson_candidates,
+# triage-report, quality-report, review-report lesson_candidates), checked against
+# core/artifacts/shared/quality-finding.schema.json#/$defs/lesson_candidate, de-duplicated by
+# its normalized summary and proposed check, with every report it was seen in (`sources`:
+# run, artifact, version, report digest, build commit, reporter). Shape:
+# quality-finding.schema.json#/$defs/candidate_record.
+#
+# `regressions` are candidates whose proposed check already holds an active lesson: a
+# regression observation of that lesson, not a new one.
+#
+# Nothing here is a rule. A person promotes a candidate - `wgf knowledge promote C-<n>` drafts
+# the lessons.yaml entry, the evidence.yaml entry and the test stubs as a patch for a pull
+# request - or rejects it (`wgf knowledge reject C-<n> --reason TEXT`). A candidate whose
+# evidence is only subjective (a review's judgment) is never drafted blocking or required.
+#
+# One JSON mapping per entry (JSON is YAML). Written by scripts/wgf_knowledge/ingest.py;
+# edit by hand only to correct a mistake, never to delete evidence.
+version: 1.0.0
+candidates: []
+regressions: []

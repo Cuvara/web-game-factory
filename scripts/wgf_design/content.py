@@ -72,7 +72,7 @@ __all__ = ["MODELS_PATH", "VOCABULARY_PATH", "BENCHMARK_PATH", "RULES", "TIER_RU
            "MASTERY_MODELS", "load_models", "load_vocabulary", "load_benchmark",
            "family_of_node", "resolve_family", "profile_of", "units_of", "quality_tier",
            "tier_bars", "check", "content_model_record", "unit_debuts",
-           "introduction_breaches", "introductions_view"]
+           "introduction_breaches", "introductions_view", "undeclared_units"]
 
 MODELS_PATH = os.path.join(paths.REFERENCE, "genre-models.yaml")
 BENCHMARK_PATH = os.path.join(paths.REFERENCE, "quality-benchmark.yaml")
@@ -1510,15 +1510,33 @@ def introduction_breaches(units, at=lambda unit: str(unit.get("id"))):
     return out
 
 
+def undeclared_units(units):
+    """The ids of the units that name no element, mechanic or introduction. What such a unit
+    puts in front of the player is unknown, so what the units after it debut - and which unit
+    opens play - cannot be counted: the count is UNMEASURED, never a pass (a unit naming
+    nothing is never silently skipped, which would let the next unit 'debut' what it met
+    there, or take the opener's exemption)."""
+    return [str(u.get("id")) for u, new in unit_debuts(units) if new is None]
+
+
 def introductions_view(design):
     """consistency.projection `introductions`: {"units": n, "over_one": [breach],
-    "debuts": {unit id: [new]}} over the design's units not tiered optional, in index order.
-    A design with no units holds the rule and says so (`units` 0)."""
+    "debuts": {unit id: [new]}, "undeclared": [unit id]} over the design's units not tiered
+    optional, in index order. A design with no units holds the rule and says so (`units` 0).
+    A unit that names nothing makes the count unmeasured, which the rule - like every rule
+    that cannot be checked - records as a breach naming the units to complete."""
     units = [u for u in units_of(design) if u.get("tier") != "optional"]
     debuts = unit_debuts(units)
-    return {"units": len(units),
-            "over_one": introduction_breaches(
-                units, at=lambda u: f"build_spec.content.units[{u.get('id')}]"),
+    undeclared = undeclared_units(units)
+    over_one = [] if undeclared else introduction_breaches(
+        units, at=lambda u: f"build_spec.content.units[{u.get('id')}]")
+    if undeclared:
+        over_one = [f"build_spec.content.units[{', '.join(undeclared[:8])}"
+                    + (f" and {len(undeclared) - 8} more" if len(undeclared) > 8 else "")
+                    + "] name no element, mechanic or introduction: what each unit debuts "
+                    "cannot be counted (unmeasured, never a pass) - name each unit's elements "
+                    "and mechanics"]
+    return {"units": len(units), "over_one": over_one, "undeclared": undeclared,
             "debuts": {str(u.get("id")): new for u, new in debuts if new}}
 
 

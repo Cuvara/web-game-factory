@@ -426,7 +426,8 @@ class Held(unittest.TestCase):
         reports = run.versions("content-sufficiency-report")
         failed = reports[0]
         check = check_of(failed, CHECK)
-        self.assertEqual((check["status"], check["route"]), ("FAIL", "develop"))
+        self.assertEqual(check["status"], "FAIL", check)
+        self.assertEqual(check.get("route"), "develop")
         self.assertFalse(rule_result(run.newest("game-design"), CHECK)["breached"])
         # held to the run's contract on that build: L29 FAILED, the release blocked
         contract = run.newest("knowledge-contract")

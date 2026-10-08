@@ -143,8 +143,9 @@ class LessonL29(unittest.TestCase):
         self.assertIn("build_spec.content.units[u-03] debuts 2 elements at once: e-surprise, e2",
                       str(result["measured"]))
         check, status = build_result(doubled(), doubled())
-        self.assertEqual((check["status"], status, check["route"]), ("FAIL", "FAIL",
-                                                                     "design-gap"))
+        # the status first: a check that passes has no route, and must fail here, not err
+        self.assertEqual((check["status"], status), ("FAIL", "FAIL"), check)
+        self.assertEqual(check.get("route"), "design-gap")
 
     # -- passes -----------------------------------------------------------------------------
 
@@ -187,7 +188,8 @@ class LessonL29(unittest.TestCase):
         result, _status, _ = design_result(design_with(paced()))
         self.assertFalse(result["breached"])
         check, status = build_result(paced(), doubled())
-        self.assertEqual((check["status"], status, check["route"]), ("FAIL", "FAIL", "develop"))
+        self.assertEqual((check["status"], status), ("FAIL", "FAIL"), check)
+        self.assertEqual(check.get("route"), "develop")
         self.assertIn("units.json u-03 debuts 2 elements at once", check["summary"])
 
     def test_L29_a_build_that_names_no_elements_is_unmeasured_never_a_pass(self):
@@ -196,6 +198,34 @@ class LessonL29(unittest.TestCase):
         # read SKIPPED, which compliance holds as UNMEASURED - a blocking rule unmet
         self.assertEqual((check["status"], status), ("SKIPPED", "SKIPPED"))
         self.assertIn("never a pass", check["summary"])
+
+    def test_L29_a_unit_naming_nothing_is_unmeasured_never_skipped(self):
+        """A unit that names no element, mechanic or introduction is never skipped: skipped,
+        the unit after it would 'debut' what it met there, and the opener's exemption would
+        not move. The count is unmeasured - on the design a breach naming the units to
+        complete (a rule that cannot be checked is never passed), on the build SKIPPED."""
+        units = paced(4)
+        bare = dict(units[0])
+        for key in ("elements", "mechanics"):
+            bare.pop(key)
+        partial = [bare] + units[1:]
+        # skipping it, u-02 would debut starter, e1 and move - two or more at once
+        result, status, blocking = design_result(design_with(partial))
+        self.assertTrue(result["breached"])
+        self.assertIn("units[u-01] name no element, mechanic or introduction",
+                      str(result["measured"]))
+        self.assertIn("unmeasured, never a pass", str(result["measured"]))
+        self.assertEqual(status, "FAIL")
+        check, status = build_result(paced(4), partial)
+        self.assertEqual((check["status"], status), ("SKIPPED", "SKIPPED"), check)
+        self.assertEqual(check["measured"]["undeclared"], ["u-01"])
+        self.assertIn("1 of 4 shipped units' (u-01)", check["summary"])
+        # a later unit naming nothing is unmeasured too, not a pass
+        late = paced(4)
+        for key in ("elements", "mechanics"):
+            late[2].pop(key)
+        check, _status = build_result(paced(4), late)
+        self.assertEqual(check["status"], "SKIPPED", check)
 
     def test_L29_a_design_without_units_holds_and_says_so(self):
         result, status, _ = design_result(design_with([]))

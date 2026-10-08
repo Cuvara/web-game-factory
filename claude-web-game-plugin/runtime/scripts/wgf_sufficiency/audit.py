@@ -37,7 +37,8 @@ from wgflib import build_scope, genre_models, paths
 from wgflib.yamllite import load_file
 
 from wgf_design import existing, layouts as geometry_of
-from wgf_design.content import introduction_breaches, quality_tier, unit_debuts
+from wgf_design.content import (introduction_breaches, quality_tier, undeclared_units,
+                                 unit_debuts)
 
 __all__ = ["RULES_PATH", "BENCHMARK_PATH", "load_rules", "load_benchmark", "owed_units",
            "built_unlocks",
@@ -867,18 +868,23 @@ def introductions_check(shipped, built_units):
     opening unit, none debuts more than one element. FAIL routes design-gap when the
     design's own units debut two at once, develop when only the build does (a design that
     claims compliance and a build that breaks it). SKIPPED as unmeasured when the content
-    data names no shipped unit's elements or mechanics: what a unit debuts cannot be counted,
+    data names no elements or mechanics for a shipped unit - any of them: what that unit puts
+    in front of the player is unknown, so what the units after it debut cannot be counted,
     and an absence is never a pass."""
     cid = "content.introductions_one_at_a_time"
     if not shipped:
         return _skip(cid, "the build ships none of the units the design owes: nothing debuts")
     built = [built_units[u.get("id")] for u in shipped]
     debuts = unit_debuts(built)
-    if all(new is None for _unit, new in debuts):
-        return _check(cid, "SKIPPED", "UNMEASURED: the content data names no shipped unit's "
-                                      "elements, mechanics or introductions, so what each "
-                                      "unit debuts cannot be counted - unmeasured, never a "
-                                      "pass", route=None)
+    undeclared = undeclared_units(built)
+    if undeclared:
+        which = ("no shipped unit's" if len(undeclared) == len(built) else
+                 f"{len(undeclared)} of {len(built)} shipped units' ("
+                 + ", ".join(undeclared[:8]) + ")")
+        return _check(cid, "SKIPPED", f"UNMEASURED: the content data names {which} elements, "
+                                      "mechanics or introductions, so what each unit debuts "
+                                      "cannot be counted - unmeasured, never a pass",
+                      measured={"undeclared": undeclared}, route=None)
     problems = introduction_breaches(built, at=lambda u: f"units.json {u.get('id')}")
     design_problems = introduction_breaches(shipped, at=lambda u: f"design {u.get('id')}")
     measured = {"debuts": {str(u.get("id")): new for u, new in debuts if new},

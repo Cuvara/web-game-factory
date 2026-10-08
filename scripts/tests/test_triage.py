@@ -234,6 +234,49 @@ class Normalization(unittest.TestCase):
         self.assertEqual(q["qa-report:d2"]["owner"], "sdk")
         self.assertEqual(q["qa-report:suite:e2e"]["bar"], {"failed": 0})
 
+    def test_a_browser_qa_defect_goes_to_the_owner_of_its_check(self):
+        # Verify writes a defect `vr-<check, mangled>`; the routing data's
+        # verification_checks table names the check, and its viewport is the project.
+        qa = {"verdict": "fail", "blocking_defects": [
+            {"id": "vr-browser-context-menu-mobile", "severity": "blocker",
+             "summary": "context menu opened", "repro": "x"},
+            {"id": "vr-browser-audio-hidden", "severity": "blocker",
+             "summary": "sound while hidden", "repro": "x"},
+            {"id": "vr-browser-ui-covers-play-tablet", "severity": "blocker",
+             "summary": "card over the ball", "repro": "x"},
+            {"id": "vr-browser-frame-stability", "severity": "critical",
+             "summary": "p95 41 ms", "repro": "x"},
+            {"id": "vr-browser-win-desktop-wide", "severity": "blocker",
+             "summary": "no win", "repro": "x"},
+            {"id": "vr-browser-run", "severity": "critical", "summary": "spec did not run",
+             "repro": "x"},
+            {"id": "vr-build", "severity": "blocker", "summary": "build failed", "repro": "x"}]}
+        found = self.by_id(normalize("qa-report", qa, ROUTING))
+        owners = {k: (v["owner"], v["source"]["check"], v["source"]["project"])
+                  for k, v in found.items()}
+        self.assertEqual(owners["qa-report:browser.context-menu@mobile"],
+                         ("browser-qa", "browser.context-menu", "mobile"))
+        self.assertEqual(owners["qa-report:browser.audio-hidden"][0], "audio-designer")
+        self.assertEqual(owners["qa-report:browser.ui-covers-play@tablet"][0], "ui")
+        self.assertEqual(owners["qa-report:browser.frame-stability"][0],
+                         "performance-engineer")
+        self.assertEqual(owners["qa-report:browser.win@desktop-wide"][0], "gameplay")
+        self.assertEqual(owners["qa-report:browser.run"][0], "browser-qa")
+        self.assertEqual(owners["qa-report:vr-build"][0], "gameplay")
+
+    def test_play_realism_failures_go_to_their_owners(self):
+        report = playability(("physics.undrawn_collision", {}), ("naive.setbacks", {}),
+                             ("naive.pace", {}), ("naive.alignment", {}),
+                             ("level.clearance", {}), ("runtime.console_errors", {}),
+                             ("runtime.webgl_context", {}))
+        owners = {f["source"]["check"]: f["owner"]
+                  for f in normalize("playability-report", report, ROUTING)}
+        self.assertEqual(owners, {
+            "physics.undrawn_collision": "gameplay", "naive.setbacks": "encounter-designer",
+            "naive.pace": "level-designer", "naive.alignment": "gameplay",
+            "level.clearance": "level-designer", "runtime.console_errors": "browser-qa",
+            "runtime.webgl_context": "performance-engineer"})
+
     def test_a_copy_finding_goes_to_the_copywriter(self):
         report = {"verdict": "FAIL", "checks": [
             {"id": "grounding.copy", "section": "grounding", "status": "FAIL", "required": True,

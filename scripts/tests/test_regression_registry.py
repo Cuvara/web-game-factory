@@ -84,11 +84,11 @@ class Sandbox(unittest.TestCase):
     FILES = ("core/reference/check-tiers.yaml", "core/reference/lessons.yaml",
              "core/reference/quality-floor.yaml", "core/reference/content-sufficiency.yaml",
              "core/reference/visual-qa-rubric.yaml", "core/reference/gate-gaming.yaml",
-             "core/reference/design-consistency-rules.yaml",
+             "core/reference/design-consistency-rules.yaml", "core/reference/browser-qa.yaml",
              "core/reference/quality-policy.yaml", "core/workflows/new-game.workflow.yaml",
              "workspace/lessons/evidence.yaml")
     TREES = ("scripts/wgf_playability", "scripts/wgf_production", "scripts/wgf_assets",
-             "scripts/tests")
+             "scripts/wgf_verification", "scripts/tests")
 
     def setUp(self):
         self.root = tempfile.mkdtemp(prefix="wgf-registry-")
@@ -156,9 +156,9 @@ class ShippedRegistry(unittest.TestCase):
                          "advisory")
         self.assertEqual(CHECKS["quality-dimension:ui"]["tier"], "quality")
 
-    def test_every_lesson_is_l1_to_l22_with_a_check_or_a_gap(self):
+    def test_every_lesson_is_l1_to_l28_with_a_check_or_a_gap(self):
         lessons = DATA["lessons"]["lessons"]
-        self.assertEqual([l["id"] for l in lessons], [f"L{i}" for i in range(1, 23)])
+        self.assertEqual([l["id"] for l in lessons], [f"L{i}" for i in range(1, 29)])
         for lesson in lessons:
             if lesson["status"] in ("enforced", "partial"):
                 self.assertTrue(lesson["checks"] and lesson["tests"], lesson["id"])
@@ -296,6 +296,17 @@ class GuardedBy(unittest.TestCase):
                                  "assets.runtime/develop@mobile")
         self.assertEqual([g["lesson"] for g in guards], ["L3"])
 
+    def test_a_browser_qa_finding_through_the_qa_report_carries_its_lesson(self):
+        guards = registry.guards(DATA["lessons"], DATA["tiers"], "qa-report",
+                                 "browser.context-menu:mobile@mobile")
+        self.assertEqual([g["lesson"] for g in guards], ["L25"])
+        self.assertEqual(guards[0]["check"], "browser-qa:browser.context-menu")
+
+    def test_a_play_realism_finding_carries_its_lesson(self):
+        guards = registry.guards(DATA["lessons"], DATA["tiers"], "playability-report",
+                                 "naive.clear_rate@desktop")
+        self.assertEqual([g["lesson"] for g in guards], ["L23"])
+
     def test_a_check_no_lesson_names_carries_nothing(self):
         self.assertEqual(registry.guards(DATA["lessons"], DATA["tiers"],
                                          "playability-report", "probe.present"), [])
@@ -328,7 +339,7 @@ class Integrity(unittest.TestCase):
             os.chdir(cwd)
         self.assertEqual(module.ERRORS, [])
         self.assertGreater(len(checks), 100)
-        self.assertEqual(len(lessons), 22)
+        self.assertEqual(len(lessons), 28)
 
 
 if __name__ == "__main__":

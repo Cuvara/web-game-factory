@@ -47,6 +47,24 @@ class Contract(unittest.TestCase):
         ids = [c["id"] for c in CONTRACT["checks"]]
         self.assertEqual(len(ids), len(set(ids)))
 
+    def test_every_check_is_routed_to_its_owner(self):
+        from wgf_triage import Routing
+        routing = Routing.load()
+        table = routing.producer("qa-report").get("verification_checks") or {}
+        self.assertEqual(table.get("browser.run"), "browser")
+        for check in CONTRACT["checks"]:
+            self.assertIn(check["owner"], routing.dimensions, check["id"])
+            self.assertEqual(table.get(f"browser.{check['id']}"), check["owner"], check["id"])
+
+    def test_every_check_is_tiered_in_the_registry_as_it_states(self):
+        from wgf_quality import registry
+        checks, problems = registry.classify(registry.load(ROOT)["tiers"], ROOT)
+        self.assertEqual(problems, [])
+        for check in CONTRACT["checks"]:
+            entry = checks[f"browser-qa:browser.{check['id']}"]
+            self.assertEqual(entry["tier"], check["tier"], check["id"])
+        self.assertEqual(checks["browser-qa-run:browser.run"]["tier"], "hard")
+
     def test_the_viewport_set(self):
         sizes = {(v["width"], v["height"]) for v in CONTRACT["viewports"]}
         for size in ((1920, 1080), (1280, 720), (1024, 768), (768, 1024), (390, 844)):

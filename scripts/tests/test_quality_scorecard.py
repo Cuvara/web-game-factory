@@ -39,7 +39,7 @@ from wgflib import gate_evidence  # noqa: E402
 from wgflib.workflow.model import StepOutcome  # noqa: E402
 
 LINES = ["gameplay", "feel", "level_design", "art_2d", "art_3d", "ui_ux", "audio",
-         "performance", "technical", "accessibility", "platform_compliance",
+         "performance", "browser", "technical", "accessibility", "platform_compliance",
          "publishing_readiness"]
 
 
@@ -188,6 +188,121 @@ class Scorecard(unittest.TestCase):
         result = _score(qg.release_build(), spec=spec)
         self.assertIsNone(result["scorecard"])
         self.assertEqual(result["verdict"], "PASS")
+
+
+BROWSER_IDS = ("loads", "canvas", "ready", "menus", "load-time", "first-interaction",
+               "page-errors", "console-errors", "webgl-context", "context-menu", "win", "lose",
+               "restart", "pause-resume", "hidden-pause", "overflow", "clipping", "ui-overlap",
+               "ui-covers-play")
+ONCE_IDS = ("audio-clips", "audio-events", "audio-loops", "audio-mute", "audio-hidden",
+            "audio-loudness", "frame-stability", "memory-growth", "oversized-textures")
+ADVISORY_IDS = ("safe-margins", "button-states", "asset-weight")
+REALISM_IDS = ("physics.undrawn_collision", "physics.collider_size", "naive.setbacks",
+               "naive.pace", "naive.unit_duration", "naive.clear_rate", "level.geometry",
+               "level.unit_length", "runtime.console_errors", "runtime.webgl_context")
+
+
+def _with_browser_and_realism(docs):
+    """The release build with a browser-QA verification (browser-qa.yaml, every viewport) and
+    the play-realism checks a release-tier bot reports, all passing."""
+    checks = [qg._check("browser.run")]
+    for cid in BROWSER_IDS:
+        checks += [qg._check(f"browser.{cid}:{vp}") for vp in ("desktop-wide", "mobile")]
+    checks += [qg._check(f"browser.{cid}") for cid in ONCE_IDS]
+    checks += [qg._check(f"browser.{cid}:mobile", required=False) for cid in ADVISORY_IDS]
+    docs["verification-report"]["checks"] = checks
+    docs["playability-report"]["checks"] += [qg._check(cid, project="desktop")
+                                             for cid in REALISM_IDS]
+    return docs
+
+
+def _set(report, check_id, status, **extra):
+    for check in report["checks"]:
+        if check["id"] == check_id:
+            check["status"] = status
+            check.update(extra)
+            return
+    raise AssertionError(check_id)
+
+
+class BrowserQAAndPlayRealism(unittest.TestCase):
+    """Browser QA (browser-qa.yaml) and play realism (play-realism.yaml) on the scorecard:
+    each check is on the line of the discipline that owns it, and a failure there holds the
+    build whatever the other lines score."""
+
+    def test_a_build_passing_both_scores_every_line_they_feed(self):
+        result = _score(_with_browser_and_realism(qg.release_build()))
+        self.assertEqual(result["verdict"], "PASS")
+        status = {line["id"]: line["status"] for line in result["scorecard"]["lines"]}
+        for line_id in ("browser", "performance", "ui_ux", "audio", "feel", "level_design",
+                        "gameplay"):
+            self.assertEqual(status[line_id], "PASS", line_id)
+        self.assertIn("floor.browser_boot", _line(result, "browser")["criteria"])
+        self.assertIn("floor.browser_session", _line(result, "browser")["criteria"])
+        self.assertIn("floor.runtime_console", _line(result, "browser")["criteria"])
+        self.assertIn("floor.browser_performance", _line(result, "performance")["criteria"])
+        self.assertIn("floor.webgl_context", _line(result, "performance")["criteria"])
+        self.assertIn("floor.browser_layout", _line(result, "ui_ux")["criteria"])
+        self.assertIn("floor.browser_audio", _line(result, "audio")["criteria"])
+        self.assertIn("floor.physics_drawn", _line(result, "feel")["criteria"])
+        self.assertIn("floor.naive_challenge", _line(result, "level_design")["criteria"])
+        self.assertIn("floor.level_geometry", _line(result, "level_design")["criteria"])
+
+    def test_a_context_menu_on_one_viewport_holds_the_browser_line(self):
+        docs = _with_browser_and_realism(qg.release_build())
+        _set(docs["verification-report"], "browser.context-menu:mobile", "FAIL")
+        result = _score(docs)
+        self.assertEqual(_line(result, "browser")["status"], "BELOW_FLOOR")
+        self.assertIn("floor.browser_boot", _line(result, "browser")["blockers"])
+        self.assertEqual(result["verdict"], "FAIL")
+
+    def test_a_silent_loss_holds_the_audio_line(self):
+        docs = _with_browser_and_realism(qg.release_build())
+        _set(docs["verification-report"], "browser.audio-events", "FAIL")
+        result = _score(docs)
+        self.assertEqual(_line(result, "audio")["status"], "BELOW_FLOOR")
+        self.assertIn("floor.browser_audio", _line(result, "audio")["blockers"])
+
+    def test_unstable_frames_hold_the_performance_line(self):
+        docs = _with_browser_and_realism(qg.release_build())
+        _set(docs["verification-report"], "browser.frame-stability", "FAIL")
+        result = _score(docs)
+        self.assertEqual(_line(result, "performance")["status"], "BELOW_FLOOR")
+        self.assertIn("floor.browser_performance", _line(result, "performance")["blockers"])
+
+    def test_advisory_browser_checks_are_findings_never_a_blocker(self):
+        docs = _with_browser_and_realism(qg.release_build())
+        _set(docs["verification-report"], "browser.button-states:mobile", "WARNING")
+        result = _score(docs)
+        self.assertEqual(result["verdict"], "PASS")
+        self.assertNotIn("floor.browser_ui_advisory", _line(result, "ui_ux")["blockers"])
+
+    def test_a_unit_held_forward_through_holds_level_design(self):
+        docs = _with_browser_and_realism(qg.release_build())
+        _set(docs["playability-report"], "naive.pace", "FAIL")
+        result = _score(docs)
+        self.assertEqual(_line(result, "level_design")["status"], "BELOW_FLOOR")
+        self.assertIn("floor.naive_challenge", _line(result, "level_design")["blockers"])
+
+    def test_a_turn_at_nothing_drawn_holds_game_feel(self):
+        docs = _with_browser_and_realism(qg.release_build())
+        _set(docs["playability-report"], "physics.undrawn_collision", "FAIL")
+        result = _score(docs)
+        self.assertEqual(_line(result, "feel")["status"], "BELOW_FLOOR")
+        self.assertIn("floor.physics_drawn", _line(result, "feel")["blockers"])
+
+    def test_an_unmeasured_clear_rate_alone_is_not_held(self):
+        # No accepted build: naive.clear_rate is reported unmeasured and not required - never
+        # a pass, never a blocker (play-realism.yaml clear_rate); the other naive checks count.
+        docs = _with_browser_and_realism(qg.release_build())
+        _set(docs["playability-report"], "naive.clear_rate", "WARNING", required=False)
+        result = _score(docs)
+        self.assertEqual(_line(result, "level_design")["status"], "PASS")
+
+    def test_a_build_without_browser_qa_or_realism_is_not_scored_on_them(self):
+        result = _score(qg.release_build())
+        self.assertNotIn("floor.browser_boot", _line(result, "browser")["criteria"])
+        self.assertNotIn("floor.physics_drawn", _line(result, "feel")["criteria"])
 
 
 class ThroughTheStep(unittest.TestCase):

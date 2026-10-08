@@ -449,8 +449,12 @@ class GenreSeedAuthor(ArchetypeAuthor):
                 f"research took from the catalog.")
 
     def synthesize(self, family_id, models, strategy, entry):
-        """`Resolved` for a game of family `family_id`, built from the family's `seed` block."""
-        self.refuse_an_idea(family_id, strategy)
+        """`Resolved` for a game of family `family_id`, built from the family's `seed` block.
+        As the agent author's starting point the seed is only the required shape, which the
+        agent rewrites into the person's idea - so an idea is refused only when the seed would
+        be the design."""
+        if not self.starting_point:
+            self.refuse_an_idea(family_id, strategy)
         seed = entry.get("seed")
         if not isinstance(seed, dict) or not isinstance(seed.get("archetype"), dict):
             raise AuthorError(f"core/reference/genre-models.yaml family {family_id!r} carries no "

@@ -303,6 +303,17 @@ class TheSeedRefusesAnIdeaItCannotDesign(unittest.TestCase):
                                         "params": {}, "title_id": "t"})
         self.assertIn("agent author", str(caught.exception))
 
+    def test_the_agent_authors_starting_point_takes_the_seed_for_an_idea(self):
+        # /new-game with an idea in a family no archetype carries: the agent author starts
+        # from the seed's shape and rewrites it into the idea, so the seed must not refuse.
+        strategy = strategy_for("simulation")
+        idea = "A lemonade-stand tycoon: price, upgrades, staff and market events"
+        strategy["brief"] = idea
+        strategy["concept"]["core_mechanic"] = idea
+        resolved = GenreSeedAuthor(starting_point=True)._resolve(
+            {"strategy": strategy, "platforms": [], "params": {}, "title_id": "t"})
+        self.assertTrue(resolved.archetype["mechanics"])
+
     def test_a_catalog_concept_is_designed_as_before(self):
         strategy = strategy_for("simulation")
         strategy["brief"] = "a tycoon game"

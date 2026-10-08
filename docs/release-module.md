@@ -129,6 +129,7 @@ when its preconditions held is what makes a draft mean something. The refusals a
 | `quality-not-release` | FAILED | the newest quality-report decided `not-release` |
 | `knowledge-not-satisfied` | FAILED | the newest quality-report's knowledge compliance is enforcing and RELEASE_BLOCKED: a blocking or required rule of the run's knowledge-contract is failed or unmeasured, and no person excepted it |
 | `stale-knowledge-compliance` | FAILED | the newest quality-report judged another knowledge-contract than the run's newest: run quality-gate again |
+| `quality-development-in-release-run` | FAILED | the newest quality-report decided `development`, but the run is release-class (its quality snapshot): a release run never ships on a development build's judgement |
 | `open-findings` | FAILED | the run's finding ledger (the newest triage-report's or quality-report's, advanced on the newest reports and G4's decision: `wgf_triage.ledger.remeasure`) holds a finding of a blocking severity (`specialist-routing.yaml` `ledger.blocking_severities`) that is not verified: nothing measured it fixed on a newer build ([specialist-routing.md](specialist-routing.md)) |
 | `ledger-unreadable` | FAILED | the ledger cannot be advanced (unusable routing data) |
 | `verified-dirty-tree` | BLOCKED | verification ran on uncommitted changes, which no commit reproduces |

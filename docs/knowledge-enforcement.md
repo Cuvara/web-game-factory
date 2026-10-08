@@ -135,13 +135,28 @@ playability, play-realism, production-quality, content-sufficiency). The irregul
 
 A report with no entry for a check reads it as UNMEASURED - never a pass. Since
 check-tiers 1.2.0 a source whose producer reports a check only for a build it concerns says
-so: `absent: {status: NOT_APPLICABLE, checks?}` (play realism's physics, naive and level
-checks; content-sufficiency's `content.regression`, an adopted game's; playability's
-`depth.stall`, timed endless play's; the quality floor's criteria, the build's own contract)
-- a report of it with no entry reads NOT_APPLICABLE, and no report at all is still
-UNMEASURED. `not_applicable: {field, values}` reads an entry whose field holds one of the
-values as NOT_APPLICABLE (a clear rate with no accepted build to fall from).
-`registry.check_status(tiers, "<source>:<id>", report)` reads one check;
+so with `not_reported` groups, and an absence is NOT_APPLICABLE only with the evidence a
+group names - never on the absence alone (a group needs `verdict` or `ran`):
+
+| Source | Checks | NOT_APPLICABLE when (all of) |
+|---|---|---|
+| play-realism | physics.* | the report finished (PASS/FAIL), realism ran (a `runtime.*` entry), and the run is 3D - or 2D and the design's `build_spec.assets` declare no `projectile` (the bodies the simulation moves) |
+| play-realism | naive.drift, naive.alignment | finished, naive play ran (a `naive.*` entry), the run is 2D |
+| play-realism | level.* | finished, and the content-sufficiency-report read the content data file (`content.data_present` PASS) |
+| content-sufficiency | content.regression | finished, ran, and the design carries no `existing_content` (no adopted game) |
+| playability | depth.stall | finished, and the ramp ran (`depth.ramp`) |
+| quality-floor | every criterion | the report scored its floor (`floor.*`): a criterion it does not carry is not the build's contract |
+
+Otherwise - a BLOCKED report, a family that never ran, a 2D game that moves a body but
+reports no physics, layouts never read - the absence is UNMEASURED. `not_applicable: {field,
+values}` reads an entry whose field holds one of the values as NOT_APPLICABLE (a clear rate
+with no accepted build to fall from). `covered: {field, values}` reads as PASS (`covered`) a
+WARNING entry its producer made advisory because another check measured what it stands for:
+level.clearance whose failing units all had their clear rate measured
+(`realism.gate_clearance`, `measured.gate` advisory or clear-rate-failed) - naive.clear_rate is
+read on its own, so a failing one still fails the rule.
+`registry.check_status(tiers, "<source>:<id>", report, facts)` reads one check (`facts`:
+the run's render and the run's other reports, for the `not_reported` conditions);
 check-integrity holds that every locator's path exists in the producer's schema.
 `test_regression_registry` resolves a failing and a passing result for every source on a
 schema-valid report of its producer, reads the irregular ones on what the producers actually
@@ -167,7 +182,7 @@ satisfied by evidence, never by a report saying something was fixed.
 | FAILED | a check failed |
 | UNMEASURED | a check has no result on this build: no report, no entry, SKIPPED, BLOCKED, a WARNING (reported without being held), a measured value with no verdict, or stale evidence - never a pass |
 | DEFERRED | a check's producer measures it later (the store listing) |
-| NOT_APPLICABLE | every check is one its producer reports only for builds it concerns (`absent: {status: NOT_APPLICABLE}`) or says does not concern this one (`not_applicable`), and none does |
+| NOT_APPLICABLE | every check is one its producer reports only for builds it concerns and a `not_reported` group's evidence holds, or one it says does not concern this build (`not_applicable`) |
 | EXCEPTED | FAILED or UNMEASURED, and a person's exception that holds at the gate's clock covers every check that is not passing (its `checks` and `viewports` scope); its measured status is kept beside it |
 | NOT_ENFORCED | an experimental rule nothing holds yet: its gap, as guidance |
 
@@ -175,16 +190,39 @@ A **blocking or required** rule FAILED or UNMEASURED (and not excepted) makes th
 `RELEASE_BLOCKED`. A recommended or experimental rule not satisfied is a warning, never a
 block. Each exception offered - the contract's, and any a person granted the run since
 (`KNOWLEDGE_EXCEPTION_GRANTED` events) - is listed with its status: `honoured`, `expired`
-(past its expiry the rule is held again) or `refused` (automation's, a rule that never
-blocks, a scope the run or the rule does not have, a platform scope covering only some of
-the run's targets - one build ships to all of them).
+(past its expiry the rule is held again) or `refused` (automation's, an unverified event, a
+rule that never blocks, a scope the run or the rule does not have, a platform scope covering
+only some of the run's targets - one build ships to all of them).
 
-**Enforcing or advisory.** For a run that made its contract, at a releasable tier, the
-section is *enforcing*: `RELEASE_BLOCKED` makes the release decision `not-release` (the rule
+The event a person's `wgf resume <run> --except ...` records has the budget raise's shape
+(`wgflib/budget.py`), and is followed by the engine's `WORKFLOW_RESUMED` with the same
+`resume_nonce`:
+
+```json
+{"event": "KNOWLEDGE_EXCEPTION_GRANTED",
+ "data": {"decided_by": "<who ran the resume>", "decided_at": "<ISO 8601>",
+          "resume_nonce": "<the resume's nonce>",
+          "exception": {"rule_id": "L26", "reason": "...", "scope": {},
+                        "approved_by": {"identifier": "<the same as decided_by>",
+                                        "mode": "human"},
+                        "created_at": "<ISO 8601>", "expires_at": "<ISO 8601>"}}}
+```
+
+The record is never trusted about its approver: an event with no `decided_by`, decided by
+`automation`, whose `decided_by` is not the record's `approved_by.identifier`, or not
+corroborated by its resume, is `unverified` and refused.
+
+**Enforcing or advisory.** For a run that made its contract, the section is *enforcing*
+when anything says the run is a release - the tier its design states, the tier its contract
+was made for, or its quality class (`params.quality`, the snapshot) - so a design stating
+mvp never softens a release-class run; a development decision there becomes `not-release`,
+and release refuses a development quality-report from a release-class run
+(`quality-development-in-release-run`). Enforcing, `RELEASE_BLOCKED` makes the release decision `not-release` (the rule
 ids as its reasons) and a passing verdict `FAIL`, routed back by the producers of what
 failed (`asset-manifest` to assets, `game-design` to design-gap, the rest develop; triage
 routes the producers' own findings). It is *advisory* - shown, changing nothing - for a
-development build (tier mvp: never a release anyway) and for a run started before the
+development build (tier mvp and a development-class run: never a release) and for a run
+started before the
 knowledge model, whose contract is resolved now from the knowledge it pinned
 (`contract.retroactive`). A run that recorded its knowledge at start (`params.quality.knowledge`)
 but whose contract does not reach the gate is never skipped: `contract_missing`, enforcing,

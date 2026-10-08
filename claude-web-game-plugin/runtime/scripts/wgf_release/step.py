@@ -248,7 +248,8 @@ class ReleaseStep(WorkflowStep):
                 gates_passed=getattr(context, "gates_passed", None) or (),
                 required_gates=required_gates, allow_unreviewed=allow_unreviewed,
                 required_reports=required_reports, required_listing=required_listing,
-                required_quality=required_quality)
+                required_quality=required_quality,
+                run_class=_run_quality(context).get("class"))
             if refusals:
                 raise _Refused(refusals)
             # The step's own `with:` only: a factory.release key is not a checkout path.

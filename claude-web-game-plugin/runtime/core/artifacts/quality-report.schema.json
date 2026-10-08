@@ -138,7 +138,11 @@
           ]
         },
         "current": {
-          "type": "boolean"
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "true: the report describes this build; false: another (stale); null: the producer is not tied to a commit of the build (the design, the asset manifest)."
         },
         "self": {
           "type": "boolean"

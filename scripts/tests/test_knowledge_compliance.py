@@ -172,7 +172,18 @@ class _Log:
         return lambda *a, **k: None
 
 
-def run_gate(test, docs, params=None, events=(), hashes=True):
+def granted(record, decided_by="duy", nonce="resume-1", corroborated=True):
+    """The operator events a person's `wgf resume <run> --except ...` records: the grant,
+    then the engine's WORKFLOW_RESUMED of the same resume."""
+    events = [{"event": compliance.EXCEPTION_EVENT,
+               "data": {"decided_by": decided_by, "decided_at": CLOCK,
+                        "resume_nonce": nonce, "exception": record}}]
+    if corroborated:
+        events.append({"event": "WORKFLOW_RESUMED", "data": {"resume_nonce": nonce}})
+    return events
+
+
+def run_gate(test, docs, run_params=None, events=(), hashes=True):
     """The real quality-gate step on `docs`, at a fixed clock; the report schema-checked."""
     base = tempfile.mkdtemp(prefix="wgf-compliance-")
     test.addCleanup(shutil.rmtree, base, ignore_errors=True)
@@ -190,7 +201,7 @@ def run_gate(test, docs, params=None, events=(), hashes=True):
 
     context = types.SimpleNamespace(config={}, run_dir=base, logger=_Log(), visit=1,
                                     attempt=1, execution=1, previous_outputs=[],
-                                    environment={}, params=params or {},
+                                    environment=run_params or {}, params={},
                                     read_events=lambda: list(events))
     step = QualityGateStep(types.SimpleNamespace(params={}, id="quality-gate"))
     step.clock = staticmethod(lambda: CLOCK)
@@ -301,7 +312,8 @@ class Levels(unittest.TestCase):
         contract = contract_for(render="3d")
         l11 = next(r for r in contract["rules"] if r["id"] == "L11")
         section = evaluate(dict(contract, rules=[l11]), {
-            "playability-report": play_report(start__playable="PASS"),
+            "playability-report": play_report(start__playable="PASS",
+                                              runtime__console_errors="PASS"),
             "review-report": {"reviewed_commit": gate_fixture.SHIP, "verdict": "approve",
                               "blockers": []}})
         statuses = {c["check"]: c["status"] for c in by_id(section)["L11"]["checks"]}
@@ -411,7 +423,12 @@ class Gate(unittest.TestCase):
                     continue
                 evidence = check["evidence"]
                 self.assertTrue(evidence["artifact_id"] or evidence.get("self"), check)
-                self.assertTrue(evidence["current"])
+                if evidence["artifact_type"] in ("game-design", "asset-manifest"):
+                    # Not tied to a commit of the build: its currency is unknown, said so.
+                    self.assertIsNone(evidence["current"])
+                    self.assertIn("currency is unknown", check["note"])
+                else:
+                    self.assertTrue(evidence["current"])
                 if evidence.get("self"):
                     self.assertEqual(evidence["artifact_id"],
                                      report["provenance"]["artifact_id"])
@@ -471,7 +488,7 @@ class Gate(unittest.TestCase):
     def test_a_run_that_recorded_its_knowledge_without_a_contract_here_is_blocked(self):
         params = {"quality": {"tier": "release", "knowledge": {
             "lessons": "lessons@2.0.0", "check-tiers": "check-tiers@1.2.0"}}}
-        result, report = run_gate(self, complete_build(), params=params)
+        result, report = run_gate(self, complete_build(), run_params=params)
         self.assertEqual(result.outcome, StepOutcome.FAILED)
         self.assertEqual(report["release_decision"]["decision"], "not-release")
         self.assertIn("no knowledge-contract reaches", report["compliance"]["contract_missing"])
@@ -491,17 +508,61 @@ class Gate(unittest.TestCase):
         for check in docs["verification-report"]["checks"]:
             if check["id"] == "browser.ui-covers-play:mobile":
                 check["status"] = "FAIL"
-        event = {"event": compliance.EXCEPTION_EVENT, "exception": exception("L26")}
-        result, report = run_gate(self, self.with_contract(docs), events=[event])
+        result, report = run_gate(self, self.with_contract(docs),
+                                  events=granted(exception("L26")))
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
         l26 = next(r for r in report["compliance"]["rules"] if r["id"] == "L26")
         self.assertEqual(l26["status"], "EXCEPTED")
         self.assertEqual(report["compliance"]["exceptions"][0]["status"], "honoured")
-        # Decided by automation, the same event excepts nothing.
-        robot = dict(event, decided_by="automation")
-        result, report = run_gate(self, self.with_contract(docs), events=[robot])
+
+    def test_a_forged_exception_event_excepts_nothing(self):
+        docs = complete_build()
+        for check in docs["verification-report"]["checks"]:
+            if check["id"] == "browser.ui-covers-play:mobile":
+                check["status"] = "FAIL"
+        forged = {
+            "automation": granted(exception("L26"), decided_by="automation"),
+            "nobody": granted(exception("L26"), decided_by=None),
+            "someone else": granted(exception("L26"), decided_by="mallory"),
+            "a lone line": granted(exception("L26"), corroborated=False),
+            "the old flat shape": [{"event": compliance.EXCEPTION_EVENT,
+                                    "exception": exception("L26"), "decided_by": "duy"}],
+        }
+        for label, events in forged.items():
+            with self.subTest(label):
+                result, report = run_gate(self, self.with_contract(docs), events=events)
+                self.assertEqual(report["release_decision"]["decision"], "not-release")
+                entry = report["compliance"]["exceptions"][0]
+                self.assertEqual(entry["status"], "refused")
+                self.assertTrue(any("unverified" in p or "unauthorized" in p
+                                    for p in entry["problems"]), entry)
+
+    def test_a_release_class_run_is_enforced_whatever_tier_its_design_states(self):
+        docs = gate_fixture.release_build(tier="mvp")
+        docs["knowledge-contract"] = contract_for(tier="mvp")
+        params = {"quality": {"tier": "release", "class": "release"}}
+        result, report = run_gate(self, docs, run_params=params)
+        section = report["compliance"]
+        self.assertEqual(section["mode"], "enforcing")
+        self.assertTrue(section["holds_release"])  # the mvp fixture lacks most checks
         self.assertEqual(report["release_decision"]["decision"], "not-release")
-        self.assertEqual(report["compliance"]["exceptions"][0]["status"], "refused")
+        # The contract's own tier says release: enforced too.
+        docs["knowledge-contract"] = contract_for(tier="release")
+        _, report = run_gate(self, docs)
+        self.assertEqual(report["compliance"]["mode"], "enforcing")
+
+    def test_release_refuses_a_development_report_in_a_release_class_run(self):
+        from wgf_release import lineage
+        docs = gate_fixture.release_build(tier="mvp")
+        _, report = run_gate(self, docs)
+        self.assertEqual(report["release_decision"]["decision"], "development")
+        refs = {"quality-report": types.SimpleNamespace(content_hash=digest("q"))}
+        codes = [r.code for r in lineage.quality_refusals(refs, {"quality-report": report},
+                                                          run_class="release")]
+        self.assertIn("quality-development-in-release-run", codes)
+        codes = [r.code for r in lineage.quality_refusals(refs, {"quality-report": report},
+                                                          run_class="development")]
+        self.assertNotIn("quality-development-in-release-run", codes)
 
     def test_g4_shows_the_compliance(self):
         docs = complete_build()
@@ -615,6 +676,76 @@ def real_rule(rule_id, render="2d"):
 class RegressionFirewall(unittest.TestCase):
     """Positive/negative pairs: each real lesson's rule FAILS the build that showed it and is
     SATISFIED by the fixed one - judged by the real producers on the same records."""
+
+    def steel_gaps(self, commit, variant, units=("w3-l7", "w4-l7")):
+        """The playability-report checks the realism judge makes of the 2D game's steel-gap
+        levels at `commit`, with naive.clear_rate of `variant` against the accepted r1
+        rates, gated as the step gates them (realism.gate_clearance)."""
+        import test_play_realism as pr
+        content = pr.real(f"content-2d-{commit}.json")
+        content = dict(content, play_geometry={
+            "grid": {"key": "rows", "solid": "S",
+                     "cell": ["tuning.bricks.brick_width_px", "tuning.bricks.brick_height_px"]},
+            "body": {"radius": "tuning.ball-rebound.ball_radius_px"}})
+        layout = realism.judge_layouts(content, RULES, RELEASE)
+        levels = pr.real("clear-rates-2d-steel-gaps.json")["levels"]
+        accepted = {u: levels[u]["r1_ref11"] for u in units}
+        runs = [pr.naive_run(model, u, asked=u, won=i < cell["won"])
+                for u in units for model, cell in levels[u][variant].items()
+                for i in range(cell["n"])]
+        rate = [c for c in realism.judge(pr.naive(*runs), D2, RULES, "desktop", RELEASE, (),
+                                         {"units": accepted}) if c["id"] == "naive.clear_rate"]
+        checks = realism.gate_clearance(layout + rate, RELEASE)
+        return {"commit": gate_fixture.DEV, "verdict": "PASS", "checks": checks}
+
+    def test_L23_the_steel_gaps_fix_is_satisfied_and_the_r20_head_fails(self):
+        """M1: the fix keeps one-cell steel lanes (level.clearance fails as a proxy) but
+        clears them as often as the accepted build, so the producer makes the clearance
+        advisory - covered by the clear rate. 894b4b8 clears w4-l7 far less often."""
+        contract = real_rule("L23")
+        fixed = self.steel_gaps("03f88ad", "fixed")
+        clearance = next(c for c in fixed["checks"] if c["id"] == "level.clearance")
+        self.assertEqual((clearance["status"], clearance["measured"]["gate"]["w3-l7"]),
+                         ("WARNING", "advisory"))
+        section = evaluate(contract, {"playability-report": fixed})
+        l23 = by_id(section)["L23"]
+        self.assertEqual(l23["status"], "SATISFIED", l23)
+        held = {c["check"]: c for c in l23["checks"]}
+        self.assertIn("advisory", held["play-realism:level.clearance"]["note"])
+        self.assertFalse(section["holds_release"])
+        head = evaluate(contract, {"playability-report": self.steel_gaps("894b4b8",
+                                                                         "main_894b4b8")})
+        self.assertEqual(by_id(head)["L23"]["status"], "FAILED")
+        self.assertEqual({c["check"]: c["status"] for c in by_id(head)["L23"]["checks"]}[
+            "play-realism:naive.clear_rate"], "FAIL")
+
+    def test_a_blocked_playability_report_never_makes_a_realism_rule_not_applicable(self):
+        contract = contract_for()
+        rules = [r for r in contract["rules"] if r["id"] in ("L13", "L14", "L23")]
+        blocked = {"commit": gate_fixture.DEV, "verdict": "BLOCKED", "checks": [],
+                   "blocked_reason": "the bot produced no records"}
+        read = {"checks": [{"id": "content.data_present", "status": "PASS"}]}
+        section = evaluate(dict(contract, rules=rules), {
+            "playability-report": blocked, "content-sufficiency-report": read})
+        for rule_id in ("L13", "L14", "L23"):
+            self.assertEqual(by_id(section)[rule_id]["status"], "UNMEASURED", rule_id)
+        self.assertTrue(section["holds_release"])
+
+    def test_L11_cannot_be_switched_off_by_reporting_no_moving_body(self):
+        """A 2D design that moves a body: physics reported for nothing is UNMEASURED, so the
+        review's flags alone never satisfy L11. A design with no moving body: not
+        applicable."""
+        l11 = real_rule("L11")
+        review = {"reviewed_commit": gate_fixture.SHIP, "verdict": "approve", "blockers": []}
+        silent = play_report(runtime__console_errors="PASS", start__playable="PASS")
+        moving = {"build_spec": {"assets": [{"id": "ball", "role": "projectile"}]}}
+        section = evaluate(l11, {"playability-report": silent, "review-report": review,
+                                 "game-design": moving})
+        self.assertEqual(by_id(section)["L11"]["status"], "UNMEASURED")
+        still = {"build_spec": {"assets": [{"id": "tile", "role": "target"}]}}
+        section = evaluate(l11, {"playability-report": silent, "review-report": review,
+                                 "game-design": still})
+        self.assertEqual(by_id(section)["L11"]["status"], "SATISFIED")
 
     def test_L11_a_collider_larger_than_its_drawn_body(self):
         contract = real_rule("L11")
@@ -881,6 +1012,34 @@ class Triage(unittest.TestCase):
         self.assertEqual(found[0]["excepted"]["rule_id"], "L25")
         self.assertNotIn("excepted", found[1])
         self.assertIn("excepted for this run by duy", held[0][1])
+
+    def test_a_finding_two_rules_hold_is_held_only_when_both_are_excepted(self):
+        from wgf_triage.step import _excepted
+        contract = contract_for(exceptions=[exception("L24")])
+        self.assertEqual([e["rule_id"] for e in contract["exceptions"]], ["L24"])
+        docs = {"knowledge-contract": contract}
+
+        class Inputs:
+            refs = {}
+
+            def __contains__(self, k):
+                return k in docs
+
+            def load(self, k):
+                return docs[k]
+
+        def finding():
+            return dict(self.finding("qa-report", "browser.console-errors", project="mobile"),
+                        guarded_by=[{"lesson": "L24", "check":
+                                     "browser-qa:browser.console-errors", "level": "required"},
+                                    {"lesson": "L99", "check":
+                                     "browser-qa:browser.console-errors", "level": "blocking"}])
+        found = [finding()]
+        self.assertEqual(_excepted(found, Inputs(), None, now=NOW), [])
+        self.assertNotIn("excepted", found[0])
+        # The same finding held by L24 alone is excepted.
+        alone = dict(finding(), guarded_by=finding()["guarded_by"][:1])
+        self.assertEqual(len(_excepted([alone], Inputs(), None, now=NOW)), 1)
 
 
 # ------------------------------------------------------------------------- fixture world

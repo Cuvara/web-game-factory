@@ -458,14 +458,63 @@ class StatusAt(unittest.TestCase):
         self.assertEqual([r["status"] for r in found], ["UNMEASURED"])
 
     def test_a_check_its_producer_reports_only_where_it_applies_is_not_applicable(self):
-        # play-realism (1.2.0): a playability-report without a physics check is a build the
-        # check does not concern (a 3D build, say) - not applicable, never a pass.
+        # play-realism (1.2.0 not_reported): a finished playability-report on which realism
+        # ran, with no physics check, of a 3D run - not applicable, never a pass.
         report = _fixture("playability-report")
+        report["verdict"] = "PASS"
         report["checks"] = [c for c in report.get("checks") or []
-                            if not str(c.get("id")).startswith("physics.")]
-        found = registry.check_status(DATA["tiers"], "play-realism:physics.collider_size",
-                                      report)
+                            if not str(c.get("id")).startswith(("physics.", "runtime."))]
+        report["checks"].append({"id": "runtime.console_errors", "project": "desktop",
+                                 "status": "PASS", "required": True, "summary": "clean"})
+        cid = "play-realism:physics.collider_size"
+        found = registry.check_status(DATA["tiers"], cid, report, {"render": "3d"})
         self.assertEqual([r["status"] for r in found], ["NOT_APPLICABLE"])
+        self.assertIn("2D board", found[0]["why"])
+        # Without the evidence its group names, the same absence is UNMEASURED: no facts, a
+        # 2D run whose design moves a body, realism that never ran, a report that blocked.
+        self.assertEqual(registry.check_status(DATA["tiers"], cid, report)[0]["status"],
+                         "UNMEASURED")
+        design = {"build_spec": {"assets": [{"id": "ball", "role": "projectile"}]}}
+        facts = {"render": "2d", "reports": {"game-design": design}}
+        self.assertEqual(registry.check_status(DATA["tiers"], cid, report, facts)[0]["status"],
+                         "UNMEASURED")
+        facts["reports"]["game-design"] = {"build_spec": {"assets": [{"id": "hero",
+                                                                      "role": "player"}]}}
+        self.assertEqual(registry.check_status(DATA["tiers"], cid, report, facts)[0]["status"],
+                         "NOT_APPLICABLE")
+        ran_nothing = dict(report, checks=[c for c in report["checks"]
+                                           if not c["id"].startswith("runtime.")])
+        self.assertEqual(registry.check_status(DATA["tiers"], cid, ran_nothing,
+                                               {"render": "3d"})[0]["status"], "UNMEASURED")
+        blocked = dict(report, verdict="BLOCKED")
+        self.assertEqual(registry.check_status(DATA["tiers"], cid, blocked,
+                                               {"render": "3d"})[0]["status"], "UNMEASURED")
+
+    def test_level_checks_absent_only_once_the_content_data_was_read(self):
+        report = dict(_fixture("playability-report"), verdict="PASS")
+        report["checks"] = [c for c in report.get("checks") or []
+                            if not str(c.get("id")).startswith("level.")]
+        cid = "play-realism:level.geometry"
+        read = {"checks": [{"id": "content.data_present", "status": "PASS"}]}
+        self.assertEqual(registry.check_status(DATA["tiers"], cid, report, {"reports": {
+            "content-sufficiency-report": read}})[0]["status"], "NOT_APPLICABLE")
+        for facts in (None, {"reports": {"content-sufficiency-report": {"checks": [
+                {"id": "content.data_present", "status": "FAIL"}]}}}):
+            self.assertEqual(registry.check_status(DATA["tiers"], cid, report,
+                                                   facts)[0]["status"], "UNMEASURED", facts)
+
+    def test_a_proxy_its_producer_made_advisory_is_covered(self):
+        # realism.gate_clearance: level.clearance advisory because the clear rate measured
+        # every failing unit - covered; a unit with no clear rate keeps it unmeasured.
+        entry = {"id": "level.clearance", "project": "build", "status": "WARNING",
+                 "required": False, "summary": "s",
+                 "measured": {"gate": {"w3-l7": "advisory"}}}
+        report = {"verdict": "PASS", "checks": [entry]}
+        found = registry.check_status(DATA["tiers"], "play-realism:level.clearance", report)
+        self.assertEqual((found[0]["status"], found[0].get("covered")), ("PASS", True))
+        entry["measured"]["gate"]["w4-l7"] = "quality-gate"
+        found = registry.check_status(DATA["tiers"], "play-realism:level.clearance", report)
+        self.assertEqual(found[0]["status"], "WARNING")
 
     def test_a_per_viewport_browser_result_reads_as_its_check(self):
         _, report = _with_result("browser-qa", "browser.context-menu", True)
@@ -491,11 +540,12 @@ class StatusAtIntegrity(Sandbox):
         self.assertTrue(any("'items[].quality.verdicts' is not a property" in p
                             for p in self.problems()))
 
-    def test_an_absent_constant_that_passes_fails(self):
+    def test_a_not_reported_group_on_absence_alone_fails(self):
         tiers = self.read("core/reference/check-tiers.yaml")
-        tiers["sources"]["play-realism"]["status_at"]["absent"] = {"status": "PASS"}
+        tiers["sources"]["play-realism"]["status_at"]["not_reported"].append(
+            {"checks": ["naive.pace"], "why": "guessed"})
         self.write("core/reference/check-tiers.yaml", tiers)
-        self.assertTrue(any("absent.status 'PASS'" in p for p in self.problems()),
+        self.assertTrue(any("needs `verdict` or `ran`" in p for p in self.problems()),
                         self.problems())
 
     def test_a_locator_key_outside_the_vocabulary_fails(self):

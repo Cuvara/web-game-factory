@@ -373,7 +373,7 @@ A finding triage normalizes whose check a lesson names carries the lesson as `gu
 (the quality-finding schema): the specialist's brief says "Known lesson Ln: held by ...".
 From the lessons the run pinned; with the run's knowledge-contract, only the rules that
 apply to the run, each with its `level` ("Known lesson L26, required rule"). A finding whose
-rule a person excepted for this run (an exception of the contract, or one granted since,
+every blocking or required rule a person excepted for this run (an exception of the contract, or one granted since,
 that holds now and whose scope covers the finding's check and viewport) is marked
 `excepted`, listed, and held with why - never routed; the producer's verdict stands, and the
 quality gate lists the exception in its compliance

@@ -24,7 +24,9 @@ Every applicable rule gets one status, from the checks that hold it:
                     it: not measured, or not held at this tier) - never a pass
     DEFERRED        a check's producer measures it later (the store listing)
     NOT_APPLICABLE  every check is one its producer reports only for builds it concerns, and
-                    reported none for this one
+                    the evidence its locator's `not_reported` group names shows this build is
+                    not one (the report finished, the family ran, the run's facts) - or the
+                    producer said so of its entry (`not_applicable`)
     EXCEPTED        FAILED or UNMEASURED, and a person's active exception covers every check
                     that is not passing - listed, never SATISFIED
     NOT_ENFORCED    an experimental rule nothing holds yet (its gap): guidance
@@ -106,11 +108,13 @@ def _evidence(producer, reports, refs, entries, build):
             return {"artifact_type": producer, "artifact_id": entry.get("artifact_id"),
                     "content_hash": entry.get("content_hash"), "commit": entry.get("commit"),
                     "current": entry.get("status") == "current"}
+    # A producer the quality floor does not tie to a commit of the build (the design, the
+    # asset manifest): which build it describes is not known - said so, never `current`.
     ref = (refs or {}).get(producer)
     return {"artifact_type": producer,
             "artifact_id": (report.get("provenance") or {}).get("artifact_id"),
             "content_hash": getattr(ref, "content_hash", None) if ref is not None else None,
-            "commit": None, "current": True}
+            "commit": None, "current": None}
 
 
 def _viewports(tiers, check_id, report):
@@ -130,7 +134,7 @@ def _viewports(tiers, check_id, report):
     return out
 
 
-def _read_check(held, tiers, reports, refs, entries, build, self_report):
+def _read_check(held, tiers, reports, refs, entries, build, self_report, facts=None):
     from wgf_quality import registry
     check_id = held.get("check")
     producer = held.get("producer")
@@ -142,11 +146,11 @@ def _read_check(held, tiers, reports, refs, entries, build, self_report):
         out.update(status="UNMEASURED", results=0,
                    note=f"no {producer} in the run: nothing measured it")
         return out, None
-    if not evidence.get("current"):
+    if evidence.get("current") is False:
         out.update(status="UNMEASURED", results=0,
                    note=f"the {producer} describes another build: stale, never a pass")
         return out, None
-    results = registry.check_status(tiers, check_id, report)
+    results = registry.check_status(tiers, check_id, report, facts)
     statuses = [r["status"] for r in results]
     status = _check_status(statuses)
     out.update(status=status, results=sum(1 for s in statuses if s != "NOT_APPLICABLE"))
@@ -155,7 +159,15 @@ def _read_check(held, tiers, reports, refs, entries, build, self_report):
         out["note"] = ("measured a value, not a verdict" if raw == ["MEASURED"] else
                        f"its {producer} reports it {', '.join(raw)}: never a pass")
     elif status == "NOT_APPLICABLE":
-        out["note"] = f"its {producer} says it does not concern this build"
+        why = next((r.get("why") for r in results if r.get("why")), None)
+        out["note"] = (f"not reported by its {producer}: {why}" if why else
+                       f"its {producer} says it does not concern this build")
+    elif status == "PASS" and any(r.get("covered") for r in results):
+        out["note"] = (f"its {producer} made it advisory: another check measured what it "
+                       "stands for, and is read on its own")
+    if evidence.get("current") is None:
+        out["note"] = (out.get("note", "") + "; " if out.get("note") else "") + (
+            f"the {producer} is not tied to a commit of the build: its currency is unknown")
     unattributed = sorted({u for r in results for u in r.get("unattributed") or ()})
     if unattributed:
         out["note"] = (out.get("note", "") + "; " if out.get("note") else "") + (
@@ -231,6 +243,8 @@ def _judge_exceptions(records, contract, lessons, now):
         elif rule.get("level") not in BLOCKING_LEVELS:
             problems.append(f"rule {rule.get('id')} is {rule.get('level')}: it never blocks, "
                             "so there is nothing to except")
+        if record.get("_unverified"):
+            problems.append(f"unverified: {record['_unverified']}")
         mode = (record.get("approved_by") or {}).get("mode") \
             if isinstance(record.get("approved_by"), dict) else None
         if mode != "human" and not any("unauthorized" in p for p in problems):
@@ -346,7 +360,7 @@ def _counts(rules):
 def evaluate(contract, tiers, reports, *, refs=None, entries=None, build=None,
              self_report=None, tier=None, contract_ref=None, retroactive=False,
              contract_missing=None, exceptions=(), lessons=None, now=None, candidates=(),
-             problem=None):
+             problem=None, run_class=None):
     """The quality-report's `compliance` section.
 
     `contract`: the run's knowledge-contract (or a retroactive one; None when none could be
@@ -360,14 +374,18 @@ def evaluate(contract, tiers, reports, *, refs=None, entries=None, build=None,
     `exceptions`: knowledge-exception records offered (the contract's and the run's events).
     `lessons`: the pinned lessons.yaml (the exception policy). `now`: an aware datetime.
     `candidates`: the run's lesson candidates. `problem`: why the knowledge could not be
-    read (blocks when enforcing)."""
+    read (blocks when enforcing). `run_class`: the run's quality class (its snapshot): a
+    release-class run is enforced whatever tier its design states."""
     contract = contract if isinstance(contract, dict) else None
     judged = _judge_exceptions(list(exceptions or ()), contract, lessons, now)
+    facts = {"render": ((contract or {}).get("facets") or {}).get("render"),
+             "reports": dict(reports or {})}
     rules = []
     for rule in (contract or {}).get("rules") or ():
         checks, viewports = [], {}
         for held in rule.get("checks") or ():
-            read, per = _read_check(held, tiers, reports, refs, entries, build, self_report)
+            read, per = _read_check(held, tiers, reports, refs, entries, build, self_report,
+                                    facts)
             checks.append(read)
             if per is not None:
                 viewports[held.get("check")] = per
@@ -405,7 +423,11 @@ def evaluate(contract, tiers, reports, *, refs=None, entries=None, build=None,
                            + ", ".join(bad))
     verdict = "RELEASE_BLOCKED" if (blocking or contract_missing
                                     or (problem and not retroactive)) else "PASS"
-    releasable = tier not in (None, "mvp")
+    # Enforced whenever anything says the run is a release: its tier, the tier its contract
+    # was made for, or its quality class - a design stating mvp never softens a release run.
+    contract_tier = ((contract or {}).get("facets") or {}).get("tier")
+    releasable = (tier not in (None, "mvp") or contract_tier not in (None, "mvp")
+                  or run_class == "release")
     if retroactive:
         mode, why = "advisory", ("pre-knowledge run: it made no knowledge-contract, so its "
                                  "rules were resolved now from what it pinned - shown, never "
@@ -485,7 +507,9 @@ def apply(report, section):
     text = ("KNOWLEDGE: the build does not satisfy the run's knowledge-contract - "
             + "; ".join(section.get("reasons") or ["a rule is not satisfied"]))
     decision.setdefault("reasons", []).insert(0, text)
-    if decision.get("decision") == "release":
+    if decision.get("decision") in ("release", "development"):
+        # A development decision here is a release-class run whose design stated mvp: it is
+        # held like a release, never shipped as development.
         decision["decision"] = "not-release"
     if report.get("verdict") == "PASS":
         report["verdict"] = "FAIL"
@@ -501,26 +525,45 @@ def apply(report, section):
 
 
 def run_exceptions(context):
-    """The knowledge exceptions a person granted the run (`EXCEPTION_EVENT` operator events):
-    [knowledge-exception record]. An event decided by automation is passed on as such - the
-    record's own approved_by says so, and it is refused, never honoured."""
+    """The knowledge exceptions a person granted the run: [knowledge-exception record], one
+    per `EXCEPTION_EVENT` operator event. The event is the budget raise's shape
+    (wgflib.budget): {"event": EXCEPTION_EVENT, "data": {"decided_by": <who ran the
+    resume>, "decided_at", "resume_nonce", "exception": <knowledge-exception record>}},
+    followed by the WORKFLOW_RESUMED event of the same resume (the same `resume_nonce`).
+
+    The record is never trusted about its approver. One whose event is not a person's -
+    `decided_by` absent or `automation`, not the record's `approved_by.identifier`, or not
+    corroborated by its resume - is passed on with `approved_by.mode` `unverified` and why,
+    so it is listed refused, never honoured."""
+    from wgflib import budget
     read = getattr(context, "read_events", None)
     if not callable(read):
         return []
     try:
-        events = read() or []
+        events = [e for e in read() or [] if isinstance(e, dict)]
     except Exception:  # noqa: BLE001 - an unreadable log grants nothing
         return []
     out = []
-    for event in events:
-        if not isinstance(event, dict) or event.get("event") != EXCEPTION_EVENT:
+    for index, event in enumerate(events):
+        if event.get("event") != EXCEPTION_EVENT:
             continue
-        record = event.get("exception") if isinstance(event.get("exception"), dict) \
-            else {k: event.get(k) for k in ("rule_id", "reason", "scope", "approved_by",
-                                            "created_at", "expires_at")}
-        if event.get("decided_by") == "automation":
-            record = dict(record, approved_by=dict(record.get("approved_by") or {},
-                                                   mode="automation"))
+        data = event.get("data") if isinstance(event.get("data"), dict) else {}
+        record = data.get("exception") if isinstance(data.get("exception"), dict) else {}
+        record = dict(record)
+        approved = record.get("approved_by") if isinstance(record.get("approved_by"),
+                                                           dict) else {}
+        who = data.get("decided_by")
+        why = None
+        if who in (None, "", "automation"):
+            why = f"the event was not recorded by a person (decided_by {who!r})"
+        elif approved.get("identifier") != who:
+            why = (f"the record names {approved.get('identifier')!r} as its approver, but "
+                   f"{who!r} recorded it")
+        elif not budget._corroborated(events, index, data.get("resume_nonce")):
+            why = "the event is not corroborated by the resume that recorded it"
+        if why:
+            record["approved_by"] = dict(approved, mode="unverified")
+            record["_unverified"] = why
         out.append(record)
     return out
 

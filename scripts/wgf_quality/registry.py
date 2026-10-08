@@ -16,8 +16,11 @@
                                           producer's report (check-tiers `status_at`)
     check_results(locator, report)        [{"check", "status", "raw", "value"}] read from a
                                           report through a locator
-    check_status(tiers, check_id, report) [result] for one `<source>:<id>` check, UNMEASURED
-                                          when the report holds no entry for it
+    check_status(tiers, check_id, report, facts=None)
+                                          [result] for one `<source>:<id>` check, UNMEASURED
+                                          when the report holds no entry for it - unless a
+                                          `not_reported` group of its locator holds on the
+                                          report and `facts` ({"render", "reports"})
     status_at_problems(tiers, root=None)  a locator whose path the producer's schema does
                                           not have
     guards(lessons, tiers, producer, check)
@@ -429,7 +432,11 @@ def _all_tests(lesson):
 RESULT_STATUSES = ("PASS", "FAIL", "WARNING", "BLOCKED", "SKIPPED", "UNMEASURED", "DEFERRED",
                    "MEASURED", "NOT_APPLICABLE")
 LOCATOR_KEYS = ("list", "keys", "id", "id_pattern", "id_split", "where", "status", "map",
-                "presence", "absent", "attribute", "not_applicable")
+                "presence", "absent", "attribute", "not_applicable", "covered",
+                "not_reported")
+# What a `not_reported` group may require (check-tiers.yaml 1.2.0).
+NOT_REPORTED_KEYS = ("checks", "why", "verdict", "ran", "render", "none_of", "missing",
+                     "other")
 
 
 def status_at(tiers, source):
@@ -505,10 +512,79 @@ def check_results(locator, report):
             else:
                 raw = entry.get(locator.get("status") or "status")
                 status = _normal(raw, locator.get("map"))
+            result = {"check": check_id, "status": status, "raw": raw, "value": None}
             if _not_applicable(locator.get("not_applicable"), entry):
-                status = "NOT_APPLICABLE"
-            out.append({"check": check_id, "status": status, "raw": raw, "value": None})
+                result["status"] = "NOT_APPLICABLE"
+            elif status == "WARNING" and _covered(locator.get("covered"), entry):
+                # The producer held the check advisory because another check measured what
+                # it stands for, and that check is read on its own: covered, so passed here.
+                result["status"], result["covered"] = "PASS", True
+            out.append(result)
     return out
+
+
+def _covered(rule, entry):
+    """True when a locator's `covered` {field, values} says this WARNING entry is a proxy its
+    producer made advisory because another check measured it: the mapping (or list) at
+    `field` is non-empty and every value in it is one of `values`."""
+    if not isinstance(rule, dict) or not rule.get("field"):
+        return False
+    found = _walk(entry, rule["field"])
+    if not found:
+        return False
+    value = found[0]
+    values = list(value.values()) if isinstance(value, dict) else (
+        list(value) if isinstance(value, list) else [value])
+    allowed = {str(v) for v in rule.get("values") or ()}
+    return bool(values) and all(str(v) in allowed for v in values)
+
+
+def _group_holds(group, report, facts):
+    """True when every condition of a `not_reported` group holds: the report's verdict, an
+    entry showing the family ran, the run's render, a value absent from another report, a
+    field missing from another report, another report's check at a status."""
+    facts = facts or {}
+    reports = facts.get("reports") or {}
+    if group.get("verdict") and str((report or {}).get("verdict")) not in {
+            str(v) for v in group["verdict"]}:
+        return False
+    if group.get("ran"):
+        prefix = str(group["ran"])
+        ids = [str(e.get("id")) for e in (report or {}).get("checks") or ()
+               if isinstance(e, dict)] + [str(e.get("id")) for e in (report or {}).get(
+                   "criteria") or () if isinstance(e, dict)]
+        if not any(i.startswith(prefix) for i in ids):
+            return False
+    if group.get("render"):
+        if facts.get("render") not in group["render"]:
+            return False
+    for key in ("none_of", "missing", "other"):
+        rule = group.get(key)
+        if not rule:
+            continue
+        other = reports.get(rule.get("report"))
+        if not isinstance(other, dict):
+            return False
+        if key == "none_of":
+            found = {str(v) for v in _walk(other, rule.get("path") or "")}
+            if found & {str(v) for v in rule.get("values") or ()}:
+                return False
+        elif key == "missing":
+            if _walk(other, rule.get("path") or ""):
+                return False
+        else:
+            entries = [e for e in _walk(other, rule.get("list") or "checks")]
+            entries = [e for block in entries for e in (block if isinstance(block, list)
+                                                        else [block])]
+            if not any(isinstance(e, dict) and str(e.get("id")) == str(rule.get("id"))
+                       and str(e.get("status")) in {str(v) for v in rule.get("status") or ()}
+                       for e in entries):
+                return False
+    return True
+
+
+def _text_of(value):
+    return isinstance(value, str) and value.strip() != ""
 
 
 def _not_applicable(rule, entry):
@@ -521,10 +597,14 @@ def _not_applicable(rule, entry):
     return bool(found) and str(found[0]) in {str(v) for v in rule.get("values") or ()}
 
 
-def check_status(tiers, check_id, report):
+def check_status(tiers, check_id, report, facts=None):
     """[result] for the check `<source>:<id>` in its producer's `report`: every entry for it,
     or one result read through the locator's `absent` rule - UNMEASURED when it has none,
-    never a pass."""
+    never a pass. A check the producer reports only for a build it concerns reads
+    NOT_APPLICABLE when its report has no entry for it AND one of the locator's
+    `not_reported` groups naming it holds - the producer finished (its verdict), the family
+    of checks ran, and what the run is (`facts`: {"render": the run's 2d|3d, "reports":
+    {artifact type: report}}) says the check does not concern it. Otherwise UNMEASURED."""
     source, _, wanted = str(check_id).partition(":")
     locator = status_at(tiers, source)
     if locator is None:
@@ -542,16 +622,15 @@ def check_status(tiers, check_id, report):
         found = [r for r in found if r["check"] == wanted]
     if found:
         return found
+    if isinstance(report, dict) and report:
+        for group in locator.get("not_reported") or ():
+            if isinstance(group, dict) and (group.get("checks") == "*" or wanted in (
+                    group.get("checks") or ())) and _group_holds(group, report, facts):
+                return [{"check": wanted, "status": "NOT_APPLICABLE", "raw": None,
+                         "value": None, "why": group.get("why")}]
     absent = locator.get("absent") or {}
     raw = (report or {}).get(absent.get("field")) if absent.get("field") else None
     status = "UNMEASURED"
-    if not absent.get("field") and absent.get("status") in RESULT_STATUSES \
-            and isinstance(report, dict) and report \
-            and (absent.get("checks") is None or wanted in (absent.get("checks") or ())):
-        # The producer reports the check only for a build it concerns, and its report - which
-        # exists - has none: the constant the locator states (for the `checks` it lists, or
-        # every check of the source). No report at all is UNMEASURED.
-        return [{"check": wanted, "status": str(absent["status"]), "raw": None, "value": None}]
     if raw is not None:
         for candidate, target in (absent.get("map") or {}).items():
             if str(candidate) == str(raw):
@@ -651,17 +730,26 @@ def status_at_problems(tiers, root=None):
         if not _schema_has(schema, path):
             problems.append(f"{where}: status_at {path!r} is not a property of "
                             f"{source.get('producer')}.schema.json")
-        constant = (locator.get("absent") or {}).get("status")
-        if constant is not None and constant not in ("NOT_APPLICABLE", "UNMEASURED"):
-            problems.append(f"{where}: status_at absent.status {constant!r} - a check its "
-                            "producer did not report is NOT_APPLICABLE or UNMEASURED, never "
-                            "a pass")
-        listed = (locator.get("absent") or {}).get("checks")
         declared = source.get("checks")
-        if listed is not None and (not isinstance(listed, list) or (
-                isinstance(declared, dict) and any(c not in declared for c in listed))):
-            problems.append(f"{where}: status_at absent.checks lists checks of this source "
-                            f"({', '.join(map(str, listed or ())) or 'none'})")
+        for index, group in enumerate(locator.get("not_reported") or ()):
+            at = f"{where}: status_at not_reported[{index}]"
+            if not isinstance(group, dict):
+                problems.append(f"{at} is a mapping")
+                continue
+            unknown_keys = sorted(set(group) - set(NOT_REPORTED_KEYS))
+            if unknown_keys:
+                problems.append(f"{at} has unknown key(s) {', '.join(unknown_keys)}")
+            listed = group.get("checks")
+            if listed != "*" and not isinstance(listed, list) or not listed or (
+                    isinstance(listed, list) and
+                    isinstance(declared, dict) and any(c not in declared for c in listed)):
+                problems.append(f"{at}: checks lists checks of this source")
+            if not (group.get("verdict") or group.get("ran")):
+                problems.append(f"{at}: needs `verdict` or `ran` - evidence the producer ran "
+                                "the check's family, or an absent entry is never "
+                                "NOT_APPLICABLE")
+            if not _text_of(group.get("why")):
+                problems.append(f"{at}: says why the producer does not report it (`why`)")
         field = (locator.get("absent") or {}).get("field")
         if field and not _schema_has(schema, field):
             problems.append(f"{where}: status_at absent.field {field!r} is not a property of "

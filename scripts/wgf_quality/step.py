@@ -215,9 +215,19 @@ def knowledge_compliance_of(context, inputs, loaded, refs, entries, result, buil
     from wgf_quality import registry
     environment = getattr(context, "environment", None) or {}
     run_dir = getattr(context, "run_dir", None)
-    params = getattr(context, "params", None) or {}
-    recorded = ((params.get("quality") or {}) if isinstance(params, dict) else {}).get(
-        "knowledge")
+    # The run's parameters (its quality snapshot) are the context's environment; a step's
+    # own `with:` is `params`.
+    from wgflib.workflow import quality as run_quality
+    params = environment if isinstance(environment, dict) else {}
+    recorded = ((params.get(run_quality.PARAM) or {}) if isinstance(
+        params.get(run_quality.PARAM), dict) else {}).get("knowledge")
+    read_events = getattr(context, "read_events", None)
+    try:
+        events = list(read_events()) if callable(read_events) else []
+    except Exception:  # noqa: BLE001 - an unreadable log: the snapshot alone decides
+        events = []
+    run_class = run_quality.run_class(params, events)[0] if params.get(
+        run_quality.PARAM) else None
     now = now or knowledge_compliance.now_utc()
     contract = loaded.get("knowledge-contract")
     contract_ref, retroactive, missing, problem = None, False, None, None
@@ -256,7 +266,8 @@ def knowledge_compliance_of(context, inputs, loaded, refs, entries, result, buil
         contract, tiers, loaded, refs=refs, entries=entries, build=build,
         self_report=self_report, tier=tier, contract_ref=contract_ref,
         retroactive=retroactive, contract_missing=missing, exceptions=offered,
-        lessons=lessons, now=now, candidates=candidates, problem=problem)
+        lessons=lessons, now=now, candidates=candidates, problem=problem,
+        run_class=run_class)
 
 
 class QualityGateStep(WorkflowStep):

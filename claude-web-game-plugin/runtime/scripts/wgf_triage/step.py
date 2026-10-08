@@ -153,20 +153,30 @@ def _excepted(found, inputs, context, now=None):
     out = []
     for finding in found or []:
         source = finding.get("source") or {}
-        for guard in finding.get("guarded_by") or ():
+        # Every rule that holds this failure must be excepted: one excepted rule never
+        # releases a failure another blocking or required rule still holds.
+        holding = [g for g in finding.get("guarded_by") or ()
+                   if g.get("level") in ("blocking", "required")]
+        covering = []
+        for guard in holding:
             record = next((r for r in honoured if r.get("rule_id") == guard.get("lesson")
                            and compliance.scope_covers(r, guard.get("check"),
                                                        source.get("project"))), None)
             if record is None:
-                continue
-            who = (record.get("approved_by") or {}).get("identifier")
-            finding["excepted"] = {"rule_id": record["rule_id"], "approved_by": who,
-                                   "reason": record.get("reason"),
-                                   "expires_at": record.get("expires_at")}
-            out.append((finding, f"rule {record['rule_id']} is excepted for this run by "
-                                 f"{who or 'a person'} until {record.get('expires_at')}: "
-                                 f"{record.get('reason')}"))
-            break
+                covering = []
+                break
+            covering.append(record)
+        if not covering:
+            continue
+        record = covering[0]
+        who = (record.get("approved_by") or {}).get("identifier")
+        finding["excepted"] = {"rule_id": record["rule_id"], "approved_by": who,
+                               "reason": record.get("reason"),
+                               "expires_at": record.get("expires_at")}
+        rules = ", ".join(r["rule_id"] for r in covering)
+        out.append((finding, f"rule(s) {rules} excepted for this run by "
+                             f"{who or 'a person'} until {record.get('expires_at')}: "
+                             f"{record.get('reason')}"))
     return out
 
 

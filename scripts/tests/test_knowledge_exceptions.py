@@ -6,9 +6,8 @@ api.py: recorded as the operator event KNOWLEDGE_EXCEPTION_GRANTED with the resu
 like a budget raise. These tests hold:
 
   * VALID. A person's exception for an applicable rule is recorded - stamped `approved_by`
-    (the event's own decided_by, mode human) and `created_at` now by the grant itself, the
-    person's handle kept as the event's `approver` - and listed in the run's next
-    knowledge-contract.
+    (the person who ran the command, by name; mode human) and `created_at` now by the grant
+    itself - and listed in the run's next knowledge-contract.
   * REFUSED. No reason or one too short, no expiry or one past the policy's window, a
     created_at in the future, a rule that does not apply, a platform the run does not target
     or a viewport its checks are not judged on: nothing is recorded, and why is said.
@@ -26,6 +25,7 @@ import datetime
 import json
 import os
 import sys
+import tempfile
 import unittest
 from unittest import mock as patch
 
@@ -45,6 +45,11 @@ from wgflib.workflow.model import RunStatus  # noqa: E402
 
 STEP = run_tests.STEP
 REASON = "The steel gaps are threaded by the oracle only; accepted for this soft launch."
+
+
+def _request(rule_ids, reason, expires, scope=(), approver="cuong"):
+    """exceptions.request with a named approver: a test never depends on the login name."""
+    return exceptions.request(rule_ids, reason, expires, scope, approver)
 
 
 def _utc(days=0):
@@ -73,9 +78,9 @@ class _Case(run_tests._Case):
 class Valid(_Case):
     def test_a_persons_exception_is_recorded_and_listed_in_contract(self):
         api, state = self.to_g4()
-        records = exceptions.request(["L23"], REASON, _utc(10)[:10], ["platform=yandex"],
-                                     approver="cuong")
-        # A mode or an approver written in the request is never trusted.
+        records = _request(["L23"], REASON, _utc(10)[:10], ["platform=yandex"],
+                           approver="Cuong N")
+        # A mode written in the request is never trusted.
         records[0]["approved_by"]["mode"] = "automation"
         state = self.grant(api, state.run_id, records)
         events = self.granted_events(api, state.run_id)
@@ -84,10 +89,9 @@ class Valid(_Case):
         self.assertEqual(data["decided_by"], "human")
         self.assertTrue(data.get("resume_nonce"))
         record = data["exception"]
-        # The approver is who the run records deciding: the event's own decided_by.
-        self.assertEqual(record["approved_by"], {"identifier": data["decided_by"],
-                                                 "mode": "human"})
-        self.assertEqual(data["approver"], "cuong")
+        # The approver is the person, by name; the mode is stamped by the grant.
+        self.assertEqual(record["approved_by"], {"identifier": "Cuong N", "mode": "human"})
+        self.assertEqual(set(data), {"exception", "decided_by", "decided_at", "resume_nonce"})
         self.assertEqual(record["rule_id"], "L23")
         self.assertEqual(record["scope"], {"platforms": ["yandex"]})
         self.assertTrue(record["expires_at"].endswith("T23:59:59Z"))
@@ -104,12 +108,34 @@ class Valid(_Case):
         with open(path, "w", encoding="utf-8") as handle:
             json.dump([{"rule_id": "L23", "reason": REASON, "scope": {},
                         "expires_at": _utc(5),
-                        "approved_by": {"identifier": "cuong", "mode": "automation"}}], handle)
-        self.grant(api, state.run_id, exceptions.requests_from_file(path))
+                        "approved_by": {"identifier": "someone-else",
+                                        "mode": "automation"}}], handle)
+        # The file says nothing about who approved it: the person running the command does.
+        self.grant(api, state.run_id, exceptions.requests_from_file(path, "cuong"))
         data = self.granted_events(api, state.run_id)[0]["data"]
-        self.assertEqual(data["exception"]["approved_by"], {"identifier": "human",
+        self.assertEqual(data["exception"]["approved_by"], {"identifier": "cuong",
                                                             "mode": "human"})
-        self.assertEqual(data["approver"], "cuong")
+
+    def test_an_exception_names_a_person_never_a_placeholder(self):
+        for name in ("human", "Person", "automation", "not a handle!"):
+            with self.assertRaisesRegex(exceptions.ExceptionRefused, "approver"):
+                exceptions.request(["L23"], REASON, _utc(5)[:10], (), name)
+        for name in ("", "  ", None):
+            self.assertIsNotNone(exceptions.approver_problem(name))
+        with patch.patch.object(exceptions.getpass, "getuser", side_effect=OSError("none")):
+            with self.assertRaisesRegex(exceptions.ExceptionRefused, "names no approver"):
+                exceptions.request(["L23"], REASON, _utc(5)[:10])
+        with patch.patch.object(exceptions.getpass, "getuser", return_value="root"):
+            with self.assertRaisesRegex(exceptions.ExceptionRefused, "names no one"):
+                exceptions.request(["L23"], REASON, _utc(5)[:10])
+        with patch.patch.object(exceptions.getpass, "getuser", return_value="duycu"):
+            self.assertEqual(exceptions.request(["L23"], REASON, _utc(5)[:10])[0]
+                             ["approved_by"], {"identifier": "duycu"})
+        # A request that reaches the grant with a placeholder is refused there too.
+        api, state = self.to_g4()
+        records = _request(["L23"], REASON, _utc(5)[:10])
+        records[0]["approved_by"]["identifier"] = "human"
+        self.assertRefused(api, state, records, "names no one")
 
 
 class Refused(_Case):
@@ -121,65 +147,69 @@ class Refused(_Case):
         self.assertRefused(self.run_api, self.state, records, expected, decided_by)
 
     def test_an_exception_without_reason_is_refused(self):
-        self.refused(exceptions.request(["L23"], None, _utc(5)[:10]), "reason")
+        self.refused(_request(["L23"], None, _utc(5)[:10]), "reason")
 
     def test_an_exception_with_a_short_reason_is_refused(self):
-        self.refused(exceptions.request(["L23"], "too short", _utc(5)[:10]), "20 characters")
+        self.refused(_request(["L23"], "too short", _utc(5)[:10]), "20 characters")
 
     def test_an_exception_without_expiry_is_refused(self):
         with self.assertRaisesRegex(exceptions.ExceptionRefused, "expires"):
-            exceptions.request(["L23"], REASON, None)
+            _request(["L23"], REASON, None)
         self.refused([{"rule_id": "L23", "reason": REASON, "scope": {}}], "expires_at")
 
     def test_an_exception_past_the_policy_window_is_refused(self):
-        self.refused(exceptions.request(["L23"], REASON, _utc(90)[:10]), "at most 30 days")
+        self.refused(_request(["L23"], REASON, _utc(90)[:10]), "at most 30 days")
 
     def test_an_exception_created_in_the_future_is_refused(self):
-        records = exceptions.request(["L23"], REASON, _utc(5)[:10])
+        records = _request(["L23"], REASON, _utc(5)[:10])
         records[0]["created_at"] = _utc(3)
         self.refused(records, "in the future")
 
     def test_an_exception_for_a_rule_that_never_blocks_is_refused(self):
         experimental = next(r["id"] for r in self.contract(self.run_api, self.state)["rules"]
                             if r["level"] == "experimental")
-        self.refused(exceptions.request([experimental], REASON, _utc(5)[:10]),
+        self.refused(_request([experimental], REASON, _utc(5)[:10]),
                      "only blocking or required")
 
     def test_an_exception_for_a_rule_that_does_not_apply_is_refused(self):
-        self.refused(exceptions.request(["L6"], REASON, _utc(5)[:10]),
+        self.refused(_request(["L6"], REASON, _utc(5)[:10]),
                      "never in a run's contract|does not apply")
 
     def test_an_exception_for_an_untargeted_platform_or_unknown_viewport_is_refused(self):
-        self.refused(exceptions.request(["L23"], REASON, _utc(5)[:10], ["platform=poki"]),
+        self.refused(_request(["L23"], REASON, _utc(5)[:10], ["platform=poki"]),
                      "scope.platforms poki are not targeted by this run")
-        self.refused(exceptions.request(["L23"], REASON, _utc(5)[:10], ["viewport=watch"]),
+        self.refused(_request(["L23"], REASON, _utc(5)[:10], ["viewport=watch"]),
                      "scope.viewports watch are not viewports")
 
     def test_one_bad_record_refuses_them_all(self):
-        records = (exceptions.request(["L23"], REASON, _utc(5)[:10])
-                   + exceptions.request(["L23"], "short", _utc(5)[:10]))
+        records = (_request(["L23"], REASON, _utc(5)[:10])
+                   + _request(["L23"], "short", _utc(5)[:10]))
         self.refused(records, "exception 2")
 
 
 class Unauthorized(_Case):
     def test_automation_cannot_grant_an_exception(self):
         api, state = self.to_g4()
-        records = exceptions.request(["L23"], REASON, _utc(5)[:10])
+        records = _request(["L23"], REASON, _utc(5)[:10])
         self.assertRefused(api, state, records, "automation", decided_by="automation")
         # From inside a step's process tree, the CLI decides `automation` by itself.
         with patch.patch.dict(os.environ, {"WGF_PROC_TAG": "a-step"}):
             self.assertRefused(api, state, records, "automation", decided_by=None)
 
     def test_an_appended_event_line_is_no_ones_act(self):
-        record = {"rule_id": "L23", "approved_by": {"identifier": "human", "mode": "human"}}
+        record = {"rule_id": "L23", "approved_by": {"identifier": "cuong", "mode": "human"}}
         events = [{"event": exceptions.EVENT, "data": {
             "exception": record, "decided_by": "human", "resume_nonce": "n1"}}]
         self.assertEqual(exceptions.granted(events), [])
         events.append({"event": exceptions.RESUMED_EVENT, "data": {"resume_nonce": "n1"}})
         self.assertEqual(exceptions.granted(events), [record])
-        # A record naming another approver than the event's decider is no one's act.
-        events[0]["data"]["exception"] = dict(record, approved_by={"identifier": "ops",
-                                                                   "mode": "human"})
+        # A record that names no person, or not as a person, is no one's act.
+        for approved in ({"identifier": "human", "mode": "human"},
+                         {"identifier": "cuong", "mode": "automation"}, {}):
+            events[0]["data"]["exception"] = dict(record, approved_by=approved)
+            self.assertEqual(exceptions.granted(events), [])
+        events[0]["data"]["exception"] = record
+        events[0]["data"].pop("decided_by")
         self.assertEqual(exceptions.granted(events), [])
         events[0]["data"]["exception"] = record
         events[0]["data"]["decided_by"] = "automation"
@@ -211,7 +241,7 @@ class Unauthorized(_Case):
 class Expired(_Case):
     def test_an_exception_expired_when_the_contract_is_made_is_refused(self):
         api, state = self.to_g4()
-        self.grant(api, state.run_id, exceptions.request(["L23"], REASON, _utc(2)))
+        self.grant(api, state.run_id, _request(["L23"], REASON, _utc(2)))
         # The contract is made again three days later, by the engine's clock.
         later = (datetime.datetime.now(datetime.timezone.utc)
                  + datetime.timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
@@ -229,7 +259,7 @@ class OldRuns(_Case):
         with patch.patch.object(quality, "load_policy", return_value=policy):
             api, state = self.to_g4()
         self.assertNotIn("knowledge", state.params["quality"])
-        self.assertRefused(api, state, exceptions.request(["L23"], REASON, _utc(5)[:10]),
+        self.assertRefused(api, state, _request(["L23"], REASON, _utc(5)[:10]),
                            "advisory only")
 
 
@@ -259,6 +289,24 @@ class CommandLine(unittest.TestCase):
         with self.assertRaises(wgf.UsageError):
             wgf._exception_requests(self.parse("--except", "L23", "--reason", REASON,
                                                "--expires", "2026-10-20", "--scope", "x=y"))
+
+    def test_except_is_a_file_only_by_its_name(self):
+        # `--except L23` is the rule even when a file named L23 sits in the working
+        # directory; a value ending .json, or a path, is a file.
+        with tempfile.TemporaryDirectory() as folder:
+            with open(os.path.join(folder, "L23"), "w", encoding="utf-8") as handle:
+                handle.write("{}")
+            cwd = os.getcwd()
+            os.chdir(folder)
+            try:
+                records = wgf._exception_requests(self.parse(
+                    "--except", "L23", "--reason", REASON, "--expires", "2026-10-20",
+                    "--approved-by", "cuong"))
+            finally:
+                os.chdir(cwd)
+        self.assertEqual(records[0]["rule_id"], "L23")
+        with self.assertRaisesRegex(wgf.UsageError, "No such file|cannot find"):
+            wgf._exception_requests(self.parse("--except", "dir/none", "--approved-by", "cuong"))
 
     def test_no_except_is_no_request(self):
         self.assertEqual(wgf._exception_requests(self.parse()), [])

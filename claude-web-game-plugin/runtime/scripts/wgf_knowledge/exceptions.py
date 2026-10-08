@@ -10,16 +10,20 @@ is granted the way a budget is raised: on a person's `wgf resume`, as an operato
 (EVENT) the engine records with the resume's nonce, refused when the command runs inside a
 Factory step's process tree. It is never granted by configuration (`factory.knowledge.
 exceptions` is reported refused, never honoured), never by a mode or an approver written in
-a record - the grant stamps `approved_by` itself from who invokes it: `identifier` is the
-resume's `decided_by` (the event's own, so the two always agree) and `mode` human - and never
-past its expiry.
+a record - the grant stamps `approved_by` itself: `identifier` is the person who runs the
+command (`--approved-by NAME`, else the login name, named explicitly - never a placeholder
+such as `human` or `person`, never a value read from an exception file) and `mode` human -
+and never past its expiry.
 
-The event's data is {"exception": <record>, "approver": <name>}: `approver` is the person's
-handle as given (`--approved-by`, else the login name), for the audit; the engine adds
-`decided_by`, `decided_at` and `resume_nonce`.
+The event's data is {"exception": <record>}; the engine adds `decided_by` (`human`: who the
+run records deciding), `decided_at` and `resume_nonce`. A reader honours it only when
+`decided_by` is a person's (present, not `automation`), the record's mode is human and names
+a person, and the resume with the same nonce corroborates it (granted()).
 
+    approver(name=None)             the person granting: `name`, else the login name;
+                                    raises ExceptionRefused for no name or a placeholder
     request(rule_ids, reason, expires, scope_pairs, approver)   partial records from the CLI
-    requests_from_file(path)                                    partial records from a file
+    requests_from_file(path, approver)                          partial records from a file
     grant(state, run_dir, requests, decided_by, now=None, read_artifact=None)
                                     the operator events' data: each complete record checked
                                     against the run's pinned knowledge
@@ -34,11 +38,12 @@ import datetime
 import getpass
 import json
 import os
+import re
 
 from . import model
 
-__all__ = ["EVENT", "ExceptionRefused", "request", "requests_from_file", "grant", "granted",
-           "from_config", "SCOPE_KEYS"]
+__all__ = ["EVENT", "ExceptionRefused", "approver", "approver_problem", "request",
+           "requests_from_file", "grant", "granted", "from_config", "SCOPE_KEYS"]
 
 EVENT = "KNOWLEDGE_EXCEPTION_GRANTED"
 RESUMED_EVENT = "WORKFLOW_RESUMED"
@@ -99,31 +104,59 @@ def _scope(pairs):
     return scope
 
 
-def _approver(name=None):
-    if name and str(name).strip():
-        return str(name).strip()
-    try:
-        return getpass.getuser() or "person"
-    except Exception:  # noqa: BLE001 - no login name on this host: a person, unnamed
-        return "person"
+# A person's handle: what `approved_by.identifier` must be. Never a placeholder that names a
+# kind of decider rather than someone.
+_HANDLE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@ '-]{0,63}")
+NOT_A_PERSON = ("human", "person", "automation", "unknown", "nobody", "user", "root",
+                "admin", "system")
 
 
-def request(rule_ids, reason, expires, scope_pairs=(), approver=None):
+def approver_problem(name):
+    """Why `name` does not name the person who granted an exception, or None."""
+    if not isinstance(name, str) or not name.strip():
+        return "the exception names no approver: give --approved-by NAME"
+    name = name.strip()
+    if not _HANDLE.fullmatch(name):
+        return f"approver {name!r} is not a handle (letters, digits, . _ @ - ' and spaces)"
+    if name.lower() in NOT_A_PERSON:
+        return (f"approver {name!r} names no one: give the person's own handle with "
+                "--approved-by NAME")
+    return None
+
+
+def approver(name=None):
+    """The person granting: `name` as given, else this host's login name - explicitly that
+    person's, never a placeholder. Raises ExceptionRefused when there is none."""
+    if not (isinstance(name, str) and name.strip()):
+        try:
+            name = getpass.getuser()
+        except Exception:  # noqa: BLE001 - no login name on this host
+            name = None
+    why = approver_problem(name)
+    if why:
+        raise ExceptionRefused(why)
+    return name.strip()
+
+
+def request(rule_ids, reason, expires, scope_pairs=(), approver_name=None):
     """[partial record] for each rule id given on the command line, with the same reason,
     expiry and scope. `approved_by.mode` is not taken from here: grant() stamps it."""
     if not rule_ids:
         raise ExceptionRefused("--except names the rule (a lesson id) or a JSON file")
     expires_at = expiry(expires)
     scope = _scope(scope_pairs)
+    who = approver(approver_name)
     return [{"rule_id": str(rule_id).strip(), "reason": reason, "scope": dict(scope),
              "expires_at": expires_at,
-             "approved_by": {"identifier": _approver(approver)}}
+             "approved_by": {"identifier": who}}
             for rule_id in rule_ids]
 
 
-def requests_from_file(path, approver=None):
+def requests_from_file(path, approver_name=None):
     """[partial record] from a JSON file holding one knowledge-exception record or a list.
-    `approved_by.mode` and `created_at` in the file are not trusted: grant() stamps both."""
+    Nothing in the file says who approved it: `approved_by` is the person running the
+    command (`approver_name`, else the login name); `created_at` is stamped by grant()."""
+    who = approver(approver_name)
     try:
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
@@ -137,9 +170,7 @@ def requests_from_file(path, approver=None):
         record = dict(record)
         if record.get("expires_at"):
             record["expires_at"] = expiry(record["expires_at"])
-        approved = record.get("approved_by")
-        identifier = approved.get("identifier") if isinstance(approved, dict) else None
-        record["approved_by"] = {"identifier": _approver(approver or identifier)}
+        record["approved_by"] = {"identifier": who}
         out.append(record)
     return out
 
@@ -211,9 +242,10 @@ def _run_problems(record, knowledge, facets, contract):
 
 
 def grant(state, run_dir, requests, decided_by, now=None, read_artifact=None):
-    """[{"exception": record, "approver": name}]: the operator events' data for the
-    knowledge-exception records `requests` grant the run `state`, each stamped `approved_by`
-    {identifier: `decided_by`, mode: human} and `created_at` now. Raises ExceptionRefused
+    """[{"exception": record}]: the operator events' data for the knowledge-exception
+    records `requests` grant the run `state`, each stamped `approved_by` {identifier: the
+    person the request names (request()/requests_from_file(): --approved-by or the login
+    name, validated here again), mode: human} and `created_at` now. Raises ExceptionRefused
     naming every problem of every record (none is granted unless all hold), and for
     `decided_by` automation - an agent never excepts a rule it is held to."""
     from .step import advisory_run, load_run_knowledge, KnowledgeUnavailable
@@ -249,14 +281,16 @@ def grant(state, run_dir, requests, decided_by, now=None, read_artifact=None):
                                 f"created_at {claimed!r} is in the future or not a date-time")
         approved = partial.get("approved_by")
         name = approved.get("identifier") if isinstance(approved, dict) else None
+        name = name.strip() if isinstance(name, str) else name
         record = {key: partial[key] for key in ("rule_id", "reason", "scope", "expires_at")
                   if key in partial}
         record.setdefault("scope", {})
-        # Stamped here, from who invokes the grant - never trusted from the request: the
-        # identifier is the event's decided_by, so a reader can hold them equal.
-        record["approved_by"] = {"identifier": decided_by, "mode": "human"}
+        # The person who ran the command, and a mode stamped here - never a mode from the
+        # request. Validated again: a placeholder or no name is refused, never filled in.
+        record["approved_by"] = {"identifier": name, "mode": "human"}
         record["created_at"] = _stamp(moment)
-        found = _schema_problems(record)
+        found = [approver_problem(name)] if approver_problem(name) else []
+        found += _schema_problems(record)
         found += model.exception_problems(record, knowledge.lessons, knowledge.checks,
                                           moment, run_facets=facets, vocabulary=vocabulary)
         found += _run_problems(record, knowledge, facets, contract)
@@ -264,7 +298,7 @@ def grant(state, run_dir, requests, decided_by, now=None, read_artifact=None):
             problems += [f"exception {index + 1} ({record.get('rule_id')}): {p}"
                          for p in dict.fromkeys(found)]
         else:
-            records.append({"exception": record, "approver": _approver(name)})
+            records.append({"exception": record})
     if problems:
         raise ExceptionRefused("; ".join(problems))
     if not records:
@@ -291,9 +325,10 @@ def _corroborated(events, index, nonce):
 
 def granted(events):
     """The exception records a person's resume recorded on the run, oldest first. An event a
-    step's process tree wrote, one no engine-recorded resume corroborates (a line appended
-    to events.jsonl), or one whose record names another approver than the event's
-    decided_by is no one's act and is not read."""
+    step's process tree wrote (decided_by missing or `automation`), one no engine-recorded
+    resume corroborates (a line appended to events.jsonl), or one whose record is not a
+    person's (mode not human, an approver that names no one) is no one's act and is not
+    read."""
     events = [e for e in events or () if isinstance(e, dict)]
     out = []
     for index, event in enumerate(events):
@@ -306,8 +341,8 @@ def granted(events):
             continue
         record = data.get("exception")
         approved = record.get("approved_by") if isinstance(record, dict) else None
-        if (isinstance(approved, dict) and approved.get("identifier") == data.get("decided_by")
-                and approved.get("mode") == "human"):
+        if (isinstance(approved, dict) and approved.get("mode") == "human"
+                and approver_problem(approved.get("identifier")) is None):
             out.append(dict(record))
     return out
 

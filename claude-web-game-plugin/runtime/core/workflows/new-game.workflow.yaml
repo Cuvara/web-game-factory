@@ -239,8 +239,10 @@ workflow:
     # that cannot make it - knowledge it did not pin or that was edited since, a version it
     # did not record, a blocking or required rule no step of this workflow validates - is
     # BLOCKED here, unrouted: the run stops for a person and never continues without it.
-    # A run started before the knowledge model makes the contract it can, advisory, and
-    # is never blocked by it (quality-policy.yaml rule 8).
+    # A run started before the knowledge model makes the contract it can, marked advisory
+    # with what would have stopped a new run, and is blocked only when no contract can be
+    # made at all (quality-policy.yaml rule 8). Its workflow is not pinned: the contract
+    # records the version and digest of the definition that named the validators.
     # The step id is not `knowledge`: that is the `wgf knowledge` command, and every step id
     # is a run command too.
     - id: knowledge-contract
@@ -249,8 +251,9 @@ workflow:
       description: Resolve the Factory knowledge that applies to this title into the run's contract.
       inputs: [game-design, title-strategy]
       outputs: [knowledge-contract]
-      # Follows design on each of its passes: 5 = design's own max_visits.
-      max_visits: 5
+      # Follows design on each of its passes (design's max_visits is 5), plus one: a person's
+      # `wgf resume --from knowledge-contract` after an exception or a fix to the pins.
+      max_visits: 6
 
     - id: tech-plan
       type: tech-plan

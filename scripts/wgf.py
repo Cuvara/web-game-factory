@@ -519,7 +519,9 @@ def build_parser(commands):
                         help="with --except RULE: narrow it to platform=ID, check=ID or "
                              "viewport=ID (repeatable; comma-separated values)")
     resume.add_argument("--approved-by", metavar="NAME", dest="approved_by",
-                        help="with --except: who grants it (default: the login name)")
+                        help="with --except: the person granting it, recorded as "
+                             "approved_by.identifier (default: the login name; never a "
+                             "placeholder such as human)")
     resume.add_argument("--json", action="store_true", help="print events as JSON lines")
     resume.add_argument("--quiet", action="store_true", help="print only the final status")
     resume.set_defaults(handler=cmd_resume)
@@ -744,7 +746,9 @@ def _exception_requests(args):
             raise UsageError(f"{', '.join(loose)} go with --except RULE")
         return []
     from wgf_knowledge import exceptions as knowledge_exceptions
-    files = [v for v in given if v.lower().endswith(".json") or os.path.isfile(v)]
+    # A file only by its name - `.json`, or a path - never because a file of that name
+    # happens to exist beside the command: `--except L23` is always the rule.
+    files = [v for v in given if v.lower().endswith(".json") or "/" in v or "\\" in v]
     rules = [v for v in given if v not in files]
     try:
         requests = []

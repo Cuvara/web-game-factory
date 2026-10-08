@@ -196,8 +196,13 @@ class Context(_Case):
         self.assertEqual(found["lessons"]["sha256"], pins["core/reference/lessons.yaml"])
         self.assertEqual(found["check_tiers"]["sha256"], pins["core/reference/check-tiers.yaml"])
         self.assertEqual(found["factory"], state.params["quality"]["factory"])
+        with open(SHIPPED, "rb") as handle:
+            digest = references.digest(handle.read())
+        # The workflow is not pinned: the contract records the file that named its validators.
         self.assertEqual(found["workflow"], {"id": "new-game",
-                                             "version": load_definition("new-game").version})
+                                             "version": load_definition("new-game").version,
+                                             "sha256": digest})
+        self.assertNotIn("advisory", self.contract(api, state))
         self.assertEqual(f"lessons@{found['lessons']['version']}",
                          state.params["quality"]["knowledge"]["lessons"])
         for platform in ("yandex", "crazygames"):
@@ -429,7 +434,12 @@ class OldRuns(_Case):
         message = state.steps[STEP].message or ""
         self.assertIn("ADVISORY", message)
         self.assertIn("content-sufficiency", message)
-
+        # The contract says so: advisory, with what would have stopped a new run.
+        advisory = self.contract(api, state)["advisory"]
+        self.assertIn("never enforced", advisory["reason"])
+        problems = " ".join(advisory["problems"])
+        self.assertIn("did not pin", problems)
+        self.assertIn("content-sufficiency", problems)
 
     def test_an_old_run_that_pinned_lessons_1x_gets_a_contract_of_the_same_schema(self):
         # Workflow 16 pinned lessons.yaml 1.x: no category, lifecycle or scope, tests a flat

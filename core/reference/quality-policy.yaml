@@ -76,7 +76,9 @@
 #      contract stops there (BLOCKED), never continues without one. A run started before
 #      this rule recorded no `knowledge`: it was never held to a contract, so its compliance
 #      is advisory only, and its knowledge step - reached only by resuming it under a newer
-#      definition - makes the contract it can and never blocks it. The step is not yet under
+#      definition - makes the contract it can, marked advisory with every problem that
+#      would have stopped a new run listed, and is blocked only when no contract can be made
+#      at all (no lessons or check tiers can be read). The step is not yet under
 #      `floor.required_steps` (rule 1): runs started before 1.4.0 would be recorded
 #      development for lacking it.
 #

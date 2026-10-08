@@ -7,7 +7,7 @@
     "id": "knowledge-contract",
     "kind": "artifact",
     "format": "json",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "producer": "title:design",
     "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "release:draft"],
     "required_for_gates": ["G3"],
@@ -44,7 +44,8 @@
           "required": ["id", "version"],
           "properties": {
             "id": { "type": "string", "minLength": 1 },
-            "version": { "type": ["integer", "string"] }
+            "version": { "type": ["integer", "string"] },
+            "sha256": { "$ref": "shared/provenance.schema.json#/$defs/hash", "description": "1.1.0: the digest of the workflow file the validators were named from, as it read when the contract was made (a run does not pin its workflow)." }
           },
           "additionalProperties": false
         },
@@ -127,6 +128,16 @@
         },
         "additionalProperties": false
       }
+    },
+    "advisory": {
+      "type": "object",
+      "description": "1.1.0: present only on the contract of a run started before the knowledge model (no params.quality.knowledge): it is reported, never enforced, and lists every problem that would have stopped a run held to its knowledge.",
+      "required": ["reason", "problems"],
+      "properties": {
+        "reason": { "type": "string", "minLength": 1 },
+        "problems": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
     },
     "counts": {
       "type": "object",

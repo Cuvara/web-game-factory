@@ -443,8 +443,9 @@ event carrying the complete record, with the resume's nonce. The API does not ju
 refuses automation itself (`decided_by` automation, exit 1, nothing recorded) and hands the
 rest to the knowledge module it names (`WorkflowAPI.KNOWLEDGE_EXCEPTIONS`,
 `scripts/wgf_knowledge/exceptions.py grant`), which stamps `approved_by` (`identifier` the
-resume's `decided_by`, `mode` human) and `created_at` now - never taken from the request;
-the person's handle is the event's `approver` - and refuses every record unless all hold
+person running the command by name - `--approved-by NAME`, else the login name, never a
+placeholder - and `mode` human) and `created_at` now, never taken from the request, and
+refuses every record unless all hold
 (the run's pinned lessons' exception policy, the record's schema, a rule that applies to
 the run, platforms it targets and viewports its checks are judged on). A run started
 before the knowledge model has no contract to except from. No configuration grants one.

@@ -303,8 +303,11 @@ G3 is decided on the contract (gates.yaml `required_artifacts`).
 **A run started before rule 8** recorded no `knowledge`. It was never held to a contract:
 its step - reached only when a resume under workflow 17 passes design again, or `wgf resume
 <run> --from knowledge-contract` - makes the contract it can from what the run holds (the
-pinned copy where it pinned one, the live file otherwise), says ADVISORY, and never blocks;
-what would have blocked a new run is named in its message. The step is not a required step
+pinned copy where it pinned one, the live file otherwise). The contract carries
+`advisory: {reason, problems}` - every problem that would have stopped a run held to its
+knowledge (files it did not pin, facets it cannot read, a missing validator, versions it
+cannot record), also named in the step's message - and the step is blocked only when no
+contract can be made at all: no lessons or check tiers can be read. The step is not a required step
 of the quality floor, so no gate is missing from such a run. One waiting at G3 when the
 Factory moves to gates 1.7.0 waits for the contract, as G4 waited for the quality-report in
 1.6.0.
@@ -313,17 +316,27 @@ Factory moves to gates 1.7.0 waits for the contract, as G4 waited for the qualit
 platform=ID|check=ID|viewport=ID ...] [--approved-by NAME]`, or `--except FILE.json` (a
 record or a list). The API refuses it from inside a step's process tree (`decided_by`
 automation) and hands it to `exceptions.grant`, which stamps `approved_by` - `identifier`
-the resume's own `decided_by`, `mode: human` - and `created_at` now, never trusting any of
-them from the request (the person's handle, `--approved-by` or the login name, is kept as
-the event's `approver`), and checks every record against
+the person running the command by name (`--approved-by NAME`, else the login name; never a
+placeholder such as `human`, `person` or `root`, never a name read from an exception file),
+`mode: human` - and `created_at` now, and checks every record against
 its schema, the run's pinned knowledge (`model.exception_problems` at now, with the run's
 facets and the pinned vocabulary) and the run itself (a rule its contract lists, platforms
 only once it targets some). Every record holds or none is recorded. A granted exception is
 the operator event `KNOWLEDGE_EXCEPTION_GRANTED`, corroborated by its resume's nonce like a
-budget raise, its data `{"exception": <record>, "approver": <name>}` plus the engine's
-`decided_by`, `decided_at` and `resume_nonce`; `exceptions.granted(events)` reads only those,
-and only where the record's `approved_by.identifier` is the event's `decided_by` and its
-mode human. The next contract the run makes
+budget raise:
+
+```json
+{"event": "KNOWLEDGE_EXCEPTION_GRANTED",
+ "data": {"exception": {"rule_id": "L26", "reason": "...", "scope": {},
+                        "approved_by": {"identifier": "<the person, by name>", "mode": "human"},
+                        "created_at": "<ISO>", "expires_at": "<ISO>"},
+          "decided_by": "human", "decided_at": "<ISO>", "resume_nonce": "<the resume's>"}}
+```
+
+`exceptions.granted(events)` is the one reader: it honours an event only when its
+`decided_by` is present and not `automation`, the `WORKFLOW_RESUMED` with the same nonce
+follows it, and the record's `approved_by` is mode human and names a person. The contract,
+the quality-report's compliance and the release list the record, so the person's name. The next contract the run makes
 lists it under `exceptions`, or under `exceptions_refused` once it has expired. No
 configuration grants one: `factory.knowledge.exceptions` is listed refused in the contract.
 

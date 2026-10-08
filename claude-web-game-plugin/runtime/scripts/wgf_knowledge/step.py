@@ -16,14 +16,19 @@
     SUCCESS   the contract is made                                                   SUCCESS
     BLOCKED   the run did not pin its knowledge, a pinned copy was edited, the recorded
               versions are not the pinned ones, the knowledge breaks its own rules, the
-              run's workflow cannot be read, or a blocking or required rule's check is
-              produced by no step of the run's workflow: the run stops before anything is
-              planned or built on knowledge it cannot state, and a person looks
+              run's workflow or facets cannot be read, or a blocking or required rule's
+              check is produced by no step of the run's workflow: the run stops before
+              anything is planned or built on knowledge it cannot state, and a person looks
 
 A run started before the knowledge model (no `params.quality.knowledge`, quality policy rule
 8) was never held to a contract: reached by resuming it under a newer definition, this step
 makes the contract it can from what the run holds - the pinned files where it pinned them -
-and never blocks it (advisory). Its compliance is advisory only.
+marked `advisory` with every problem that would have stopped a new run listed. It is
+BLOCKED only when no contract can be made at all: no lessons or check tiers can be read.
+Its compliance is advisory only.
+
+The run's workflow is not pinned: the validators are named from the definition file as it
+reads now, whose version and digest the contract records (`versions.workflow`).
 
 It reads data and writes one artifact: no process, no network, no checkout.
 """
@@ -79,7 +84,7 @@ class RunKnowledge:
     live file only for a file an advisory run did not pin). `pinned`: every file came from
     the run's pins. `problems`: classification problems (code literals excepted)."""
 
-    def __init__(self, lessons, tiers, checks, root, read, pinned, problems):
+    def __init__(self, lessons, tiers, checks, root, read, pinned, problems, unpinned=()):
         self.lessons = lessons
         self.tiers = tiers
         self.checks = checks
@@ -87,6 +92,7 @@ class RunKnowledge:
         self.read = read
         self.pinned = pinned
         self.problems = problems
+        self.unpinned = list(unpinned)
 
 
 def _reader(environment, run_dir):
@@ -144,15 +150,17 @@ def load_run_knowledge(environment, run_dir, platforms=(), strict=True):
         return load_yaml(read(relpath).decode("utf-8"))
     checks, problems = registry.classify(tiers, root, reader=reader)
     problems = [p for p in problems if _CODE_PROBLEM not in p]
-    return RunKnowledge(lessons, tiers, checks, root, read, pinned, problems)
+    return RunKnowledge(lessons, tiers, checks, root, read, pinned, problems, unpinned)
 
 
 def run_workflow(context):
-    """The run's workflow as a mapping ({"id", "version", "steps", ...}): the file the run
-    recorded it was started from, else its id in core/workflows/. None when neither can be
-    read."""
+    """(the run's workflow as a mapping, its file's digest): the file the run recorded it was
+    started from, else its id in core/workflows/ - as that file reads NOW. A run does not
+    pin its workflow; the digest (and the version against the one the run started under) is
+    recorded in the contract so a reader sees which definition named the validators.
+    (None, None) when neither can be read."""
     from wgflib.workflow.definition import WORKFLOWS, find_definition
-    from wgflib.yamllite import load_file
+    from wgflib.yamllite import load as load_yaml
     workflow_id = getattr(context, "workflow_id", None)
     candidates = []
     run_dir = getattr(context, "run_dir", None)
@@ -174,13 +182,42 @@ def run_workflow(context):
             pass
     for path in candidates:
         try:
-            workflow = (load_file(path) or {}).get("workflow")
+            with open(path, "rb") as handle:
+                data = handle.read()
+            workflow = (load_yaml(data.decode("utf-8")) or {}).get("workflow")
         except Exception:  # noqa: BLE001 - an unreadable candidate is tried no further
             continue
         if isinstance(workflow, dict) and (not workflow_id
                                            or workflow.get("id") == workflow_id):
-            return workflow
-    return None
+            return workflow, pinned_references.digest(data)
+    return None, None
+
+
+def _fallback_versions(knowledge, workflow, digest, factory):
+    """The least a contract's `versions` holds - lessons and check tiers by version and
+    digest, the Factory, the workflow - for an advisory run whose other files cannot be
+    read. Raises KnowledgeUnavailable when even these cannot."""
+    out = {"factory": factory}
+    for key in ("lessons", "check_tiers"):
+        try:
+            data = knowledge.read(versions.FILES[key])
+        except OSError as exc:
+            raise KnowledgeUnavailable(str(exc))
+        version = model.version_of(knowledge.lessons if key == "lessons" else knowledge.tiers)
+        if version is None:
+            raise KnowledgeUnavailable(f"{versions.FILES[key]} has no version")
+        out[key] = {"version": version, "sha256": pinned_references.digest(data)}
+    out["workflow"] = _workflow_version(workflow, digest)
+    return out
+
+
+def _workflow_version(workflow, digest):
+    if not isinstance(workflow, dict):
+        return None
+    entry = {"id": workflow.get("id"), "version": workflow.get("version")}
+    if digest:
+        entry["sha256"] = digest
+    return entry
 
 
 def _normalize_advisory(body):
@@ -215,15 +252,11 @@ class KnowledgeStep(WorkflowStep):
         run_dir = getattr(context, "run_dir", None)
         title_id = (design or {}).get("title_id") or (strategy or {}).get("title_id")
         advisory = advisory_run(environment)
-        now_stamp = getattr(context, "now", None)
-        now = _utc(now_stamp)
+        now = _utc(getattr(context, "now", None))
         tier = quality.run_tier(environment)
+        # What blocks a run held to its knowledge; for an advisory run (started before
+        # rule 8), what the contract says it could not hold - never a stop.
         notes = []
-        try:
-            run_facets = resolver.facets_from(design, strategy, tier)
-        except ValueError as exc:
-            # The design or strategy states a facet the resolver cannot read: never guessed.
-            return StepResult.blocked(f"knowledge: the run's facets cannot be read ({exc})")
 
         def stop(reason):
             if advisory:
@@ -235,13 +268,27 @@ class KnowledgeStep(WorkflowStep):
                 "without the contract of the knowledge it is held to.")
 
         try:
+            run_facets = resolver.facets_from(design, strategy, tier)
+        except ValueError as exc:
+            # The design or strategy states a facet the resolver cannot read: never guessed.
+            blocked = stop(f"the run's facets cannot be read ({exc})")
+            if blocked:
+                return blocked
+            run_facets = resolver.facets(tier=tier if isinstance(tier, str) else None)
+
+        try:
             knowledge = load_run_knowledge(environment, run_dir, run_facets["platforms"],
                                            strict=not advisory)
         except KnowledgeUnavailable as exc:
-            # Even an advisory run cannot make a contract without readable knowledge.
+            # No knowledge to resolve: no contract can be made at all, advisory or not.
             context.logger.warning("knowledge blocked", reason=str(exc))
-            return StepResult.blocked(f"knowledge: {exc}")
+            return StepResult.blocked(f"knowledge: no contract can be made: {exc}")
 
+        if knowledge.unpinned:
+            # Only an advisory run gets here with files it did not pin (a run held to its
+            # knowledge is refused above): said, never a stop.
+            notes.append(f"the run did not pin {', '.join(knowledge.unpinned)}: read from "
+                         "the live files")
         recorded = quality.knowledge_of(environment) or {}
         for name, key in (("lessons", "lessons"), ("check-tiers", "check_tiers")):
             data = knowledge.lessons if key == "lessons" else knowledge.tiers
@@ -264,13 +311,20 @@ class KnowledgeStep(WorkflowStep):
                 if blocked:
                     return blocked
 
-        workflow = run_workflow(context)
+        workflow, workflow_digest = run_workflow(context)
         if workflow is None:
             blocked = stop(f"the run's workflow {getattr(context, 'workflow_id', None)!r} "
                            "cannot be read, so the steps that validate its rules cannot be "
                            "named")
             if blocked:
                 return blocked
+        else:
+            started = getattr(context, "workflow_version", None)
+            if started is not None and str(workflow.get("version")) != str(started):
+                # Resumed under a newer definition: the validators are the ones the engine
+                # drives the run with now. Said, with the digest recorded; not a stop.
+                notes.append(f"validators named by {workflow.get('id')} "
+                             f"v{workflow.get('version')}; the run started under v{started}")
 
         granted = exceptions.granted(context.read_events())
         try:
@@ -280,21 +334,25 @@ class KnowledgeStep(WorkflowStep):
             if blocked:
                 return blocked
             vocabulary = None
+        taken = (environment.get(quality.PARAM) or {}).get("factory")
+        factory = ({"version": taken.get("version"), "commit": taken.get("commit")}
+                   if isinstance(taken, dict) else versions.factory())
         try:
             found_versions = versions.collect(read=knowledge.read, root=knowledge.root,
                                               workflow=workflow,
                                               platforms=run_facets["platforms"],
                                               pins=resolver.platform_pins(strategy))
+            found_versions["factory"] = factory
+            found_versions["workflow"] = _workflow_version(workflow, workflow_digest)
         except (model.KnowledgeError, OSError, ValueError) as exc:
             blocked = stop(f"the versions the run is held to cannot be recorded ({exc})")
             if blocked:
                 return blocked
-            found_versions = None
-        if found_versions is not None:
-            taken = (environment.get(quality.PARAM) or {}).get("factory")
-            found_versions["factory"] = (
-                {"version": taken.get("version"), "commit": taken.get("commit")}
-                if isinstance(taken, dict) else versions.factory())
+            try:
+                found_versions = _fallback_versions(knowledge, workflow, workflow_digest,
+                                                    factory)
+            except KnowledgeUnavailable as why:
+                return StepResult.blocked(f"knowledge: no contract can be made: {why}")
         body = resolver.resolve(knowledge.lessons, knowledge.checks, knowledge.tiers,
                                 run_facets, workflow=workflow, exceptions=granted, now=now,
                                 versions=found_versions, vocabulary=vocabulary)
@@ -311,8 +369,6 @@ class KnowledgeStep(WorkflowStep):
             body["missing_validators"] = []
         if advisory:
             _normalize_advisory(body)
-        if found_versions is None:
-            return StepResult.blocked(f"knowledge: {'; '.join(notes)}")
 
         contract = {
             "provenance": provenance.build(
@@ -327,6 +383,12 @@ class KnowledgeStep(WorkflowStep):
             "versions": found_versions,
         }
         contract.update(body)
+        if advisory:
+            contract["advisory"] = {
+                "reason": "a run started before the knowledge model (no "
+                          "params.quality.knowledge): its compliance is reported, never "
+                          "enforced",
+                "problems": [n for n in notes if n]}
         counts = body["counts"]
         summary = (f"knowledge: {counts['blocking']} blocking, {counts['required']} required, "
                    f"{counts['recommended']} recommended, {counts['experimental']} "
@@ -336,8 +398,8 @@ class KnowledgeStep(WorkflowStep):
         if advisory:
             summary += ("; ADVISORY - a run started before the knowledge model: its "
                         "compliance is reported, never enforced")
-            if notes:
-                summary += " (" + "; ".join(notes) + ")"
+        if notes:
+            summary += " (" + "; ".join(notes) + ")"
         refused = body["exceptions_refused"]
         if refused:
             summary += f"; {len(refused)} exception(s) refused"

@@ -107,7 +107,7 @@ bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; ex
                                           # cancelled, 3 waiting/paused); also logs, runs, pause, cancel
 
 # The Core Acceptance Suite: WORKFLOW, AGENTS, CONTRACTS, VERIFY, RELEASE, QUALITY,
-# 2D/3D GOLDEN, PROCESS CLEANUP, SECURITY. MISSING or FAIL exits 1; SKIP is never PASS:
+# 2D/3D GOLDEN, KNOWLEDGE, PROCESS CLEANUP, SECURITY. MISSING or FAIL exits 1; SKIP is never PASS:
 # skipped tests are listed and the summary says INCOMPLETE. --strict also exits 4 on a skipped category.
 bin/wgf test-core [--only WORKFLOW] [--json] [--strict]
 WGF_GOLDEN=1 bin/wgf test-core --strict   # the release gate: real 2D + 3D goldens, no SKIP category

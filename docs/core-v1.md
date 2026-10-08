@@ -147,6 +147,7 @@ bin/wgf test-core --only SECURITY --json
 | QUALITY | `test_quality_consistency` | an intentionally bad game cannot pass new-game: six genres held to one floor, eleven degradations each detected, blocking, typed and routed to its owner, recovery only by re-measurement, anti-gaming ([quality-consistency-tests.md](quality-consistency-tests.md)) |
 | 2D GOLDEN | `test_golden_2d` | the whole pipeline on a real PixiJS game |
 | 3D GOLDEN | `test_golden_3d` | the same workflow on a real Three.js game |
+| KNOWLEDGE | `test_knowledge_firewall`, `test_knowledge_generalization`, `test_knowledge_ingest`, `test_knowledge_generations`, `test_knowledge_model`, `test_knowledge_resolve`, `test_knowledge_exceptions`, `test_knowledge_compliance` | every lesson's catches, passes and generalizes tests exist and pass (the regression firewall; a skip is never a pass), and the knowledge model, its run contract, compliance and learning loop hold ([knowledge-enforcement.md](knowledge-enforcement.md)) |
 | PROCESS CLEANUP | `test_core_process` | no survivor on any exit path |
 | SECURITY | `test_core_security` | the adversarial pass, one test per attack |
 

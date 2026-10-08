@@ -226,7 +226,8 @@ def write_runner(root, cfg, port=None):
                          retries=max(0, attempts - 1), test_timeout_ms=_test_timeout_ms(cfg),
                          projects=json.dumps(projects), port=port,
                          root=root.replace("\\", "/"))
-    config_path = os.path.join(work, "playwright.config.ts")
+    # Not the game's config name: this one is the Factory's, beside its own spec.
+    config_path = os.path.join(work, "browser-qa.config.ts")
     with open(config_path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(text)
     with open(os.path.join(work, "settings.json"), "w", encoding="utf-8", newline="\n") as handle:

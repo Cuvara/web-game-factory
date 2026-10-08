@@ -371,7 +371,7 @@
     "scripts/wgf_triage/routing.py": "sha256:3517cc13444a8c1d56a66f70ffdc327aec5a7aff7da830a0cf2183460e4066a5",
     "scripts/wgf_triage/step.py": "sha256:fbf17a492b2e0165271c28b38f5fd650f1c67436598aeb9c9352a24f7b20066e",
     "scripts/wgf_verification/__init__.py": "sha256:d839c975552a91e4eacae638057938892f9cd7985fd6acb1d2905f0e2b9bf4ad",
-    "scripts/wgf_verification/browser_qa.py": "sha256:1335e8bb3f7aad03926dd17fb8d742d6e10ddad8111435ba52f9181b4f51fac1",
+    "scripts/wgf_verification/browser_qa.py": "sha256:b7d59bec2c653df9901e37b9e7a3b808d0d4ef4b340167eb4e073afb49a93e9d",
     "scripts/wgf_verification/browser_qa.spec.ts": "sha256:198250cdc05db5adf121d13cb1130d11bac931777acb56f5247dd940a7829d48",
     "scripts/wgf_verification/checks/__init__.py": "sha256:b363b83e2b5318bb903affd6aee720ce9aa3babe4750e2f5bdd1255eed90e435",
     "scripts/wgf_verification/checks/assets.py": "sha256:33f951990001f827f1b650d95126d1ed21bb80ced45674a7029f2d6ca481154b",

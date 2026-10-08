@@ -1593,7 +1593,7 @@ class BrowserQA(VerificationCase):
     def test_the_spec_runs_guarded_inside_the_checkout(self):
         result, report, qa, seen = self.run_with()
         self.assertEqual(report["verdict"], "PASS", report["failed_checks"])
-        self.assertIn("build/wgf-browser-qa/playwright.config.ts", " ".join(seen["command"]))
+        self.assertIn("build/wgf-browser-qa/browser-qa.config.ts", " ".join(seen["command"]))
         self.assertIn("WGF_BROWSER_PROXY", seen["env"])          # behind the refusing proxy
         ids = {c["id"] for c in report["checks"]}
         self.assertIn("browser.run", ids)

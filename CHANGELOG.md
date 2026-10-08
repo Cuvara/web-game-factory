@@ -31,9 +31,13 @@ unit debuted two mechanics for five families; it now introduces one mechanic per
 introduction leaves the count unmeasured on the design and the build, never a pass. Existing artifacts stay
 valid (every schema change is additive). A run is held to the rule files it pinned when it
 started: the design step reads the run's pinned design-consistency-rules.yaml and
-content-sufficiency its pinned content-sufficiency.yaml (the live file only for a run that
-pinned none), so a run started before this change never meets the new design rules or the
-new build check - not on resume, not when design is entered again.
+content-sufficiency its pinned content-sufficiency.yaml, so a run that pinned them before
+this change never meets the new design rules or the new build check - not on resume, not
+when design is entered again. A run that pinned nothing - every run started before K2 on
+2026-10-08, the two paused validation runs among them - is judged by the live files: on
+resume it meets the new rules and check. A unit debuts what it states it `introduces` (an
+element and the mechanic it stands for are one introduction); a unit stating none is counted
+by every element and mechanic it shows for the first time.
 
 **A run is held to its knowledge, and a person's exception is the run's own record**
 (quality-policy 1.4.0 rule 8, new-game 17, gates 1.7.0, knowledge-contract 1.1.0,

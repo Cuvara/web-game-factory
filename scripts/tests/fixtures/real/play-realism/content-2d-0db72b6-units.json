@@ -1,0 +1,668 @@
+{
+ "_source": "the 2D game's public/content/units.json at 0db72b6, units trimmed to id, index, tier, elements, mechanics, introduces",
+ "schema": "wgf-content/1",
+ "units": [
+  {
+   "id": "w1-l1",
+   "index": 1,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "multi-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "power-ups",
+    "star-rating"
+   ],
+   "introduces": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "power-ups",
+    "star-rating",
+    "multi-ball"
+   ]
+  },
+  {
+   "id": "w1-l2",
+   "index": 2,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "power-ups"
+   ],
+   "introduces": [
+    "wide-paddle"
+   ]
+  },
+  {
+   "id": "w1-l3",
+   "index": 3,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "laser-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "power-ups",
+    "star-rating"
+   ],
+   "introduces": [
+    "laser"
+   ]
+  },
+  {
+   "id": "w1-l4",
+   "index": 4,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "armored-brick",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "armored-bricks",
+    "power-ups"
+   ],
+   "introduces": [
+    "armored-bricks"
+   ]
+  },
+  {
+   "id": "w1-l5",
+   "index": 5,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "multi-capsule",
+    "wide-capsule",
+    "laser-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "armored-bricks",
+    "power-ups",
+    "star-rating"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w1-l6",
+   "index": 6,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "armored-brick",
+    "multi-capsule",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "armored-bricks",
+    "power-ups"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w1-l7",
+   "index": 7,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "armored-brick",
+    "multi-capsule",
+    "wide-capsule",
+    "laser-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "armored-bricks",
+    "power-ups",
+    "star-rating"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w1-l8",
+   "index": 8,
+   "tier": "mvp",
+   "elements": [
+    "armored-brick",
+    "boss-sentinel",
+    "multi-capsule",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "armored-bricks",
+    "power-ups",
+    "boss-fight"
+   ],
+   "introduces": [
+    "boss-fight"
+   ]
+  },
+  {
+   "id": "w2-l1",
+   "index": 9,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "steel-brick",
+    "multi-capsule",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "steel-bricks",
+    "power-ups"
+   ],
+   "introduces": [
+    "steel-bricks"
+   ]
+  },
+  {
+   "id": "w2-l2",
+   "index": 10,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "multi-capsule",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "steel-bricks",
+    "sliding-rows",
+    "power-ups"
+   ],
+   "introduces": [
+    "sliding-rows"
+   ]
+  },
+  {
+   "id": "w2-l3",
+   "index": 11,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "armored-brick",
+    "steel-brick",
+    "multi-capsule",
+    "laser-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "steel-bricks",
+    "sliding-rows",
+    "armored-bricks"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w2-l4",
+   "index": 12,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "steel-brick",
+    "laser-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "steel-bricks",
+    "sliding-rows",
+    "power-ups",
+    "star-rating"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w2-l5",
+   "index": 13,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "multi-capsule",
+    "wide-capsule",
+    "laser-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "sliding-rows",
+    "power-ups",
+    "star-rating"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w2-l6",
+   "index": 14,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "armored-brick",
+    "steel-brick"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "steel-bricks",
+    "armored-bricks",
+    "sliding-rows"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w2-l7",
+   "index": 15,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "steel-brick",
+    "multi-capsule",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "steel-bricks",
+    "sliding-rows",
+    "power-ups"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w2-l8",
+   "index": 16,
+   "tier": "mvp",
+   "elements": [
+    "armored-brick",
+    "boss-prism",
+    "multi-capsule",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "armored-bricks",
+    "steel-bricks",
+    "sliding-rows",
+    "boss-fight",
+    "power-ups"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w3-l1",
+   "index": 17,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "multi-capsule",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "descending-field",
+    "power-ups"
+   ],
+   "introduces": [
+    "descending-field"
+   ]
+  },
+  {
+   "id": "w3-l2",
+   "index": 18,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "multi-capsule",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "descending-field",
+    "power-ups"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w3-l3",
+   "index": 19,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "armored-brick",
+    "multi-capsule",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "descending-field",
+    "armored-bricks",
+    "power-ups"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w3-l4",
+   "index": 20,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "steel-brick",
+    "multi-capsule",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "descending-field",
+    "steel-bricks",
+    "sliding-rows",
+    "power-ups"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w3-l5",
+   "index": 21,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "multi-capsule",
+    "wide-capsule",
+    "laser-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "descending-field",
+    "power-ups",
+    "star-rating"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w3-l6",
+   "index": 22,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "armored-brick",
+    "multi-capsule",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "descending-field",
+    "armored-bricks",
+    "power-ups"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w3-l7",
+   "index": 23,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "steel-brick",
+    "multi-capsule",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "descending-field",
+    "steel-bricks",
+    "power-ups"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w3-l8",
+   "index": 24,
+   "tier": "mvp",
+   "elements": [
+    "armored-brick",
+    "boss-crusher",
+    "multi-capsule",
+    "wide-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "descending-field",
+    "armored-bricks",
+    "boss-fight",
+    "power-ups"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w4-l1",
+   "index": 25,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "explosive-brick",
+    "multi-capsule",
+    "wide-capsule",
+    "laser-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "explosive-bricks",
+    "power-ups"
+   ],
+   "introduces": [
+    "explosive-bricks"
+   ]
+  },
+  {
+   "id": "w4-l2",
+   "index": 26,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "explosive-brick",
+    "multi-capsule",
+    "wide-capsule",
+    "laser-capsule"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "explosive-bricks",
+    "power-ups"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w4-l3",
+   "index": 27,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "explosive-brick",
+    "multi-capsule",
+    "wide-capsule",
+    "laser-capsule",
+    "ember"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "explosive-bricks",
+    "falling-embers",
+    "power-ups"
+   ],
+   "introduces": [
+    "falling-embers"
+   ]
+  },
+  {
+   "id": "w4-l4",
+   "index": 28,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "armored-brick",
+    "explosive-brick",
+    "ember"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "explosive-bricks",
+    "armored-bricks",
+    "falling-embers"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w4-l5",
+   "index": 29,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "explosive-brick",
+    "ember"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "explosive-bricks",
+    "falling-embers",
+    "star-rating"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w4-l6",
+   "index": 30,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "armored-brick",
+    "steel-brick",
+    "explosive-brick",
+    "ember"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "explosive-bricks",
+    "armored-bricks",
+    "falling-embers",
+    "steel-bricks"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w4-l7",
+   "index": 31,
+   "tier": "mvp",
+   "elements": [
+    "brick",
+    "steel-brick",
+    "explosive-brick",
+    "multi-capsule",
+    "wide-capsule",
+    "laser-capsule",
+    "ember"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "explosive-bricks",
+    "steel-bricks",
+    "falling-embers",
+    "power-ups"
+   ],
+   "introduces": []
+  },
+  {
+   "id": "w4-l8",
+   "index": 32,
+   "tier": "mvp",
+   "elements": [
+    "armored-brick",
+    "explosive-brick",
+    "boss-forge",
+    "multi-capsule",
+    "wide-capsule",
+    "ember"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "bricks",
+    "explosive-bricks",
+    "armored-bricks",
+    "falling-embers",
+    "boss-fight",
+    "power-ups"
+   ],
+   "introduces": []
+  }
+ ]
+}

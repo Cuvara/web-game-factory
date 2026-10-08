@@ -137,8 +137,9 @@ checks:
   content.regression: {dimension: content, owner: level-design, severity: blocker, route: by-design, design_field: "build_spec.content.units"}
   # 1.5.0. The design rule content.introductions_one_at_a_time (design-consistency-rules.yaml)
   # counted on the BUILT content data file: after the opening unit, no shipped unit (index
-  # order) debuts more than one element - `elements`, `mechanics` and `introduces` it names
-  # that no earlier shipped unit named. A design that paces its introductions but a build
+  # order) debuts more than one element - what it states it `introduces` (an element and
+  # the mechanic it stands for are one introduction), or, for a unit stating none, every
+  # element and mechanic it names that no earlier shipped unit named. A design that paces its introductions but a build
   # whose units.json does not FAILs (claimed vs actual); `by-design`: a design that itself
   # debuts two at once routes design-gap. A content data file that names no unit's elements
   # or mechanics cannot be counted: SKIPPED as unmeasured, never a pass.

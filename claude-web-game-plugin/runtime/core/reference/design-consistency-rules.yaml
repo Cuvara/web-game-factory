@@ -182,8 +182,9 @@ rules:
     label: After the opening unit, a unit debuts at most one element the player has not met
     severity: blocking
     # `introductions.over_one`: every content unit (not tiered optional, in index order)
-    # after the first that names more than one element, mechanic or introduction no earlier
-    # unit named (wgf_design/content.py introductions_view). The opening unit is exempt: it
+    # after the first that debuts more than one element - what it states it `introduces`, or,
+    # for a unit stating none, every element and mechanic no earlier unit named
+    # (wgf_design/content.py unit_debuts, introductions_view). The opening unit is exempt: it
     # is where play begins. A design with no units holds the rule and says so.
     when: { left: introductions.over_one, op: neq, right: [] }
     rationale: >

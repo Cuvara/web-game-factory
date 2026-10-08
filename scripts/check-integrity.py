@@ -537,6 +537,22 @@ def check_template_pin():
     return lock
 
 
+def check_regression_registry():
+    """WS-9: every check the reference files and producer tables declare has a tier
+    (core/reference/check-tiers.yaml), and every lesson (core/reference/lessons.yaml) marked
+    enforced or partial points at a classified check and a test that exists, a gap says what
+    is missing, and no lesson names a game. A new check without a tier fails here."""
+    sys.path.insert(0, "scripts")
+    from wgf_quality import registry
+
+    problems = registry.problems(os.getcwd())
+    ERRORS.extend(problems)
+    data = registry.load(os.getcwd())
+    checks, _ = registry.classify(data["tiers"], os.getcwd())
+    lessons = (data["lessons"] or {}).get("lessons") or []
+    return checks, lessons
+
+
 def main():
     if not os.path.isdir("core"):
         sys.exit("run from the web-game-factory repository root")
@@ -559,6 +575,7 @@ def main():
     check_plugin_version()
     check_plugin_runtime()
     pin = check_template_pin()
+    tiered, lessons = check_regression_registry()
 
     print(f"artifacts   {len(artifacts)}")
     print(f"roles       {len(roles)}")
@@ -568,6 +585,7 @@ def main():
     print(f"stages      {len(glob.glob('core/lifecycle/stages/*.md'))}")
     print(f"workflows   {len(workflows)}")
     print(f"entry points {', '.join(entry_points) or '-'}")
+    print(f"checks      {len(tiered)} tiered, {len(lessons)} lesson(s)")
     if pin:
         print(f"template    {pin['repository']}@{pin['commit'][:12]} ({pin['ref']})")
     for note in NOTES:

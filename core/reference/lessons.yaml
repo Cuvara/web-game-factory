@@ -1,0 +1,263 @@
+# Lessons: what building real games taught the Factory, and what now stops each from recurring.
+#
+# A lesson is a defect a person or a gate found in a game the Factory built, stated so it is
+# true of any game: the root cause in the Factory, not the game's symptom. Each names the
+# check that now prevents it from recurring (a check id of core/reference/check-tiers.yaml)
+# and the test that proves the check catches it - or says plainly that nothing does yet.
+# Before this file the lessons lived in a ledger outside the Factory, and no Factory artifact
+# linked a finding to the guard that answered it; a lesson learned in one run had to be
+# re-learned by the next person who hit it.
+#
+# Never a game, a title, a theme or a portal account here: core/ names no specific game.
+# Which game showed each lesson, and the evidence (frames, reports, commits), is instance
+# data kept beside the titles, keyed by these ids.
+#
+# status:
+#   enforced  a check of check-tiers.yaml holds it at the release tier, and a test replays
+#             the failure (on real evidence where the lesson came with some) and shows it caught
+#   partial   a check covers part of it; `gap` says what still is not held
+#   gap       nothing holds it yet; `gap` says what would hold it
+#   process   a lesson about how people and agents work, not about a build: no check can hold
+#             it; `held_by` says where it is written down
+#
+# A quality finding a gate raises on a check named here carries the lesson as `guarded_by`
+# (core/artifacts/shared/quality-finding.schema.json): the specialist sees that the failure is
+# a known one, and what accepted it last time. A specialist visit that finds a systemic issue
+# names a lesson candidate in its report (prototype-report `specialist.lesson_candidates`);
+# the quality gate and triage surface the candidates to the person deciding G4, who promotes
+# one to this file - with its check and its test - or rejects it. A candidate never edits this
+# file by itself.
+#
+# check-integrity holds: every id unique; an enforced or partial lesson names at least one
+# check that check-tiers.yaml classifies and at least one test that exists
+# (`scripts/tests/<file>.py::<test name>`); a partial or gap lesson says what is missing; no
+# lesson names a game the instance evidence lists.
+
+version: 1.0.0  # WS-9: version bump at integration
+
+statuses: [enforced, partial, gap, process]
+
+lessons:
+  - id: L1
+    title: Layered result screens passed a UI overlap check
+    lesson: >-
+      Inactive screens left drawn under the active one (pause, win and loss cards stacked)
+      passed a layout overlap check that compares element boxes, while a frame judge saw the
+      text unreadable over the layers.
+    status: partial
+    checks: [production-quality:ui.text, production-quality:ui.overlap]
+    tests:
+      - scripts/tests/test_production_quality.py::test_the_same_text_over_multi_coloured_art_fails
+      - scripts/tests/test_production_quality.py::test_a_label_partly_over_a_bright_shape_fails_on_that_part
+    gap: text over a busy backdrop fails now; there is no play-probe contract that exactly one screen is active at a time.
+
+  - id: L2
+    title: A difficulty-ramp check decided noise at small margins
+    lesson: >-
+      A ramp judged from a few short samples flipped between pass and fail on builds whose
+      gameplay had not changed: a measurement at the edge of its bar is noise, not a verdict.
+    status: enforced
+    checks: [playability:depth.ramp, playability:depth.stall]
+    tests:
+      - scripts/tests/test_playability.py::test_endless_samples_whose_pooled_input_rate_falls_fail
+      - scripts/tests/test_playability.py::test_a_noisy_borderline_is_extended_then_unmeasured_never_decided
+      - scripts/tests/test_playability.py::test_a_stall_is_its_own_finding_not_a_ramp_failure
+
+  - id: L3
+    title: An asset chain check reported only its first broken link
+    lesson: >-
+      A runtime asset chain (exists, referenced, loaded, rendered, visible) that stops at the
+      first failing link surfaces later failures one loop at a time, each loop a full
+      develop and measure cycle.
+    status: partial
+    checks: [production-quality:assets.runtime]
+    tests:
+      - scripts/tests/test_production_quality.py::test_the_chain_stops_at_the_first_broken_link
+    gap: every link is measured, but the finding and its route still name the first failing link only; the visibility bar of a small fast entity is a viewport share, not a share of the play area.
+
+  - id: L4
+    title: A design-gap repair was measured only at the end of production
+    lesson: >-
+      A content structure failure answered by a redesign was not measured again until the
+      content-sufficiency step, after the whole production loop: the redesign could fail the
+      same check after every expensive step had run on it.
+    status: partial
+    checks: [content-sufficiency:content.structure]
+    tests:
+      - scripts/tests/test_content_sufficiency.py::test_geometry_is_the_declared_layouts_lists_by_value
+    gap: the judge is right now, but its ordering is unchanged - neither design nor greybox measures structure on the design's own layouts.
+
+  - id: L5
+    title: A reachability check timed the bot, not the game
+    lesson: >-
+      A unit-to-unit transition window that included the bot's own reaction latency failed
+      identical gameplay on a loaded host: the verdict measured the measurer.
+    status: enforced
+    checks: [playability:content.units_reachable]
+    tests:
+      - scripts/tests/test_playability.py::test_a_transition_late_only_by_the_bot_passes
+      - scripts/tests/test_playability.py::test_the_val_3d_transitions_replay_to_one_verdict
+
+  - id: L6
+    title: Delegated agents ran with no record the coordinator could audit
+    lesson: >-
+      Work started outside the coordinator's own delegation path, or whose start check
+      failed, left real agents with no record; an audit then reported live work as orphaned.
+    status: process
+    held_by: the coordinator's delegation procedure (outside the Factory runtime); the mechanism it was found in is retired.
+
+  - id: L7
+    title: A stalled host was judged as a failing game
+    lesson: >-
+      A recording taken while the host stalled, or a sample cut short, decided start time,
+      win reachability and variety: measurement artifacts were judged as game defects.
+    status: enforced
+    checks: [playability:start.playable, playability:win.reachable, playability:content.variety]
+    tests:
+      - scripts/tests/test_playability.py::test_a_degraded_attempt_made_again_is_judged_on_the_healthy_one
+      - scripts/tests/test_playability.py::test_every_attempt_degraded_is_unmeasured_never_passed
+      - scripts/tests/test_playability.py::test_a_stall_on_a_host_degraded_on_every_attempt_is_blocked_never_a_finding
+
+  - id: L8
+    title: Nothing compared a candidate with the last accepted build
+    lesson: >-
+      Every gate is an absolute floor, so a build can pass every check that passed on the
+      build a person accepted and still be worse than it - smaller, flatter, harder to read.
+    status: gap
+    gap: an accepted-baseline regression gate - paired frame judgement, playability metric deltas, content and feature parity against the build a person accepted.
+
+  - id: L9
+    title: The accepted build is the floor, not the target
+    lesson: >-
+      A build that clears every bar can still have lacklustre game and level design and
+      below-standard models: the bars said what a finished game has, not what a good one is.
+    status: gap
+    gap: design, level and model-craft judges, and benchmark bars calibrated on the market rather than on the Factory's own games.
+
+  - id: L10
+    title: Specialists passed a gate by changing what it measures
+    lesson: >-
+      A reachability finding was met by shrinking the play area with undrawn bounds, and a
+      visibility finding by drawing sprites larger than their colliders: the gate passed, the
+      player felt nothing better.
+    status: enforced
+    checks: [gate-gaming:play-area-change, gate-gaming:sprite-size-without-collider, gate-gaming:unread-content-field]
+    tests:
+      - scripts/tests/test_review_gaming.py::test_a_lowered_ceiling_in_a_reachability_visit_is_flagged
+      - scripts/tests/test_review_gaming.py::test_a_sprite_drawn_larger_with_its_collider_unchanged_is_flagged
+
+  - id: L11
+    title: Physics collided where nothing was drawn
+    lesson: >-
+      Bounds and colliders the simulation has but the screen does not show read to a player
+      as invisible walls; the play probe reported drawn shapes only, never colliders.
+    status: partial
+    checks: [gate-gaming:play-area-change, gate-gaming:sprite-size-without-collider]
+    tests:
+      - scripts/tests/test_review_gaming.py::test_a_play_area_value_in_a_layout_is_flagged_whatever_its_name
+    gap: only the code-diff heuristic catches it; there is no runtime check that every collision happens at a drawn surface.
+
+  - id: L12
+    title: A run adopting an accepted game rewrote it
+    lesson: >-
+      A run that adopted a person-accepted repository wrote a new design and rebuilt the game
+      wholesale - every unit replaced, the world stripped - and nothing made replacing
+      accepted work a person's decision.
+    status: partial
+    checks: [content-sufficiency:content.regression, quality-floor:floor.existing_content]
+    tests:
+      - scripts/tests/test_brief_commitments.py::test_a_build_that_deletes_shipped_units_is_a_regression
+      - scripts/tests/test_existing_floor_probe.py::test_no_content_data_is_an_unmeasured_floor_never_no_floor
+    gap: the floor holds counts, not ids - a run can keep the count and replace every unit; replacement is not yet a person's decision.
+
+  - id: L13
+    title: The playability bot only ever played perfectly
+    lesson: >-
+      A bot with an oracle never falls, drifts or misreads the camera, so falls per minute,
+      lateral drift, input alignment and time against par under ordinary input were never
+      measured.
+    status: gap
+    gap: naive and noisy input policies with their own metrics and bars, blocking at the release tier.
+
+  - id: L14
+    title: Level geometry was never checked
+    lesson: >-
+      Tight turns without rails and units cleared in a fraction of their par went unnoticed:
+      there was no geometry lint and no minimum unit length or duration per tier.
+    status: gap
+    gap: a geometry and clearance lint on the design's own layouts, and unit length and duration bars per tier.
+
+  - id: L15
+    title: 3D models were graded by their own author
+    lesson: >-
+      Model specs the author judged itself shipped below standard: detail sunk inside a shell,
+      flat stacked parts, floating pieces, kit nodes never authored; the loop shipped the last
+      check-passing spec even when its author called it bad.
+    status: partial
+    checks: [model-review:model.primitive, model-review:model.parts]
+    tests:
+      - scripts/tests/test_model_review.py::test_bands_sunk_inside_the_shell_compose_nothing
+      - scripts/tests/test_model_review.py::test_a_lone_sphere_is_still_a_placeholder
+    gap: no independent model-craft judge, contrast measured against the sky rather than the play surface, no game-to-asset node contract.
+
+  - id: L16
+    title: Interactions had no required visual feedback
+    lesson: >-
+      Pickups, checkpoints and outcomes had flat or screen-filling effects, or none: the build
+      spec has no effect contract per interaction, and no gate looks for one.
+    status: gap
+    gap: a per-interaction effect contract in the design, checked by production-quality and the visual judge's states.
+
+  - id: L17
+    title: Game and level design were technically complete and dull
+    lesson: >-
+      Units declared their beats but only their order was checked: an opening unit introduced
+      many mechanics at once, bosses absorbed damage without asking anything new, nothing
+      climaxed - and every bar passed.
+    status: gap
+    gap: a design contract (one new idea per unit, set pieces, climax, route choice) judged against teardowns of comparable games.
+
+  - id: L18
+    title: No one judged the levels, and risk never paid
+    lesson: >-
+      Nothing judged how a level uses its space, its identity, routes or reveals, and no
+      measurement showed that an optional risk pays off over the safe line.
+    status: gap
+    gap: a level-design rubric and judge, and safe and greedy bot policies whose outcomes are compared.
+
+  - id: L19
+    title: An agent's cleanup deleted other agents' work
+    lesson: >-
+      A cleanup that removed a shared scratch directory and pruned worktrees deleted live
+      work of other agents.
+    status: process
+    held_by: every delegation prompt - a unique path per agent, delete only what you created, never prune shared worktrees.
+
+  - id: L20
+    title: A structure judge read geometry from the wrong place
+    lesson: >-
+      A content-structure judge read layouts from one file and counted any list as geometry;
+      when a game moved per-unit geometry elsewhere, identical units looked different.
+    status: enforced
+    checks: [content-sufficiency:content.structure]
+    tests:
+      - scripts/tests/test_content_sufficiency.py::test_only_a_declared_place_carries_geometry
+      - scripts/tests/test_content_sufficiency.py::test_a_list_outside_the_declared_layout_does_not_escape_unmeasured
+
+  - id: L21
+    title: A deferred platform became the default build
+    lesson: >-
+      Strategy ranked a platform the installation does not publish to as required, so the
+      default build carried that portal's third-party ad SDK into every other portal's
+      package, and a smoke test loaded the real SDK.
+    status: gap
+    gap: an SDK leakage scan of each platform's bundle, a deferred-platform guard in strategy, and smoke tests that stub every portal SDK.
+
+  - id: L22
+    title: A design re-entry reused a stale floor
+    lesson: >-
+      Resuming design after a person restored the accepted content reused an existing-content
+      floor measured on an intermediate commit, and greybox began conforming the restored
+      game to the old design.
+    status: gap
+    gap: the adopted checkout re-measured at its head on every design entry, and greybox never conforming accepted content to a superseded design.

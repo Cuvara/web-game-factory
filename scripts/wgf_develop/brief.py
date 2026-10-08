@@ -315,6 +315,16 @@ REPORT_CONTRACT = {
                              "evidence": [{"file": "<repository path>", "line": 1}],
                              "player_effect": "<what the player sees or does differently>"}],
     "how_to_play": "One or two sentences a reviewer reads before opening the build.",
+    # A specialist visit only, and only for a systemic issue: a class of defect the Factory's
+    # gates or brief let through, not this build's instance of it (WS-9, the knowledge
+    # write-back rule; core/reference/lessons.yaml). Omit otherwise.
+    "lesson_candidates": [{"summary": "<the lesson, true of any game: the Factory's root "
+                                      "cause, not this build's symptom>",
+                           "root_cause": "<which gate, brief or step let it through>",
+                           "proposed_check": "<a check id of core/reference/check-tiers.yaml "
+                                             "to strengthen, or the new check that would "
+                                             "hold it>",
+                           "finding": "<the finding id you were working, or null>"}],
 }
 
 # build_spec sections the brief carries, in reading order. Two are left out on purpose:

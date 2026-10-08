@@ -164,6 +164,13 @@
         "source": { "type": ["string", "null"], "description": "The gate entry the findings came from (verify.fail, visual-qa.develop, prototype-review.iterate, ...)." },
         "writable_paths": { "type": "array", "items": { "type": "string" } },
         "sessions": { "type": ["integer", "null"], "minimum": 0 },
+        "lesson_candidates": {
+          "type": "array",
+          "description": "Added by WS-9. The knowledge write-back rule: a systemic issue the specialist found while working its findings - a class of defect the Factory let through, not this build's instance of it - stated generically, with the check that should hold it. Copied from the developer's report (docs/development/report.json `lesson_candidates`); surfaced to the person at G4 by the triage-report and the quality-report.",
+          "items": {
+            "$ref": "./shared/quality-finding.schema.json#/$defs/lesson_candidate"
+          }
+        },
         "cost_usd": { "type": ["number", "null"], "minimum": 0 }
       },
       "additionalProperties": false

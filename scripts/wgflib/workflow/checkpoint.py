@@ -195,6 +195,16 @@ class HumanCheckpointStep(WorkflowStep):
         gate = self.params.get("gate")
         choices = list(self.params.get("choices") or ["approve", "reject"])
         prompt = self.params.get("prompt") or f"Decision required at {self.id}"
+        # Gates the Factory now runs before this one that the run's workflow lacks (an old
+        # run resumed): named in the prompt and the record, and never decided automatically.
+        missing = [g.get("step") for g in getattr(context, "missing_gates", None) or ()
+                   if isinstance(g, dict) and g.get("step")]
+        missed = (f"MISSING GATES: this run's workflow does not have {', '.join(missing)}, "
+                  f"which the Factory now runs before {gate or self.id} - their evidence does "
+                  f"not exist, and the run is development, never a release"
+                  if missing else None)
+        if missed:
+            prompt = f"{missed}. {prompt}"
 
         required = required_artifacts(gate)
         if required is None:
@@ -222,7 +232,10 @@ class HumanCheckpointStep(WorkflowStep):
                     f"{gate} is irreversible and needs a human decision. {prompt}",
                     choices=choices, gate=gate,
                 )
-            held = hold_for_person(gate, inputs) if decision.get("decided_by") != "human"                 else []
+            held = hold_for_person(gate, inputs) if decision.get("decided_by") != "human" \
+                else []
+            if missed and decision.get("decided_by") != "human":
+                held.append(missed)
             if held:
                 return StepResult.waiting_for_human(
                     f"{gate} needs a person's decision this time: {'; '.join(held)}. "
@@ -230,9 +243,12 @@ class HumanCheckpointStep(WorkflowStep):
             data = {"gate": gate, "decided_by": decision.get("decided_by")}
             if decision.get("mode"):
                 data["mode"] = decision["mode"]
+            note = decision.get("note")
+            if missed:
+                note = (f"{note} - " if note else "") + missed
             record, problem = self._record(
                 gate, choice, inputs, context, decided_by=decision.get("decided_by"),
-                mode=decision.get("mode"), note=decision.get("note"),
+                mode=decision.get("mode"), note=note,
                 decided_at=decision.get("decided_at") or context.now)
             if problem:
                 return problem
@@ -248,7 +264,7 @@ class HumanCheckpointStep(WorkflowStep):
             return StepResult.success(record, route=choice, message=f"{choice} at {self.id}",
                                       **data)
 
-        held = hold_for_person(gate, inputs)
+        held = hold_for_person(gate, inputs) + ([missed] if missed else [])
         if held:
             # Evidence a person must read (gates.yaml hold_for_person_when): no automatic
             # approval and no timeout approval for this decision, whatever the run allows.

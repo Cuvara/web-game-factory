@@ -560,11 +560,47 @@ class WorkflowEngine:
             known = set(params[quality.PARAM].get("reasons") or ()) | set(
                 quality.downgrades(events))
             new = [r for r in quality.config_reasons(policy, self.config) if r not in known]
+            # A gate the Factory now requires that this run's workflow lacks (a run started
+            # under an older definition): the run is development, never a release.
+            missing = quality.lacking(self.definition, quality.effective(params, policy))
+            if missing:
+                reason = (f"workflow {self.definition.id} lacks required step(s) "
+                          f"{', '.join(missing)}")
+                if reason not in known and reason not in new:
+                    new.append(reason)
             if new:
                 data = {"reasons": new, "policy": policy.get("version")}
                 self._emit(state, Events.QUALITY_DOWNGRADED, step_id=state.cursor, data=data)
                 events.append({"event": Events.QUALITY_DOWNGRADED, "data": data})
         self._quality_class = quality.run_class(params, events)[0]
+
+    def _reference_definition(self):
+        """The Factory's shipped definition of this run's workflow (core/workflows/<id>), to
+        place gates the run's own definition lacks; None when there is none."""
+        if quality.shipped(self.definition):
+            return self.definition
+        cached = getattr(self, "_reference_cache", False)
+        if cached is not False:
+            return cached
+        reference = None
+        try:
+            import os
+            from .definition import WORKFLOWS, load_definition
+            path = os.path.join(WORKFLOWS, f"{self.definition.id}.workflow.yaml")
+            if os.path.isfile(path):
+                reference = load_definition(path)
+        except Exception:  # noqa: BLE001 - placing is best effort; naming never depends on it
+            reference = None
+        self._reference_cache = reference
+        return reference
+
+    def _missing_gates(self, state, step_def):
+        """quality.missing_gates for `step_def` in this run; [] for a mock run."""
+        held = self._quality_held(state)
+        if held is None:
+            return []
+        return quality.missing_gates(self.definition, held, step_def,
+                                     self._reference_definition())
 
     def _refuse_below_floor(self, state, step_def):
         """Stop the run BLOCKED before `step_def` executes when the quality policy forbids
@@ -1133,6 +1169,7 @@ class WorkflowEngine:
             gates_passed=self.gates_passed(state),
             entered_by=step_state.entered_by,
             visit_budget=self._visit_budget(step_def, step_state),
+            missing_gates=self._missing_gates(state, step_def),
             read_events=lambda: self.store.read_events(state.run_id),
         )
         step_state.pid = None

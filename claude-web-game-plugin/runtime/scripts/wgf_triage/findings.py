@@ -437,7 +437,11 @@ def _quality_report(ctx):
                 or item.get("dimension") not in below:
             continue
         check = item.get("criterion") or item.get("id") or "quality"
-        dimension = ctx.dimension(dims.get(item.get("dimension")))
+        # A criterion the table names (`criteria`) goes to its own owner whatever the quality
+        # dimension it is scored in: a performance criterion of `technical` is the
+        # performance engineer's, not the generalist's.
+        word = (ctx.table.get("criteria") or {}).get(check) or dims.get(item.get("dimension"))
+        dimension = ctx.dimension(word)
         route = {"design-gap": "design", "assets": "assets"}.get(item.get("route"))
         gap = item.get("design_gap") if isinstance(item.get("design_gap"), dict) else None
         finding = ctx.make(

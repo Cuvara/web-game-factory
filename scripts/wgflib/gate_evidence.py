@@ -25,6 +25,10 @@ by step or artifact type, so any checkpoint whose inputs carry the same fields s
                                                    floor, the open findings and the release
                                                    decision (G4) - `development` for a tier-mvp
                                                    run, never a release
+    scorecard + missing_gates + lesson_candidates  (quality-report) the per-discipline lines
+                                                   with the hard blockers listed on their own,
+                                                   the gates the run's workflow lacks, and the
+                                                   lessons specialists proposed (WS-9)
 
 Read-only and presentation only: it decides nothing, and a guard or a gate never reads it.
 """
@@ -120,7 +124,17 @@ def _quality(content):
                             "min_score": d.get("min_score"), "status": d.get("status")}
                            for d in dimensions if isinstance(d, dict)],
             "findings": len(open_findings),
-            "blockers": [f.get("id") for f in open_findings if f.get("severity") == "blocker"]}
+            "blockers": [f.get("id") for f in open_findings if f.get("severity") == "blocker"],
+            "scorecard": [{"id": l.get("id"), "label": l.get("label"), "score": l.get("score"),
+                           "status": l.get("status")}
+                          for l in ((content.get("scorecard") or {}).get("lines") or [])
+                          if isinstance(l, dict)],
+            "hard_blockers": [h for h in ((content.get("scorecard") or {})
+                                          .get("hard_blockers") or []) if isinstance(h, dict)],
+            "missing_gates": [g.get("step") for g in content.get("missing_gates") or []
+                              if isinstance(g, dict) and g.get("step")],
+            "lesson_candidates": [c.get("summary") for c in content.get("lesson_candidates")
+                                  or [] if isinstance(c, dict) and c.get("summary")]}
 
 
 def _fidelity(blocker):
@@ -275,12 +289,28 @@ def render(evidence):
             floor = dim["min_score"] if dim["min_score"] is not None else "-"
             lines.append(f"    {str(dim['id']):<12} {str(score):>6} / floor {str(floor):<5} "
                          f"{dim['status']}")
+        if entry.get("missing_gates"):
+            lines.append(f"    ! MISSING GATES: this run's workflow does not have "
+                         f"{', '.join(entry['missing_gates'])} - their evidence does not "
+                         "exist; this build is never a release")
+        if entry.get("scorecard"):
+            lines.append("    scorecard:")
+            for line in entry["scorecard"]:
+                score = line["score"] if line["score"] is not None else "-"
+                lines.append(f"      {str(line['label'] or line['id']):<32} {str(score):>6}  "
+                             f"{line['status']}")
+        for blocker in entry.get("hard_blockers") or []:
+            lines.append(f"    ! hard blocker {blocker.get('criterion')} ({blocker.get('line')}, "
+                         f"{blocker.get('status')}): no score lifts it")
         if entry["findings"]:
             lines.append(f"    {entry['findings']} open finding(s)"
                          + (f"; blocking: {', '.join(entry['blockers'][:6])}"
                             if entry["blockers"] else ""))
         for reason in entry["reasons"][:4]:
             lines.append(f"    - {reason[:110]}")
+        for summary in (entry.get("lesson_candidates") or [])[:6]:
+            lines.append(f"    lesson candidate (promote to core/reference/lessons.yaml, or "
+                         f"not): {summary[:90]}")
     for report in evidence.get("reports") or []:
         lines.append(f"  {report['artifact']}: verdict {report['verdict']}, evidence "
                      f"{report['evidence_status']}")

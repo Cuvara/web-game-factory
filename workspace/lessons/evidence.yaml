@@ -11,7 +11,7 @@
 
 version: 1.0.0
 
-source: factory-learning-ledger.md L1-L22 (the Lead's ledger of the 2026-10-05..07 validation runs), and factory-gap-audit-2026-10-07.md section 2
+source: factory-learning-ledger.md L1-L22 and M1-M6 (the Lead's ledger of the 2026-10-05..07 validation runs), and factory-gap-audit-2026-10-07.md section 2; L23-L28 added at the quality-system integration (2026-10-08)
 
 games: [Brick Breaker Worlds, Sky Marble]
 
@@ -26,10 +26,10 @@ lessons:
   L8:  {games: [Brick Breaker Worlds, Sky Marble], ledger_row: L8, evidence: [diagnosis/2d, diagnosis/3d, diagnosis/3d/capture-log.json], planned_by: WS-1}
   L9:  {games: [Brick Breaker Worlds, Sky Marble], ledger_row: L9, evidence: [critique/design, critique/3d-art], planned_by: WS-3}
   L10: {games: [Brick Breaker Worlds], ledger_row: L10, evidence: []}
-  L11: {games: [Brick Breaker Worlds], ledger_row: L11, evidence: [diagnosis/2d], planned_by: WS-2}
+  L11: {games: [Brick Breaker Worlds], ledger_row: L11, evidence: [diagnosis/2d, scripts/tests/fixtures/real/play-realism (in this repository)], planned_by: WS-2, closed_by: WS-2}
   L12: {games: [Sky Marble], ledger_row: L12, evidence: [diagnosis/3d], planned_by: WS-1}
-  L13: {games: [Sky Marble, Brick Breaker Worlds], ledger_row: L13, evidence: [rebase/evidence/3d/naive-final.json], planned_by: WS-2}
-  L14: {games: [Sky Marble], ledger_row: L14, evidence: [diagnosis/3d], planned_by: WS-2}
+  L13: {games: [Sky Marble, Brick Breaker Worlds], ledger_row: L13, evidence: [rebase/evidence/3d/naive-final.json, scripts/tests/fixtures/real/play-realism (in this repository)], planned_by: WS-2, closed_by: WS-2}
+  L14: {games: [Sky Marble], ledger_row: L14, evidence: [diagnosis/3d, scripts/tests/fixtures/real/play-realism (in this repository)], planned_by: WS-2, closed_by: WS-2}
   L15: {games: [Sky Marble], ledger_row: L15, evidence: [critique/3d-art], planned_by: WS-4}
   L16: {games: [Sky Marble], ledger_row: L16, evidence: [critique/3d-art/shots], planned_by: WS-4}
   L17: {games: [Brick Breaker Worlds, Sky Marble], ledger_row: L17, evidence: [critique/design], planned_by: WS-3}
@@ -37,4 +37,10 @@ lessons:
   L19: {games: [], ledger_row: L19, evidence: []}
   L20: {games: [Sky Marble], ledger_row: L20, evidence: []}
   L21: {games: [Brick Breaker Worlds, Sky Marble], ledger_row: L21, evidence: [wgf-inv dist-* per-platform bundles], planned_by: WS-6}
-  L22: {games: [Sky Marble], ledger_row: L22, evidence: [], planned_by: WS-1}
+  L22: {games: [Sky Marble, Brick Breaker Worlds], ledger_row: L22, evidence: [scripts/tests/fixtures/design/readopt-3d, scripts/tests/fixtures/design/readopt-2d (in this repository)], planned_by: WS-1, closed_by: PR 54}
+  L23: {games: [Brick Breaker Worlds], ledger_row: M1, evidence: [rebase/evidence/2d/steel-gaps.json, scripts/tests/fixtures/real/play-realism/clear-rates-2d-steel-gaps.json (in this repository)], closed_by: WS-2}
+  L24: {games: [Brick Breaker Worlds, Sky Marble], ledger_row: M5, evidence: [], closed_by: "WS-2 (bot), WS-5 (browser QA)"}
+  L25: {games: [Brick Breaker Worlds, Sky Marble], ledger_row: gap audit 2026-10-07 (WS-5), evidence: [scripts/tests/fixtures/browser-qa (in this repository)], closed_by: WS-5}
+  L26: {games: [Brick Breaker Worlds], ledger_row: gap audit 2026-10-07 (WS-5), evidence: [scripts/tests/fixtures/browser-qa/brick-breaker-worlds-894b4b8.json (in this repository)], closed_by: WS-5}
+  L27: {games: [Sky Marble], ledger_row: gap audit 2026-10-07 (WS-5), evidence: [scripts/tests/fixtures/browser-qa/sky-marble-c340631.json (in this repository)], closed_by: WS-5}
+  L28: {games: [], ledger_row: gap audit 2026-10-07 (WS-5), evidence: [], closed_by: WS-5}

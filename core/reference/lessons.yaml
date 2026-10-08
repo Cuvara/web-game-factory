@@ -33,7 +33,7 @@
 # (`scripts/tests/<file>.py::<test name>`); a partial or gap lesson says what is missing; no
 # lesson names a game the instance evidence lists.
 
-version: 1.0.0  # WS-9: version bump at integration
+version: 1.0.0
 
 statuses: [enforced, partial, gap, process]
 
@@ -152,10 +152,14 @@ lessons:
       Bounds and colliders the simulation has but the screen does not show read to a player
       as invisible walls; the play probe reported drawn shapes only, never colliders.
     status: partial
-    checks: [gate-gaming:play-area-change, gate-gaming:sprite-size-without-collider]
+    checks: [play-realism:physics.undrawn_collision, play-realism:physics.collider_size, gate-gaming:play-area-change, gate-gaming:sprite-size-without-collider]
     tests:
+      - scripts/tests/test_play_realism.py::test_L11_the_regressed_2d_head_turns_at_an_undrawn_ceiling
+      - scripts/tests/test_play_realism.py::test_L11_the_accepted_2d_build_never_turns_at_nothing
+      - scripts/tests/test_play_realism.py::test_a_sprite_enlarged_with_the_collider_unchanged_still_fails
+      - scripts/tests/test_play_realism.py::test_a_collider_is_never_passed_without_a_drawn_body
       - scripts/tests/test_review_gaming.py::test_a_play_area_value_in_a_layout_is_flagged_whatever_its_name
-    gap: only the code-diff heuristic catches it; there is no runtime check that every collision happens at a drawn surface.
+    gap: a 2D build's turns are judged at runtime against what is drawn, and a reported collider against its drawn body; a 3D build's screen-space turns are not judged (a camera moves), so there only the code-diff heuristic holds it.
 
   - id: L12
     title: A run adopting an accepted game rewrote it
@@ -176,16 +180,27 @@ lessons:
       A bot with an oracle never falls, drifts or misreads the camera, so falls per minute,
       lateral drift, input alignment and time against par under ordinary input were never
       measured.
-    status: gap
-    gap: naive and noisy input policies with their own metrics and bars, blocking at the release tier.
+    status: enforced
+    checks: [play-realism:naive.setbacks, play-realism:naive.drift, play-realism:naive.alignment, play-realism:naive.pace, play-realism:naive.unit_duration]
+    tests:
+      - scripts/tests/test_play_realism.py::test_L13_the_regressed_3d_head_is_cleared_by_holding_forward
+      - scripts/tests/test_play_realism.py::test_L13_the_accepted_builds_pass_naive_play
+      - scripts/tests/test_play_realism.py::test_L13_this_bot_fails_the_regressed_3d_head_and_passes_r1_forward
+      - scripts/tests/test_play_realism.py::test_falling_every_few_seconds_in_the_opening_fails
+      - scripts/tests/test_play_realism.py::test_an_off_axis_camera_fails_alignment
 
   - id: L14
     title: Level geometry was never checked
     lesson: >-
       Tight turns without rails and units cleared in a fraction of their par went unnoticed:
       there was no geometry lint and no minimum unit length or duration per tier.
-    status: gap
-    gap: a geometry and clearance lint on the design's own layouts, and unit length and duration bars per tier.
+    status: enforced
+    checks: [play-realism:level.geometry, play-realism:level.unit_length, play-realism:naive.unit_duration]
+    tests:
+      - scripts/tests/test_play_realism.py::test_L14_the_regressed_3d_courses_are_too_tight_and_too_short
+      - scripts/tests/test_play_realism.py::test_L14_the_3d_r1_forward_courses_pass
+      - scripts/tests/test_play_realism.py::test_a_tight_bend_needs_a_railed_inner_edge
+      - scripts/tests/test_play_realism.py::test_a_unit_cleared_in_a_few_seconds_is_too_short_at_the_tier
 
   - id: L15
     title: 3D models were graded by their own author
@@ -259,5 +274,91 @@ lessons:
       Resuming design after a person restored the accepted content reused an existing-content
       floor measured on an intermediate commit, and greybox began conforming the restored
       game to the old design.
-    status: gap
-    gap: the adopted checkout re-measured at its head on every design entry, and greybox never conforming accepted content to a superseded design.
+    status: enforced
+    checks: [design-consistency:existing_content_floor_kept, content-sufficiency:content.regression]
+    tests:
+      - scripts/tests/test_design_readopt.py::test_the_floor_is_the_accepted_courses_and_supersedes_v4s
+      - scripts/tests/test_design_readopt.py::test_v4s_units_breach_the_floor_the_checkout_ships
+      - scripts/tests/test_design_readopt.py::test_greybox_refuses_v4_before_any_developer
+      - scripts/tests/test_design_readopt.py::test_develop_refuses_v1
+
+  - id: L23
+    title: A larger collider closed the gaps a level is threaded through
+    lesson: >-
+      Growing a moving body's collider left the narrow passages of a level's unbreakable rows
+      too tight to thread. Every check still passed - they judged what was drawn, played by a
+      perfect oracle - while the levels were cleared far less often than on the accepted build.
+    status: enforced
+    checks: [play-realism:level.clearance, play-realism:naive.clear_rate]
+    tests:
+      - scripts/tests/test_play_realism.py::test_M1_the_r20_collider_cannot_thread_the_steel_gaps
+      - scripts/tests/test_play_realism.py::test_M1_the_steel_levels_clear_less_often_than_on_the_accepted_build
+      - scripts/tests/test_play_realism.py::test_M1_894b4b8_is_blocked_by_its_clear_rate
+      - scripts/tests/test_play_realism.py::test_M1_the_steel_gaps_fix_is_advisory_on_clearance_at_r1_clear_rate
+
+  - id: L24
+    title: Console errors and lost WebGL contexts were seen by no gate
+    lesson: >-
+      Gates read uncaught exceptions only: errors the game logged to the console, and a WebGL
+      context the browser took away mid-play, passed every check.
+    status: enforced
+    checks: [play-realism:runtime.console_errors, play-realism:runtime.webgl_context, browser-qa:browser.console-errors, browser-qa:browser.webgl-context]
+    tests:
+      - scripts/tests/test_play_realism.py::test_an_error_from_the_games_origin_fails_and_network_refusals_are_not_counted
+      - scripts/tests/test_play_realism.py::test_a_lost_webgl_context_fails
+      - scripts/tests/test_browser_qa.py::test_console_errors_of_the_game_not_of_the_environment
+      - scripts/tests/test_browser_qa.py::test_webgl_context_loss
+
+  - id: L25
+    title: The browser's context menu opened over the game
+    lesson: >-
+      A right click, or a long press on a touch device, opened the browser's context menu over
+      play at every viewport; no gate ever tried either.
+    status: enforced
+    checks: [browser-qa:browser.context-menu]
+    tests:
+      - scripts/tests/test_browser_qa.py::test_context_menu_left_open_fails_at_release
+      - scripts/tests/test_browser_qa.py::test_both_games_open_the_context_menu_at_every_viewport
+
+  - id: L26
+    title: Layout was judged at two viewports, never against what is played
+    lesson: >-
+      UI was checked on one desktop and one phone viewport for overlap between controls only:
+      a HUD card covering the moving body on tablet and touch layouts, and pages that scroll or
+      clip at the sizes players bring, passed.
+    status: enforced
+    checks: [browser-qa:browser.ui-covers-play, browser-qa:browser.overflow, browser-qa:browser.clipping, browser-qa:browser.ui-overlap]
+    tests:
+      - scripts/tests/test_browser_qa.py::test_ui_over_a_critical_entity
+      - scripts/tests/test_browser_qa.py::test_the_2d_objective_card_covers_the_ball_on_touch_layouts
+      - scripts/tests/test_browser_qa.py::test_overflow_clipping_overlap
+      - scripts/tests/test_play_realism.py::test_the_viewports_are_data
+
+  - id: L27
+    title: Sound was checked to play, not to play when it should
+    lesson: >-
+      An audio check that something played passed a loss with no sound, a one-shot started
+      looping, a mute control that did not silence and sound that went on with the page
+      hidden.
+    status: enforced
+    checks: [browser-qa:browser.audio-events, browser-qa:browser.audio-loops, browser-qa:browser.audio-mute, browser-qa:browser.audio-hidden, browser-qa:browser.audio-clips]
+    tests:
+      - scripts/tests/test_browser_qa.py::test_an_end_state_without_a_sound
+      - scripts/tests/test_browser_qa.py::test_the_3d_time_out_is_silent
+      - scripts/tests/test_browser_qa.py::test_a_one_shot_started_looping
+      - scripts/tests/test_browser_qa.py::test_mute_that_does_not_silence
+      - scripts/tests/test_browser_qa.py::test_sound_while_hidden_is_a_hard_gate
+
+  - id: L28
+    title: Performance was never measured while played, and a loaded host was judged as the game
+    lesson: >-
+      Frame stability and memory growth over a session were not measured in a real browser,
+      and a load time read on a stalled host or a software rasterizer would have been judged
+      as the game's own.
+    status: enforced
+    checks: [browser-qa:browser.frame-stability, browser-qa:browser.memory-growth, browser-qa:browser.load-time, browser-qa:browser.first-interaction]
+    tests:
+      - scripts/tests/test_browser_qa.py::test_frames_and_memory_over_the_bars
+      - scripts/tests/test_browser_qa.py::test_a_degraded_host_never_passes_or_fails_a_timing_check
+      - scripts/tests/test_browser_qa.py::test_the_zz_perf_load_artefact_is_blocked_never_failed
+      - scripts/tests/test_browser_qa.py::test_a_software_rasterizer_blocks_a_failure_and_keeps_a_pass

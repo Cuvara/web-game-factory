@@ -87,8 +87,11 @@ factory:
   #                  docs/publish-module.md)
   #   wgf_triage     the `triage` step: failures as quality findings, routed to the
   #                  specialist that owns them (scripts/wgf_triage/, docs/specialist-routing.md)
+  #   wgf_knowledge  the `knowledge` step: the Factory knowledge that applies to the title, as
+  #                  the run's knowledge-contract (scripts/wgf_knowledge/,
+  #                  docs/knowledge-enforcement.md)
   steps:
-    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa, wgf_sufficiency, wgf_quality, wgf_listing, wgf_publish, wgf_triage]
+    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa, wgf_sufficiency, wgf_quality, wgf_listing, wgf_publish, wgf_triage, wgf_knowledge]
 
   # The strategy module (scripts/wgf_strategy): by default it ranks the opportunity's
   # candidate platforms by audience fit and makes the best one required. A project that has

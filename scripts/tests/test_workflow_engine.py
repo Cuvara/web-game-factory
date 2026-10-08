@@ -139,7 +139,7 @@ workflow:
 # tests name requires, so each test exercises the gate rule it is about, not a missing input.
 GATE_EVIDENCE = ("[title-strategy, game-design, tech-plan, qa-report, verification-report, "
                  "prototype-report, playability-report, review-report, quality-report, "
-                 "release-manifest, performance-review]")
+                 "release-manifest, performance-review, knowledge-contract]")
 
 CHECKPOINT = f"""
 workflow:

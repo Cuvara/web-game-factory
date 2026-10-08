@@ -76,6 +76,8 @@ FILES = [
     # Named in the release agent's, the release skill's and /wgf-publish's read-first lists.
     "docs/publish-module.md",
     "docs/portal-publishing-architecture.md",
+    # Named in the knowledge skill's and /wgf-knowledge's read-first lists.
+    "docs/knowledge-enforcement.md",
 ]
 EXCLUDE = ["__pycache__", "*.pyc", "*.pyo", ".DS_Store", "Thumbs.db"]
 

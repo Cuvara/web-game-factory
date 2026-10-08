@@ -64,6 +64,24 @@
 #      missing that gate (scripts/wgflib/workflow/quality.py missing_gates), recorded
 #      development, and never released.
 #
+#   8. Knowledge (1.4.0). A run records, when it starts, the version of every file under
+#      `knowledge` (`params.quality.knowledge`, {<file stem>: "<stem>@<version>"}) and the
+#      Factory's own version and commit (`params.quality.factory`), so every run says which
+#      lessons and check tiers it was held to, and runs are comparable across Factory
+#      generations. A file listed here that is missing, unreadable, versionless or not
+#      shaped as knowledge refuses the run before it starts (a ConfigError: no run is
+#      created). The workflow pins the same files, and its step of type `knowledge`
+#      (new-game's `knowledge-contract`) resolves the rules that apply to the title into the
+#      run's knowledge-contract before any plan or code is made; a run that cannot make its
+#      contract stops there (BLOCKED), never continues without one. A run started before
+#      this rule recorded no `knowledge`: it was never held to a contract, so its compliance
+#      is advisory only, and its knowledge step - reached only by resuming it under a newer
+#      definition - makes the contract it can, marked advisory with every problem that
+#      would have stopped a new run listed, and is blocked only when no contract can be made
+#      at all (no lessons or check tiers can be read). The step is not yet under
+#      `floor.required_steps` (rule 1): runs started before 1.4.0 would be recorded
+#      development for lacking it.
+#
 # `pending` names the required steps that no workflow contains yet. They are enforced by
 # rule 1 from the first definition that adds them, with nothing else to change, and until
 # then `wgf status` lists them as not yet enforced.
@@ -73,7 +91,15 @@
 
 # 1.1.0: skipped_checks (check strength); 1.2.0: quality-gate is in new-game (workflow 11), no longer pending.
 # 1.3.0: rule 6 (independent review, `independent_review`) and rule 7 (no bypass for a small game).
-version: 1.3.0
+# 1.4.0: rule 8 (the knowledge a run is held to, `knowledge`).
+version: 1.4.0
+
+# Rule 8: the knowledge files whose versions a run records at start (and refuses to start
+# without). Their meaning is the knowledge module's (scripts/wgf_knowledge,
+# docs/knowledge-enforcement.md); this file only names them.
+knowledge:
+  - core/reference/lessons.yaml
+  - core/reference/check-tiers.yaml
 
 # The quality bars a release-tier run is judged against. A run records the version it
 # started under, so a later recalibration does not silently re-judge it.

@@ -27,7 +27,7 @@ Every surface reads the Factory from the runtime this plugin ships (`runtime/`, 
 | `ui` | `claude-web-game-plugin/agents/ui.md` | covered |
 | `portfolio-owner` | — | human role; see `core/roles/portfolio-owner.md` |
 
-## Commands (13 of 13 transitions)
+## Commands (14: 12 transitions, `/wgf-status` and `/wgf-knowledge`)
 
 | Command | File | Status |
 |---|---|---|
@@ -43,6 +43,7 @@ Every surface reads the Factory from the runtime this plugin ships (`runtime/`, 
 | `/wgf-score` | `claude-web-game-plugin/commands/wgf-score.md` | covered |
 | `/wgf-select` | `claude-web-game-plugin/commands/wgf-select.md` | covered |
 | `/wgf-status` | `claude-web-game-plugin/commands/wgf-status.md` | covered |
+| `/wgf-knowledge` | `claude-web-game-plugin/commands/wgf-knowledge.md` | covered |
 | `/wgf-strategy` | `claude-web-game-plugin/commands/wgf-strategy.md` | covered |
 
 ## Workflow entry points (1 of 1)
@@ -55,7 +56,7 @@ restates none of it and never answers a gate.
 |---|---|---|---|
 | `/new-game` | `claude-web-game-plugin/commands/new-game.md` | `core/workflows/new-game.workflow.yaml` | covered |
 
-## Skills (28 of 28)
+## Skills (30 of 30)
 
 | Skill | File | Status |
 |---|---|---|
@@ -70,6 +71,7 @@ restates none of it and never answers a gate.
 | `game-ui-kit` | `claude-web-game-plugin/skills/game-ui-kit/SKILL.md` | covered |
 | `gameplay-review` | `claude-web-game-plugin/skills/gameplay-review/SKILL.md` | covered |
 | `juice` | `claude-web-game-plugin/skills/juice/SKILL.md` | covered |
+| `knowledge` | `claude-web-game-plugin/skills/knowledge/SKILL.md` | covered |
 | `level-design` | `claude-web-game-plugin/skills/level-design/SKILL.md` | covered |
 | `localization` | `claude-web-game-plugin/skills/localization/SKILL.md` | covered |
 | `market-intelligence` | `claude-web-game-plugin/skills/market-intelligence/SKILL.md` | covered |
@@ -371,6 +373,41 @@ visit, not a new surface.
 
 No agent, command, workflow or gate was added or removed; the manifest goes to 1.10.0 for the
 new reads.
+
+## The learning loop (binding manifest 1.13.0)
+
+The Factory's knowledge gains its learning side (`docs/knowledge-enforcement.md`, unit K4 of
+the learning-enforcement design), and the surfaces point agents and people at it through
+`wgf knowledge ...` rather than restating any of it.
+
+- **`/wgf-knowledge`** (new command, not a transition, like `/wgf-status`): runs the
+  `wgf knowledge` subcommand asked for - `show`, `resolve`, `contract`, `report`, `ingest`,
+  `candidates`, `reject`, `promote`, `firewall`, `generations`, `table` - and reports it. Its
+  generated section "The learning loop" (from `command_extra` in `scripts/gen-adapters.sh`)
+  says what writes (only `ingest` and `reject`, to the project's
+  `workspace/lessons/candidates.yaml`), that `promote` prints a patch for a person's pull
+  request and never edits `core/`, that subjective evidence is never drafted blocking or
+  required, that a skipped or missing firewall test is never a pass, and that the benchmark
+  table starts no run and lists every profile and phase as requiring a person's budget
+  approval. It grants no exception and answers no gate.
+- **`knowledge`** (new skill, supports game-designer, gameplay, qa, ui): reads
+  `docs/knowledge-enforcement.md`, `core/reference/lessons.yaml`,
+  `core/reference/check-tiers.yaml`, `core/artifacts/knowledge-contract.schema.json` and
+  `core/artifacts/shared/quality-finding.schema.json` (the lesson candidate).
+- **Agents.** game-designer and ui now read `core/reference/lessons.yaml` and
+  `core/reference/check-tiers.yaml` (gameplay and qa already did), and all four read
+  `core/artifacts/knowledge-contract.schema.json`. Their notes: in a run, read its
+  knowledge-contract first (`bin/wgf knowledge contract <run-id>`); a blocking or required
+  rule is held by the gates on the build, never by the agent's report; a systemic issue is
+  reported as a lesson candidate (symptom, root cause, systemic or not), never as an edit to
+  `lessons.yaml`.
+- The runtime ships `docs/knowledge-enforcement.md` (`scripts/build-plugin-runtime.py`).
+- `/wgf-knowledge` is not a transition, so it does not carry the transition procedure
+  (machine, schemas, guards): its own three steps read the knowledge documents, run the
+  subcommand and write nothing but the candidate store. `promote` and `firewall` need a
+  web-game-factory checkout (the Factory's own lessons, evidence and tests); from an
+  installed plugin they refuse and say so, while `ingest`, `candidates` and `reject` work
+  in the project.
 
 ## The portal publisher as built (binding manifest 1.11.0)
 

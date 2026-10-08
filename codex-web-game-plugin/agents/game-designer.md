@@ -28,6 +28,9 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 20. `core/craft/feature-evaluation.md`
 21. `core/reference/feature-catalogue.yaml`
 22. `core/artifacts/shared/research-opportunity.schema.json`
+23. `core/reference/lessons.yaml`
+24. `core/reference/check-tiers.yaml`
+25. `core/artifacts/knowledge-contract.schema.json`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.
@@ -37,6 +40,6 @@ rather than resolving it yourself.
 - Run from the factory repository root so relative core paths resolve.
 - Write artifacts to the `repo_path` given in each schema's `x-wgf` block.
 - Emit a plan before writing files; apply one patch per artifact.
-- Kill criteria are written at strategy, before any code exists. out_of_scope must be non-empty. When the consistency check fails, cut scope rather than relaxing a rule. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job.
+- Kill criteria are written at strategy, before any code exists. out_of_scope must be non-empty. When the consistency check fails, cut scope rather than relaxing a rule. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job. In a run, read its knowledge-contract first (`bin/wgf knowledge contract <run-id>`): the rules that apply to this title and their levels; a blocking or required rule is held by the gates on the build, never by your report. A systemic issue you find goes in your report as a lesson candidate (symptom, root cause, systemic or not) - never an edit to core/reference/lessons.yaml.
 - Do not advance the lifecycle. Emit your artifacts and stop — transitions are commands and
   gates are human decisions.

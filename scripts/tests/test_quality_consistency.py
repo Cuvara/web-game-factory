@@ -45,6 +45,7 @@ from wgflib.workflow import checkpoint, quality, references  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
 from wgflib.workflow.config import FactoryConfig  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
+from wgflib.workflow.definition import load_definition  # noqa: E402
 from wgflib.workflow.model import RunStatus  # noqa: E402
 from wgflib.workflow.engine import EngineError  # noqa: E402
 from wgflib.workflow.step import StepInputs, StepRegistry  # noqa: E402
@@ -234,16 +235,20 @@ class MultiGenreConsistency(_Case):
         taken = state.params["quality"]
         self.assertEqual((taken["tier"], taken["class"]), ("release", "release"))
         self.assertTrue(taken["benchmark"].startswith("quality-benchmark@"))
+        pinned = ["core/reference/quality-floor.yaml",
+                  "core/reference/quality-benchmark.yaml",
+                  "core/reference/visual-qa-rubric.yaml",
+                  "core/reference/visual-quality.yaml",
+                  "core/reference/play-realism.yaml",
+                  "core/reference/browser-qa.yaml",
+                  "core/reference/check-tiers.yaml",
+                  "core/reference/lessons.yaml"]
+        # 17: and everything the run's knowledge-contract is resolved from.
+        pinned += [p for p in load_definition("new-game").pinned_references
+                   if p not in pinned]
+        self.assertIn("core/reference/genre-models.yaml", pinned)
         self.assertEqual(sorted(state.params["pinned_references"]),
-                         sorted(references.collect(
-                             ["core/reference/quality-floor.yaml",
-                              "core/reference/quality-benchmark.yaml",
-                              "core/reference/visual-qa-rubric.yaml",
-                              "core/reference/visual-quality.yaml",
-                              "core/reference/play-realism.yaml",
-                              "core/reference/browser-qa.yaml",
-                              "core/reference/check-tiers.yaml",
-                              "core/reference/lessons.yaml"])))
+                         sorted(references.collect(pinned)))
 
         # The design is the family's at the release tier, and the design step's own rules
         # passed it (designs.py raises otherwise).
@@ -739,14 +744,7 @@ class AntiGaming(_Case):
 
         # A run started after the edit pins the edited file, and is held to it.
         root = os.path.join(self.scratch, "factory")
-        for relpath in ("core/reference/quality-floor.yaml",
-                        "core/reference/quality-benchmark.yaml",
-                        "core/reference/visual-qa-rubric.yaml",
-                        "core/reference/visual-quality.yaml",
-                        "core/reference/play-realism.yaml",
-                        "core/reference/browser-qa.yaml",
-                        "core/reference/check-tiers.yaml",
-                        "core/reference/lessons.yaml"):
+        for relpath in load_definition("new-game").pinned_references:
             target = os.path.join(root, *relpath.split("/"))
             os.makedirs(os.path.dirname(target), exist_ok=True)
             if relpath.endswith("quality-benchmark.yaml"):

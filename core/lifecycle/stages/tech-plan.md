@@ -71,8 +71,10 @@ does not fit the timebox decides nothing.
 Present the consistency result including rules that nearly failed, milestone estimates
 against the timebox, the develop budget the plan derives from the tasks its quality tier
 builds before G4 against the installation's cap (a cap below the need is a planned
-shortfall, decided here rather than discovered mid-build), and how much asset cost is not
-yet sourced.
+shortfall, decided here rather than discovered mid-build), how much asset cost is not
+yet sourced, and the knowledge contract the build will be held to: the rules that apply by
+level, the steps that validate the blocking and required ones, the experimental gaps, and
+every exception granted or refused.
 
 ## Failure modes
 

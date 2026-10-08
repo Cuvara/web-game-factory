@@ -61,6 +61,7 @@ EXPECTED_STEPS = (
     ("strategy", "SUCCESS"),
     ("strategy-review", "SUCCESS"),
     ("design", "SUCCESS"),
+    ("knowledge-contract", "SUCCESS"),  # the lessons that apply, from the run's pins (K2)
     ("tech-plan", "SUCCESS"),
     ("tech-plan-review", "SUCCESS"),
     ("init", "SUCCESS"),

@@ -53,13 +53,13 @@ claude_paths() {
 agents=(
 "research|portfolio:market-scan, portfolio:discovered|Gathers web game market signal from portal sources and normalizes it into tiered claims and candidate opportunities. Use when starting a market scan, researching a genre or platform, or refreshing stale evidence on the backlog.|core/roles/research.md;core/lifecycle/stages/market-scan.md;core/artifacts/shared/claim.schema.json;core/artifacts/opportunity.schema.json;core/artifacts/research-report.schema.json;core/reference/dimensions.yaml;core/reference/research-vocabulary.yaml;core/reference/research-analysis.yaml;core/artifacts/shared/game-record.schema.json;core/artifacts/shared/research-opportunity.schema.json;core/craft/competitive-teardown.md;core/craft/research-evidence.md|Write claims to workspace/claims/ and opportunities to workspace/opportunities/. Write each teardown as a game record under workspace/research/games/, coded on the research vocabulary; never record a gameplay observation that was not made. Observation and interpretation are always separate claims. Never edit a claim; supersede it. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
 "analysis|portfolio:scored, shortlisted, approved, title:concept|Scores opportunities against a versioned scoring model, tracks evidence coverage, and presents the ranked shortlist at gate G1. Use when evaluating or re-scoring opportunities, or preparing an opportunity selection decision.|core/roles/analysis.md;core/lifecycle/stages/score-opportunity.md;core/lifecycle/stages/opportunity-selection.md;core/artifacts/evaluation.schema.json;core/artifacts/shared/scoring-model.schema.json;core/reference/scoring/portfolio-default.v1.yaml|Append evaluations, never overwrite. Record the scoring model by id, version and file hash. Empty evidence_refs forces tier=hypothesis; do not work around it. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
-"game-designer|title:strategy, title:design|Authors the title strategy including its kill criteria, then designs scope, session, retention and monetization together as one artifact. Use when drafting a strategy, producing a game design, or presenting prototype evidence at gate G4.|core/roles/game-designer.md;core/lifecycle/stages/strategy.md;core/lifecycle/stages/design.md;core/artifacts/title-strategy.schema.json;core/artifacts/game-design.schema.json;core/reference/design-consistency-rules.yaml;core/templates/gdd.md;core/craft/core-loop-and-difficulty.md;core/craft/onboarding-and-portal-ux.md;core/craft/art-direction.md;core/craft/production-art-and-ui.md;core/craft/production-art-2d.md;core/craft/production-art-3d.md;core/craft/game-ui-kit.md;core/craft/juice.md;core/craft/retention-and-progression.md;core/craft/content-and-level-design.md;core/reference/genre-models.yaml;core/reference/design-depth.yaml;core/craft/feature-evaluation.md;core/reference/feature-catalogue.yaml;core/artifacts/shared/research-opportunity.schema.json|Kill criteria are written at strategy, before any code exists. out_of_scope must be non-empty. When the consistency check fails, cut scope rather than relaxing a rule. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
+"game-designer|title:strategy, title:design|Authors the title strategy including its kill criteria, then designs scope, session, retention and monetization together as one artifact. Use when drafting a strategy, producing a game design, or presenting prototype evidence at gate G4.|core/roles/game-designer.md;core/lifecycle/stages/strategy.md;core/lifecycle/stages/design.md;core/artifacts/title-strategy.schema.json;core/artifacts/game-design.schema.json;core/reference/design-consistency-rules.yaml;core/templates/gdd.md;core/craft/core-loop-and-difficulty.md;core/craft/onboarding-and-portal-ux.md;core/craft/art-direction.md;core/craft/production-art-and-ui.md;core/craft/production-art-2d.md;core/craft/production-art-3d.md;core/craft/game-ui-kit.md;core/craft/juice.md;core/craft/retention-and-progression.md;core/craft/content-and-level-design.md;core/reference/genre-models.yaml;core/reference/design-depth.yaml;core/craft/feature-evaluation.md;core/reference/feature-catalogue.yaml;core/artifacts/shared/research-opportunity.schema.json;core/reference/lessons.yaml;core/reference/check-tiers.yaml;core/artifacts/knowledge-contract.schema.json|Kill criteria are written at strategy, before any code exists. out_of_scope must be non-empty. When the consistency check fails, cut scope rather than relaxing a rule. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job. In a run, read its knowledge-contract first (\`bin/wgf knowledge contract <run-id>\`): the rules that apply to this title and their levels; a blocking or required rule is held by the gates on the build, never by your report. A systemic issue you find goes in your report as a lesson candidate (symptom, root cause, systemic or not) - never an edit to core/reference/lessons.yaml."
 "architect|title:tech-plan; reviews development commits in title:prototype|Selects the engine, defines architecture and performance budgets, and writes the development plan a coding agent works from; then reviews each development commit read-only and returns a review-report. Use when turning an approved design into a technical plan, preparing gate G3, or reviewing a prototype commit.|core/roles/architect.md;core/lifecycle/stages/tech-plan.md;core/artifacts/tech-plan.schema.json;core/templates/tech-plan.md;core/lifecycle/stages/prototype.md;core/artifacts/review-report.schema.json;core/craft/web-performance.md;core/craft/gameplay-review.md|PixiJS for 2D, Three.js for 3D, nothing else. Every task needs acceptance criteria and tests. repo_params carries the full game.config.yaml content with platforms pinned as id@profile-version. As a reviewer you are read-only: never edit, stage or commit in the game repository. The Factory fingerprints the checkout, and a review that changed anything is undone and discarded. The verdict shape is the one in the review brief the Factory writes. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
-"qa|release:qa|Independently verifies a built release candidate and produces the QA report read at gate G5. Use when a release is in QA, or when prototype evidence needs its numbers checked at G4.|core/roles/qa.md;core/lifecycle/stages/qa.md;core/artifacts/verification-report.schema.json;core/artifacts/qa-report.schema.json;core/artifacts/shared/gameplay-session.schema.json;core/templates/qa-report.md;core/craft/playtesting.md;core/craft/web-performance.md;core/craft/accessibility.md;core/reference/lessons.yaml;core/reference/check-tiers.yaml;core/reference/browser-qa.yaml;core/reference/play-realism.yaml|You verify work you did not author, and you may fail a build its author believes is finished. Every defect needs reproduction steps. verdict is derived from blocking defects and performance budgets. When a Playwright browser tool is available, play the built bundle (a preview server, never the dev server) through each gameplay aspect and record the session to build/verification/gameplay-session.json in the game repository, naming the commit under test, before running \`bin/wgf verify\`; without one, verification falls back to the repository's Playwright suites. Never report a portal's approval. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
+"qa|release:qa|Independently verifies a built release candidate and produces the QA report read at gate G5. Use when a release is in QA, or when prototype evidence needs its numbers checked at G4.|core/roles/qa.md;core/lifecycle/stages/qa.md;core/artifacts/verification-report.schema.json;core/artifacts/qa-report.schema.json;core/artifacts/shared/gameplay-session.schema.json;core/templates/qa-report.md;core/craft/playtesting.md;core/craft/web-performance.md;core/craft/accessibility.md;core/reference/lessons.yaml;core/reference/check-tiers.yaml;core/reference/browser-qa.yaml;core/reference/play-realism.yaml;core/artifacts/knowledge-contract.schema.json|You verify work you did not author, and you may fail a build its author believes is finished. Every defect needs reproduction steps. verdict is derived from blocking defects and performance budgets. When a Playwright browser tool is available, play the built bundle (a preview server, never the dev server) through each gameplay aspect and record the session to build/verification/gameplay-session.json in the game repository, naming the commit under test, before running \`bin/wgf verify\`; without one, verification falls back to the repository's Playwright suites. Never report a portal's approval. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job. In a run, read its knowledge-contract first (\`bin/wgf knowledge contract <run-id>\`): the rules that apply to this title and their levels; a blocking or required rule is held by the gates on the build, never by your report. A systemic issue you find goes in your report as a lesson candidate (symptom, root cause, systemic or not) - never an edit to core/reference/lessons.yaml."
 "release|title:scaffolding, release:draft/rc/validating/submitting|Creates game repositories from the template, assembles and freezes releases, runs platform validation, and prepares portal submissions. Also owns compliance and localization. Use for scaffolding, release assembly, validation, or publishing.|core/roles/release.md;core/lifecycle/stages/scaffolding.md;core/lifecycle/stages/release-draft.md;core/lifecycle/stages/release-candidate.md;core/lifecycle/stages/platform-validation.md;core/lifecycle/stages/publish.md;core/lifecycle/stages/store-listing.md;core/artifacts/release-manifest.schema.json;core/artifacts/platform-publication.schema.json;core/artifacts/review-report.schema.json;core/artifacts/store-listing.schema.json;core/artifacts/listing-validation-report.schema.json;core/artifacts/portal-registry.schema.json;core/artifacts/shared/publication-profile.schema.json;core/reference/publication/;core/reference/store-listing.yaml;core/templates/release-report.md;core/craft/onboarding-and-portal-ux.md;core/craft/store-listing.md;docs/publish-module.md;docs/portal-publishing-architecture.md|Game repositories originate from web-game-template, never from scratch. A frozen manifest is immutable. Validate against the pinned profile version. Secrets never enter source. A portal rejection must produce a compliance finding and a profile version bump. The store listing is captured from the verified build by the store-listing step, never written by hand: a platform requirement nobody has read from the portal stays null in its profile and is reported UNKNOWN, and store copy may claim nothing the shipped game does not have. Publishing is the submit step's portal publisher (docs/publish-module.md; docs/portal-publishing-architecture.md Part 0): you never operate a portal page yourself - the step's executor is the only browser actor, and a drifted step is answered only through its adaptive resolver, never by you. A person logs in in the window the step opens (WAITING_FOR_HUMAN_LOGIN): never ask for, accept, type or keep a password, one-time code, cookie, session or token. G5, G6, the submit confirmation after an upload (WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION) and every declaration, terms or legal field are a person's; never answer one. A publication profile is corrected only from what a person's console observation (wgf-publish.py observe-summary) or the portal's own documentation shows, as a reviewed change; drift-review proposals are for a person to review. Report a portal's readiness as IMPLEMENTED, FIXTURE_VALIDATED, DRY_RUN_VALIDATED, REAL_CONSOLE_VERIFIED, REAL_UPLOAD_VALIDATED, SUBMITTED, PUBLISHED, UNVERIFIED or HUMAN_ACTION_REQUIRED - never as supported. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
 "liveops|title:live|Interprets post-launch analytics, runs scheduled performance reviews, and decides iterate, scale, hold or sunset. Use for any post-launch analysis, experiment design, or campaign proposal at gate G7.|core/roles/liveops.md;core/lifecycle/stages/live.md;core/lifecycle/stages/performance-review.md;core/lifecycle/stages/campaign.md;core/artifacts/performance-review.schema.json;core/craft/retention-and-progression.md|Keep metrics, findings, hypotheses and experiments in their separate fields. Report per platform with sample size, never averaged. A projection is a hypothesis with a number attached; label it. Campaigns need a human-authorized ceiling. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
-"gameplay|works in title:prototype, title:production|Implements core mechanics, game loop, systems and progression from the development plan, and writes the prototype report. Use when building prototype or production tasks.|core/roles/implementers.md;core/lifecycle/stages/prototype.md;core/lifecycle/stages/production.md;core/artifacts/prototype-report.schema.json;core/artifacts/review-report.schema.json;core/artifacts/game-design.schema.json;core/craft/game-feel.md;core/craft/core-loop-and-difficulty.md;core/craft/production-art-and-ui.md;core/craft/production-art-2d.md;core/craft/production-art-3d.md;core/craft/juice.md;core/craft/production-wiring.md;core/craft/retention-and-progression.md;core/craft/content-and-level-design.md;core/reference/genre-models.yaml;core/reference/design-depth.yaml;core/craft/game-audio.md;core/roles/specialists.md;core/reference/specialist-routing.yaml;core/artifacts/shared/quality-finding.schema.json;core/reference/lessons.yaml;core/reference/check-tiers.yaml;core/reference/play-realism.yaml|Work the plan's tasks in dependency order and satisfy both acceptance criteria and tests. When the brief opens with blockers from code review or verification, fix those first. When it opens with *This visit* as a specialist, you are that discipline: fix only the findings it lists, read its playbooks, and write only its writable scope. Scope, monetization, platform strategy, core gameplay and architecture change only through the production change process. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
-"ui|works in title:prototype, title:production|Implements interface, HUD, menus, onboarding flow and platform UI constraints. Use when building or revising any player-facing interface.|core/roles/implementers.md;core/lifecycle/stages/production.md;core/lifecycle/stages/prototype.md;core/artifacts/game-design.schema.json;core/craft/onboarding-and-portal-ux.md;core/craft/ui-hud-mobile.md;core/craft/accessibility.md;core/craft/game-feel.md;core/craft/production-art-and-ui.md;core/craft/game-ui-kit.md;core/craft/juice.md;core/craft/production-wiring.md;core/craft/game-audio.md;core/reference/browser-qa.yaml|time_to_first_play_s and time_to_first_reward_s are design targets, not aspirations. Portal traffic has no install cost anchoring players through a slow start. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
+"gameplay|works in title:prototype, title:production|Implements core mechanics, game loop, systems and progression from the development plan, and writes the prototype report. Use when building prototype or production tasks.|core/roles/implementers.md;core/lifecycle/stages/prototype.md;core/lifecycle/stages/production.md;core/artifacts/prototype-report.schema.json;core/artifacts/review-report.schema.json;core/artifacts/game-design.schema.json;core/craft/game-feel.md;core/craft/core-loop-and-difficulty.md;core/craft/production-art-and-ui.md;core/craft/production-art-2d.md;core/craft/production-art-3d.md;core/craft/juice.md;core/craft/production-wiring.md;core/craft/retention-and-progression.md;core/craft/content-and-level-design.md;core/reference/genre-models.yaml;core/reference/design-depth.yaml;core/craft/game-audio.md;core/roles/specialists.md;core/reference/specialist-routing.yaml;core/artifacts/shared/quality-finding.schema.json;core/reference/lessons.yaml;core/reference/check-tiers.yaml;core/reference/play-realism.yaml;core/artifacts/knowledge-contract.schema.json|Work the plan's tasks in dependency order and satisfy both acceptance criteria and tests. When the brief opens with blockers from code review or verification, fix those first. When it opens with *This visit* as a specialist, you are that discipline: fix only the findings it lists, read its playbooks, and write only its writable scope. Scope, monetization, platform strategy, core gameplay and architecture change only through the production change process. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job. In a run, read its knowledge-contract first (\`bin/wgf knowledge contract <run-id>\`): the rules that apply to this title and their levels; a blocking or required rule is held by the gates on the build, never by your report. A systemic issue you find goes in your report as a lesson candidate (symptom, root cause, systemic or not) - never an edit to core/reference/lessons.yaml."
+"ui|works in title:prototype, title:production|Implements interface, HUD, menus, onboarding flow and platform UI constraints. Use when building or revising any player-facing interface.|core/roles/implementers.md;core/lifecycle/stages/production.md;core/lifecycle/stages/prototype.md;core/artifacts/game-design.schema.json;core/craft/onboarding-and-portal-ux.md;core/craft/ui-hud-mobile.md;core/craft/accessibility.md;core/craft/game-feel.md;core/craft/production-art-and-ui.md;core/craft/game-ui-kit.md;core/craft/juice.md;core/craft/production-wiring.md;core/craft/game-audio.md;core/reference/browser-qa.yaml;core/reference/lessons.yaml;core/reference/check-tiers.yaml;core/artifacts/knowledge-contract.schema.json|time_to_first_play_s and time_to_first_reward_s are design targets, not aspirations. Portal traffic has no install cost anchoring players through a slow start. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job. In a run, read its knowledge-contract first (\`bin/wgf knowledge contract <run-id>\`): the rules that apply to this title and their levels; a blocking or required rule is held by the gates on the build, never by your report. A systemic issue you find goes in your report as a lesson candidate (symptom, root cause, systemic or not) - never an edit to core/reference/lessons.yaml."
 "asset|works in title:design through production|Authors the asset manifest with sources and cost estimates, then produces or sources assets and tracks line-item status. Use when planning asset cost during design or producing assets during development.|core/roles/implementers.md;core/artifacts/asset-manifest.schema.json;core/reference/asset-policy.yaml;core/craft/art-direction.md;core/craft/game-audio.md;core/craft/2d-assets.md;core/craft/production-art-and-ui.md;core/craft/production-art-2d.md;core/craft/production-art-3d.md;core/craft/game-ui-kit.md;core/craft/production-wiring.md|Contribute during design: asset cost is an input to the scope decision. Prefer library and procedural sources. No purchased or library item is integrated without a recorded license. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
 "sdk|works in title:prototype, production, release:validating|Integrates platform SDKs, ads, analytics and cloud save through the template's platform abstraction. Use when wiring any portal capability or preparing platform validation.|core/roles/implementers.md;core/reference/platforms/;core/artifacts/shared/platform-profile.schema.json;core/craft/onboarding-and-portal-ux.md|Game code never calls a portal SDK directly; it calls the abstraction. Integrate during prototype, not production, so monetization is proven in context. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
 )
@@ -136,6 +136,7 @@ commands=(
 "publish|release|release: approved -> validating -> submitting -> live|G6|Continue the run that drafted a release through platform validation, G5, G6 and the portal submit step; a person logs in and decides."
 "live|liveops|title: live (scheduled review)|G7|Run a performance review and decide iterate, scale, hold or sunset."
 "status|-|read-only|-|Report portfolio and title state from workspace/."
+"knowledge|-|read-only (ingest writes workspace/lessons/candidates.yaml)|-|The Factory's knowledge and its learning loop through wgf knowledge - rules, a run's contract and compliance, lesson candidates, promotion drafts, the regression firewall, generations."
 )
 
 # command_extra <id>: what one transition command adds to the shared procedure, emitted after
@@ -144,6 +145,47 @@ commands=(
 # and the publisher's CLI and never by operating a portal page itself.
 command_extra() {
   case "$1" in
+    knowledge) cat <<'EOF'
+
+
+## The learning loop
+
+Read `docs/knowledge-enforcement.md` before acting; it and `core/reference/lessons.yaml` are
+authoritative over this section. Where `python3` is not on PATH (Windows), use `python` in its
+place.
+
+- **The rules.** `bin/wgf knowledge show [ID]` lists every lesson with its derived level;
+  `resolve --family F --render R --platform P --tier T` the rules that apply to those facets;
+  `validate` the model's own problems.
+- **A run.** `bin/wgf knowledge contract <run-id>` is the knowledge-contract the run is held
+  to; `report <run-id> [--md]` its compliance from the newest quality-report. An exception is a
+  person's, granted only through `bin/wgf resume <run-id> --except ...`; never grant one.
+- **Learning from a run.** `bin/wgf knowledge ingest <run-id>` collects the run's lesson
+  candidates (specialist, triage, quality-report and reviewer) into the project's
+  `workspace/lessons/candidates.yaml`: schema-checked, each with a root cause, de-duplicated,
+  with the run, report and commit it came from. A candidate on a check an active lesson holds
+  is that lesson's regression only when its finding is guarded by the lesson or it states the
+  lesson's problem; otherwise it is a new candidate naming the lesson (`related_lessons`).
+  Evidence is measured only when a gate of that run recorded the finding on that build, and
+  promote re-verifies it against the run store. `candidates [--open]` lists them; a person rejects
+  one with `reject C-<n> --reason TEXT`.
+- **Promotion is a person's pull request.** `bin/wgf knowledge promote C-<n> [--out FILE]`
+  prints a patch - the lessons.yaml entry, the evidence.yaml entry, failing test stubs - and
+  writes nothing to `core/`. A candidate whose evidence is only subjective (a review's
+  comment, or a finding no gate of that run recorded on that build) is never drafted
+  blocking or required. Never apply the patch to `core/` yourself. Promote drafts against
+  the Factory repository's own `lessons.yaml`, `evidence.yaml` and tests, so it runs only
+  from a web-game-factory checkout; from an installed plugin it refuses and says so, while
+  `ingest`, `candidates` and `reject` work in the project.
+- **The firewall.** `bin/wgf knowledge firewall [ID ...] [--run <run-id>]` runs every lesson's
+  catches (the check fails the defect), passes (it passes the fix) and generalizes tests; a
+  missing or skipped test is never a pass. It needs a Factory checkout: an installed runtime
+  does not ship the tests.
+- **Generations and benchmarks.** `generations` compares runs by the Factory and knowledge
+  versions they consumed; `table` is the dry benchmark approval table, in which every
+  complexity profile and phase requires a person's budget approval. Neither starts a run.
+EOF
+      ;;
     publish) cat <<'EOF'
 
 
@@ -225,6 +267,28 @@ for row in "${commands[@]}"; do
       codex_step="Follow \`$X/agents/$role.md\`."
       record_step="Record the outcome: artifacts at their \`repo_path\`, and the title's \`state.json\`." ;;
   esac
+  head_line="**Transition** \`$triggers\`"
+  steps="1. Read \`core/lifecycle/\` for the machine that owns this transition, and the
+   \`procedure\` file named on the source state.
+2. Read the \`x-wgf\` block of every artifact schema this transition produces or consumes.
+3. Check the transition's guards before acting. A guard that cannot be evaluated is a
+   blocker to report, not one to assume.
+4. STEP
+5. $record_step"
+  closing="Commands map to transitions rather than to stages, so this file stays correct as long as
+the machine does."
+  # knowledge is not a transition: the engine's knowledge command, read-only but for the
+  # candidate store a run's lesson candidates are collected into. No machine, no guards.
+  if [ "$id" = knowledge ]; then
+    head_line="**Not a transition** - $triggers"
+    claude_step="Run the \`bin/wgf knowledge\` subcommand the user asks for and report what it prints; see *The learning loop* below."
+    codex_step="$claude_step"
+    record_step="Write nothing yourself: only \`ingest\` and \`reject\` write, to the project's \`workspace/lessons/candidates.yaml\`; \`promote\` prints a patch for a person's pull request."
+    steps="1. Read \`docs/knowledge-enforcement.md\` and \`core/reference/lessons.yaml\`.
+2. STEP
+3. $record_step"
+    closing="This command moves no lifecycle state, answers no gate and grants no exception."
+  fi
 
   claude_paths > "$C/commands/wgf-$id.md" <<EOF
 ---
@@ -233,7 +297,7 @@ description: $summary
 
 # /wgf-$id
 
-**Transition** \`$triggers\`
+$head_line
 **Role** \`$role\`
 $gate_line
 
@@ -241,22 +305,15 @@ $summary
 
 ## Procedure
 
-1. Read \`core/lifecycle/\` for the machine that owns this transition, and the
-   \`procedure\` file named on the source state.
-2. Read the \`x-wgf\` block of every artifact schema this transition produces or consumes.
-3. Check the transition's guards before acting. A guard that cannot be evaluated is a
-   blocker to report, not one to assume.
-4. $claude_step
-5. $record_step
+${steps/STEP/$claude_step}
 
-Commands map to transitions rather than to stages, so this file stays correct as long as
-the machine does.$(command_extra "$id")
+$closing$(command_extra "$id")
 EOF
 
   cat > "$X/commands/wgf-$id.md" <<EOF
 # /wgf-$id (Web Game Factory)
 
-**Transition** \`$triggers\`
+$head_line
 **Role** \`$role\`
 $gate_line
 
@@ -264,16 +321,9 @@ $summary
 
 ## Procedure
 
-1. Read \`core/lifecycle/\` for the machine that owns this transition, and the
-   \`procedure\` file named on the source state.
-2. Read the \`x-wgf\` block of every artifact schema this transition produces or consumes.
-3. Check the transition's guards before acting. A guard that cannot be evaluated is a
-   blocker to report, not one to assume.
-4. $codex_step
-5. $record_step
+${steps/STEP/$codex_step}
 
-Commands map to transitions rather than to stages, so this file stays correct as long as
-the machine does.$(command_extra "$id")
+$closing$(command_extra "$id")
 EOF
 done
 
@@ -598,6 +648,7 @@ skills=(
 "production-art-3d|asset, gameplay, game-designer|3D production art from model specs: part decomposition of recognisable low-poly objects, bevel, taper and mirror, materials and emissive, the lighting rig, fog and sky, chase camera and portrait framing, and building and inspecting models.|core/craft/production-art-3d.md;core/craft/production-art-and-ui.md;core/craft/3d-assets-and-animation.md;core/craft/3d-scene-and-physics.md;core/artifacts/shared/model-spec.schema.json"
 "game-ui-kit|ui, asset, game-designer|The game's own interface kit: fonts as licensed assets with locale glyph coverage, HUD layout without overlap, contrast and touch-target minimums, drawn buttons, title, pause, result and retry screens, and the mobile portrait layout.|core/craft/game-ui-kit.md;core/craft/production-art-and-ui.md;core/craft/ui-hud-mobile.md;core/craft/accessibility.md"
 "juice|gameplay, ui|Game feel with numbers: drop bounce, merge pop and burst, combo text, shake, near-miss and crash feedback, opening grace, and acknowledgement within 100 ms.|core/craft/juice.md;core/craft/game-feel.md"
+"knowledge|game-designer, gameplay, qa, ui|The Factory's lessons as rules: which apply to a run and at what level, the run's knowledge-contract and compliance, and the learning loop - lesson candidates stated as symptom, root cause and whether it is systemic, collected with wgf knowledge ingest, drafted for a person's review with wgf knowledge promote, held by the regression firewall.|docs/knowledge-enforcement.md;core/reference/lessons.yaml;core/reference/check-tiers.yaml;core/artifacts/knowledge-contract.schema.json;core/artifacts/shared/quality-finding.schema.json"
 "production-wiring|gameplay, ui, asset|Wiring production art into a build: loading the runtime asset manifest (variants, roles, fonts), the play probe's asset, render and assets_loaded, the regression guard end-to-end test, and self-checking against the production gate and visual QA before reporting.|core/craft/production-wiring.md;core/craft/2d-assets.md;core/artifacts/shared/play-probe.schema.json;core/reference/visual-quality.yaml;core/reference/experience-rules.yaml"
 )
 

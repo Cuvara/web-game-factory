@@ -6,7 +6,12 @@ route is named here, only what the policy file names. The engine calls `floor_pr
 API calls `snapshot` when a run starts and `report` for `wgf status`.
 
     snapshot      what a new run records in its params (`quality`): the tier, the class, why,
-                  and the policy and benchmark versions it started under
+                  the policy and benchmark versions it started under, the version of every
+                  knowledge file the policy lists (`knowledge`) and the Factory's own
+                  version and commit when the caller gives them (`factory`)
+    knowledge_versions
+                  {<file stem>: "<stem>@<version>"} of the policy's `knowledge` files; raises
+                  PolicyError for one that is missing, unreadable or versionless
     effective     the policy a run is held to: its snapshot's lists joined with the current
                   file's (a newer policy only ever adds), or the current file alone for a
                   run started before there was a snapshot
@@ -18,6 +23,7 @@ API calls `snapshot` when a run starts and `report` for `wgf status`.
 """
 
 import os
+import re
 
 from .. import paths
 from ..yamllite import load_file
@@ -28,7 +34,7 @@ from .model import StepOutcome, StepStatus
 __all__ = ["PARAM", "RELEASE", "DEVELOPMENT", "FLOOR", "load_policy", "snapshot",
            "effective", "run_class", "config_reasons", "floor_problems",
            "production_problems", "current", "report", "run_tier", "shipped", "downgrades",
-           "preflight_refusals",
+           "preflight_refusals", "knowledge_versions", "knowledge_of",
            "PolicyError"]
 
 PARAM = "quality"
@@ -40,6 +46,7 @@ FLOOR = "quality-floor"
 POLICY_FILE = os.path.join(paths.REFERENCE, "quality-policy.yaml")
 
 _LISTS = ("enforce_at", "required_steps", "pending", "production_only")
+_SEMVER = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 
 
 class PolicyError(ValueError):
@@ -72,8 +79,9 @@ def load_policy(path=None):
         "preflight": list(data.get("preflight") or []),
         "release_ready_at": data.get("release_ready_at"),
         "shipped_workflows_only": data.get("shipped_workflows_only") is True,
+        "knowledge": list(data.get("knowledge") or []),
     }
-    for key in _LISTS:
+    for key in _LISTS + ("knowledge",):
         if not all(isinstance(item, str) for item in policy[key]):
             raise PolicyError(f"{paths.display(path)}: {key} must be a list of names")
     if not policy["tier"]["classes"] or policy["tier"]["default"] not in policy["tier"]["classes"]:
@@ -91,6 +99,35 @@ def _benchmark_version(relative):
     version = data.get("version") if isinstance(data, dict) else None
     name = os.path.basename(relative).split(".")[0]
     return f"{name}@{version}" if version else None
+
+
+def knowledge_versions(policy, root=None):
+    """{<file stem>: "<stem>@<version>"} for every file under the policy's `knowledge` (rule
+    8), read from the Factory root. Raises PolicyError for a file that is missing, is not
+    readable YAML, or carries no `version` MAJOR.MINOR.PATCH: a run is not started without
+    the knowledge it would be held to. What the files mean is not this module's: it names
+    them, as the policy does, and records their versions."""
+    out = {}
+    for relative in (policy or {}).get("knowledge") or ():
+        path = os.path.join(root or paths.ROOT, *str(relative).split("/"))
+        try:
+            data = load_file(path)
+        except Exception as exc:
+            raise PolicyError(f"knowledge file {relative} cannot be read: {exc}")
+        version = data.get("version") if isinstance(data, dict) else None
+        if not isinstance(version, str) or not _SEMVER.fullmatch(version):
+            raise PolicyError(f"knowledge file {relative} has no version MAJOR.MINOR.PATCH")
+        name = os.path.basename(str(relative)).split(".")[0]
+        out[name] = f"{name}@{version}"
+    return out
+
+
+def knowledge_of(params):
+    """The knowledge versions a run recorded at start ({stem: "<stem>@<version>"}), or None
+    for a run started before rule 8 - one never held to a knowledge contract."""
+    taken = (params or {}).get(PARAM) if isinstance(params, dict) else None
+    found = taken.get("knowledge") if isinstance(taken, dict) else None
+    return dict(found) if isinstance(found, dict) and found else None
 
 
 def _lookup(config, dotted):
@@ -153,10 +190,20 @@ def _tier(policy, config, override=None):
     return tier
 
 
-def snapshot(policy, config, definition, mock=False):
+def snapshot(policy, config, definition, mock=False, factory=None, knowledge=None):
     """The `quality` param a new run records: tier, class, reasons, versions, and the lists
-    it is held to. `config` is the factory data (FactoryConfig.data)."""
+    it is held to. `config` is the factory data (FactoryConfig.data). `knowledge`: the
+    versions of the policy's knowledge files (knowledge_versions(), read now when not
+    given); `factory`: {"version", "commit"} of the Factory checkout, recorded when given.
+    Raises PolicyError when a knowledge file the policy lists cannot be recorded."""
     tier = _tier(policy, config)
+    if knowledge is None:
+        knowledge = knowledge_versions(policy)
+    listed = [os.path.basename(str(f)).split(".")[0] for f in policy.get("knowledge") or ()]
+    unrecorded = [name for name in listed if name not in (knowledge or {})]
+    if unrecorded:
+        raise PolicyError(f"the run cannot record the version of knowledge file(s) "
+                          f"{', '.join(unrecorded)}")
     reasons = []
     if mock:
         reasons.append("a mock run: every step is a placeholder that judges nothing")
@@ -180,6 +227,10 @@ def snapshot(policy, config, definition, mock=False):
         taken["reasons"] = reasons
     if policy.get("benchmark"):
         taken["benchmark"] = policy["benchmark"]
+    if knowledge:
+        taken["knowledge"] = dict(sorted(knowledge.items()))
+    if isinstance(factory, dict):
+        taken["factory"] = {"version": factory.get("version"), "commit": factory.get("commit")}
     for key in _LISTS:
         taken[key] = list(policy[key])
     return taken
@@ -378,6 +429,11 @@ def report(state, definition, events, policy=None):
     out = {"class": klass, "tier": taken.get("tier"), "policy": taken.get("policy"),
            "benchmark": taken.get("benchmark"), "reasons": reasons,
            "release_ready": False, "not_yet_enforced": []}
+    # Rule 8: what the run was held to, comparable across Factory generations. Absent for a
+    # run started before it (advisory knowledge only).
+    for key in ("knowledge", "factory"):
+        if isinstance(taken.get(key), dict):
+            out[key] = dict(taken[key])
     if held is None:
         return out
     out["not_yet_enforced"] = [s for s in held["pending"] if not definition.has_step(s)]

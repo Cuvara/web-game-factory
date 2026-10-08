@@ -107,7 +107,7 @@ bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; ex
                                           # cancelled, 3 waiting/paused); also logs, runs, pause, cancel
 
 # The Core Acceptance Suite: WORKFLOW, AGENTS, CONTRACTS, VERIFY, RELEASE, QUALITY,
-# 2D/3D GOLDEN, PROCESS CLEANUP, SECURITY. MISSING or FAIL exits 1; SKIP is never PASS:
+# 2D/3D GOLDEN, KNOWLEDGE, PROCESS CLEANUP, SECURITY. MISSING or FAIL exits 1; SKIP is never PASS:
 # skipped tests are listed and the summary says INCOMPLETE. --strict also exits 4 on a skipped category.
 bin/wgf test-core [--only WORKFLOW] [--json] [--strict]
 WGF_GOLDEN=1 bin/wgf test-core --strict   # the release gate: real 2D + 3D goldens, no SKIP category
@@ -317,8 +317,10 @@ every step type in `new-game` has one: `wgf_discovery` (research), `wgf_strategy
 `wgf_sdk`, `wgf_verification`, `wgf_release`, `wgf_playability`, `wgf_production`
 (production-quality), `wgf_visualqa` (visual-qa), `wgf_sufficiency` (content-sufficiency),
 `wgf_quality` (quality-gate), `wgf_listing` (store-listing and listing-validation),
-`wgf_publish` (platform-validate and publish) and `wgf_triage` (triage: failures as quality
-findings, routed to the specialist that owns them). `--mock` still
+`wgf_publish` (platform-validate and publish), `wgf_triage` (triage: failures as quality
+findings, routed to the specialist that owns them) and `wgf_knowledge` (knowledge-contract:
+the lessons that apply to the title, resolved from the run's pinned knowledge after design;
+a run that cannot make it stops). `--mock` still
 replaces all of them with placeholders for a run. Discovery reads evidence snapshots from
 `workspace/research/snapshots/` and teardown records from `workspace/research/games/`, codes
 every game on `core/reference/research-vocabulary.yaml`, and proposes several opportunities

@@ -815,8 +815,8 @@ class TestCoreCommand(unittest.TestCase):
     def test_the_shipped_mapping_names_every_category(self):
         suite = wgf.load_core_suite()
         self.assertEqual(list(suite), ["WORKFLOW", "AGENTS", "CONTRACTS", "VERIFY", "RELEASE",
-                                       "QUALITY", "2D GOLDEN", "3D GOLDEN", "PROCESS CLEANUP",
-                                       "SECURITY"])
+                                       "QUALITY", "2D GOLDEN", "3D GOLDEN", "KNOWLEDGE",
+                                       "PROCESS CLEANUP", "SECURITY"])
         self.assertIn("test_core_workflow", suite["WORKFLOW"])
         self.assertIn("test_core_persistence", suite["WORKFLOW"])
 

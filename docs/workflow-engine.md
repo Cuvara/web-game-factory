@@ -436,6 +436,36 @@ corroborated against `WORKFLOW_STARTED` like every other. Nor by appending to
 forged pair written during a step is taken out again (below, and
 development-module.md#budget).
 
+`wgf resume <run-id> --except RULE --reason TEXT --expires DATE [--scope KEY=VALUE ...]
+[--approved-by NAME]` (or `--except FILE.json`, one knowledge-exception record or a list)
+grants the run a knowledge exception the same way: a `KNOWLEDGE_EXCEPTION_GRANTED` operator
+event carrying the complete record, with the resume's nonce. The API does not judge it: it
+refuses automation itself (`decided_by` automation, exit 1, nothing recorded) and hands the
+rest to the knowledge module it names (`WorkflowAPI.KNOWLEDGE_EXCEPTIONS`,
+`scripts/wgf_knowledge/exceptions.py grant`), which stamps `approved_by` (`identifier` the
+person running the command by name - `--approved-by NAME`, else the login name, never a
+placeholder - and `mode` human) and `created_at` now, never taken from the request, and
+refuses every record unless all hold
+(the run's pinned lessons' exception policy, the record's schema, a rule that applies to
+the run, platforms it targets and viewports its checks are judged on). A run started
+before the knowledge model has no contract to except from. No configuration grants one.
+Readers count an exception only when its resume corroborates it, like a raise, and only
+when its nonce is one the engine issued and used once: every resume that records
+operator events keeps its nonce in state.json (`resume_nonces`) with the digest of exactly
+those events (`engine.operator_digest`: canonical JSON of each event's name and data, the
+engine's own stamps left out). A grant is honoured only when its nonce is there, one
+`WORKFLOW_RESUMED` carries it, and the events carrying it still digest to the kept value -
+so neither a made-up nonce nor a real one copied onto new lines of events.jsonl is a
+person's act, and without a run directory or state.json nothing is (fail closed;
+`exceptions.granted(events, issued_nonces(run_dir))`). Budget raises are still read by
+corroboration alone (`wgflib/budget.py`); their digests are kept too, for a reader that
+checks them. A grant takes effect at
+the next quality gate (`wgf resume <run> --from quality-gate` to judge the current build
+with it now), and in the run's contract at its next `knowledge-contract` - the command says
+so. A resume that ends the run by advancing past a step that had already succeeded still
+records the operator events passed with it before `WORKFLOW_RESUMED`; they are never
+dropped. See docs/knowledge-enforcement.md.
+
 Resume refuses a run another live process — or another thread of this one — is driving
 (`RunLocked`), before changing anything. A `stale` run (its driver died) is resumed by taking
 over the dead lock; the step that was interrupted runs again, nothing before it does. A pause
@@ -559,7 +589,12 @@ params (`pinned_references`, corroborated by WORKFLOW_STARTED like every param;
 `scripts/wgflib/workflow/references.py`). A step reads the run's copy through
 `references.read`, which refuses one edited after the start. `new-game` pins the quality
 floor, the quality benchmark and the visual-qa rubric, so a run is scored against the
-contract it started under.
+contract it started under - and, since workflow 17, every file its knowledge is read with
+(the lessons, the check tiers and their sources, the genre models, the quality policy and
+the platform profiles), from which its `knowledge-contract` step resolves the run's
+knowledge-contract. A run's start also records the knowledge versions and the Factory's
+version and commit in `params.quality` (quality-policy rule 8), and is refused - no run
+created - when the knowledge cannot be read (`WorkflowAPI.KNOWLEDGE_VERSIONS`).
 A reviewer that never approves blocks the run on its own
 third request for changes; a verification that always fails, on its third failure; a third
 G4 iterate stops for a person too; none spends another's budget. What a whole run may spend
@@ -619,8 +654,8 @@ nothing is retried.
 and held by the run; otherwise the checkpoint returns `WAITING_FOR_INPUT` naming them, asks
 nobody, and `wgf decide` refuses the run as waiting for input. The engine re-checks each
 input (checksum, contract) before the checkpoint runs, as for any step. In `new-game`:
-G2 on `title-strategy`, G3 on `game-design` + `tech-plan` (not `asset-manifest`: assets are
-sourced after G3), G4 on `qa-report` + `verification-report` + `prototype-report`.
+G2 on `title-strategy`, G3 on `game-design` + `tech-plan` + `knowledge-contract` (not
+`asset-manifest`: assets are sourced after G3), G4 on `qa-report` + `verification-report` + `prototype-report`.
 
 **Choices that stop the run.** `reject` and `kill` return `BLOCKED` with the choice as the
 route: unrouted, the run blocks for a person; routed to `$end`, the run ends `COMPLETED`
@@ -785,7 +820,7 @@ which is the structured log:
 | `QUALITY_DOWNGRADED` | `reasons` (the `development_when` conditions of core/reference/quality-policy.yaml the configuration of this drive meets, not recorded before), `policy`; emitted when a drive begins. A run's class only goes down |
 | `ARTIFACT_CREATED` | the `ArtifactRef` |
 | `ARTIFACT_UPDATED` | the `ArtifactRef` (version ≥ 2) |
-| operator events | Not the engine's: a person's act recorded with `wgf resume` (`engine.resume(operator_events=...)`), `data` + `decided_by`, `decided_at`, and the `resume_nonce` of the `WORKFLOW_RESUMED` that follows. Refused for automation and for any of the names above. Today two, both wgflib/budget.py: `BUDGET_RAISED` (`max_sessions`, `max_cost`; `wgf resume --budget-sessions/--budget-cost`) and `BUDGET_ADOPTED` (`budget`; recorded by a person's resume of a run with no budget while `factory.develop.budget` is configured) |
+| operator events | Not the engine's: a person's act recorded with `wgf resume` (`engine.resume(operator_events=...)`), `data` + `decided_by`, `decided_at`, and the `resume_nonce` of the `WORKFLOW_RESUMED` that follows. Refused for automation and for any of the names above. Today three: wgflib/budget.py's `BUDGET_RAISED` (`max_sessions`, `max_cost`; `wgf resume --budget-sessions/--budget-cost`) and `BUDGET_ADOPTED` (`budget`; recorded by a person's resume of a run with no budget while `factory.develop.budget` is configured), and wgf_knowledge/exceptions.py's `KNOWLEDGE_EXCEPTION_GRANTED` (`exception`: a knowledge-exception record; `wgf resume --except`) |
 
 Consumers must ignore fields and events they do not know. `EventContract` fails if an event
 is added without being documented here. The CLI's progress output is just another
@@ -857,7 +892,8 @@ ended, else `null`). `RunState.from_dict` ignores the extra keys.
 ### `wgf test-core`
 
 Runs the Core Acceptance Suite category by category — `WORKFLOW`, `AGENTS`, `CONTRACTS`,
-`VERIFY`, `RELEASE`, `QUALITY`, `2D GOLDEN`, `3D GOLDEN`, `PROCESS CLEANUP`, `SECURITY` — and
+`VERIFY`, `RELEASE`, `QUALITY`, `2D GOLDEN`, `3D GOLDEN`, `KNOWLEDGE`, `PROCESS CLEANUP`,
+`SECURITY` — and
 prints a table of results and counts. The category → test-module mapping is data, in
 `scripts/tests/core_suite.py`.
 

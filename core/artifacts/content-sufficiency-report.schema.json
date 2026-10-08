@@ -7,7 +7,7 @@
     "id": "content-sufficiency-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.0.2",
+    "version": "1.1.0",
     "producer": "title:prototype",
     "consumers": [
       "title:design",
@@ -238,6 +238,16 @@
         "additionalProperties": false
       },
       "description": "Checks that measured nothing because nothing they measure is claimed. A skip is never a pass."
+    },
+    "layout_source": {
+      "type": "object",
+      "description": "Since 1.1.0. Whether the layout source the content data file declares (content-sufficiency.yaml `layout.source`, or the data file's `layout_source`) was read: `read`, `none` (none declared, or none shipped), or `unreadable` with why. Unit geometry is judged on it, so an unreadable one leaves the level checks unmeasured, never not applicable.",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["read", "none", "unreadable"] },
+        "problem": { "type": "string" }
+      },
+      "additionalProperties": false
     },
     "blocked_reason": {
       "type": [

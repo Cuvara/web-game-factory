@@ -321,6 +321,9 @@ class DevelopStep(WorkflowStep):
         visual_qa = inputs.load("visual-qa-report") if "visual-qa-report" in inputs else None
         sufficiency = (inputs.load("content-sufficiency-report")
                        if "content-sufficiency-report" in inputs else None)
+        # The run's knowledge-contract: the rules this build is held to, in the brief.
+        knowledge = (inputs.load("knowledge-contract") if "knowledge-contract" in inputs
+                     else None)
         # A qa-report on the first visit is a leftover from an earlier release, not feedback
         # on this build; only a loop back from verify carries defects to fix.
         if qa is not None and (context.visit <= 1 or qa.get("verdict") == "pass"):
@@ -452,6 +455,7 @@ class DevelopStep(WorkflowStep):
                 sessions=_sessions(context, tech_plan),
                 developer=settings.developer,
                 specialist=spec,
+                knowledge=knowledge,
             )
 
         if content_floor.adopted(design) and not committed:

@@ -21,7 +21,7 @@
 # Which specialist owns which quality dimension is reference data, not a role property:
 # core/reference/specialist-routing.yaml. Charter: specialists.md.
 
-version: 1.1.0
+version: 1.2.0  # 1.2.0: art-director, performance-engineer, browser-qa, publishing-compliance
 
 roles:
   # ---------------------------------------------------------------- owners
@@ -309,6 +309,86 @@ roles:
       - core/craft/game-audio.md
       - core/craft/production-wiring.md
     writes: [src/, public/, tests/, docs/development/]
+
+  # 1.2.0: art direction, performance, browser QA and publishing
+  # compliance as routed specialists.
+  art-director:
+    kind: implementer
+    label: Art director (2D/3D)
+    charter: specialists.md
+    works_in: [title:prototype, title:production]
+    responsibility: >
+      One coherent look across the build: palette, shape language, scale, perspective and
+      rendering style shared by every asset and screen, judged apart from the artists who
+      make the assets.
+    focus: >
+      Art direction: what does not belong - a sprite or model in another style, a palette
+      the direction does not name, scale and perspective that disagree, a UI that reads as
+      another game - fixed at the shared source (palette roles, materials, the style the
+      assets are drawn in), never by retouching one frame.
+    reads:
+      - core/craft/art-direction.md
+      - core/craft/production-art-2d.md
+      - core/craft/production-art-3d.md
+      - core/craft/production-art-and-ui.md
+    writes: [src/, public/, tests/, docs/development/]
+
+  performance-engineer:
+    kind: implementer
+    label: Performance engineer
+    charter: specialists.md
+    works_in: [title:prototype, title:production]
+    responsibility: >
+      Load time, first interaction, frame stability, memory and download size within the
+      budgets the tech plan set, on the device classes it names.
+    focus: >
+      Performance: what the player waits for and what stutters - oversized textures and
+      audio, allocations in the frame loop, scene complexity, work on the main thread - each
+      measured before and after, never traded against what the game shows.
+    reads:
+      - core/craft/web-performance.md
+      - core/craft/3d-diagnostics.md
+      - core/craft/production-wiring.md
+    writes: [src/, public/, tests/, docs/development/, index.html]
+
+  browser-qa:
+    kind: implementer
+    label: Browser QA engineer
+    charter: specialists.md
+    works_in: [title:prototype, title:production]
+    responsibility: >
+      The game in real browsers: no page error or uncaught exception, every viewport the
+      Factory tests, focus and visibility handled, and the end-to-end tests that hold it.
+    focus: >
+      Browser behaviour: an uncaught error or a failed request in play, a viewport the
+      layout breaks on, a lost focus or a hidden tab the game does not pause for - each
+      reproduced in an end-to-end test that fails before the fix and passes after.
+    reads:
+      - core/craft/web-performance.md
+      - core/craft/ui-hud-mobile.md
+      - core/craft/onboarding-and-portal-ux.md
+      - core/craft/playtesting.md
+    writes: [src/, tests/, index.html, docs/development/]
+
+  publishing-compliance:
+    kind: implementer
+    label: Publishing compliance
+    charter: specialists.md
+    works_in: [release:store-listing]
+    responsibility: >
+      What each targeted platform's rules require of the package and its listing - fields,
+      media, formats, sizes, age and content declarations - checked against the platform
+      profiles before a person is asked to authorize an upload.
+    focus: >
+      Platform compliance: each requirement a platform profile states that the package or
+      its listing does not meet, fixed in the listing or named for a person when only a
+      person can provide it; a requirement the profile leaves UNKNOWN is said so, never
+      passed.
+    reads:
+      - core/craft/store-listing.md
+      - core/craft/onboarding-and-portal-ux.md
+    # The listing is the store-listing step's output, not the game repository's.
+    writes: []
 
   copywriter:
     kind: implementer

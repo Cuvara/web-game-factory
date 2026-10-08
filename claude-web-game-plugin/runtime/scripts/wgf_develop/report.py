@@ -256,5 +256,37 @@ def build_report(*, title_id, brief, checks, dev_report, commit_sha, built_at, b
     if specialist:
         # The specialist this visit was briefed as (triage routed it): which findings it was
         # given and what its sessions cost. Whether they were resolved is the gates' to say.
-        artifact["specialist"] = specialist
+        artifact["specialist"] = dict(specialist)
+        candidates = lesson_candidates(dev_report, specialist.get("role"))
+        if candidates:
+            # The knowledge write-back rule (WS-9): surfaced by triage and the quality gate
+            # to the person at G4, who promotes one to core/reference/lessons.yaml or not.
+            artifact["specialist"]["lesson_candidates"] = candidates
     return provenance.seal(artifact)
+
+
+_CANDIDATE_KEYS = ("summary", "root_cause", "proposed_check", "finding", "evidence_refs")
+
+
+def lesson_candidates(dev_report, role=None):
+    """The developer report's `lesson_candidates`, kept to the schema's shape: a summary is
+    required, strings only, at most eight. Anything else is dropped, never guessed."""
+    out = []
+    for item in (dev_report or {}).get("lesson_candidates") or []:
+        if not isinstance(item, dict) or not str(item.get("summary") or "").strip():
+            continue
+        candidate = {"summary": " ".join(str(item["summary"]).split())[:600]}
+        for key in ("root_cause", "proposed_check"):
+            if isinstance(item.get(key), str) and item[key].strip():
+                candidate[key] = " ".join(item[key].split())[:600]
+        if isinstance(item.get("finding"), str) and item["finding"].strip():
+            candidate["finding"] = item["finding"].strip()[:200]
+        refs = [r for r in item.get("evidence_refs") or [] if isinstance(r, str) and r]
+        if refs:
+            candidate["evidence_refs"] = refs[:10]
+        if role:
+            candidate["role"] = role
+        out.append(candidate)
+        if len(out) == 8:
+            break
+    return out

@@ -296,6 +296,46 @@ def current(state, definition, step_id, last=None):
     return None
 
 
+def lacking(definition, held):
+    """The required steps of `held` (effective()) that are not pending and that `definition`
+    does not have: gates the run's workflow skips by not containing them."""
+    if not held:
+        return []
+    return [s for s in held["required_steps"]
+            if s not in held["pending"] and not definition.has_step(s)]
+
+
+def missing_gates(definition, held, step_def, reference=None):
+    """[{"step", "stage", "type"}]: the required steps the run's `definition` lacks that the
+    Factory runs before `step_def` - placed by `reference`, the Factory's shipped definition
+    of the same workflow (every lacking step when there is none, or when it does not have
+    `step_def`). [] for a step at a stage the floor is not enforced at.
+
+    Rule 1 holds only the required steps a workflow contains, so a run started under an
+    older definition passes a gate added since without a word. Named here, a checkpoint and
+    the quality gate say so, and the run is recorded development (never a release). Asked of
+    a step at a stage the floor is enforced at, or of a required step itself (the quality
+    gate); [] for any other."""
+    if not held or (step_def.stage not in held["enforce_at"]
+                    and step_def.id not in held["required_steps"]):
+        return []
+    missing = lacking(definition, held)
+    if not missing:
+        return []
+    ordered = reference is not None and reference.has_step(step_def.id)
+    if ordered:
+        ids = list(reference.step_ids)
+        before = set(ids[:ids.index(step_def.id)])
+        missing = [s for s in missing if s in before or not reference.has_step(s)]
+    out = []
+    for step_id in missing:
+        spec = reference.step(step_id) if reference is not None \
+            and reference.has_step(step_id) else None
+        out.append({"step": step_id, "stage": getattr(spec, "stage", None),
+                    "type": getattr(spec, "type", None)})
+    return out
+
+
 def floor_problems(state, definition, step_def, held):
     """Rule 1: why the required steps before `step_def` do not let it execute; [] when they
     do, or when its stage is not one the floor is enforced at. `held` is effective()."""

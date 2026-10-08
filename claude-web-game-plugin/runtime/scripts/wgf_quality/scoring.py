@@ -8,9 +8,16 @@
     build_identity(loaded)                       the build: shipped commit, development
                                                  commit, bundle digest
     evidence(contract, loaded, refs, build)      every report the scores read, current or stale
-    score(contract, criteria, loaded, refs, tier, build, previous)
+    score(contract, criteria, loaded, refs, tier, build, previous, render=...)
                                                  criteria, dimensions, findings, regression,
-                                                 the release decision and the verdict
+                                                 the scorecard, the release decision and the
+                                                 verdict
+    scorecard(contract, results, findings, tier, render)
+                                                 the per-discipline lines (gameplay, feel,
+                                                 level design, 2D/3D art, UI/UX, audio,
+                                                 performance, accessibility, platform
+                                                 compliance, publishing readiness) and every
+                                                 hard blocker listed on its own
 
 Pure functions over parsed data: no file, process or clock. Every number comes from the
 contract or the benchmark it references; no consumer branches on a family or a game. An
@@ -21,12 +28,15 @@ game rule.
 import fnmatch
 
 __all__ = ["ContractError", "contract", "tier_of", "derive", "build_identity", "evidence",
-           "score", "ROUTE_ORDER", "STATUSES", "find"]
+           "score", "scorecard", "ROUTE_ORDER", "STATUSES", "LINE_STATUSES", "find"]
 
 # The design must grow before the art is made again, the art before the build changes, and
 # the store listing last (it is measured after G4).
 ROUTE_ORDER = ("design-gap", "assets", "develop", "listing")
 STATUSES = ("PASS", "FAIL", "UNMEASURED", "DEFERRED")
+# A scorecard line's status: NOT_APPLICABLE for a line of the other rendering dimension.
+LINE_STATUSES = ("PASS", "BELOW_FLOOR", "UNMEASURED", "DEFERRED", "NOT_APPLICABLE")
+RENDERS = ("2d", "3d")
 KINDS = ("checks", "verdict", "scores", "count", "all")
 SEVERITIES = ("blocker", "warning")
 # A check status the producer itself counts as measured: SKIPPED measured nothing.
@@ -36,6 +46,13 @@ LISTING_PHASE = "listing"
 # lists one of its checks, in any status (a SKIPPED one too, which measured nothing and is
 # therefore UNMEASURED): the producer decides whether the check concerns this game at all.
 APPLIES_REPORTED = "reported"
+# `evaluate.required_only: passed` (checks only): every required check counts, and an optional
+# one only when it passed. A producer whose strength follows the run's own tier (play
+# realism, browser QA) reports a check optional below the release class - a failure there is
+# its WARNING, an unmeasured one its note - while its passes still show what was measured.
+# With `applies: reported`, a criterion whose checks are all optional and none passed does
+# not apply: the producer holds none of them at this run's strength.
+REQUIRED_PASSED = "passed"
 
 
 class ContractError(ValueError):
@@ -89,6 +106,11 @@ def _criteria_problems(where, criteria, dimensions):
         if not isinstance(evaluate, dict) or evaluate.get("kind") not in KINDS \
                 or not evaluate.get("report"):
             problems.append(f"{at}: evaluate needs a kind of {', '.join(KINDS)} and a report")
+        elif evaluate.get("required_only") not in (None, True, False, REQUIRED_PASSED) or (
+                evaluate.get("required_only") == REQUIRED_PASSED
+                and evaluate.get("kind") != "checks"):
+            problems.append(f"{at}: evaluate.required_only is true, false or "
+                            f"{REQUIRED_PASSED!r} (checks only)")
         elif evaluate.get("applies") not in (None, APPLIES_REPORTED) or (
                 evaluate.get("applies") and evaluate.get("kind") != "checks"):
             problems.append(f"{at}: evaluate.applies may only be {APPLIES_REPORTED!r}, on a "
@@ -101,6 +123,45 @@ def _criteria_problems(where, criteria, dimensions):
             problems.append(f"{at}: route must be one of {', '.join(ROUTE_ORDER)}")
         if "minimum" not in criterion and "maximum" not in criterion:
             problems.append(f"{at}: a criterion needs a minimum or a maximum")
+    return problems
+
+
+def _scorecard_problems(floor, dimensions):
+    """[problem] of the floor's `scorecard` block: every line known, every floor dimension
+    feeding exactly one line per rendering dimension, every criterion's `scorecard` a line."""
+    lines = floor.get("scorecard")
+    if lines is None:
+        return []
+    if not isinstance(lines, dict) or not lines:
+        return ["scorecard must map a line id to {label, dimensions[, render, min_score]}"]
+    problems = []
+    for line_id, line in lines.items():
+        if not isinstance(line, dict) or not isinstance(line.get("dimensions"), list):
+            problems.append(f"scorecard.{line_id}: needs a list of floor dimensions")
+            continue
+        if line.get("render") not in (None,) + RENDERS:
+            problems.append(f"scorecard.{line_id}: render must be one of {', '.join(RENDERS)}")
+        for dim in line["dimensions"]:
+            if dim not in dimensions:
+                problems.append(f"scorecard.{line_id}: {dim!r} is not a scored dimension")
+    for render in RENDERS:
+        for dim in dimensions:
+            feeding = [k for k, v in lines.items() if isinstance(v, dict)
+                       and dim in (v.get("dimensions") or [])
+                       and v.get("render") in (None, render)]
+            if len(feeding) != 1:
+                problems.append(f"scorecard: dimension {dim!r} feeds {len(feeding)} lines for a "
+                                f"{render} game ({', '.join(feeding) or 'none'}), not one")
+    criteria = list(floor.get("universal") or [])
+    for entry in (floor.get("genres") or {}).values():
+        criteria += list((entry or {}).get("criteria") or [])
+    for entry in (floor.get("dimensions_contracts") or {}).values():
+        criteria += list((entry or {}).get("criteria") or [])
+    for criterion in criteria:
+        if isinstance(criterion, dict) and criterion.get("scorecard") is not None \
+                and criterion["scorecard"] not in lines:
+            problems.append(f"{criterion.get('id')}: scorecard {criterion['scorecard']!r} is not "
+                            "a scorecard line")
     return problems
 
 
@@ -118,6 +179,7 @@ def contract(floor, benchmark, rubric):
     for render, entry in (floor.get("dimensions_contracts") or {}).items():
         problems += _criteria_problems(f"dimensions_contracts.{render}",
                                        (entry or {}).get("criteria"), dimensions)
+    problems += _scorecard_problems(floor, dimensions)
     if problems:
         raise ContractError("; ".join(problems[:6]))
     references = {"quality-benchmark": benchmark or {}, "visual-qa-rubric": rubric or {}}
@@ -237,7 +299,8 @@ def _measure(evaluate, report):
         checks = [c for c in report.get("checks") or [] if isinstance(c, dict)
                   and _matches(c.get("id"), evaluate.get("checks"))
                   and c.get("status") in MEASURED
-                  and (c.get("required") or not required_only)]
+                  and (c.get("required") or not required_only
+                       or (required_only == REQUIRED_PASSED and c.get("status") == "PASS"))]
         projects = evaluate.get("projects")
         if projects:
             shares = {}
@@ -335,6 +398,8 @@ def _evaluate(layer, criterion, loaded, evidence_by_type, tier, references, defe
     base = {"id": criterion["id"], "layer": layer, "dimension": criterion["dimension"],
             "severity": severity, "owner": criterion.get("owner") or "",
             "route": criterion["route"], "basis": str(criterion.get("basis") or "proposed")}
+    if criterion.get("scorecard"):
+        base["scorecard"] = criterion["scorecard"]
     entry = evidence_by_type.get(report_type)
     base["evidence"] = [_ref_of(entry)] if entry else []
     if report_type in deferred and report_type not in loaded:
@@ -360,6 +425,15 @@ def _evaluate(layer, criterion, loaded, evidence_by_type, tier, references, defe
     if evaluate.get("applies") == APPLIES_REPORTED and not any(
             isinstance(c, dict) and _matches(c.get("id"), evaluate.get("checks"))
             for c in report.get("checks") or []):
+        return None
+    if (evaluate.get("required_only") == REQUIRED_PASSED
+            and evaluate.get("applies") == APPLIES_REPORTED
+            and not any(
+                isinstance(c, dict) and _matches(c.get("id"), evaluate.get("checks"))
+                and (c.get("required") or c.get("status") == "PASS")
+                for c in report.get("checks") or [])):
+        # Every check it reads is one the producer does not hold at this run's strength,
+        # and none passed: the producer's own WARNINGs say so; nothing applies here.
         return None
     observed, share, measured = _measure(evaluate, report)
     if not measured:
@@ -425,10 +499,97 @@ def _failing_assets(loaded, result):
     return sorted(names)
 
 
+def _line_of(lines, result, render):
+    """The scorecard line a criterion result is on: its own `scorecard`, else the line its
+    dimension feeds for `render`."""
+    if result.get("scorecard") in lines:
+        return result["scorecard"]
+    for line_id, line in lines.items():
+        if result["dimension"] in (line.get("dimensions") or []) \
+                and line.get("render") in (None, render):
+            return line_id
+    return None
+
+
+def scorecard(spec, results, findings, tier, render=None):
+    """{"render", "lines", "hard_blockers"} - None when the contract has no scorecard (a run
+    pinned a floor from before it). `results`: score()'s criteria; `findings`: its findings
+    (an open blocker carried from an earlier build and not yet re-measured holds its line)."""
+    lines = (spec.get("floor") or {}).get("scorecard")
+    if not isinstance(lines, dict) or not lines:
+        return None
+    held = tier or "mvp"
+    render = render if render in RENDERS else "2d"
+    references = spec["references"]
+    on = {}
+    for result in results:
+        line_id = _line_of(lines, result, render)
+        if line_id:
+            on.setdefault(line_id, []).append(result)
+    hard = []
+    for result in results:
+        if result["severity"] == "blocker" and result["status"] in ("FAIL", "UNMEASURED"):
+            hard.append({"criterion": result["id"], "line": _line_of(lines, result, render),
+                         "dimension": result["dimension"], "status": result["status"],
+                         "summary": result.get("summary") or ""})
+    blocking = {h["criterion"] for h in hard}
+    for finding in findings or []:
+        if finding.get("status") != "open" or finding.get("severity") != "blocker" \
+                or finding.get("criterion") in blocking:
+            continue
+        result = next((r for r in results if r["id"] == finding.get("criterion")), None)
+        if result is None or result["status"] != "PASS":
+            continue
+        # Passing again on the build it was raised on: still open until a newer build is
+        # measured (score() keeps it open), so it still holds its line.
+        hard.append({"criterion": finding["criterion"],
+                     "line": _line_of(lines, result, render),
+                     "dimension": result["dimension"], "status": "OPEN",
+                     "summary": "an open blocker finding not yet re-measured on a newer build"})
+    out = []
+    for line_id, line in lines.items():
+        own = on.get(line_id, [])
+        min_score = _bar(line.get("min_score"), held, references)
+        entry = {"id": line_id, "label": line.get("label") or line_id,
+                 "dimensions": list(line.get("dimensions") or []),
+                 "criteria": [r["id"] for r in own], "score": None, "min_score": min_score,
+                 "blockers": sorted({h["criterion"] for h in hard if h["line"] == line_id}),
+                 "status": None, "reason": None}
+        if line.get("render") and line["render"] != render:
+            entry.update(status="NOT_APPLICABLE",
+                         reason=f"a {line['render']} line; this game is {render}")
+            out.append(entry)
+            continue
+        measured = [r for r in own if r["status"] in ("PASS", "FAIL")]
+        if measured:
+            entry["score"] = round(sum(r["score"] for r in measured) / len(measured), 1)
+        if entry["blockers"]:
+            entry["status"] = "BELOW_FLOOR"
+            entry["reason"] = ("hard blockers below their minimum: "
+                               + ", ".join(entry["blockers"])
+                               + " - no score on this or any other line lifts them")
+        elif own and all(r["status"] == "DEFERRED" for r in own):
+            entry.update(status="DEFERRED",
+                         reason="measured once the store listing exists (listing-validation)")
+        elif entry["score"] is None:
+            entry.update(status="UNMEASURED",
+                         reason="no criterion of the floor measures this line for this game: "
+                                "a gap in what the Factory measures, never a pass")
+        elif min_score is not None and entry["score"] < min_score:
+            entry.update(status="BELOW_FLOOR",
+                         reason=f"score {entry['score']:g} below the line's floor "
+                                f"{min_score:g}")
+        else:
+            entry["status"] = "PASS"
+        out.append(entry)
+    return {"render": render, "lines": out, "hard_blockers": hard}
+
+
 def score(spec, criteria, loaded, refs, tier, build, previous=None, evidence_entries=None,
-          deferred=("listing-validation-report",)):
+          deferred=("listing-validation-report",), render=None):
     """The scorecard. `tier`: the quality tier (None is held as mvp). `previous`: the run's
-    previous quality-report, for finding lifecycle and regression."""
+    previous quality-report, for finding lifecycle and regression. `render`: the game's
+    rendering dimension (2d | 3d): which scorecard line its art is scored on."""
     held = tier or "mvp"
     references = spec["references"]
     entries = evidence_entries if evidence_entries is not None else \
@@ -573,7 +734,21 @@ def score(spec, criteria, loaded, refs, tier, build, previous=None, evidence_ent
                        "never a release")
         reasons += [f"{d['id']} below its floor: {d['reason']}" for d in dimensions
                     if d["status"] == "BELOW_FLOOR"]
-    verdict = "FAIL" if below or (held == "release" and decision != "release") else "PASS"
+    card = scorecard(spec, results, findings.values(), tier, render)
+    lines_below = [line for line in (card or {}).get("lines") or []
+                   if line["status"] == "BELOW_FLOOR"]
+    if lines_below:
+        # A line below its floor holds the build whatever every other line scores. A blocker
+        # always holds its floor dimension too, so a reason is added only where a line's own
+        # min_score is what holds it.
+        reasons += [f"scorecard {line['id']} below its floor: {line['reason']}"
+                    for line in lines_below if not line["blockers"]]
+        if held == "release":
+            decision = "not-release"
+        if not routes:
+            routes = ["develop"]
+    verdict = "FAIL" if below or lines_below or (held == "release" and decision != "release") \
+        else "PASS"
     return {
         "criteria": results,
         "findings": sorted(findings.values(), key=lambda f: (f["status"] != "open", f["id"])),
@@ -582,6 +757,7 @@ def score(spec, criteria, loaded, refs, tier, build, previous=None, evidence_ent
                        "regressed_criteria": sorted(regressed)},
         "overall_score": overall,
         "release_decision": {"decision": decision, "reasons": reasons},
+        "scorecard": card,
         "failed": below,
         "routes": routes if verdict == "FAIL" else [],
         "deferred": deferred_dims,

@@ -98,6 +98,73 @@ The store dimension (`phase: listing`) is measured by `listing-validation`, whic
 G4. Before it exists the dimension is DEFERRED - listed in `deferred`, never passed - and
 release separately requires the listing's validation (`docs/release-module.md`).
 
+## The scorecard
+
+The same criteria are read a second way, per discipline a person judges a game by
+(`core/reference/quality-floor.yaml` `scorecard`, 1.2.0): gameplay, game feel and polish,
+level design and content, 2D art, 3D art, UI/UX, audio, performance and runtime, browser
+compatibility, technical integrity, accessibility and readability, platform compliance and
+publishing readiness. Each
+line takes the criteria of the floor dimensions it lists; a criterion that belongs to another
+discipline than its dimension names its line itself (`scorecard: performance` on
+`floor.performance`, which `technical` scores). `art_2d` and `art_3d` read the same criteria
+and a game is scored on the one its rendering dimension is (the other is `NOT_APPLICABLE`).
+Every floor dimension feeds exactly one line per rendering dimension, so every criterion is
+on the scorecard; the contract is refused otherwise.
+
+| Line status | When |
+|---|---|
+| `BELOW_FLOOR` | a blocker criterion of the line is below its minimum or unmeasured, or an open blocker finding of it is not yet re-measured on a newer build - whatever the line or any other line scores; or the line's own `min_score` (none shipped) is not met |
+| `DEFERRED` | every criterion of it is deferred to the store listing |
+| `UNMEASURED` | no criterion of the floor measures the line for this game - a gap in what the Factory measures, never a pass |
+| `NOT_APPLICABLE` | an art line of the other rendering dimension |
+| `PASS` | otherwise |
+
+`scorecard.hard_blockers` lists every blocker below its minimum (`FAIL`), unmeasured
+(`UNMEASURED`) or carried open (`OPEN`), apart from any score. A line `BELOW_FLOOR` fails the
+gate - a blocker always also holds its floor dimension, so the floor semantics above are
+unchanged - and the overall score decides nothing. G4 shows the lines and every hard
+blocker (`wgflib/gate_evidence.py`). A report scored on a floor pinned before the scorecard
+has none. Tests: `scripts/tests/test_quality_scorecard.py` (a build that scores high
+everywhere with one blocker fails).
+
+Which tier each check is in - Hard Gate, Quality Gate or Advisory - is
+`core/reference/check-tiers.yaml` (see docs/specialist-routing.md "Regression knowledge").
+
+Play realism (`docs/playability-module.md`, "Play realism") and browser QA
+(`docs/verification-module.md`, "Browser QA") are on the floor with `applies: reported`: a
+build whose reports carry their checks is scored on them, one that does not (a 3D build's
+screen turns, a grid game's path geometry, a verification that ran no browser QA - which
+verify itself holds BLOCKED at release) is not. `floor.physics_drawn` (game feel),
+`floor.naive_control` (gameplay), `floor.naive_challenge` and `floor.level_geometry` (level
+design), `floor.runtime_console`, `floor.browser_boot` and `floor.browser_session` (browser),
+`floor.browser_layout` (UI/UX), `floor.browser_audio` (audio), `floor.webgl_context` and
+`floor.browser_performance` (performance) are release blockers; `floor.browser_ui_advisory`
+and `floor.browser_asset_weight` read the advisory checks and are warnings. The blockers
+read `required_only: passed`: both producers hold a check by the run's own tier class, so
+below the release class a quality check is optional - its failure the producer's WARNING,
+an unmeasured one its note - and the floor counts its passes but is not held by the rest; a
+criterion whose checks are all optional and none passed does not apply. At the release class
+the producers report them required (an unmeasured one held as a required FAIL), and every
+one counts. A timing check
+verify could only measure on a degraded host is BLOCKED there, and counts here as not passed:
+the build is measured again on a quiet host before it can pass.
+
+## Gates the run's workflow lacks
+
+A run started under an older definition, or a workflow from elsewhere, may lack a gate the
+quality policy now requires before this step (`quality.missing_gates`, the engine's
+`context.missing_gates`). The report names them (`missing_gates`), its release decision is
+never `release` while any is named - their evidence does not exist - and G4 shows them. See
+docs/new-game-quality-inheritance.md, rule 7.
+
+## Lesson candidates
+
+The lesson candidates specialist visits reported (prototype-report
+`specialist.lesson_candidates`, triage-report `lesson_candidates`) are listed in
+`lesson_candidates` and shown at G4. A person promotes one to `core/reference/lessons.yaml`
+- with the check and the test that hold it - or not; the gate never applies one.
+
 ## The release decision
 
 | Tier | Every dimension at its floor | Decision | Verdict |
@@ -172,7 +239,9 @@ carries them. The route budgets are on triage (`quality-gate.develop: 2`,
 * **Evidence comes from the build.** Every score cites the reports it read, by artifact id,
   content hash and the commit they describe; a report of another commit blocks the gate.
 * **Thresholds come from the run's start.** `new-game` lists the floor, the benchmark and
-  the visual-qa rubric under `pinned_references`: when a run starts, the engine copies them
+  the visual-qa rubric under `pinned_references` (and, since workflow 16, the play-realism,
+  browser-QA and visual-quality bars and the regression registry the producers read -
+  docs/new-game-quality-inheritance.md "Pinned references"): when a run starts, the engine copies them
   into the run directory and records their digests in the run's params (corroborated by
   WORKFLOW_STARTED like every param). The step reads the run's copies; a copy whose digest is
   not the recorded one BLOCKS the step. An edit made during a run applies to the next run. A

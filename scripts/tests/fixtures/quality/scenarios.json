@@ -45,7 +45,7 @@
      "expect": ["win.reachable", "lose.reachable"], "label": "gameplay"},
     {"id": "performance-regression", "n": 8, "genre": "racing-3d",
      "defect": "performance-regression", "gate": "quality-gate", "report": "quality-report",
-     "expect": ["floor.performance"], "label": "gameplay"},
+     "expect": ["floor.performance"], "label": "performance-engineer"},
     {"id": "duplicate-level", "n": 9, "genre": "platformer-content", "defect": "duplicate-level",
      "gate": "content-sufficiency", "report": "content-sufficiency-report",
      "expect": ["content.structure"], "label": "level-designer"},

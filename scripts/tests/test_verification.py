@@ -116,6 +116,9 @@ class FakeRunner:
             "run test:verify": self.runtime_facts,
             "collect-facts": self.collect,
             "evaluate-assertions": self.evaluate,
+            # The Factory's browser-QA spec (wgf_verification/browser_qa.py): a healthy game
+            # at every viewport of core/reference/browser-qa.yaml.
+            "wgf-browser-qa": self.browser_qa,
         }
 
     def run(self, command, cwd, timeout=None, env=None):
@@ -150,6 +153,13 @@ class FakeRunner:
         shutil.copy(os.path.join(FIXTURES, "playwright-e2e.json"),
                     env["PLAYWRIGHT_JSON_OUTPUT_NAME"])
         return ok()
+
+    @staticmethod
+    def browser_qa(command, cwd, env):
+        from browser_qa_fixture import healthy_records, write_records
+        from wgf_verification.browser_qa import load_contract
+        write_records(env["WGF_BQA_OUT"], healthy_records(load_contract()))
+        return ok("  163 passed (4.2m)")
 
     @staticmethod
     def runtime_facts(command, cwd, env):
@@ -1545,6 +1555,102 @@ class ThroughTheEngine(VerificationCase):
 
 
 # -- the schema, with ajv when it is at hand --------------------------------------------------
+
+class BrowserQA(VerificationCase):
+    """Browser QA in the verify step (core/reference/browser-qa.yaml): the Factory's spec runs
+    against the build, its checks join the report under their tiers, and a defect at the
+    release tier loops the build back to develop."""
+
+    def run_with(self, records=None, tier=None, **params):
+        from browser_qa_fixture import healthy_records, write_records
+        from wgf_verification.browser_qa import load_contract
+        seen = {}
+
+        def browser(command, cwd, env):
+            seen["command"] = list(command)
+            seen["env"] = dict(env)
+            write_records(env["WGF_BQA_OUT"], records or healthy_records(load_contract()))
+            return ok("passed")
+
+        context = FakeContext()
+        if tier:
+            context.environment = {"quality": {"tier": tier}}
+        runner = FakeRunner({"wgf-browser-qa": browser})
+        result = self.step(runner, **params).execute(self.inputs(), context)
+        reports = {a.type: a.content for a in result.artifacts}
+        for artifact_type, content in reports.items():
+            self.assertEqual(CONTRACTS(artifact_type, content), [], artifact_type)
+        return result, reports["verification-report"], reports["qa-report"], seen
+
+    def defective(self):
+        from browser_qa_fixture import healthy_records
+        from wgf_verification.browser_qa import load_contract
+        records = healthy_records(load_contract())
+        records["desktop-standard"]["viewport"]["context_menu"]["events"] = [
+            {"t": 1, "prevented": False, "target": "canvas"}]
+        return records
+
+    def test_the_spec_runs_guarded_inside_the_checkout(self):
+        result, report, qa, seen = self.run_with()
+        self.assertEqual(report["verdict"], "PASS", report["failed_checks"])
+        self.assertIn("build/wgf-browser-qa/browser-qa.config.ts", " ".join(seen["command"]))
+        self.assertIn("WGF_BROWSER_PROXY", seen["env"])          # behind the refusing proxy
+        ids = {c["id"] for c in report["checks"]}
+        self.assertIn("browser.run", ids)
+        self.assertIn("browser.context-menu:mobile", ids)
+        self.assertIn("browser.frame-stability", ids)
+        perf = {p["device_class"]: p for p in qa["perf_results"]}
+        self.assertTrue(perf["desktop-chromium-browser-qa"]["within_budget"])
+        self.assertIn("memory_mb", perf["desktop-chromium-browser-qa"])
+
+    def test_a_quality_defect_fails_a_release_run(self):
+        result, report, qa, _seen = self.run_with(self.defective())
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertEqual(result.route, "fail")
+        self.assertIn("browser.context-menu:desktop-standard", report["failed_checks"])
+        self.assertIn("vr-browser-context-menu-desktop-standard",
+                      [d["id"] for d in qa["blocking_defects"]])
+
+    def test_a_quality_defect_is_a_warning_in_a_development_run(self):
+        _result, report, _qa, _seen = self.run_with(self.defective(), tier="mvp")
+        self.assertEqual(report["verdict"], "PASS")
+        check = self.check(report, "browser.context-menu:desktop-standard")
+        self.assertEqual((check["status"], check["required"]), ("WARNING", False))
+
+    def test_a_hard_defect_fails_any_run(self):
+        records = self.defective()
+        records["mobile"]["viewport"]["watch"]["page_errors"] = ["ReferenceError: level is not defined"]
+        _result, report, _qa, _seen = self.run_with(records, tier="mvp")
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertEqual(report["failed_checks"], ["browser.page-errors:mobile"])
+
+    def test_a_degraded_host_blocks_never_passes(self):
+        from browser_qa_fixture import DEGRADED, healthy_records
+        from wgf_verification.browser_qa import load_contract
+        records = healthy_records(load_contract())
+        perf = records["desktop-standard"]["perf"]
+        perf["attempts"] = [{"attempt": 1, "health": DEGRADED}, {"attempt": 2, "health": DEGRADED}]
+        result, report, qa, _seen = self.run_with(records)
+        self.assertEqual(report["verdict"], "BLOCKED")
+        self.assertIn("browser.frame-stability", report["blocked_checks"])
+        perf = {p["device_class"]: p for p in qa["perf_results"]}
+        self.assertFalse(perf["desktop-chromium-browser-qa"]["within_budget"])
+
+    def test_switched_off_is_not_a_pass_at_the_release_tier(self):
+        _result, report, _qa, seen = self.run_with(browser_qa="off")
+        self.assertNotIn("command", seen)
+        self.assertEqual(self.check(report, "browser.run")["status"], "BLOCKED")
+        _result, report, _qa, _seen = self.run_with(browser_qa="off", tier="mvp")
+        self.assertEqual(self.check(report, "browser.run")["status"], "WARNING")
+
+    def test_no_records_blocks(self):
+        def nothing(command, cwd, env):
+            return ok("")
+        runner = FakeRunner({"wgf-browser-qa": nothing})
+        result = self.step(runner).execute(self.inputs(), FakeContext())
+        report = result.artifacts[0].content
+        self.assertEqual(self.check(report, "browser.run")["status"], "BLOCKED")
+
 
 @unittest.skipUnless(enabled("WGF_AJV"), "set WGF_AJV=1 to validate with ajv (npx)")
 class SchemaValidation(VerificationCase):

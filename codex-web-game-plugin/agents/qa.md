@@ -15,6 +15,10 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 7. `core/craft/playtesting.md`
 8. `core/craft/web-performance.md`
 9. `core/craft/accessibility.md`
+10. `core/reference/lessons.yaml`
+11. `core/reference/check-tiers.yaml`
+12. `core/reference/browser-qa.yaml`
+13. `core/reference/play-realism.yaml`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

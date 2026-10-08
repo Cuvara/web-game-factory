@@ -324,7 +324,8 @@ class RouteScopedVisitLimits(unittest.TestCase):
                          {"triage.level-designer", "triage.systems-designer",
                           "triage.encounter-designer", "triage.environment-artist",
                           "triage.artist-2d", "triage.ui", "triage.audio-designer",
-                          "triage.sdk"})
+                          "triage.sdk", "triage.art-director", "triage.performance-engineer",
+                          "triage.browser-qa"})
         # The production gates' asset failures are bounded on assets, which continues to
         # develop: each pass through assets enters develop once more.
         assets = definition.step("assets")

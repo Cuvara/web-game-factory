@@ -30,6 +30,11 @@
        raising producer's re-measurement of a newer build, and never past a regression. It
        continues from the newest ledger in the run (ledger.previous_lifecycle): the quality
        gate advances it too, on the reports it sees (ledger.remeasure).
+    6. Regression knowledge (WS-9). Each finding whose check a lesson of
+       core/reference/lessons.yaml names carries it as `guarded_by` - the specialist sees a
+       known failure and the test that holds it. The lesson candidates specialist visits
+       reported (prototype-report `specialist.lesson_candidates`) are carried forward in
+       `lesson_candidates` for the quality gate and the person at G4; none is applied here.
 
 Outcomes:
 
@@ -75,6 +80,67 @@ REQUEST_REF = ("https://webgamefactory.dev/schemas/artifacts/shared/"
 
 def _utc_now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+_REGISTRY = {}
+
+
+def _registry(context=None):
+    """{"tiers", "lessons"} as the run pinned them (new-game `pinned_references`), the live
+    files for a run that pinned none; cached by content. None when they cannot be read."""
+    from wgf_quality import registry
+    from wgflib.workflow import references
+    from wgflib.yamllite import load as load_yaml
+    environment = getattr(context, "environment", None) if context is not None else None
+    run_dir = getattr(context, "run_dir", None) if context is not None else None
+    texts = {}
+    for key, relpath in (("tiers", registry.TIERS_FILE), ("lessons", registry.LESSONS_FILE)):
+        text, digest, _pinned = references.read(relpath, environment, run_dir)
+        texts[key] = (text, digest)
+    cache_key = tuple(d for _t, d in texts.values())
+    if cache_key not in _REGISTRY:
+        _REGISTRY[cache_key] = {key: load_yaml(text) for key, (text, _d) in texts.items()}
+    return _REGISTRY[cache_key]
+
+
+def _guard(found, context=None):
+    """Each finding whose source check a lesson names carries the lesson as `guarded_by`
+    (wgf_quality.registry.guards), from the lessons and tiers the run pinned. Best effort: a
+    registry that cannot be read guards nothing, and never stops a triage."""
+    try:
+        from wgf_quality import registry
+        data = _registry(context)
+    except Exception:  # noqa: BLE001 - knowledge is advisory here; routing is not
+        return
+    if not data:
+        return
+    for finding in found or []:
+        if not isinstance(finding, dict):
+            continue
+        source = finding.get("source") or {}
+        guards = registry.guards(data["lessons"], data["tiers"], source.get("producer"),
+                                 source.get("check"))
+        if guards:
+            finding["guarded_by"] = guards
+
+
+def _lesson_candidates(previous, proto):
+    """The previous triage-report's lesson candidates and the newest specialist visit's, in
+    that order, deduplicated by summary."""
+    out, seen = [], set()
+    specialist = (proto or {}).get("specialist") if isinstance(proto, dict) else None
+    sources = list((previous or {}).get("lesson_candidates") or [])
+    if isinstance(specialist, dict):
+        sources += [dict(c, role=c.get("role") or specialist.get("role"))
+                    for c in specialist.get("lesson_candidates") or [] if isinstance(c, dict)]
+    for candidate in sources:
+        if not isinstance(candidate, dict):
+            continue
+        key = " ".join(str(candidate.get("summary") or "").lower().split())
+        if key and key not in seen:
+            seen.add(key)
+            out.append(candidate)
+    return out
 
 
 def _seq(inputs, artifact_type):
@@ -436,6 +502,8 @@ class TriageStep(WorkflowStep):
             routing_version=life.get("routing_version") or routing.version,
             build_of=life.get("build_of") or (lambda kind: {"commit": commit, "digest": None}),
             handed=life.get("handed"))
+        _guard(findings, context)
+        candidates = _lesson_candidates(_load(inputs, "triage-report"), life.get("proto"))
         body = {
             "provenance": provenance.build(
                 "triage-report",
@@ -460,6 +528,8 @@ class TriageStep(WorkflowStep):
             "verdict": verdict,
             "message": message,
         }
+        if candidates:
+            body["lesson_candidates"] = candidates
         return ArtifactOutput("triage-report", provenance.seal(body), metadata={
             "verdict": verdict, "route": (selected or {}).get("label"),
             "owner": (selected or {}).get("owner"), "findings": len(findings),

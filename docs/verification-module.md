@@ -92,6 +92,7 @@ are the only recorded "not the game" causes.
 | code | `typecheck`, `lint`, `unit`, `integration` | the repository's scripts — the names the template's CI gives qa-report suites |
 | gameplay | `boot`, `loading`, `start`, `input`, `core-loop`, `progression`, `game-over`, `restart`, `pause-resume`, `responsive` | a browser against the built bundle — see below |
 | gameplay | `quality.report-commit`, `quality.<group>:<check>` | the playability-report: what the bot measured about the design's content, difficulty, progression and depth, carried not re-measured — see below |
+| browser QA | `run`, then `browser.<check>[:<viewport>]` filed under gameplay, policy or assets | the Factory's browser spec against the build at five viewports, judged against `core/reference/browser-qa.yaml` - see [Browser QA](#browser-qa-every-viewport-audio-and-performance) |
 | policy | `runtime-facts`, `assertions:<platform>`, `assertion-warnings:<platform>`, `asset-licenses` | `test:verify`; the template's `collect-facts.mjs` / `evaluate-assertions.mjs` against the **pinned** profile (a breached `blocking` assertion FAILs `assertions:<platform>`; breached `warning`-severity ones go on the optional `assertion-warnings:<platform>`, so they never weaken the release's evidence); the asset manifest |
 | platform | `profile:<p>`, `sdk-init:<p>`, `hooks:<p>`, `requirements:<p>`, `fallback` | vendored `config/platforms/`; sdk-report per platform and feature (`BLOCKED` when it names another commit; `PASS_MOCK` unless observed live); declared ad kinds; shipped locales; a boot with no portal SDK present |
 | assets | `manifest`, `missing`, `formats`, `paths`, `runtime-manifest`, `loading` | asset-manifest vs files named after each item id under `public/`, `src/assets/`, `assets/` (source code under `src/assets/` is the bundler's input, not an asset); extensions per asset type; asset paths in `src/`; `public/assets/assets.json` against the repository with the assets module's validator (broken references FAIL; a stale hash, unlisted/unused file or large texture is a WARNING; absent is a WARNING) ([assets-module.md](assets-module.md#validation)); failed requests while playing |
@@ -215,6 +216,164 @@ game again.
   the run never asked for one. Either way the report says the content was not verified rather
   than implying it was.
 
+## Browser QA: every viewport, audio and performance
+
+`browser_qa.py` runs the Factory's own browser spec, `browser_qa.spec.ts`, against the build
+after the gameplay checks, and judges what it recorded against
+[`core/reference/browser-qa.yaml`](../core/reference/browser-qa.yaml) - the contract as data:
+viewports, checks, tiers and bars. The spec is copied into the checkout's git-ignored
+`build/wgf-browser-qa/` with a generated Playwright config (one project per viewport, the
+repository's own `pnpm preview` of `dist/`, the refusing proxy handed to the browser itself,
+every non-local request aborted at once as an ad blocker would), so it needs nothing from the
+game but `@playwright/test` and the play probe. The tree stays clean. The spec records and
+never judges; `judge()` holds the records to the bars, so the judging is tested offline from
+records (`scripts/tests/test_browser_qa.py`) and the same records always give the same checks.
+
+**Viewports**: desktop wide 1920x1080, desktop standard 1280x720, narrow desktop 1024x768,
+tablet 768x1024 and mobile 390x844 (tablet and mobile as touch devices). Per viewport the
+spec loads the build as a first session, walks the menus into play, measures the DOM UI on
+every screen it reaches (title, playing, paused, won, lost), samples which DOM UI covers the
+probe's gameplay-critical entities during play, right-clicks the game (a long press on touch),
+pauses and resumes, hides the page, and plays to `won` (the oracle) and to `lost` (bad play)
+and retries. On the audio viewport it also probes the mute control and decodes every clip the
+runtime manifest ships; on the perf viewport it records frame times over active play and the
+JS heap after a forced collection across a session of play, losses and restarts.
+
+**Tiers** (`tier` on every check, one vocabulary):
+
+| Tier | Required | A FAIL |
+|---|---|---|
+| `hard` - Hard Gate | at every quality tier | fails verification, loops to develop |
+| `quality` - Quality Gate | where the run's quality-tier class is in `quality_required_at` (release, as shipped) | fails a release-tier run; a WARNING in a development run |
+| `advisory` | never | a WARNING |
+
+A check whose `hard_when_profile` names a flag a targeted platform profile sets true under
+`requirements` (`context-menu`: `requirements.context_menu_suppressed`) is a Hard Gate for
+that title. A check that measured nothing is never a PASS: BLOCKED where it is required and
+the measurement was possible (the spec did not run, a record is missing, the host was
+degraded), a WARNING where the game has nothing of that kind (no pause control, no mute
+control, an end state not reached in its window - the playability step judges
+`win.reachable` over its own window).
+
+| Check (`browser.<id>[:<viewport>]`) | Tier | |
+|---|---|---|
+| `loads`, `canvas`, `ready`, `menus` | hard | the page and the game's own requests answer; a canvas covers 25 % of the viewport; the probe leaves `loading` within 30 s; the title leads into play |
+| `page-errors`, `webgl-context` | hard | no uncaught exception or rejection; no WebGL context lost (one the page releases itself through `WEBGL_lose_context` - PixiJS probing support - is not a loss) |
+| `console-errors` | quality | no console error from the game's origin; refused and foreign requests are the environment's |
+| `context-menu` | quality (hard by profile) | a right click / long press on the game is prevented |
+| `load-time`, `first-interaction` | quality, timing | probe ready within 6 s; first input offered within 8 s |
+| `win`, `lose`, `restart` | quality | per outcomes viewport |
+| `pause-resume`, `hidden-pause` | quality | the pause control pauses and resumes; hidden, play holds still and resumes |
+| `overflow`, `clipping`, `ui-overlap`, `ui-covers-play` | quality | the page does not scroll; no control or text cut by the edge; no controls overlapping; painted UI over at most 25 % of a critical entity in two consecutive samples |
+| `safe-margins`, `button-states` | advisory | 4 px from the edge; hover/pressed/disabled look different |
+| `audio-clips`, `audio-loops`, `audio-hidden` | hard | every manifest clip decodes; no clip the manifest does not mark `audio.loop` is started looping; silent while hidden |
+| `audio-events`, `audio-mute`, `audio-loudness` | quality | a sound within 500 ms of each declared action with `audio`, and from 1.5 s before to 2.5 s after `won`/`lost`; the mute control silences and restores; effects within 20 dB of each other, music 3 dB over to 24 dB under them, no clipping |
+| `frame-stability`, `memory-growth` | quality, timing | p95 frame time 33.4 ms, at most 2 % of frames 100 ms or longer; heap growth at most 24 MB over 45 s |
+| `oversized-textures` / `asset-weight` | quality / advisory | no image edge over 4096 px / over 2048 px, 1 MiB, effects over 512 KiB, music over 256 kbps |
+
+**Host load.** The timing checks (`timing: true`) carry the health of the host they were
+measured on, judged exactly as the playability bot's are (`wgf_playability.analysis.
+environment_health` with `visual-quality.yaml` `environment`, read from there): a timer in the
+spec's process, a timer in a worker inside the page, the local server's wait. A recording made
+on a degraded host is made again (up to `max_attempts`); when the last attempt was degraded the
+timing checks are BLOCKED - re-measured on a quiet host - whatever they read: a degraded host
+never passes and never fails them. A frame-time failure on a software rasterizer
+(`software_renderers`: SwiftShader, llvmpipe) is BLOCKED the same way; the config asks the
+host's GPU first (ANGLE on D3D11, Metal or Vulkan). An `audio-events` silence read on a
+degraded host is BLOCKED too; a sound that followed in its window stands.
+
+**Into the reports.** The checks join the verification-report (category per the contract) and
+the qa-report: blocking ones become `blocking_defects`, the timing ones the `performance`
+suite and the rest `smoke`; a `desktop-chromium-browser-qa` entry joins `perf_results`
+(median-frame fps, heap, `within_budget` false when a required browser performance check did
+not pass), which `floor.performance` reads. `with: {browser_qa: off}` skips the spec and
+leaves `browser.run` BLOCKED at the release tier (a WARNING below it): switching it off is
+never a pass.
+
+**What the build omits.** A check the build could have been measured on but whose data it
+omits - the play probe reports no gameplay-critical entity (`ui-covers-play`) or no audio
+level (`audio-hidden`), the bundle ships no runtime manifest (`audio-clips`,
+`audio-loudness`) - is held as `quality-policy.yaml skipped_checks` says
+(`wgflib.check_strength`): at the release class BLOCKED and required, so the quality floor
+cannot pass over it; below it a WARNING. A game that genuinely has none of a thing (no pause
+or mute control, no declared win, no audio in its manifest) stays a WARNING at every class.
+
+**Back into play before the page is hidden.** The hidden probe (`hidden-pause`,
+`audio-hidden`) runs after the context-menu and pause probes, which leave the game unsteered:
+a game that ends within seconds without input (a dodge game) is lost by then, and one whose
+resume failed is still paused. The spec brings it back into play first, as a player would -
+retry from an end, resume a pause, begin from the title (`backToPlay`, recorded as
+`hidden.reentered`). A page it still cannot hide during play is BLOCKED for the hard
+`audio-hidden` at every class - the measurement was possible and was not made - and the
+check names why.
+
+**Pinned.** The contract, and the `visual-quality.yaml` values it reads, are the copies the
+run pinned when it started (new-game `pinned_references`): a resumed run is held to the checks
+and tiers it started under.
+
+**Tiers, routing and the floor.** Each check's tier is classified once, in
+`core/reference/check-tiers.yaml` (source `browser-qa`, read from this file's `tier` with the
+`browser.` prefix; `browser.run` is `browser-qa-run`). A blocking defect reaches triage
+through the qa-report as `vr-<check>[-<viewport>]`; `core/reference/specialist-routing.yaml`
+qa-report `verification_checks` names the check and its owner - boot, runtime, visibility and
+the context menu to browser QA, layout to UI, sound to audio, timings and weight to the
+performance engineer, the session's outcomes to gameplay - the same dimension each check's
+`owner` here states (`test_browser_qa.py` holds that they agree). The quality gate reads them
+on its scorecard (`core/reference/quality-floor.yaml` 1.2.0, `applies: reported`):
+`floor.browser_boot` and `floor.browser_session` on the browser line, `floor.browser_layout`
+(and the advisory `floor.browser_ui_advisory`) on UI/UX, `floor.browser_audio` on audio,
+`floor.browser_performance` (and the advisory `floor.browser_asset_weight`) on performance.
+Lessons L24-L28 (`core/reference/lessons.yaml`) name these checks.
+
+**Context-menu suppression and the template.** The template's `main` already prevents the
+context menu in `bindPlatform` (web-game-template PR #27), so a game made from a template
+release that carries it passes `context-menu` without code of its own; a game made from an
+earlier pin (v1.2.0, `workspace/config/template.lock.json`) does not, which is what the
+calibration games show. Nothing here duplicates the template's handler: the check only
+measures it.
+
+**Calibration (2026-10-07).** The spec was run on the two validation games at their accepted
+commits - Brick Breaker Worlds (PixiJS, 894b4b8) and Sky Marble (three.js, c340631) - in
+clones of those commits, on a Windows 11 host with a GPU (ANGLE D3D11) that other agents were
+loading at the same time; the records are the replay fixtures `scripts/tests/fixtures/
+browser-qa/*.json`. A whole run took 6.5-10 minutes per game. Measured, at the bars above:
+
+| | Brick Breaker Worlds | Sky Marble |
+|---|---|---|
+| probe ready, per viewport | 0.87-1.21 s | 0.33-1.03 s |
+| p95 / median frame time (GPU) | 16.8 / 16.7 ms, no long frames | 16.8 / 16.7 ms, no long frames |
+| JS heap over 45 s of play, losses, restarts | 4.97 -> 6.55 MB | 6.89 -> 8.14 MB |
+| effects loudness spread; music vs effects; peak | 10.8 dB; music 4.3 dB under; -0.9 dBFS | 9.0 dB; music 3.4 dB under; -1 dBFS |
+| oracle win / bad-play loss, per viewport | won in 26-36 s; lost in 42-59 s, once not within 60 s (`lose_s` 90 from this) | won in 19 s; lost on its 30 s clock |
+
+The first run, on SwiftShader (the playability config's software GL), drew Brick Breaker at
+a median 100 ms per frame and was BLOCKED, not failed - which is why the config asks for the
+GPU. On the loaded host two attempts of Sky Marble's desktop-standard viewport were degraded
+(the spec's timer lost 5.3-6.5 s of 20-24 s): its load-time and first-interaction were
+BLOCKED that run and passed on the next, quiet one. Every bar stands as first written except
+`lose_s` (60 cut Brick Breaker's three-ball loss) and three measurement corrections the real
+records showed: a context the page releases itself is not lost (PixiJS's WebGL probe), the
+end-of-play sound may lead the probe's `lost` by up to 1.5 s (Brick Breaker's sting starts
+350-1030 ms before its fail card), and painted UI must cover an entity in two consecutive
+samples (Sky Marble's course card is gone 400 ms after play starts).
+
+The defects the runs found are the games' (the bars were not moved for them):
+
+- **Both games open the browser's context menu** on a right click at every desktop viewport
+  and do not prevent the contextmenu a long press raises on tablet and mobile (M6, Yandex
+  1.6.1.8). The template now prevents it (`src/platform/context-menu.ts`); the games predate it.
+- **Brick Breaker Worlds: the objective card covers the ball** on tablet (100 %) and mobile
+  (40 %) in consecutive samples of play - `div#objective-line` sits in the play field.
+- **Sky Marble: losing on the clock is silent** - no sound within 2.5 s of `lost` (its last
+  sound, the fall, is 3.8 s earlier); a design that lists failure feedback in sound.
+- Advisory: neither game's title buttons change on hover (Brick Breaker's PLAY and SOUND ON;
+  Sky Marble's Play, Courses and Sound on).
+
+Everything else passed on both: loading, menus, no page or console errors, no context lost,
+win/lose/restart at every viewport, pause and resume, held and silent while hidden, the mute
+control (found on the pause screen in both), no accidental loops (Sky Marble's `sfx-roll` is a
+declared loop), every clip decodes, loudness, frames, memory, texture sizes.
+
 ## Evidence is this run's, and pinned
 
 A PASS rests on what this verification ran or read, never on an upstream report's say-so —
@@ -316,7 +475,8 @@ the same checks. It never pushes, publishes or contacts a portal.
 | `gameplay_session` | `build/verification/gameplay-session.json` | Recorded session path, relative to the checkout |
 | `gameplay.required` | from the design | Aspects that must pass |
 | `release_id` | `candidate-<commit>` | Written to both reports (the release step allocates the real `r<n>`) |
-| `timeouts` | install 900, build 600, script 600, browser 900, git 30 | Seconds, per command kind |
+| `timeouts` | install 900, build 600, script 600, browser 900, git 30; `browser_qa` from the contract's windows | Seconds, per command kind |
+| `browser_qa` | `auto` | `auto` runs browser QA ([above](#browser-qa-every-viewport-audio-and-performance)); `off` skips it, leaving `browser.run` BLOCKED at the release tier |
 
 ## Tests
 
@@ -334,6 +494,15 @@ configs (the build target last, `dist/` its bundle), the facts collected through
 the config (byte-identical bundles) and one platform's failed build fail the verdict; every
 targeted platform is required; a single platform is built once with nothing under
 `build/platforms/`; a contract-2 repository's `build:platforms`.
+
+`scripts/tests/test_browser_qa.py` holds browser QA: the contract (versioned, every check
+tiered, the five viewports, the request's checks all present, the shared bars read from
+`visual-quality.yaml` and `production-quality.yaml`), the tiers, a healthy record set passing,
+each defect failing on its own, the degraded-host and software-rasterizer rules, the bundle
+scan, the generated runner, and the replay of the records the spec made of the two validation
+games (`fixtures/browser-qa/`) and of the zz-perf load artefact (BLOCKED, never FAIL). `test_verification.py` `BrowserQA` runs it through the verify
+step: guarded, a quality defect failing a release run and warning a development one, a hard
+defect failing any run, a degraded host blocking, `browser_qa: off` never passing.
 
 `scripts/tests/test_core_verify.py` is the VERIFY category of the Core v1 freeze: valid game
 evidence passes; missing evidence, a failed browser test, invalid SDK evidence and evidence

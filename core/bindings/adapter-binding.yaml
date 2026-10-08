@@ -18,7 +18,11 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.11.0  # 1.11.0: the two 1.10.0 lines below, merged
+version: 1.12.0
+# 1.12.0: the regression registry (lessons, check tiers) in the gameplay and qa agents - a
+#         specialist reads the lessons its findings may be guarded by; play realism in the
+#         gameplay and qa agents, browser QA in the qa and ui agents.
+# 1.11.0: the two 1.10.0 lines below, merged
 # 1.10.0 (publishing): the publish surfaces and the release agent follow the as-built portal publisher
 # 1.10.0 (quality): specialist routing (specialists charter, routing data, quality finding) in the gameplay agent
 # 1.9.0: feature evaluation (playbook and catalogue) in the game-designer surfaces
@@ -127,6 +131,10 @@ agents:
       - core/craft/playtesting.md
       - core/craft/web-performance.md
       - core/craft/accessibility.md
+      - core/reference/lessons.yaml
+      - core/reference/check-tiers.yaml
+      - core/reference/browser-qa.yaml
+      - core/reference/play-realism.yaml
     produces: [verification-report, qa-report]
     consumes: [release-manifest, game-design, tech-plan, scaffold-record, asset-manifest, sdk-report]
 
@@ -209,6 +217,9 @@ agents:
       - core/roles/specialists.md
       - core/reference/specialist-routing.yaml
       - core/artifacts/shared/quality-finding.schema.json
+      - core/reference/lessons.yaml
+      - core/reference/check-tiers.yaml
+      - core/reference/play-realism.yaml
     produces: [prototype-report]
     consumes: [tech-plan, game-design, review-report, qa-report, triage-report]
 
@@ -229,6 +240,7 @@ agents:
       - core/craft/juice.md
       - core/craft/production-wiring.md
       - core/craft/game-audio.md
+      - core/reference/browser-qa.yaml
     produces: []
     consumes: [game-design, tech-plan]
 

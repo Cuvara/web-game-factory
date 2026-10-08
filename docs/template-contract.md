@@ -137,6 +137,62 @@ Two more parts of the probe serve the content-sufficiency step
   its `kind`, in the game's own vocabulary. The schema requires it (`probe.valid` reads it),
   and the content audit counts elements on the build by it.
 
+## The play probe realism fields and the layout file
+
+The playability step also checks that what a build simulates is what it draws, that someone
+who is not perfect can play it, that the level geometry it declares can be played, and that
+it runs without console errors
+([playability-module.md](playability-module.md#play-realism),
+`core/reference/play-realism.yaml`). Every probe field it reads for that is **optional** in the
+schema; a build without one is played as before, and the check that needs it is
+*unmeasured* - never a pass, and **not passed at the release tier** (quality-policy.yaml
+`skipped_checks`): a release-tier build must report the fields its game has.
+
+| Field | For | Read by |
+|---|---|---|
+| `entities[].collider` `{shape: rect\|circle, x, y, w, h}` | the body the simulation collides, projected to the screen beside the drawn box | `physics.undrawn_collision`, `physics.collider_size` |
+| `entities[].body` `{x, y, w, h}`, `entities[].halo` | the opaque drawn body inside a glow or halo (`halo: true` is declared with the body) | `physics.collider_size` (judged on the body when reported) |
+| `playfield` `{x, y, w, h}` | a 2D board: the drawn bounds whose edges stop what moves | `physics.undrawn_collision` |
+| `track` `{offset, half_width}` | a path game: the player's signed offset from the centre line, and half the width there | `naive.drift` |
+| `view` `{camera_forward, control_forward}` | a camera the player steers relative to: both as `[x, z]` on the ground plane | `naive.alignment` |
+| `setbacks` | falls, deaths and respawns since the page loaded, whether or not play ended in `lost` | `naive.setbacks` |
+| `content.par_s` | the unit's par time as shown (else the design unit's `parameters.par_s` / `time_target`) | `naive.pace` |
+| `play.policy` `{set(name), policies(), measures()}` | the oracle under `safe` / `greedy` (only with `wgf-probe=1`) | the risk test |
+
+Two rules come with them. Every surface the simulation turns a mover at is **drawn**: an
+entity, or an edge of `playfield` - a wall or ceiling with nothing drawn at it fails
+`physics.undrawn_collision`. And a group of things a player counts is reported **one entity
+each**, never as one `composite` box: a composite row of bricks hides which brick is there,
+and a turn at a gap in it reads as a hit.
+
+Level geometry lives where the content contract already puts it
+(`core/reference/content-sufficiency.yaml` `layout`): a unit's `layout` entry in
+`public/content/units.json`, and its entry in the layout source (`layout.source`, by default
+`public/content/layouts.json` under the key `layouts`). Two shapes are linted:
+
+- a **path**: `{"width": 8, "top_speed": 16, "segments": [{"t": "line", "len": 20, "w": 6,
+  "rails": true}, {"t": "turn", "deg": 90, "r": 16, "rails": "outside"}, {"t": "jump",
+  "gap": 4}]}` - `top_speed` optional per layout; `rails` `true`, `"inside"`, `"outside"` or
+  absent (open);
+- a **grid**: a list of equal-length strings under one key of the layout (`"rows":
+  ["#########", "SS.S.S.SS"]`), whose notation only the game knows.
+
+What the linter cannot read from the layout itself, the content data file declares once, at
+its top level, as numbers or dotted paths into the same file:
+
+```jsonc
+"play_geometry": {
+  "top_speed": "tuning.steering.max_speed",           // a path layout's top speed
+  "grid": { "key": "rows", "solid": "S",               // never-breaking cells
+            "cell": ["tuning.bricks.brick_width_px", "tuning.bricks.brick_height_px"] },
+  "body": { "radius": "tuning.ball-rebound.ball_radius_px" }   // or "diameter"
+}
+```
+
+A build whose units lay out grids without `play_geometry.grid` is unmeasured on
+`level.clearance` (reported, not held: the grid is a guess until it is declared); a path
+without a top speed is unmeasured on its crossing time (held at the release tier).
+
 ## How drift is caught
 
 `scripts/tests/test_template_contract.py` holds every entry against a checkout of the pinned

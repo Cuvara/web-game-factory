@@ -180,6 +180,16 @@ EVIDENCE = {
     # depth.ramp reads how soon bad play ended (the lose recording) and the ramp's samples.
     "depth.ramp": ("ramp", "lose"),
     "depth.stall": ("ramp",),
+    # Play realism (realism.py): turns read on the win test's per-frame samples, and naive
+    # play's clear times, setbacks and samples on its own recording.
+    "physics.undrawn_collision": ("win",),
+    "physics.collider_size": ("win",),
+    "naive.setbacks": ("naive",),
+    "naive.drift": ("naive",),
+    "naive.alignment": ("naive",),
+    "naive.pace": ("naive",),
+    "naive.unit_duration": ("naive",),
+    "naive.clear_rate": ("naive",),
 }
 RETRIED_RECORDS = tuple(sorted({r for records in EVIDENCE.values() for r in records}))
 

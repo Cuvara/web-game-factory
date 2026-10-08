@@ -89,17 +89,31 @@ workflow:
   # release refuses while any is (it reads the triage-report and decision-record too).
   # 15: greybox-playability says it plays the greybox (`with: {phase: greybox}`): the MVP
   # build, so a time ramp promised by a post-mvp mode is not owed by it.
-  version: 15
+  # 16: three more develop specialists - art director, performance engineer, browser QA -
+  # routed by triage (specialist-routing 1.6.0), with their visit budgets on triage and
+  # develop; every implementer's change meets every judge before G4 and release
+  # (quality-policy 1.3.0 rule 6, checked on this graph). It also pins the bars the
+  # producers read - visual-quality, play-realism, browser-qa, check-tiers, lessons - so a
+  # resumed run is held to the checks and tiers it started under.
+  version: 16
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
   # Reference files the run copies and pins when it starts (scripts/wgflib/workflow/
   # references.py): the quality gate scores every build of the run against the contract it
-  # started under, and an edit made while it runs applies to the next run.
+  # started under, the playability bot plays and judges it on the viewports and realism bars
+  # it started under, verify's browser QA holds it to the checks and tiers it started under,
+  # and triage names the lessons it started under; an edit made while it runs - or a resume
+  # on an updated Factory - applies to the next run.
   pinned_references:
     - core/reference/quality-floor.yaml
     - core/reference/quality-benchmark.yaml
     - core/reference/visual-qa-rubric.yaml
+    - core/reference/visual-quality.yaml
+    - core/reference/play-realism.yaml
+    - core/reference/browser-qa.yaml
+    - core/reference/check-tiers.yaml
+    - core/reference/lessons.yaml
 
   # Every artifact a step names has a schema in core/artifacts/. A workflow MAY list types
   # without one under `untyped_artifacts`, as a visible, temporary gap: check-integrity.py
@@ -300,7 +314,9 @@ workflow:
       # 1 + 6 assets passes + the sending routes' budgets, each followed by at most one visit
       # per specialist through next-specialist; the specialists' own budgets on develop are
       # the bound a chain meets. The quality gate's three routes (workflow 11) add 10.
-      max_visits: 110
+      # 16: three more develop specialists - art director,
+      # performance engineer, browser QA - four visits each, each returning here once: 12.
+      max_visits: 122
       max_visits_by_route:
         playability.fail: 2
         production-quality.develop: 2
@@ -326,6 +342,11 @@ workflow:
         ui: develop
         audio-designer: develop
         sdk: develop
+        # 16: specialists added to core/reference/specialist-routing.yaml. Publishing
+        # compliance works on the listing (route `listing`): held here, taken after G4.
+        art-director: develop
+        performance-engineer: develop
+        browser-qa: develop
 
     - id: develop
       type: develop
@@ -348,7 +369,9 @@ workflow:
       # assets (assets' own route budgets), each of which enters develop once more.
       # 59 = the first visit + 16 + 8 x 4 + 6 + 4 returns after a design repair (one each
       # from greybox's and develop's design-gap, two from triage's design).
-      max_visits: 59
+      # 16: + 3 x 4 for the art director, the performance
+      # engineer and browser QA = 71.
+      max_visits: 71
       max_visits_by_route:
         triage.gameplay: 16
         triage.level-designer: 4
@@ -359,6 +382,9 @@ workflow:
         triage.ui: 4
         triage.audio-designer: 4
         triage.sdk: 4
+        triage.art-director: 4
+        triage.performance-engineer: 4
+        triage.browser-qa: 4
       on:
         design-gap: design
         # A specialist visit done while the triage that routed it has groups pending: the
@@ -384,7 +410,7 @@ workflow:
       outputs: [playability-report]
       with:
         survey: true
-      max_visits: 59
+      max_visits: 71
       on:
         fail: triage
 
@@ -400,7 +426,7 @@ workflow:
       stage: title:prototype
       inputs: [playability-report, asset-manifest, game-design, scaffold-record]
       outputs: [production-quality-report]
-      max_visits: 59
+      max_visits: 71
       on:
         assets: assets
         develop: triage
@@ -414,7 +440,7 @@ workflow:
       stage: title:prototype
       inputs: [playability-report, game-design, asset-manifest, production-quality-report]
       outputs: [visual-qa-report]
-      max_visits: 59
+      max_visits: 71
       on:
         assets: assets
         develop: triage
@@ -436,7 +462,7 @@ workflow:
       stage: title:prototype
       inputs: [playability-report, game-design, scaffold-record, title-strategy, visual-qa-report]
       outputs: [content-sufficiency-report]
-      max_visits: 59
+      max_visits: 71
       on:
         # Through triage, like every gate: `develop` to the specialist that owns each
         # finding, `design-gap` to design (triage's `design`, with the report's gaps).
@@ -456,7 +482,7 @@ workflow:
       stage: title:prototype
       inputs: [prototype-report, game-design, scaffold-record, qa-report]
       outputs: [review-report]
-      max_visits: 59
+      max_visits: 71
       on:
         request-changes: triage
 
@@ -471,7 +497,7 @@ workflow:
       stage: title:prototype
       inputs: [game-design, scaffold-record, prototype-report, tech-plan]
       outputs: [sdk-report]
-      max_visits: 59
+      max_visits: 71
       # A create-before-build portal's ids (wgf_publish.identity): once per portal, and once
       # more for a person's retry.
       max_visits_by_route:
@@ -490,7 +516,7 @@ workflow:
       stage: title:prototype
       inputs: [sdk-report, prototype-report, game-design, scaffold-record, qa-report]
       outputs: [review-report]
-      max_visits: 59
+      max_visits: 71
       with:
         subject: sdk-report
       on:
@@ -507,7 +533,7 @@ workflow:
       inputs: [prototype-report, sdk-report, game-design, scaffold-record, asset-manifest, playability-report]
       outputs: [verification-report, qa-report]
       retry: {max_attempts: 2}
-      max_visits: 59
+      max_visits: 71
       on:
         fail: triage
 
@@ -528,7 +554,7 @@ workflow:
       stage: title:prototype
       inputs: [playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, qa-report, verification-report, prototype-report, game-design, sdk-report, review-report, asset-manifest, title-strategy, triage-report, decision-record]
       outputs: [quality-report]
-      max_visits: 59
+      max_visits: 71
       on:
         develop: triage
         assets: triage
@@ -555,7 +581,7 @@ workflow:
         gate: G4
         prompt: Judge the verified prototype against the kill criteria set at strategy - pass to release, iterate to develop again, or kill the title?
         choices: [pass, iterate, kill]
-      max_visits: 59
+      max_visits: 71
       on:
         iterate: triage
         kill: $end
@@ -587,7 +613,7 @@ workflow:
       retry: {max_attempts: 2}
       # Once per develop visit (G4's iterate comes back through here), plus the validation
       # loop's own budget.
-      max_visits: 59
+      max_visits: 71
       max_visits_by_route:
         listing-triage.listing: 2
 
@@ -604,7 +630,7 @@ workflow:
       stage: release:store-listing
       inputs: [store-listing, game-design, sdk-report, scaffold-record]
       outputs: [listing-validation-report]
-      max_visits: 59
+      max_visits: 71
       on:
         listing: listing-triage
 
@@ -657,7 +683,7 @@ workflow:
       description: Normalize the store listing's failures into quality findings and route them to store-listing, the copywriter briefed with the store-copy ones.
       inputs: [game-design, prototype-report, listing-validation-report, triage-report]
       outputs: [triage-report]
-      max_visits: 59
+      max_visits: 71
       max_visits_by_route:
         listing-validation.listing: 2
       on:

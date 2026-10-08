@@ -24,6 +24,8 @@ from .model import BLOCKED, Check, Evidence, PASS
 __all__ = ["VerificationSession", "locate_checkout", "DEFAULT_TIMEOUTS"]
 
 DEFAULT_TIMEOUTS = {"install": 900, "build": 600, "script": 600, "browser": 900, "git": 30}
+# The timeout kinds whose commands run a browser, behind the refusing proxy.
+BROWSER_KEYS = ("browser", "browser_qa")
 
 # Relative to the checkout. Written by whoever drove the game in a browser - typically an
 # agent with a Playwright browser tool - for this module to ingest. See gameplay.py.
@@ -83,6 +85,10 @@ class VerificationSession:
         self.assertions = {}                # platform id -> [criterionResult]
         self.gameplay_driver = None
         self.gameplay = None                # checks.gameplay.Observation
+        # The step's context (the run's quality tier is read from it), and what browser QA
+        # recorded and judged (browser_qa.check_browser), for the qa-report's perf results.
+        self.context = None
+        self.browser_qa = None
 
     # -- files ----------------------------------------------------------------------------
 
@@ -285,9 +291,11 @@ class VerificationSession:
         `-c` on a wrapper of that config handing the browser the proxy itself."""
         if self.logger:
             self.logger.info("verification command", command=" ".join(command))
-        guard = RefusingProxy().start() if timeout_key == "browser" else None
+        # `browser_qa` runs the Factory's own browser spec with a config of its own that hands
+        # the browser the proxy itself (browser_qa.py): guarded, never wrapped.
+        guard = RefusingProxy().start() if timeout_key in BROWSER_KEYS else None
         wrapper_dir, plain = None, list(command)
-        if guard and wraps_game_config():
+        if guard and timeout_key == "browser" and wraps_game_config():
             wrapper_dir = tempfile.mkdtemp(prefix="wgf-pw-")
             wrapper = guarded_playwright_config(self.root, wrapper_dir, contract.PLAYWRIGHT_CONFIG)
             separator = ["--"] if self.package_manager == "npm" and "--" not in command else []

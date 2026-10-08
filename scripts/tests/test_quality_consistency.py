@@ -238,7 +238,12 @@ class MultiGenreConsistency(_Case):
                          sorted(references.collect(
                              ["core/reference/quality-floor.yaml",
                               "core/reference/quality-benchmark.yaml",
-                              "core/reference/visual-qa-rubric.yaml"])))
+                              "core/reference/visual-qa-rubric.yaml",
+                              "core/reference/visual-quality.yaml",
+                              "core/reference/play-realism.yaml",
+                              "core/reference/browser-qa.yaml",
+                              "core/reference/check-tiers.yaml",
+                              "core/reference/lessons.yaml"])))
 
         # The design is the family's at the release tier, and the design step's own rules
         # passed it (designs.py raises otherwise).
@@ -660,8 +665,10 @@ class Recovery(_Case):
 
     def test_a_quality_gate_finding_is_closed_only_on_a_newer_build(self):
         case, world, api, state = self.recover(
-            "performance-regression", {"gameplay": {"fixes": ["performance-regression"]}})
-        self.assertEqual(world.visits, ["gameplay"])
+            "performance-regression",
+            {"performance-engineer": {"fixes": ["performance-regression"]}})
+        # WS-9: a performance criterion is the performance engineer's, by its own id.
+        self.assertEqual(world.visits, ["performance-engineer"])
         self.assert_measured_again(api, state, case)
         quality_reports = self.every(api, state, "quality-report")
         failing, passing = quality_reports[0], quality_reports[-1]
@@ -734,7 +741,12 @@ class AntiGaming(_Case):
         root = os.path.join(self.scratch, "factory")
         for relpath in ("core/reference/quality-floor.yaml",
                         "core/reference/quality-benchmark.yaml",
-                        "core/reference/visual-qa-rubric.yaml"):
+                        "core/reference/visual-qa-rubric.yaml",
+                        "core/reference/visual-quality.yaml",
+                        "core/reference/play-realism.yaml",
+                        "core/reference/browser-qa.yaml",
+                        "core/reference/check-tiers.yaml",
+                        "core/reference/lessons.yaml"):
             target = os.path.join(root, *relpath.split("/"))
             os.makedirs(os.path.dirname(target), exist_ok=True)
             if relpath.endswith("quality-benchmark.yaml"):

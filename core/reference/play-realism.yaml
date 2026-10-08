@@ -1,0 +1,273 @@
+# Play realism: whether what a built game simulates is what it draws, whether someone who is
+# not perfect can play it, whether its declared level geometry can be played at all, and
+# whether it runs without errors while it is played.
+#
+# The playability step (title:prototype, scripts/wgf_playability/realism.py) reads these
+# bars. Before this file the bot played only with a perfect oracle and judged only what was
+# drawn, so defects of the 2026-10 validation builds passed every check
+# (factory-learning-ledger L11, L13, L14, M1, M5):
+#   - a 2D ball turned at a ceiling nothing drew, mid-board (68a12b7);
+#   - a 3D marble course was cleared by holding one input in about a third of its par, its
+#     bends were tighter than the track's width with open inner edges, and its opening
+#     course was 38 m long (1c6b099);
+#   - growing a 2D ball's collider from r11 to r20 left the one-cell gaps of the steel rows
+#     too narrow to thread, and the clear rate of the steel levels fell (894b4b8);
+#   - console errors and a lost WebGL context were seen by no gate.
+# Every check reads only the play probe (core/artifacts/shared/play-probe.schema.json), the
+# bot's records, and the content data file and layout source the played commit ships
+# (core/reference/content-sufficiency.yaml `layout`): no engine, game or family is named in
+# code. A check whose data the build does not report is UNMEASURED - never a pass - and is
+# held as quality-policy.yaml `skipped_checks` says for the run's tier (not passed at the
+# release tier).
+#
+# Calibration evidence: scripts/tests/fixtures/real/play-realism/ (README.md there names every
+# source) and scripts/tests/test_play_realism.py, which replays it: the regressed heads
+# (2D 68a12b7, 3D 1c6b099, and 2D 894b4b8 for the steel gaps) FAIL, the accepted builds
+# (2D 96f5cea, 3D 64ff4c6) and the 3D r1-forward build (c340631) PASS.
+#
+# Changing a bar is a version bump of this file, with the calibration that moved it.
+version: 1.0.0
+basis: measured-2
+
+# Which quality tiers (quality-benchmark.yaml `tiers[].id`) a measured FAIL of a check here
+# holds the build back at: the step FAILs and routes the build to develop. At any other tier a
+# FAIL is a WARNING the report lists (a greybox, an MVP, a golden run). What an UNMEASURED
+# check is follows quality-policy.yaml `skipped_checks` (rule 5), never this list.
+enforce:
+  fail_required_at: [release, premium]
+
+# -- physics.undrawn_collision, physics.collider_size: turns where something is drawn --------
+physics:
+  # The roles whose reversals and stops are judged. A projectile is moved by the simulation
+  # alone; a player also turns because the player steered it, and a reversal the input made
+  # cannot be told from one a wall made, so it is not judged here.
+  roles: [projectile]
+  # Judged on the screen-space board of a 2D build only (the design's engine.dimension). A 3D
+  # build's screen positions are projections of a moving camera: a turn on screen is not a
+  # turn in the world, so the check is not made on a 3D build (nothing is reported for it).
+  dimensions: [2d]
+  # A reversal: the velocity on one axis changes sign between consecutive rendered frames,
+  # moving at least this fast (CSS px per frame) on that axis before and after.
+  min_speed_px: 1.0
+  # A stop: from at least `min_speed_px` to under this, and still under it this many frames.
+  stop_speed_px: 0.25
+  stop_frames: 3
+  # A jump larger than this between two frames is a respawn or a reset, not a turn.
+  max_step_px: 120
+  # A turn is explained when the mover's collider (else its drawn box) reaches a drawn
+  # surface - another visible entity's drawn box in the frame of the turn or the one before
+  # (a brick the hit breaks), or an edge of the probe's playfield - on the side it was moving
+  # toward, within this tolerance plus the distance it travelled in the frame; or when it is
+  # inside a drawn box, or touching one that moves along the same axis (a ball carried on a
+  # paddle); or when another turn of it in the same frame is (one contact, both axes). A
+  # composite mover is no body's path and is not judged. Without a playfield, a turn at
+  # nothing drawn FAILs only when a drawn entity still lies ahead of the mover (the board's
+  # edges enclose everything drawn in play); otherwise it is unmeasured.
+  # Calibration (the win test's per-frame samples the bot recorded during the 2D validation
+  # runs, desktop and mobile, neither probe reporting a playfield): the accepted build 96f5cea
+  # - 0 FAIL; the regressed head 68a12b7 - FAIL on both viewports, a turn moving up 220-248 px
+  # short of the drawn bar above it (the undrawn ceiling). The explained turns met their
+  # surface within 1-2 px; any tolerance from 2 to 200 px separates the two builds.
+  tolerance_px: 6
+  # physics.collider_size: what is drawn over the collider, per axis, for every entity that
+  # reports one - its opaque BODY (the probe's `entities[].body`) when it reports one, else
+  # its whole drawn box. Above the maximum the player sees a hit that did not happen (the
+  # drawing overlaps a brick the body has not reached); below the minimum a hit lands on
+  # nothing drawn. A soft glow or halo around an opaque body is not the body: the probe
+  # declares it (`halo: true`) WITH the body box, and the body is judged. A collider is never
+  # passed without something drawn to hold it to - a halo without a body, an empty body, or a
+  # body outside the drawn box FAILs. No 2026-10 build reports a collider yet, so the bar is
+  # the ledger's (L11: "<= ~1.3x"). From the builds' own tuning (board units, ball radius
+  # and sprite): r1 96f5cea draws a 56.8 glow around a 22 collider (2.6x on the sprite);
+  # r1-forward 894b4b8 draws a solid disc of exactly its 40 collider inside the same 56.8
+  # glow - 1.0x on its body (PASS), 1.42x on the whole sprite (FAIL), which is why the body
+  # is what is judged; a sprite enlarged with the collider unchanged still FAILs on its body.
+  max_drawn_to_collider: 1.3
+  min_drawn_to_collider: 0.77
+
+# -- naive.*: the build played by someone who is not perfect ---------------------------------
+naive:
+  # Per viewport: the opening unit (a fresh first session), then up to `units - 1` more of
+  # the design's authored units the build carries through the probe's unit link
+  # (wgf-unit=<id>): the middle and last of them.
+  units: 3
+  # Each policy plays each sampled unit for at most this long, retrying a loss at once.
+  run_s: 25
+  # Desktop only: the policies play the same game on every viewport, and the mobile
+  # viewport's touch path is the act and win tests' business.
+  projects: [desktop]
+  # The player models, by what the probe lists as the player's inputs now. `steady`: the
+  # first input the oracle names, held and repeated unchanged - "hold forward", or tapping the
+  # same spot. `jitter`: the oracle's input, late by `reaction_ms`, a pointer off by up to
+  # `jitter_px` each way, and with probability `error_rate` another listed move instead (never
+  # a pause, settings or retry control). Seeded: the same build plays the same.
+  policies:
+    held: [steady, jitter]   # an input listed with hold_ms (steer, drag, charge)
+    tap: [jitter]            # taps and key presses only
+  jitter_px: 24
+  reaction_ms: 250
+  error_rate: 0.15
+  seed: 20261005
+  # naive.setbacks: falls, deaths and respawns (the probe's `setbacks`, else every `lost` as
+  # a lower bound) per minute of jittered play IN THE OPENING UNIT, which has to forgive a
+  # first-time player; later units may be as hard as their design says, and their rates are
+  # reported, not judged. A FAIL needs at least `min_count` setbacks: one fall in a short
+  # sample is not a rate. Calibration (3D): r1-forward c340631 / r1 64ff4c6, the opening
+  # course under the r1 harness's jittered drag (5 seeds, 131.8 s) - 10 falls, 4.55 a minute;
+  # held forward 0. The bot's own naive test on 64ff4c6: 0 in 25 s. The regressed head's
+  # opening course had 0 falls too: this bar is a ceiling on an unforgiving opening, not
+  # what tells those two builds apart (naive.pace and level.* do).
+  setbacks:
+    scope: opening
+    max_per_min: 6.0
+    min_count: 2
+  # naive.drift: the player's lateral offset from the path's centre line over the half width
+  # there (the probe's `track`), the mean over the jittered runs of the opening unit,
+  # weighted by time played. 1.0 is the edge. Calibration (3D r1-forward c340631, the r1
+  # harness on the opening course, 8 m wide): held forward 0.60, jittered drag 0.55-0.69
+  # (0.63 pooled). The bar leaves an accepted opening its spread; no regressed build reports
+  # `track`, so it is reasoned above r1, not between two builds.
+  drift:
+    scope: opening
+    max_mean_share: 0.8
+    # Expected of a probe on these dimensions (a path the player follows on a 3D course);
+    # elsewhere a probe without `track` is not judged on drift at all.
+    dimensions: [3d]
+  # naive.alignment: the angle between the camera's forward and the forward the player's
+  # "forward" control moves the player (the probe's `view`), on the ground plane, 90th
+  # percentile over every sample. Screen-up must mean forward: an off-axis camera with
+  # course-relative steering (3D develop:9, 086e7a9) turns every push into a diagonal. No
+  # build reports `view`; 30 degrees is what a chase camera on a bend stays inside.
+  alignment:
+    max_p90_deg: 30
+    dimensions: [3d]
+  # naive.pace: time to clear a unit under naive play over the unit's par (the probe's
+  # `content.par_s`, else the design unit's `parameters.par_s` / `parameters.time_target`); a
+  # run still short of the end after the bar's share of par is a lower bound. Below the bar
+  # the unit is over before it asks anything, or its par means nothing. Calibration: 3D head
+  # 1c6b099 - meadow-roll (par 24 s) cleared in 8.9-12.3 s (0.37-0.51); 3D r1-forward
+  # c340631 - the opening course (par 18 s) held forward in 15.25 s (0.85), jittered in
+  # 16.45-34.7 s (0.91-1.93); 2D 96f5cea and 68a12b7 - no naive clear inside 25 s (at least
+  # 0.82-0.86 x par). 0.5 sits between.
+  min_clear_to_par: 0.5
+  # naive.unit_duration: the fastest clear any naive policy made of a unit, in seconds, per
+  # quality tier - a unit played through in a few seconds is not a level. A unit no policy
+  # cleared inside `run_s` lasted at least that long (a lower bound, a pass). Calibration:
+  # 3D head 1c6b099 meadow-roll 8.9 s (steady), storm-crown 19.0 s; 3D r1-forward c340631
+  # 15.25 s on the opening course; the ledger's L14 (38 m crossed in 5.8 s).
+  min_unit_s:
+    mvp: 8
+    release: 12
+    premium: 12
+    default: 8
+
+# -- naive.clear_rate: per-unit clear rate against the accepted build ------------------------
+# Per unit and player model, the share of naive runs that cleared it, against the same
+# unit's share on the previously accepted build (the step's `with: accepted_play`: a naive
+# record of that build, or {units: {id: {policy: {won, n}}}}). A unit FAILs when it clears
+# at least `min_drop` less often AND the drop is significant (one-sided two-proportion z of at
+# least `min_z`), both builds having at least `min_runs` runs of it. With an accepted record
+# the bot plays every sampled unit `runs` times per policy. Without one there is nothing to
+# compare: the rates are reported, unmeasured, never a pass and never a blocker.
+# Calibration (2D, the wgf-inv headless harness, nudged aim): 894b4b8 (collider r20) against
+# 96f5cea (r11), 200 runs per level - w4-l7 0.39 vs 0.84 (z 9.25), w3-l2 0.55 vs 0.92 (z
+# 8.38), w4-l6 0.61 vs 0.855 (z 5.53), w3-l7 0.085 vs 0.245 (z 4.31): FAIL; all 32 levels at
+# 50 runs - w3-l2, w4-l6, w4-l7 regress and nothing else; the same 894b4b8 code at r11 - no
+# level regresses (the collider is the cause); steel-gap variant "w4-l7 E" (r20, 100 runs)
+# 0.82 vs 0.84 (z 0.44): PASS, variants F and G (z 5.26, 4.42): FAIL.
+clear_rate:
+  runs: 6
+  min_runs: 6
+  min_drop: 0.15
+  min_z: 2.33
+
+# -- level.*: the geometry a build declares ---------------------------------------------------
+# Read from the content contract's one declared place (content-sufficiency.yaml `layout`): a
+# unit's `layout` entry in public/content/units.json and its entry in the layout source.
+#
+# A PATH layout has a `width` and `segments`, each {t: line, len} | {t: turn, deg, r} |
+# {t: jump, gap} (any other `t` counts its `len`), optionally `w` (this segment's width) and
+# `rails` (true | "inside" | "outside"; absent = open). Its top speed is the layout's
+# `top_speed`, else the content data file's `play_geometry.top_speed` (a number, or a dotted
+# path into the data file such as "tuning.steering.max_speed").
+geometry:
+  # level.geometry: a bend is judged on its centre-line radius over the width there. It
+  # fails tighter than `min_radius_to_width` (its inner edge folds toward a point), and
+  # tighter than `tight_radius_to_width` with an open inner edge. Calibration: r1 /
+  # r1-forward (64ff4c6, c340631: twelve courses) bend no tighter than 2.0 x the width and
+  # were accepted at G4; head 1c6b099 has 180-degree bends of 0.84 x (railed outside only)
+  # and a 130-degree bend of 1.22 x with no rail, and players fell off them.
+  min_radius_to_width: 1.0
+  tight_radius_to_width: 1.5
+  # level.unit_length: a unit's path length over its width, and the time a run at top speed
+  # takes to cross it - over the unit's par, and per quality tier in seconds. Calibration:
+  # r1-forward c340631 - 29-98 x the width, 14.6-27.5 s at top speed (16 m/s), 0.66-0.81 of
+  # par; head 1c6b099 - 1.8-17 x the width, 4.5-12.5 s, 0.15-0.39 of par.
+  min_length_to_width: 20
+  min_traverse_to_par: 0.5
+  min_traverse_s:
+    mvp: 8
+    release: 12
+    premium: 12
+    default: 8
+
+# -- level.clearance: the moving body fits the gaps the level asks it through ----------------
+# A GRID layout is a list of equal-length strings under one key of a unit's layout (rows of
+# cells). Its notation is the game's, so the content data file declares it under
+# `play_geometry`: {grid: {key, cell: [w, h], solid: "<symbols>"}, body: {radius | diameter}}
+# - each number either a number or a dotted path into the data file
+# ("tuning.ball-rebound.ball_radius_px"), cell and body in the same unit. A row holding a
+# solid (never-breaking) cell is a wall the body has to pass through; its passages are the
+# runs of non-solid cells between solids and the board's edges. The row FAILs when its
+# WIDEST passage is narrower than `min_widest_to_body` x the body's diameter - the centre
+# has less room to aim through than the body is wide - and every passage narrower than the
+# body is reported as closed. A build whose layouts read as grids but that declares no
+# `play_geometry.grid` is unmeasured - reported, never a pass, and not held at any tier,
+# because an undeclared grid is only a guess from the data's shape; a declared grid missing
+# its cell or body is held like any unmeasured check. Calibration (2D, 72 px cells): 96f5cea (r11, 22 px)
+# - widest passages 72 px, 3.27 x; 894b4b8 (r20, 40 px) - 1.8 x on w4-l7 and w3-l7, whose
+# thread rate fell from 30 % to 20.5 % (wgf-inv gap-w4l7: 25 % at r16 = 2.25 x, 22.9 % at
+# r18 = 2.0 x). The passage share (room for the centre over the row's width) is reported:
+# 0.23-0.31 on r1, 0.15-0.20 on 894b4b8.
+clearance:
+  min_widest_to_body: 2.0
+  # The bar is a PROXY, calibrated on one build: 894b4b8's collider growth (r11 -> r20) on
+  # 96f5cea's layouts, and the w4-l7 thread rates by radius. What it stands for is whether
+  # the level is still cleared, which naive.clear_rate measures directly. So it is held per
+  # unit by what was measured (realism.gate_clearance):
+  #   - no clear rate against the accepted build measured for the unit: the clearance
+  #     finding is a QUALITY GATE - blocking at the tiers `enforce` names;
+  #   - the unit's clear rate measured and passing: ADVISORY - reported, never blocking (the
+  #     fix/steel-gaps branch keeps w3-l7's one-cell lanes, 1.8 x a 40 px ball, at r1's clear
+  #     rate: 65/72/14 of 200 against r1's 62/72/16 per player model);
+  #   - the unit's clear rate measured and failing: both reported, naive.clear_rate blocks
+  #     (894b4b8 w4-l7: 78/138/107 of 200 against 158/199/188).
+  # Evidence: rebase/evidence/2d/steel-gaps.json (the game's own simulation, 200 runs per
+  # level per model), scripts/tests/fixtures/real/play-realism/clear-rates-2d-steel-gaps.json.
+  basis: proxy-measured-1
+  gate: unmeasured-clear-rate
+
+# -- runtime.*: what the console says while the bot plays ------------------------------------
+# runtime.console_errors: console.error messages logged from the game's own origin (the
+# page's host; an error a third-party script logs is that script's), and runtime.webgl_context:
+# a `webglcontextlost` event on any canvas. Uncaught exceptions are page.errors (analysis).
+# A message matching `ignore` is the Factory's sandbox refusing a network request (the
+# refusing proxy, wgflib.netguard) - recorded, never counted.
+runtime:
+  ignore:
+    - "net::ERR_"
+    - "Failed to load resource"
+  max_messages: 20
+
+# -- the risk test: the oracle's safe and greedy policies (bot side only) --------------------
+# With the step's `with: risk: true`, the bot plays each sampled unit under the game's own
+# oracle policies (the probe's optional `play.policy`): `safe` ignores optional rewards,
+# `greedy` goes for them. It only records (`risk.json`); the level-design step judges whether
+# an optional risk exists and pays.
+risk:
+  projects: [desktop]
+  units: 3
+  attempts: 3
+  attempt_s: 45
+  total_s: 600
+  policies: [safe, greedy]

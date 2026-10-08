@@ -48,7 +48,11 @@
 # and the visual-qa rubric when it starts (new-game `pinned_references`): an edit made during
 # a run applies to the next run, never to the one in flight.
 
-version: 1.1.0  # 1.1.0: floor.existing_content - an adopted repository's floor, unmeasured is a blocker; evaluate.applies
+# 1.1.0: floor.existing_content - an adopted repository's floor, unmeasured is a blocker; evaluate.applies
+# 1.2.0: the scorecard (lines per discipline, hard blockers apart, a criterion's `scorecard`);
+#        play realism (play-realism.yaml) and browser QA (browser-qa.yaml) on the floor; the
+#        `browser` line.
+version: 1.2.0
 
 references:
   quality-benchmark: core/reference/quality-benchmark.yaml
@@ -73,6 +77,34 @@ dimensions:
   platform:     {label: Platform readiness,     owner: engineering,  min_score: {release: 75}, preferred: 95, basis: proposed}
   store:        {label: Store,                  owner: release,      min_score: {release: 75}, preferred: 95, basis: proposed, phase: listing}
 
+# The scorecard (1.2.0): the same criteria, read per discipline
+# a person judges a game by - gameplay, game feel, level design, 2D art, 3D art, UI/UX, audio,
+# performance, accessibility and readability, platform compliance and publishing readiness -
+# each with its own score, and every hard blocker listed on its own. A line takes every
+# criterion of the floor `dimensions` it lists, except one that names another line in its own
+# `scorecard` field; `render` limits a line to games of that rendering dimension (art_2d and
+# art_3d read the same criteria, and a game is scored on the one its dimension is). Every
+# floor dimension feeds exactly one line per rendering dimension, so every criterion is on
+# the scorecard. A line is BELOW_FLOOR when a blocker criterion of it is below its minimum or
+# unmeasured - whatever its other criteria score - or, where it states a `min_score`, when its
+# mean is below it; no average carries a line past a blocker, and a line BELOW_FLOOR fails
+# the gate whatever every other line scores. A line no criterion measures is UNMEASURED:
+# reported as a gap, never a pass. The floor `dimensions` above still route the findings.
+scorecard:
+  gameplay:             {label: Gameplay,                        dimensions: [gameplay, progression]}
+  feel:                 {label: Game feel and polish,            dimensions: [polish]}
+  level_design:         {label: Level design and content,        dimensions: [content, variety]}
+  art_2d:               {label: 2D art,                          dimensions: [visual, consistency], render: 2d}
+  art_3d:               {label: 3D art,                          dimensions: [visual, consistency], render: 3d}
+  ui_ux:                {label: UI/UX,                           dimensions: [ui]}
+  audio:                {label: Audio,                           dimensions: [audio]}
+  performance:          {label: Performance and runtime,         dimensions: []}
+  browser:              {label: Browser compatibility,           dimensions: []}
+  technical:            {label: Technical integrity,             dimensions: [technical]}
+  accessibility:        {label: Accessibility and readability,   dimensions: []}
+  platform_compliance:  {label: Platform compliance,             dimensions: [platform]}
+  publishing_readiness: {label: Publishing readiness,            dimensions: [store]}
+
 # Which report must describe which commit of the build. `development` is the commit develop
 # made (the prototype-report's, the sdk-report's base): the gates that play and judge the
 # build before sdk commits on top of it name it. `shipped` is the verified commit release
@@ -93,7 +125,10 @@ build_evidence:
 # Evaluator kinds (scripts/wgf_quality/scoring.py), read generically:
 #   checks    `report`'s `checks[]` whose id is listed (a trailing `*` is a prefix); with
 #             `projects`, each viewport is measured on its own and the lowest share counts;
-#             `required_only: false` counts optional checks too. Observed: the share of PASS.
+#             `required_only: false` counts optional checks too; `required_only: passed` counts
+#             an optional check only when it passed (a producer that holds a check by the
+#             run's own tier reports it optional below the release class, its failure there a
+#             WARNING and an unmeasured one a note). Observed: the share of PASS.
 #   verdict   `report`'s `field` (default verdict) is one of `pass`. Observed: the value.
 #   scores    `report`'s `field` map, the `keys` listed, aggregated by `aggregate` (min|mean).
 #   count     the length of `report`'s `field` list, filtered by `where` (a value, a list of
@@ -119,6 +154,7 @@ universal:
     basis: measured-2
   - id: floor.controls
     dimension: gameplay
+    scorecard: feel
     metric: share of viewports on which every action is acknowledged and the opening grace holds
     evaluate: {kind: checks, report: playability-report, checks: [act.acknowledged, idle.grace], projects: [desktop, mobile]}
     minimum: 1.0
@@ -299,6 +335,7 @@ universal:
     basis: measured-2
   - id: floor.stable_runtime
     dimension: technical
+    scorecard: performance
     metric: share of the runtime checks that pass - no page error while played, the game boots
     evaluate: {kind: checks, report: playability-report, checks: [page.errors], required_only: false}
     minimum: 1.0
@@ -333,6 +370,7 @@ universal:
     basis: measured-2
   - id: floor.performance
     dimension: technical
+    scorecard: performance
     metric: share of the measured device classes within the performance budget
     evaluate: {kind: all, report: qa-report, field: perf_results, key: within_budget, equals: true}
     minimum: 1.0
@@ -598,6 +636,181 @@ universal:
     regression: anything but PASS on a newer listing
     basis: measured-2
 
+  # -- play realism (core/reference/play-realism.yaml, 1.2.0): what is simulated is what is
+  # drawn, a player who is not perfect can play it, its declared geometry can be played. The
+  # playability step holds a measured FAIL at the release tier itself; here the same checks
+  # are placed on the scorecard. `applies: reported`: a build the bot could not judge on a
+  # check (a 3D build's screen turns, a grid game's path geometry) is not scored on it.
+  - id: floor.physics_drawn
+    dimension: gameplay
+    scorecard: feel
+    metric: share of the physics-vs-drawing checks that pass - every turn at a drawn surface, the drawn body the size of the collider
+    evaluate: {kind: checks, report: playability-report, checks: [physics.undrawn_collision, physics.collider_size], required_only: passed, applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: gameplay
+    route: develop
+    evidence: playability-report physics.*
+    regression: a turn at nothing drawn, or a collider unlike its drawing, on a newer build
+    basis: measured-2
+  - id: floor.naive_control
+    dimension: gameplay
+    metric: share of the naive-control checks that pass - lateral drift on the path, camera forward against control forward
+    evaluate: {kind: checks, report: playability-report, checks: [naive.drift, naive.alignment], required_only: passed, applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: gameplay
+    route: develop
+    evidence: playability-report naive.drift, naive.alignment
+    regression: a check FAILs on a newer build
+    basis: proposed
+  - id: floor.naive_challenge
+    dimension: content
+    metric: share of the naive-play checks that pass - setbacks in the opening unit, time to clear against par, the shortest unit, the clear rate against the accepted build
+    evaluate: {kind: checks, report: playability-report, checks: [naive.setbacks, naive.pace, naive.unit_duration, naive.clear_rate], required_only: passed, applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: level-design
+    route: develop
+    evidence: playability-report naive.*
+    regression: a unit cleared by holding one input, or cleared less often than on the accepted build
+    basis: measured-2
+  - id: floor.level_geometry
+    dimension: content
+    metric: share of the declared-geometry checks that pass - bends no tighter than the track, units long enough for the tier
+    evaluate: {kind: checks, report: playability-report, checks: [level.geometry, level.unit_length], required_only: passed, applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: level-design
+    route: develop
+    evidence: playability-report level.geometry, level.unit_length
+    regression: a check FAILs on a newer build
+    basis: measured-2
+  - id: floor.runtime_console
+    dimension: technical
+    scorecard: browser
+    metric: share of the console checks that pass while the bot plays - no console error from the game's own origin
+    evaluate: {kind: checks, report: playability-report, checks: [runtime.console_errors], required_only: passed, applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: browser-qa
+    route: develop
+    evidence: playability-report runtime.console_errors
+    regression: a console error on a newer build
+    basis: measured-2
+  - id: floor.webgl_context
+    dimension: technical
+    scorecard: performance
+    metric: no WebGL context lost while the bot plays
+    evaluate: {kind: checks, report: playability-report, checks: [runtime.webgl_context], required_only: passed, applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: performance-engineer
+    route: develop
+    evidence: playability-report runtime.webgl_context
+    regression: a lost context on a newer build
+    basis: measured-2
+  # -- browser QA (core/reference/browser-qa.yaml, 1.2.0): the production build in a real
+  # browser at five viewports. Its checks are reported by verify as `browser.<id>:<viewport>`
+  # (a trailing `*` reads every viewport); `applies: reported`: a verification that ran no
+  # browser QA leaves `browser.run` BLOCKED at release, which verify's own verdict holds. The
+  # two calibration builds fail some of these (the context menu, UI over the ball on touch
+  # layouts, a silent loss): a defect a game shows is a defect, so the basis is `proposed`.
+  - id: floor.browser_boot
+    dimension: technical
+    scorecard: browser
+    metric: share of the browser boot and runtime checks that pass on every viewport - the spec ran, the page loads, a canvas is drawn, loading completes, no page or console error, no context menu
+    evaluate: {kind: checks, report: verification-report, checks: [browser.run, "browser.loads*", "browser.canvas*", "browser.ready*", "browser.page-errors*", "browser.console-errors*", "browser.context-menu*"], required_only: passed, applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: browser-qa
+    route: develop
+    evidence: verification-report browser.*
+    regression: a check FAILs on a newer build
+    basis: proposed
+  - id: floor.browser_session
+    dimension: gameplay
+    scorecard: browser
+    metric: share of the browser session checks that pass - win, loss and restart reached, pause and resume, play held while the page is hidden
+    evaluate: {kind: checks, report: verification-report, checks: ["browser.win*", "browser.lose*", "browser.restart*", "browser.pause-resume*", "browser.hidden-pause*"], required_only: passed, applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: gameplay
+    route: develop
+    evidence: verification-report browser.*
+    regression: a check FAILs on a newer build
+    basis: proposed
+  - id: floor.browser_layout
+    dimension: ui
+    metric: share of the browser layout checks that pass on every viewport - menus reach play, no scroll, nothing clipped, no overlap, no UI over a gameplay-critical entity
+    evaluate: {kind: checks, report: verification-report, checks: ["browser.menus*", "browser.overflow*", "browser.clipping*", "browser.ui-overlap*", "browser.ui-covers-play*"], required_only: passed, applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: ui
+    route: develop
+    evidence: verification-report browser.*
+    regression: a check FAILs on a newer build
+    basis: proposed
+  - id: floor.browser_ui_advisory
+    dimension: ui
+    metric: share of the advisory browser UI checks that pass - safe margins, hover, pressed and disabled states
+    evaluate: {kind: checks, report: verification-report, checks: ["browser.safe-margins*", "browser.button-states*"], required_only: false, applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: warning}
+    owner: ui
+    route: develop
+    evidence: verification-report browser.*
+    regression: a check WARNs on a newer build
+    basis: proposed
+  - id: floor.browser_audio
+    dimension: audio
+    metric: share of the browser audio checks that pass - every clip decodes, actions and end states sound, one-shots never loop, mute works, silence while hidden, a balanced mix
+    evaluate: {kind: checks, report: verification-report, checks: ["browser.audio-*"], required_only: passed, applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: audio
+    route: develop
+    evidence: verification-report browser.audio-*
+    regression: a check FAILs on a newer build
+    basis: proposed
+  - id: floor.browser_performance
+    dimension: technical
+    scorecard: performance
+    metric: share of the browser performance checks that pass - load and first input in time, stable frames, bounded heap growth, no oversized texture, no lost WebGL context
+    evaluate: {kind: checks, report: verification-report, checks: ["browser.load-time*", "browser.first-interaction*", "browser.frame-stability*", "browser.memory-growth*", "browser.oversized-textures*", "browser.webgl-context*"], required_only: passed, applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: blocker}
+    owner: performance-engineer
+    route: develop
+    evidence: verification-report browser.*
+    regression: a check FAILs on a newer build; a timing check on a degraded host is BLOCKED, re-measured, never passed
+    basis: proposed
+  - id: floor.browser_asset_weight
+    dimension: technical
+    scorecard: performance
+    metric: share of the advisory asset-weight checks that pass - images, effects and music under their sizes
+    evaluate: {kind: checks, report: verification-report, checks: ["browser.asset-weight*"], required_only: false, applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {release: warning}
+    owner: performance-engineer
+    route: develop
+    evidence: verification-report browser.asset-weight
+    regression: a check WARNs on a newer build
+    basis: proposed
+
 # LAYER B, per genre family (core/reference/genre-models.yaml `families`). Each entry adds
 # criteria in the shape above; none removes or lowers a universal one. Every value is data:
 # no consumer branches on a family id.
@@ -607,6 +820,7 @@ genres:
     criteria:
       - id: genre.feedback
         dimension: polish
+        scorecard: feel
         metric: share of viewports on which every action is visibly acknowledged
         evaluate: {kind: checks, report: playability-report, checks: [act.acknowledged], projects: [desktop, mobile]}
         minimum: 1.0
@@ -619,6 +833,7 @@ genres:
         basis: measured-2
       - id: genre.responsiveness
         dimension: gameplay
+        scorecard: feel
         metric: share of viewports on which play starts at once and the opening grace holds
         evaluate: {kind: checks, report: playability-report, checks: [start.playable, idle.grace], projects: [desktop, mobile]}
         minimum: 1.0
@@ -685,6 +900,7 @@ genres:
     criteria:
       - id: genre.movement
         dimension: gameplay
+        scorecard: feel
         metric: share of viewports on which every movement input is acknowledged and the opening grace holds
         evaluate: {kind: checks, report: playability-report, checks: [act.acknowledged, idle.grace], projects: [desktop, mobile]}
         minimum: 1.0
@@ -712,6 +928,7 @@ genres:
     criteria:
       - id: genre.projectiles_readable
         dimension: visual
+        scorecard: accessibility
         metric: share of viewports on which projectiles read at their size
         evaluate: {kind: checks, report: playability-report, checks: [entities.projectile], required_only: false}
         minimum: 1.0
@@ -724,6 +941,7 @@ genres:
         basis: proposed
       - id: genre.feedback
         dimension: polish
+        scorecard: feel
         metric: share of viewports on which every action is visibly acknowledged
         evaluate: {kind: checks, report: playability-report, checks: [act.acknowledged], projects: [desktop, mobile]}
         minimum: 1.0
@@ -763,6 +981,7 @@ genres:
         basis: measured-2
       - id: genre.course_readable
         dimension: visual
+        scorecard: accessibility
         metric: the lowest of the readability scores (entities, composition)
         evaluate: {kind: scores, report: visual-qa-report, field: scores, aggregate: min, keys: [character_readability, composition]}
         minimum: {mvp: "visual-qa-rubric:pass_bar", release: "quality-benchmark:presentation.visual_qa.min_dimension"}
@@ -851,6 +1070,7 @@ dimensions_contracts:
     criteria:
       - id: render.spatial_readability
         dimension: visual
+        scorecard: accessibility
         metric: the lowest of the spatial readability scores (entities, composition) under the chase camera
         evaluate: {kind: scores, report: visual-qa-report, field: scores, aggregate: min, keys: [character_readability, composition]}
         minimum: {mvp: "visual-qa-rubric:pass_bar", release: "quality-benchmark:presentation.visual_qa.min_dimension"}

@@ -37,6 +37,13 @@ SUITES = (
     ("gameplay.", "smoke"),
     # What the playability bot measured about the design's content, difficulty and depth.
     ("quality.", "gameplay-quality"),
+    # Browser QA (core/reference/browser-qa.yaml): its timing checks are performance, the
+    # rest the browser smoke at every viewport.
+    ("browser.load-time:", "performance"),
+    ("browser.first-interaction:", "performance"),
+    ("browser.frame-stability", "performance"),
+    ("browser.memory-growth", "performance"),
+    ("browser.", "smoke"),
     ("policy.runtime-facts", "performance"),
     ("policy.assertions:", "platform-validation"),
     ("platform.", "platform-validation"),
@@ -239,10 +246,44 @@ def _perf_results(session):
     return [result]
 
 
+def _browser_perf(session):
+    """The browser-QA performance run as a perf result: frame rate from the median frame
+    time, the heap at the end of the session, loading on the perf viewport. Within budget
+    unless a REQUIRED browser-QA performance check failed or could not be measured."""
+    qa = getattr(session, "browser_qa", None) if session else None
+    if not qa:
+        return None
+    checks = [c for c in qa.get("checks") or [] if c.id in PERF_CHECKS
+              or c.id.startswith(("browser.load-time:", "browser.first-interaction:"))]
+    data = {}
+    for check in checks:
+        for evidence in check.evidence:
+            data.setdefault(check.id, evidence.data or {})
+    frames = data.get("browser.frame-stability") or {}
+    memory = data.get("browser.memory-growth") or {}
+    result = {
+        "device_class": "desktop-chromium-browser-qa",
+        "fps": round(1000.0 / frames["median_ms"], 1) if frames.get("median_ms") else 0,
+        "within_budget": not any(c.required and c.status in (FAIL, BLOCKED) for c in checks),
+        "note": "browser QA perf viewport, unthrottled desktop Chromium: "
+                + ", ".join(f"{c.id} {c.status}" for c in checks if c.id in PERF_CHECKS),
+    }
+    series = memory.get("series") or []
+    if series and isinstance(series[-1].get("mb"), (int, float)):
+        result["memory_mb"] = series[-1]["mb"]
+    return result
+
+
+PERF_CHECKS = ("browser.frame-stability", "browser.memory-growth")
+
+
 def build_qa_report(*, title_id, release_id, checks, session, verification, produced_at,
                     sequence, pinned, context=None):
     defects = _defects(checks)
     perf = _perf_results(session)
+    browser = _browser_perf(session)
+    if browser:
+        perf.append(browser)
     commit = (session.commit if session else None) or "unknown"
     build_ref = {"commit_sha": commit}
     if session and session.build_artifact:

@@ -246,8 +246,19 @@ def render(specialist):
             lines.append("  - Evidence: " + ", ".join(evidence))
         for rule in vocabulary.rules_for(finding):
             lines.append(f"  - Not a fix: {rule}")
+        for guard in finding.get("guarded_by") or []:
+            lines.append(f"  - Known lesson {guard.get('lesson')}: held by "
+                         f"`{guard.get('check')}` ({guard.get('status')}) - a failure the "
+                         "Factory has seen before; fix the cause, not the check")
     lines.append("")
     lines.extend(_gaming_rules(vocabulary))
+    lines.append("### Leave what you learned\n")
+    lines.append("If a finding shows a systemic issue - a class of defect the Factory's gates "
+                 "or this brief let through, that will recur in other games - record it in "
+                 "report.json `lesson_candidates`: the lesson stated so it is true of any "
+                 "game, its root cause in the Factory, and the check that would hold it. It "
+                 "is shown to the person deciding G4, who adds it to the Factory's lessons "
+                 "or not. Omit it for a defect that is only this build's.\n")
     lines.append("### Your craft playbooks\n")
     lines.append("Read these before you change anything - they are this discipline's bar. "
                  "They are outside this repository: open them by these absolute paths.\n")

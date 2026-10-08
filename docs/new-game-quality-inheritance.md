@@ -12,7 +12,7 @@ The rules are data: [core/reference/quality-policy.yaml](../core/reference/quali
 `engine.py`); the test file is
 [scripts/tests/test_quality_inheritance.py](../scripts/tests/test_quality_inheritance.py).
 
-## The policy in six sentences
+## The policy in eight sentences
 
 1. **Snapshot.** A run records, when it starts, its quality tier (`factory.strategy.quality_tier`,
    default `release`), its class (`release` or `development`) and why, and the policy and
@@ -51,6 +51,39 @@ The rules are data: [core/reference/quality-policy.yaml](../core/reference/quali
    `dev_plan.develop_budget.shortfall`, WS-3) is not auto-approved, not approved on a
    timeout, and not answered by automation: it waits for a person, as G4 does, and `wgf
    status` says why (`Held:`; `pending.held_for_person`, with no timeout eligibility).
+
+7. **No bypass for a small game; missing gates are named** (WS-9, quality-policy 1.3.0). No tier, profile or
+   configuration removes a required step: the tier changes a run's class and its bars,
+   never the steps it runs, and no step of new-game carries a condition that could skip it.
+   Rule 2 holds only the required steps a workflow *contains*, so a run whose workflow lacks
+   one (started under an older definition, or a workflow from elsewhere) used to pass that
+   gate without a word. Now `quality.missing_gates` names every required step the run's
+   workflow lacks that the Factory's shipped definition places before the step about to run;
+   the engine hands it to the step (`context.missing_gates`) at every stage the floor holds
+   and to the quality gate. A checkpoint puts `MISSING GATES: ...` in front of its prompt,
+   never decides automatically (no auto-approval, no timeout approval, no automation
+   decision), and records them in the decision's note; the quality-report names them and is
+   never a release; the run is recorded development (`QUALITY_DOWNGRADED`, "lacks required
+   step(s)"). A resume reads the workflow by id - the current definition - so a resumed run
+   meets the gate and the floor (rule 2) holds G4 until it passed.
+8. **Independent review** (WS-9, quality-policy 1.3.0). Every path an implementer's change (develop, sdk) can take
+   to G4 or release passes every judge `independent_review` lists for it; check-integrity
+   holds it on the workflow's graph. See docs/specialist-routing.md "Independent review".
+
+Tests: `scripts/tests/test_no_bypass.py`.
+
+**Pinned references.** A run is held to the bars it started under, on every entry point and
+every resume. `new-game` lists under `pinned_references` the quality floor, the quality
+benchmark and the visual-qa rubric (the quality gate, content-sufficiency, visual-qa), and -
+workflow 16 - the bot's viewports and environment bars (`visual-quality.yaml`), play realism
+(`play-realism.yaml`), browser QA (`browser-qa.yaml`, with the values it reads from
+`visual-quality.yaml` through the same pinned copy) and the regression registry
+(`check-tiers.yaml`, `lessons.yaml`). The engine copies them when the run starts and records
+their digests in the run's params; playability, verify's browser QA and triage read the run's
+copies (`scripts/wgflib/workflow/references.py read`). So a run resumed on an updated
+Factory gets no new required check and no changed tier: those apply to the next run. A copy
+edited after the start BLOCKS the step that reads it; a run started before a file was pinned
+reads the live file. Tests: `scripts/tests/test_pinned_quality_references.py`.
 
 `content-sufficiency` (WS-4) and `quality-gate` (WS-7, workflow 10,
 [quality-gate-module.md](quality-gate-module.md)) are in the workflow and enforced like every

@@ -296,6 +296,15 @@ PROMPT_ADOPTION = (
     " elements, mechanics or difficulty): the design fails when a shipped unit id is missing"
     " from it, and develop refuses a design that rewrites the shipped units under their ids."
 )
+# Appended to PROMPT_ADOPTION when the floor derives groups or climax units the shipped units
+# do not state (existing.derive): what the floor counts is handed over, never left to infer.
+PROMPT_ADOPTION_DERIVED = (
+    " The floor counts what it derives of the shipped units (the request's"
+    " `adoption.derived`): {derived}. Each starting unit already carries the `group` and"
+    " climax `purpose` that count gives it, and build_spec.content.groups declares each of"
+    " those group ids: keep them - name and theme each group, never drop a group or a unit's"
+    " membership - or the design plans fewer groups or climax units than the floor and fails."
+)
 # Appended when the step asks again: the previous draft and exactly what made it invalid.
 PROMPT_REPAIR = (
     " Your previous draft (the request's `repair.previous_draft`) was invalid for the reasons"
@@ -312,6 +321,22 @@ DEFAULTS = {"argv": [], "timeout_seconds": 1800, "idle_timeout_seconds": 600,
 _GAP_KEYS = ("id", "field", "question", "severity", "observed", "bar", "assumed", "unit",
              "finding")
 _MAX_BYTES = 4 * 1024 * 1024
+
+
+def _derived_summary(derived):
+    """One line of what the floor derives of the shipped units (existing.adoption_derived),
+    or "" when it derives no group and no climax unit."""
+    derived = derived or {}
+    parts = []
+    groups = derived.get("groups") or {}
+    if groups:
+        parts.append(f"{len(groups)} group(s) by {derived.get('groups_measured_by')}: "
+                     + "; ".join(f"{g} = {', '.join(ids)}" for g, ids in groups.items()))
+    climax = derived.get("climax_unit_ids") or []
+    if climax:
+        parts.append(f"{len(climax)} climax unit(s) by {derived.get('climax_measured_by')}: "
+                     + ", ".join(climax))
+    return "; and ".join(parts)
 
 
 def _tier_request(design, strategy):
@@ -486,6 +511,18 @@ class AgentAuthor(DesignAuthor):
             spec = starting.setdefault("build_spec", {})
             content_spec = spec.get("content") if isinstance(spec.get("content"), dict) else {}
             content_spec["units"] = copy.deepcopy(adoption.get("units") or [])
+            # The groups the adopted units carry (existing.adoption_units: a group the floor
+            # derives is written into each unit) are the groups the design declares; a
+            # starting group no adopted unit is in is another game's.
+            used = []
+            for unit in content_spec["units"]:
+                if isinstance(unit, dict) and unit.get("group") and unit["group"] not in used:
+                    used.append(unit["group"])
+            if used:
+                declared = {g.get("id"): g for g in content_spec.get("groups") or []
+                            if isinstance(g, dict) and g.get("id")}
+                content_spec["groups"] = [declared.get(g) or {"id": g, "name": g}
+                                          for g in used]
             spec["content"] = content_spec
             with open(adopted_path, "w", encoding="utf-8", newline="\n") as handle:
                 json.dump({"commit": adoption.get("commit"), "path": adoption.get("path"),
@@ -588,6 +625,9 @@ class AgentAuthor(DesignAuthor):
                 "unit_ids": adoption.get("unit_ids"), "units_file": adopted_path,
                 "rewritten": adoption.get("rewritten") or [],
                 "supersedes": adoption.get("supersedes"),
+                # What the floor derives of the shipped units (existing.derive): the groups
+                # with their unit ids and the climax units, each by its method.
+                "derived": adoption.get("derived"),
                 "rule": "Every unit id the repository ships stays in the design under its "
                         "own id; extend and improve the shipped units, never replace them."}
         if revision:
@@ -644,6 +684,9 @@ class AgentAuthor(DesignAuthor):
                 commit=str(adoption.get("commit") or "")[:12], units=adopted_path,
                 ids=", ".join(ids[:16]) + (f" and {len(ids) - 16} more" if len(ids) > 16
                                            else ""))
+            derived = _derived_summary(adoption.get("derived"))
+            if derived:
+                values["prompt"] += PROMPT_ADOPTION_DERIVED.format(derived=derived)
         if repair:
             values["prompt"] += PROMPT_REPAIR
         try:

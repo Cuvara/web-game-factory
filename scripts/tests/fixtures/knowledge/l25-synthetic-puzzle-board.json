@@ -1,0 +1,27 @@
+{
+  "game": "synthetic B: a DOM-board match puzzle that prevents the right click on its canvas but not the long press on its board",
+  "lesson": "L25",
+  "check": "browser-qa:browser.context-menu",
+  "learned_from": "scripts/tests/fixtures/browser-qa/brick-breaker-worlds-894b4b8.json and sky-marble-c340631.json (two canvas games that prevented the context menu nowhere)",
+  "note": "Synthetic, not a recording: the healthy browser-QA records (scripts/tests/browser_qa_fixture.py) with each viewport's `context_menu` probe replaced. The defect is narrower than where it was learned - only the touch layouts, only on a DOM element, not the canvas - and the check still catches it.",
+  "klass": "release",
+  "regressed": {
+    "desktop-standard": {"context_menu": {"probed": true, "how": "right-click", "at": [640, 360],
+                          "events": [{"t": 5000, "prevented": true, "target": "canvas"}]}},
+    "tablet": {"context_menu": {"probed": true, "how": "long-press", "at": [384, 512],
+                "events": [{"t": 6100, "prevented": false, "target": "div#board"}]}},
+    "mobile": {"context_menu": {"probed": true, "how": "long-press", "at": [195, 422],
+                "events": [{"t": 6050, "prevented": false, "target": "div#board"}]}}
+  },
+  "fixed": {
+    "tablet": {"context_menu": {"probed": true, "how": "long-press", "at": [384, 512],
+                "events": [{"t": 6100, "prevented": true, "target": "div#board"}]}},
+    "mobile": {"context_menu": {"probed": true, "how": "long-press", "at": [195, 422],
+                "events": [{"t": 6050, "prevented": true, "target": "div#board"}]}}
+  },
+  "expect": {
+    "regressed": {"browser.context-menu:tablet": "FAIL", "browser.context-menu:mobile": "FAIL",
+                  "browser.context-menu:desktop-standard": "PASS"},
+    "fixed": {"browser.context-menu:tablet": "PASS", "browser.context-menu:mobile": "PASS"}
+  }
+}

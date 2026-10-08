@@ -1,0 +1,19 @@
+{
+  "game": "synthetic B: a side-on platformer whose hero sprite grew, closing the one-tile shafts it drops through",
+  "lesson": "L23",
+  "check": "play-realism:level.clearance",
+  "learned_from": "scripts/tests/fixtures/real/play-realism/content-2d-894b4b8.json (a 2D brick breaker: a larger ball could not thread the steel rows)",
+  "note": "Synthetic, not a recording: a content data file (public/content/units.json shape, wgf-content/1) of another family - a platformer, laid out in a `tiles` grid with `#` solid - whose moving body is the hero, not a ball. The accepted build's hero is 24 px across; the regressed one 40 px.",
+  "accepted": {
+    "schema": "wgf-content/1",
+    "tuning": {"hero": {"width_px": 24}, "tiles": {"size_px": 32}},
+    "play_geometry": {"grid": {"key": "tiles", "solid": "#", "cell": ["tuning.tiles.size_px", "tuning.tiles.size_px"]},
+                      "body": {"diameter": "tuning.hero.width_px"}},
+    "units": [
+      {"id": "cave-1", "layout": {"tiles": ["#........#", "####..####", "#........#"]}},
+      {"id": "cave-2", "layout": {"tiles": ["#...##...#", "###..#####", "#........#"]}}
+    ]
+  },
+  "regressed_tuning": {"hero": {"width_px": 40}, "tiles": {"size_px": 32}},
+  "expect": {"accepted": "PASS", "regressed": "FAIL", "regressed_units": ["cave-1", "cave-2"]}
+}

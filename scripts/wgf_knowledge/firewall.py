@@ -83,7 +83,8 @@ def _cases(module, name):
     found = []
     for value in vars(module).values():
         if isinstance(value, type) and issubclass(value, unittest.TestCase) \
-                and value.__module__ == module.__name__ and name in vars(value):
+                and value.__module__ == module.__name__ and callable(vars(value).get(name)):
+            # A subclass that sets an inherited test to None switches it off there.
             found.append(value(name))
     return found
 

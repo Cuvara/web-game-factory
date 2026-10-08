@@ -14,6 +14,11 @@
     wgf knowledge contract RUN_ID [--store DIR] [--config PATH] [--json]
         The run's knowledge-contract. A run that has none yet is resolved now from its
         game-design, title-strategy, quality tier and pinned knowledge, and says so.
+    wgf knowledge report RUN_ID [--md | --json] [--store DIR] [--config PATH]
+        The run's knowledge compliance, from its newest quality-report: versions, the rules
+        by level - satisfied, failed, unmeasured, excepted - the evidence each check was read
+        from, exceptions, regression, lessons applied and new lesson candidates. Exit 0
+        PASS, 1 RELEASE_BLOCKED (enforcing or advisory alike), 2 no quality-report yet.
     wgf knowledge table [--families F,..] [--render 2d,3d] [--tiers T,..] [--platform P ...]
                         [--json]
         The benchmark approval table: one dry resolution per facet combination - rule counts
@@ -299,6 +304,33 @@ def cmd_contract(args):
     return EXIT_OK
 
 
+def cmd_report(args):
+    from wgf_quality import compliance
+    from wgflib.workflow.api import WorkflowAPI
+    from wgflib.workflow.store import StoreError
+    try:
+        api = WorkflowAPI(config_path=args.config, store_dir=args.store)
+        state = api.store.load(args.run)
+        ref = state.latest_of_type("quality-report")
+        report = api.store.read_artifact(state.run_id, ref) if ref is not None else None
+    except (StoreError, OSError, ValueError, KeyError) as exc:
+        raise Unusable(f"run {args.run}: {exc}")
+    section = (report or {}).get("compliance")
+    if not isinstance(section, dict):
+        raise Unusable(f"run {args.run}: no quality-report with a compliance section yet - the "
+                       "quality gate has not judged a build of this run")
+    if args.json:
+        _print_json(section)
+    elif args.md:
+        sys.stdout.write(compliance.render_markdown(section))
+    else:
+        print(f"{state.run_id}: quality-report {ref.id} v{ref.version} "
+              f"({(report.get('provenance') or {}).get('artifact_id')})")
+        for line in compliance.render_lines(section):
+            print(line)
+    return EXIT_PROBLEMS if section.get("verdict") == "RELEASE_BLOCKED" else EXIT_OK
+
+
 def _split(values):
     out = []
     for value in values or ():
@@ -376,6 +408,14 @@ def build_parser():
     contract.add_argument("--config", metavar="PATH")
     contract.add_argument("--json", action="store_true")
     contract.set_defaults(handler=cmd_contract)
+    report = sub.add_parser("report", help="a run's knowledge compliance")
+    report.add_argument("run", metavar="RUN_ID")
+    report.add_argument("--store", metavar="DIR")
+    report.add_argument("--config", metavar="PATH")
+    form = report.add_mutually_exclusive_group()
+    form.add_argument("--md", action="store_true", help="markdown, for a person")
+    form.add_argument("--json", action="store_true")
+    report.set_defaults(handler=cmd_report)
     table = sub.add_parser("table", help="the benchmark approval table (dry)")
     table.add_argument("--families", action="append", metavar="F,..")
     table.add_argument("--render", action="append", metavar="2d,3d")

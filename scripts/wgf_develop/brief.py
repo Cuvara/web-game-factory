@@ -656,14 +656,78 @@ def existing_floor(design):
             "rule": rule}
 
 
+def knowledge_rules(contract, ref=None):
+    """The brief's `knowledge`: the run's knowledge-contract as a developer needs it - the
+    blocking and required rules (id, level, category, the lesson in one paragraph, the checks
+    that hold it and the step that judges each), the experimental ones by id with their gap,
+    the exceptions a person granted, and the contract's identity. None without a contract.
+    Only the rules that hold the build are spelled out; the full contract is in the run."""
+    if not isinstance(contract, dict):
+        return None
+    rules = []
+    for rule in contract.get("rules") or ():
+        if not isinstance(rule, dict) or rule.get("level") not in ("blocking", "required"):
+            continue
+        rules.append({"id": rule.get("id"), "level": rule.get("level"),
+                      "category": rule.get("category"), "title": rule.get("title"),
+                      "lesson": " ".join(str(rule.get("lesson") or "").split()),
+                      "checks": [{"check": c.get("check"), "tier": c.get("tier"),
+                                  "judged_by": list(c.get("steps") or [])}
+                                 for c in rule.get("checks") or () if isinstance(c, dict)]})
+    return {"contract": {"artifact_id": (contract.get("provenance") or {}).get("artifact_id"),
+                         "content_hash": getattr(ref, "content_hash", None)},
+            "rules": rules,
+            "experimental": [{"id": e.get("id"), "gap": e.get("gap")}
+                             for e in contract.get("experimental") or ()
+                             if isinstance(e, dict)],
+            "exceptions": [{"rule_id": e.get("rule_id"), "expires_at": e.get("expires_at"),
+                            "scope": e.get("scope")}
+                           for e in contract.get("exceptions") or () if isinstance(e, dict)],
+            "counts": dict(contract.get("counts") or {})}
+
+
+def _knowledge_section(knowledge):
+    if not knowledge:
+        return []
+    lines = ["## The Factory's rules for this game\n",
+             "What earlier games taught the Factory, resolved for this title (its genre "
+             "family, 2D/3D, platforms and quality tier) into the run's knowledge-contract "
+             f"`{(knowledge.get('contract') or {}).get('artifact_id') or '-'}`. Each rule "
+             "below is held by the checks named, on the build you commit: the quality gate "
+             "shows every one satisfied by the reports of those checks - by their evidence, "
+             "never by what a report says was fixed - or the build is not a release. A "
+             "blocking rule's check is pass/fail; a required rule's is held to a calibrated "
+             "bar. The same list is in `brief.json` under `knowledge`.\n"]
+    for rule in knowledge.get("rules") or ():
+        checks = ", ".join(f"`{c['check']}`" + (f" ({', '.join(c['judged_by'])})"
+                                                 if c.get("judged_by") else "")
+                           for c in rule.get("checks") or ())
+        lines.append(f"- **{rule['id']}** ({rule['level']}, {rule.get('category')}): "
+                     f"{rule.get('lesson') or rule.get('title')} Held by {checks}.")
+    if knowledge.get("experimental"):
+        lines.append("")
+        lines.append("Known, not held by a check yet (guidance - avoid them all the same): "
+                     + ", ".join(f"{e['id']} ({e.get('gap')})"
+                                 for e in knowledge["experimental"]))
+    if knowledge.get("exceptions"):
+        lines.append("")
+        lines.append("A person excepted, for this run only: "
+                     + ", ".join(f"{e['rule_id']} until {e.get('expires_at')}"
+                                 for e in knowledge["exceptions"])
+                     + ". Their checks still run and still report.")
+    lines.append("")
+    return lines
+
+
 def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, scaffold,
                 strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
                 review=None, mobile_test=True, tech_plan=None, self_playtest=False,
                 writable_paths=None, package_changes=None, loop=None, sessions=None,
                 playability=None, frames_root=None, phase=None, greybox_commit=None,
                 production=None, visual_qa=None, sufficiency=None,
-                review_baseline=None, developer=None, specialist=None):
-    """The brief as data. `render_markdown` turns it into the document a developer reads."""
+                review_baseline=None, developer=None, specialist=None, knowledge=None):
+    """The brief as data. `render_markdown` turns it into the document a developer reads.
+    `knowledge`: the run's knowledge-contract (None for a run that made none)."""
     refs = refs or {}
     writable_paths = list(DEFAULT_WRITABLE if writable_paths is None else writable_paths)
     package_changes = package_changes or {}
@@ -779,7 +843,8 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                          ("review-report", review), ("playability-report", playability),
                          ("production-quality-report", production),
                          ("visual-qa-report", visual_qa),
-                         ("content-sufficiency-report", sufficiency))
+                         ("content-sufficiency-report", sufficiency),
+                         ("knowledge-contract", knowledge))
             if c
         ],
         "design": {
@@ -905,6 +970,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         # What verification will demand browser evidence for (wgf_verification computes the
         # same set from the same design): the developer is told up front, instead of
         # learning it from a failed verification and a loop back here.
+        # The rules of the run's knowledge-contract that hold this build (knowledge_rules):
+        # machine-readable here, a section of the brief for the developer. None without one.
+        "knowledge": knowledge_rules(knowledge, refs.get("knowledge-contract")),
         "verification_aspects": {
             "vocabulary": list(ASPECTS),
             "required": [a for a in ASPECTS if a in required_aspects_for(design, mobile_test)],
@@ -1566,6 +1634,8 @@ def render_markdown(brief):
     add("")
     if brief.get("specialist"):
         out.extend(specialist_section.render(brief["specialist"]))
+
+    out.extend(_knowledge_section(brief.get("knowledge")))
 
     add("## Goal\n")
     add("A genuinely playable game: a stranger opens the build, understands it without help, "

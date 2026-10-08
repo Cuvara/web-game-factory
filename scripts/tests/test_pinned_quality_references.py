@@ -54,7 +54,7 @@ class PinnedRun(unittest.TestCase):
         collected["core/reference/visual-quality.yaml"] = collected[
             "core/reference/visual-quality.yaml"].replace(b"version: 1.3.0", b"version: 1.2.9", 1)
         collected["core/reference/lessons.yaml"] = collected[
-            "core/reference/lessons.yaml"].replace(b"version: 1.0.0", b"version: 0.9.0", 1)
+            "core/reference/lessons.yaml"].replace(b"version: 2.0.0", b"version: 0.9.0", 1)
         self.pins = references.pin(collected, self.run_dir)
         self.context = types.SimpleNamespace(
             environment={references.PARAM: dict(self.pins)}, run_dir=self.run_dir)

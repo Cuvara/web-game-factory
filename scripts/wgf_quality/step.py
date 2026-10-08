@@ -18,6 +18,12 @@
       -> the lesson candidates specialist visits reported (prototype-report
          `specialist.lesson_candidates`, triage-report `lesson_candidates`): surfaced to the
          person deciding G4, who promotes one to core/reference/lessons.yaml or not
+      -> knowledge compliance (compliance.py): every rule of the run's knowledge-contract
+         held to the checks that hold it, on this build's current reports, each result cited
+         by the producer's artifact id, content hash and commit; a blocking or required rule
+         FAILED or UNMEASURED and not excepted by a person makes the release decision
+         not-release (the `compliance` section). A run that made no contract (it started
+         before the knowledge model) gets the same section resolved now, advisory
       -> the run's finding ledger (wgf_triage.ledger.remeasure), advanced on every report
          of this build and this report itself: a finding a specialist fixed is verified or
          regressed here, by the producer that raised it, though no triage runs after the
@@ -26,7 +32,8 @@
 
     PASS      every dimension at or above its floor (the store DEFERRED to the listing), and
               no blocking finding of the ledger raised by a gate is open             SUCCESS
-    FAIL      a dimension below its floor                                    FAILED, not
+    FAIL      a dimension below its floor, or (enforcing) a blocking or required rule of
+              the knowledge-contract not satisfied                           FAILED, not
               retryable, routed by the findings that hold it there: design-gap, assets,
               develop (listing once the listing is measured)
     BLOCKED   evidence about another build, a pinned reference edited after the start, or a
@@ -46,16 +53,19 @@ from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow import references as pinned_references
 from wgflib.yamllite import YamlError, load as load_yaml
 
+from . import compliance as knowledge_compliance
 from . import scoring
 
 __all__ = ["QualityGateStep", "REQUIRED_INPUTS", "OPTIONAL_INPUTS", "FLOOR", "BENCHMARK",
-           "RUBRIC", "load_contract", "advance_ledger", "missing_gates", "lesson_candidates"]
+           "RUBRIC", "load_contract", "advance_ledger", "missing_gates", "lesson_candidates",
+           "knowledge_compliance_of"]
 
 REQUIRED_INPUTS = ("playability-report", "production-quality-report", "visual-qa-report",
                    "content-sufficiency-report", "qa-report", "verification-report",
                    "prototype-report", "game-design")
 OPTIONAL_INPUTS = ("sdk-report", "review-report", "asset-manifest", "title-strategy",
-                   "listing-validation-report", "triage-report", "decision-record")
+                   "listing-validation-report", "triage-report", "decision-record",
+                   "knowledge-contract")
 FLOOR = "core/reference/quality-floor.yaml"
 BENCHMARK = "core/reference/quality-benchmark.yaml"
 RUBRIC = "core/reference/visual-qa-rubric.yaml"
@@ -180,6 +190,75 @@ def lesson_candidates(loaded):
     return found
 
 
+def _pinned_yaml(relpath, environment, run_dir):
+    text, _digest, _pinned = pinned_references.read(relpath, environment, run_dir)
+    return load_yaml(text)
+
+
+def _pinned_reader(environment, run_dir):
+    def read(relpath):
+        try:
+            text, _digest, _pinned = pinned_references.read(relpath, environment, run_dir)
+        except pinned_references.PinError as exc:
+            raise OSError(str(exc))
+        return text.encode("utf-8")
+    return read
+
+
+def knowledge_compliance_of(context, inputs, loaded, refs, entries, result, build, tier,
+                            candidates=(), now=None):
+    """The quality-report's `compliance` section (compliance.evaluate): against the run's
+    knowledge-contract when it is an input, else - for a run that never recorded its
+    knowledge - against one resolved now from the knowledge it pinned, advisory. Never
+    raises: what cannot be read is said in the section."""
+    from wgf_knowledge import model as knowledge_model
+    from wgf_quality import registry
+    environment = getattr(context, "environment", None) or {}
+    run_dir = getattr(context, "run_dir", None)
+    params = getattr(context, "params", None) or {}
+    recorded = ((params.get("quality") or {}) if isinstance(params, dict) else {}).get(
+        "knowledge")
+    now = now or knowledge_compliance.now_utc()
+    contract = loaded.get("knowledge-contract")
+    contract_ref, retroactive, missing, problem = None, False, None, None
+    tiers = lessons = None
+    try:
+        tiers = _pinned_yaml(registry.TIERS_FILE, environment, run_dir)
+        lessons = _pinned_yaml(registry.LESSONS_FILE, environment, run_dir)
+    except (pinned_references.PinError, YamlError, OSError) as exc:
+        problem = f"the run's knowledge cannot be read ({exc})"
+    if isinstance(contract, dict):
+        ref = refs.get("knowledge-contract")
+        contract_ref = {"artifact_id": (contract.get("provenance") or {}).get("artifact_id"),
+                        "content_hash": getattr(ref, "content_hash", None)}
+    else:
+        contract = None
+        if recorded:
+            missing = ("the run recorded its knowledge at start (" + ", ".join(
+                str(v) for v in (recorded.values() if isinstance(recorded, dict) else
+                                 [recorded])) + ") but no knowledge-contract reaches the "
+                       "quality gate: its rules cannot be shown satisfied, and a rule is "
+                       "never skipped silently")
+        if problem is None:
+            retroactive = not missing
+            try:
+                contract = knowledge_compliance.retroactive_contract(
+                    lessons, tiers, design=loaded.get("game-design"),
+                    strategy=loaded.get("title-strategy"), tier=tier,
+                    read=_pinned_reader(environment, run_dir))
+            except knowledge_model.KnowledgeError as exc:
+                problem = f"the run's knowledge cannot be resolved ({exc})"
+    offered = list((contract or {}).get("exceptions") or ())
+    offered += knowledge_compliance.run_exceptions(context)
+    self_report = {"criteria": (result or {}).get("criteria") or [],
+                   "dimensions": (result or {}).get("dimensions") or []}
+    return knowledge_compliance.evaluate(
+        contract, tiers, loaded, refs=refs, entries=entries, build=build,
+        self_report=self_report, tier=tier, contract_ref=contract_ref,
+        retroactive=retroactive, contract_missing=missing, exceptions=offered,
+        lessons=lessons, now=now, candidates=candidates, problem=problem)
+
+
 class QualityGateStep(WorkflowStep):
     type = "quality-gate"
     clock = staticmethod(_utc_now)
@@ -228,6 +307,9 @@ class QualityGateStep(WorkflowStep):
                                  f"the quality contract is malformed ({exc})", entries=entries)
         result["missing_gates"] = missing_gates(context)
         result["lesson_candidates"] = lesson_candidates(loaded)
+        result["compliance"] = knowledge_compliance_of(
+            context, inputs, loaded, refs, entries, result, build, tier,
+            candidates=result["lesson_candidates"], now=self._knowledge_now())
         if result["missing_gates"]:
             names = ", ".join(g["step"] for g in result["missing_gates"])
             decision = result["release_decision"]
@@ -239,6 +321,15 @@ class QualityGateStep(WorkflowStep):
                 decision["decision"] = "not-release"
         return self._finish(context, inputs, title_id, build, tier, record, summary, entries,
                             result, previous)
+
+    def _knowledge_now(self):
+        """The clock exceptions expire by: the step's own (a test's injected one)."""
+        stamp = self.clock()
+        try:
+            return datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(
+                tzinfo=datetime.timezone.utc)
+        except (TypeError, ValueError):
+            return knowledge_compliance.now_utc()
 
     @staticmethod
     def _previous(context):
@@ -311,6 +402,11 @@ class QualityGateStep(WorkflowStep):
             value = (result or {}).get(key)
             if value:
                 report[key] = value
+        section = (result or {}).get("compliance")
+        if section:
+            report["compliance"] = knowledge_compliance.bind_self(
+                section, report["provenance"]["artifact_id"])
+            knowledge_compliance.apply(report, section)
         if blocked and "missing_gates" not in report:
             gates = missing_gates(context)
             if gates:
@@ -368,6 +464,12 @@ class QualityGateStep(WorkflowStep):
             context.logger.error("quality below the floor", failed=report["failed"],
                                  route=route)
             reasons = "; ".join(report["release_decision"]["reasons"][:5])
+            if not report["failed"]:
+                return StepResult("FAILED", route=route, artifacts=[output], retryable=False,
+                                  error=f"KNOWLEDGE: rule(s) "
+                                        f"{', '.join(report['compliance']['blocking']) or '-'} "
+                                        f"of the run's knowledge-contract not satisfied "
+                                        f"(route {route}): {reasons}")
             return StepResult("FAILED", route=route, artifacts=[output], retryable=False,
                               error=f"QUALITY REGRESSION: {', '.join(report['failed'])} below "
                                     f"the floor of quality-floor "

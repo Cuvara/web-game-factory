@@ -445,12 +445,27 @@ class StatusAt(unittest.TestCase):
 
     def test_a_check_the_report_does_not_carry_is_unmeasured(self):
         report = _fixture("playability-report")
-        found = registry.check_status(DATA["tiers"], "play-realism:naive.clear_rate", report)
+        report["checks"] = [c for c in report.get("checks") or []
+                            if c.get("id") != "depth.ramp"]
+        found = registry.check_status(DATA["tiers"], "playability:depth.ramp", report)
+        self.assertEqual([r["status"] for r in found], ["UNMEASURED"])
+        # No report at all is unmeasured too, whatever the source says of an absent entry.
+        found = registry.check_status(DATA["tiers"], "play-realism:naive.clear_rate", {})
         self.assertEqual([r["status"] for r in found], ["UNMEASURED"])
         failed_review = dict(_fixture("review-report"), verdict="request-changes", blockers=[])
         found = registry.check_status(DATA["tiers"], "gate-gaming:play-area-change",
                                       failed_review)
         self.assertEqual([r["status"] for r in found], ["UNMEASURED"])
+
+    def test_a_check_its_producer_reports_only_where_it_applies_is_not_applicable(self):
+        # play-realism (1.2.0): a playability-report without a physics check is a build the
+        # check does not concern (a 3D build, say) - not applicable, never a pass.
+        report = _fixture("playability-report")
+        report["checks"] = [c for c in report.get("checks") or []
+                            if not str(c.get("id")).startswith("physics.")]
+        found = registry.check_status(DATA["tiers"], "play-realism:physics.collider_size",
+                                      report)
+        self.assertEqual([r["status"] for r in found], ["NOT_APPLICABLE"])
 
     def test_a_per_viewport_browser_result_reads_as_its_check(self):
         _, report = _with_result("browser-qa", "browser.context-menu", True)
@@ -476,6 +491,13 @@ class StatusAtIntegrity(Sandbox):
         self.assertTrue(any("'items[].quality.verdicts' is not a property" in p
                             for p in self.problems()))
 
+    def test_an_absent_constant_that_passes_fails(self):
+        tiers = self.read("core/reference/check-tiers.yaml")
+        tiers["sources"]["play-realism"]["status_at"]["absent"] = {"status": "PASS"}
+        self.write("core/reference/check-tiers.yaml", tiers)
+        self.assertTrue(any("absent.status 'PASS'" in p for p in self.problems()),
+                        self.problems())
+
     def test_a_locator_key_outside_the_vocabulary_fails(self):
         tiers = self.read("core/reference/check-tiers.yaml")
         tiers["sources"]["gate-gaming"]["status_at"]["guess"] = True
@@ -486,7 +508,7 @@ class StatusAtIntegrity(Sandbox):
         tiers = self.read("core/reference/check-tiers.yaml")
         del tiers["status_at"]
         self.write("core/reference/check-tiers.yaml", tiers)
-        self.assertTrue(any("sources.playability: no `status_at`" in p
+        self.assertTrue(any("sources.production-quality: no `status_at`" in p
                             for p in self.problems()))
 
 

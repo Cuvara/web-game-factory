@@ -65,7 +65,15 @@
 #               `presence` status
 #   absent      {field, map}: a check with no entry reads the report's `field` through `map`
 #               (a review that approved has no gate-gaming blocker: PASS); otherwise, and
-#               when a report has no entry for a check, it is UNMEASURED - never a pass
+#               when a report has no entry for a check, it is UNMEASURED - never a pass.
+#               {status: NOT_APPLICABLE, checks?} (1.2.0): the producer reports a check (the
+#               `checks` listed, else every check of the source) only for a build it
+#               concerns, so a report of it that has no entry for the check says the check
+#               does not concern this build - shown as such, never a pass; no report at all
+#               is still UNMEASURED
+#   not_applicable  {field, values} (1.2.0): an entry whose `field` (dotted, in the entry)
+#               holds one of `values` is the producer saying the check does not concern this
+#               build (a clear rate with no accepted build to fall from): NOT_APPLICABLE
 #
 # check-integrity holds that every locator's path exists in the producer's schema
 # (core/artifacts/<producer>.schema.json).
@@ -74,7 +82,7 @@
 # and triage's `guarded_by`), scripts/wgf_knowledge/ (levels, the applicability resolver).
 # Add a check to a source file and it is classified here, or the integrity check fails.
 
-version: 1.1.0
+version: 1.2.0
 
 applies_at: release
 
@@ -101,7 +109,9 @@ sources:
     file: core/reference/quality-floor.yaml
     producer: quality-report
     enumerate: floor-criteria        # universal + genres.*.criteria + dimensions_contracts.*.criteria
-    status_at: {list: criteria, id: id, status: status}
+    # The report scores the criteria of the build's own contract (its genre family, its render,
+    # an `applies` the build meets): a criterion it does not carry does not concern this build.
+    status_at: {list: criteria, id: id, status: status, absent: {status: NOT_APPLICABLE}}
     # A release blocker is hard when it is pass/fail (a check share, a verdict, a count of
     # zero) and quality when it reads a calibrated bar (a `quality-benchmark:` or
     # `visual-qa-rubric:` reference, or a rubric score); a release warning is advisory; a
@@ -158,6 +168,8 @@ sources:
     file: core/reference/content-sufficiency.yaml
     producer: content-sufficiency-report
     enumerate: {keys: checks}
+    # content.regression is reported only for a run that adopted a game (a floor to keep).
+    status_at: {list: checks, id: id, status: status, absent: {status: NOT_APPLICABLE, checks: [content.regression]}}
     # Required at the release tier, every one fails the step's verdict. Pass/fail ones are
     # hard; one that counts the build against a tier's bar (the benchmark) is quality.
     checks:
@@ -180,6 +192,8 @@ sources:
   playability:
     producer: playability-report
     defined_in: scripts/wgf_playability
+    # depth.stall is reported only where the ramp was sampled in timed, endless play.
+    status_at: {list: checks, id: id, status: status, absent: {status: NOT_APPLICABLE, checks: [depth.stall]}}
     checks:
       probe.present: hard
       start.playable: hard
@@ -219,6 +233,22 @@ sources:
   play-realism:
     producer: playability-report
     defined_in: scripts/wgf_playability
+    # Reported only for a build a check concerns (play-realism.yaml: physics on a 2D board,
+    # drift and level.geometry on a 3D path, level.clearance on a grid layout, naive play on
+    # the input kinds it models): a playability-report without one is not applicable to it.
+    # A check that concerns the build and could not be measured is reported UNMEASURED; the
+    # runtime checks are reported for every viewport the bot recorded, so theirs is not listed.
+    # naive.clear_rate with no accepted build (`measured.unmeasured: no-accepted-build`) is,
+    # in the producer's words, never held: a game with no accepted build has no clear rate
+    # to fall from. Any other unmeasured result is UNMEASURED.
+    status_at:
+      list: checks
+      id: id
+      status: status
+      not_applicable: {field: measured.unmeasured, values: [no-accepted-build]}
+      absent:
+        status: NOT_APPLICABLE
+        checks: [physics.undrawn_collision, physics.collider_size, naive.setbacks, naive.drift, naive.alignment, naive.pace, naive.unit_duration, naive.clear_rate, level.geometry, level.unit_length, level.clearance]
     # core/reference/play-realism.yaml: a measured FAIL holds the build at the tiers
     # `enforce.fail_required_at` names (release, premium); an unmeasured one follows
     # quality-policy.yaml skipped_checks. Pass/fail ones are hard; one held to a

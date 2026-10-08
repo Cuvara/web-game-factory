@@ -360,6 +360,28 @@ class AgentRunFailed(RuntimeError):
     """The agent host failed, timed out or went silent. Retryable."""
 
 
+def _provisional_knowledge(starting, strategy):
+    """The Factory's rules that may apply to the design about to be written: resolved over
+    what is known before it (the family, the strategy's platforms; 2D/3D and tier are
+    undetermined, which never excludes a rule). Provisional - the run's knowledge-contract,
+    made after design, is what the build is held to. None when the knowledge cannot be read
+    (the knowledge step, not this one, stops a run for it)."""
+    try:
+        from wgf_knowledge import resolve as resolver
+        from wgf_quality import registry
+        data = registry.load()
+        checks, _ = registry.classify(data["tiers"])
+        family = ((starting or {}).get("genre") or {}).get("family")
+        facets = resolver.facets_from({"genre": {"family": family}}, strategy)
+        body = resolver.resolve(data["lessons"], checks, data["tiers"], facets)
+    except Exception:  # noqa: BLE001 - guidance only; nothing is decided here
+        return None
+    return {"provisional": True,
+            "rules": [{"id": r["id"], "level": r["level"], "category": r.get("category"),
+                       "lesson": " ".join(str(r.get("lesson") or "").split())}
+                      for r in body["rules"]]}
+
+
 def _last_json_object(text):
     """The last top-level JSON object in `text` (bare or in a ```json fence), or None."""
     decoder = json.JSONDecoder()
@@ -610,6 +632,9 @@ class AgentAuthor(DesignAuthor):
             # The content shape research coded for this cell, with its tiers and claims: the
             # family, what one unit is, the progression, the difficulty shape and the axes.
             request["design_constraints"] = constraints
+        knowledge = _provisional_knowledge(starting, brief.get("strategy"))
+        if knowledge:
+            request["knowledge"] = knowledge
         with open(request_path, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(request, handle, indent=2, ensure_ascii=False, default=str)
 

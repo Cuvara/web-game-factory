@@ -369,6 +369,22 @@ def quality_refusals(refs, loaded, required=DEFAULT_REQUIRED_QUALITY):
         out.append(Refusal(FAILED, "stale-quality-report",
                            "the newest quality-report did not score the run's newest "
                            f"{', '.join(stale)}: work came after it. Run quality-gate again."))
+    compliance = report.get("compliance") if isinstance(report.get("compliance"), dict) else {}
+    if compliance.get("holds_release"):
+        out.append(Refusal(FAILED, "knowledge-not-satisfied",
+                           "the newest quality-report holds the build to the run's "
+                           "knowledge-contract and rule(s) "
+                           + ", ".join(compliance.get("blocking") or ["?"])
+                           + " are not satisfied or excepted: "
+                           + "; ".join(compliance.get("reasons") or [])[:400]))
+    contract_ref = refs.get("knowledge-contract")
+    judged = (compliance.get("contract") or {}).get("content_hash")
+    if contract_ref is not None and compliance and not compliance.get("contract", {}).get(
+            "retroactive") and judged != contract_ref.content_hash:
+        out.append(Refusal(FAILED, "stale-knowledge-compliance",
+                           "the newest quality-report judged another knowledge-contract than "
+                           "the run's newest: the contract was made again after it. Run "
+                           "quality-gate again."))
     decision = (report.get("release_decision") or {}).get("decision")
     if decision == "not-release":
         out.append(Refusal(FAILED, "quality-not-release",

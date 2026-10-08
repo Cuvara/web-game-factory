@@ -424,10 +424,12 @@ def _all_tests(lesson):
 
 # What a locator reads a result as. MEASURED: a value held to a bar the source file states
 # (a rubric score); the bar is judged by whoever holds the rule, not here.
+# NOT_APPLICABLE: a producer that reports a check only for a build it concerns (a source's
+# `absent: {status: NOT_APPLICABLE}`) reported none - the check does not concern this build.
 RESULT_STATUSES = ("PASS", "FAIL", "WARNING", "BLOCKED", "SKIPPED", "UNMEASURED", "DEFERRED",
-                   "MEASURED")
+                   "MEASURED", "NOT_APPLICABLE")
 LOCATOR_KEYS = ("list", "keys", "id", "id_pattern", "id_split", "where", "status", "map",
-                "presence", "absent", "attribute")
+                "presence", "absent", "attribute", "not_applicable")
 
 
 def status_at(tiers, source):
@@ -503,8 +505,20 @@ def check_results(locator, report):
             else:
                 raw = entry.get(locator.get("status") or "status")
                 status = _normal(raw, locator.get("map"))
+            if _not_applicable(locator.get("not_applicable"), entry):
+                status = "NOT_APPLICABLE"
             out.append({"check": check_id, "status": status, "raw": raw, "value": None})
     return out
+
+
+def _not_applicable(rule, entry):
+    """True when a locator's `not_applicable` {field, values} says this entry is the
+    producer stating the check does not concern the build (its `field` - dotted - holds one
+    of `values`)."""
+    if not isinstance(rule, dict) or not rule.get("field"):
+        return False
+    found = _walk(entry, rule["field"])
+    return bool(found) and str(found[0]) in {str(v) for v in rule.get("values") or ()}
 
 
 def check_status(tiers, check_id, report):
@@ -531,6 +545,13 @@ def check_status(tiers, check_id, report):
     absent = locator.get("absent") or {}
     raw = (report or {}).get(absent.get("field")) if absent.get("field") else None
     status = "UNMEASURED"
+    if not absent.get("field") and absent.get("status") in RESULT_STATUSES \
+            and isinstance(report, dict) and report \
+            and (absent.get("checks") is None or wanted in (absent.get("checks") or ())):
+        # The producer reports the check only for a build it concerns, and its report - which
+        # exists - has none: the constant the locator states (for the `checks` it lists, or
+        # every check of the source). No report at all is UNMEASURED.
+        return [{"check": wanted, "status": str(absent["status"]), "raw": None, "value": None}]
     if raw is not None:
         for candidate, target in (absent.get("map") or {}).items():
             if str(candidate) == str(raw):
@@ -630,6 +651,17 @@ def status_at_problems(tiers, root=None):
         if not _schema_has(schema, path):
             problems.append(f"{where}: status_at {path!r} is not a property of "
                             f"{source.get('producer')}.schema.json")
+        constant = (locator.get("absent") or {}).get("status")
+        if constant is not None and constant not in ("NOT_APPLICABLE", "UNMEASURED"):
+            problems.append(f"{where}: status_at absent.status {constant!r} - a check its "
+                            "producer did not report is NOT_APPLICABLE or UNMEASURED, never "
+                            "a pass")
+        listed = (locator.get("absent") or {}).get("checks")
+        declared = source.get("checks")
+        if listed is not None and (not isinstance(listed, list) or (
+                isinstance(declared, dict) and any(c not in declared for c in listed))):
+            problems.append(f"{where}: status_at absent.checks lists checks of this source "
+                            f"({', '.join(map(str, listed or ())) or 'none'})")
         field = (locator.get("absent") or {}).get("field")
         if field and not _schema_has(schema, field):
             problems.append(f"{where}: status_at absent.field {field!r} is not a property of "

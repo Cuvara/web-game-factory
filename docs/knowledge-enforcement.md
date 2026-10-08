@@ -133,7 +133,14 @@ playability, play-realism, production-quality, content-sufficiency). The irregul
 | browser-qa, browser-qa-run | verification-report `checks[]`, the check id before `:<viewport>` |
 | model-review | asset-manifest `items[].quality.checks[]` |
 
-A report with no entry for a check reads it as UNMEASURED - never a pass.
+A report with no entry for a check reads it as UNMEASURED - never a pass. Since
+check-tiers 1.2.0 a source whose producer reports a check only for a build it concerns says
+so: `absent: {status: NOT_APPLICABLE, checks?}` (play realism's physics, naive and level
+checks; content-sufficiency's `content.regression`, an adopted game's; playability's
+`depth.stall`, timed endless play's; the quality floor's criteria, the build's own contract)
+- a report of it with no entry reads NOT_APPLICABLE, and no report at all is still
+UNMEASURED. `not_applicable: {field, values}` reads an entry whose field holds one of the
+values as NOT_APPLICABLE (a clear rate with no accepted build to fall from).
 `registry.check_status(tiers, "<source>:<id>", report)` reads one check;
 check-integrity holds that every locator's path exists in the producer's schema.
 `test_regression_registry` resolves a failing and a passing result for every source on a
@@ -143,6 +150,62 @@ write (browser QA's judge on a validation game's records, the realism judge on t
 model checks on a real GLB, a real visual judge's verdict), and holds that the quality gate's
 reader (`wgf_quality.scoring`) and this one agree on every check of real producer reports
 (`ParityWithScoring`): one report, one reading.
+
+## Compliance: the build held to its contract
+
+The quality gate holds the build to the run's knowledge-contract (unit K3,
+`scripts/wgf_quality/compliance.py`). It is a section of the quality-report (1.3.0
+`compliance`), not a second quality system: every applicable rule gets one status from the
+checks that hold it, read on this build's **current** reports through
+`registry.check_status` - the one reader of a producer's check results for rules - and each
+check cites the producer's artifact id, content hash and the commit it describes. A rule is
+satisfied by evidence, never by a report saying something was fixed.
+
+| Status | When |
+|---|---|
+| SATISFIED | every check passed, or does not concern this build |
+| FAILED | a check failed |
+| UNMEASURED | a check has no result on this build: no report, no entry, SKIPPED, BLOCKED, a WARNING (reported without being held), a measured value with no verdict, or stale evidence - never a pass |
+| DEFERRED | a check's producer measures it later (the store listing) |
+| NOT_APPLICABLE | every check is one its producer reports only for builds it concerns (`absent: {status: NOT_APPLICABLE}`) or says does not concern this one (`not_applicable`), and none does |
+| EXCEPTED | FAILED or UNMEASURED, and a person's exception that holds at the gate's clock covers every check that is not passing (its `checks` and `viewports` scope); its measured status is kept beside it |
+| NOT_ENFORCED | an experimental rule nothing holds yet: its gap, as guidance |
+
+A **blocking or required** rule FAILED or UNMEASURED (and not excepted) makes the section
+`RELEASE_BLOCKED`. A recommended or experimental rule not satisfied is a warning, never a
+block. Each exception offered - the contract's, and any a person granted the run since
+(`KNOWLEDGE_EXCEPTION_GRANTED` events) - is listed with its status: `honoured`, `expired`
+(past its expiry the rule is held again) or `refused` (automation's, a rule that never
+blocks, a scope the run or the rule does not have, a platform scope covering only some of
+the run's targets - one build ships to all of them).
+
+**Enforcing or advisory.** For a run that made its contract, at a releasable tier, the
+section is *enforcing*: `RELEASE_BLOCKED` makes the release decision `not-release` (the rule
+ids as its reasons) and a passing verdict `FAIL`, routed back by the producers of what
+failed (`asset-manifest` to assets, `game-design` to design-gap, the rest develop; triage
+routes the producers' own findings). It is *advisory* - shown, changing nothing - for a
+development build (tier mvp: never a release anyway) and for a run started before the
+knowledge model, whose contract is resolved now from the knowledge it pinned
+(`contract.retroactive`). A run that recorded its knowledge at start (`params.quality.knowledge`)
+but whose contract does not reach the gate is never skipped: `contract_missing`, enforcing,
+RELEASE_BLOCKED.
+
+The section also records the versions the rules came from (the contract's), the counts by
+level, the rules' regression suite (the Factory's tests, run by its CI, never in a game
+run), the checks run, passed, failed and unmeasured, the lessons applied and the run's new
+lesson candidates. G4 prints its summary (`wgflib.gate_evidence`), release refuses a build
+whose compliance holds the release (`knowledge-not-satisfied`) or was judged against an older
+contract (`stale-knowledge-compliance`) and ships the contract and the compliance under
+`release/<release-id>/` (`knowledge-contract.json`, `knowledge-compliance.json`, and
+`knowledge-compliance.md` for a person). `wgf knowledge report <run> [--md|--json]` renders
+it at the end of a run.
+
+**Triage** guards a finding from the run's contract - only its applicable rules, each with
+its `level` - and holds, never routes, a finding whose rule a person excepted for the run
+(`excepted`); the producer's verdict is unchanged. **Briefs**: develop and specialist visits
+carry the contract's blocking and required rules (`brief.json` `knowledge`, and a section of
+the brief), the design agent a provisional list resolved over what is known before the
+design.
 
 ## Lifecycle
 
@@ -269,7 +332,5 @@ nothing.
 This is unit K1 of the learning-enforcement design. Recording the knowledge versions at run
 start, pinning `lessons.yaml` and `check-tiers.yaml`, the `knowledge` step that writes the
 contract and blocks a run that cannot make one, and the `wgf resume --except` operator act
-are K2. Compliance per rule in the quality-report (SATISFIED, FAILED, UNMEASURED, EXCEPTED,
-DEFERRED, NOT_APPLICABLE), triage reading the run's contract, and briefs carrying the
-blocking and required rules are K3. Ingestion of lesson candidates, promotion drafts, the
+are K2. Compliance (above) is K3. Ingestion of lesson candidates, promotion drafts, the
 regression firewall (`test-core` KNOWLEDGE) and the plugin surfaces are K4.

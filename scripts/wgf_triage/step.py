@@ -32,7 +32,10 @@
        gate advances it too, on the reports it sees (ledger.remeasure).
     6. Regression knowledge (WS-9). Each finding whose check a lesson of
        core/reference/lessons.yaml names carries it as `guarded_by` - the specialist sees a
-       known failure and the test that holds it. The lesson candidates specialist visits
+       known failure and the test that holds it. From the lessons the run pinned; with the
+       run's knowledge-contract, only its applicable rules, each with its level. A finding
+       whose rule a person excepted for this run (an active knowledge exception) is
+       `excepted`: listed and held with why, never routed - the producer's verdict stands. The lesson candidates specialist visits
        reported (prototype-report `specialist.lesson_candidates`) are carried forward in
        `lesson_candidates` for the quality gate and the person at G4; none is applied here.
 
@@ -103,10 +106,11 @@ def _registry(context=None):
     return _REGISTRY[cache_key]
 
 
-def _guard(found, context=None):
+def _guard(found, context=None, contract=None):
     """Each finding whose source check a lesson names carries the lesson as `guarded_by`
-    (wgf_quality.registry.guards), from the lessons and tiers the run pinned. Best effort: a
-    registry that cannot be read guards nothing, and never stops a triage."""
+    (wgf_quality.registry.guards), from the lessons and tiers the run pinned. With the run's
+    knowledge-contract, only the rules that apply to the run, each with its `level`. Best
+    effort: a registry that cannot be read guards nothing, and never stops a triage."""
     try:
         from wgf_quality import registry
         data = _registry(context)
@@ -114,14 +118,56 @@ def _guard(found, context=None):
         return
     if not data:
         return
+    rules = ({r.get("id"): r for r in contract.get("rules") or () if isinstance(r, dict)}
+             if isinstance(contract, dict) else None)
     for finding in found or []:
         if not isinstance(finding, dict):
             continue
         source = finding.get("source") or {}
         guards = registry.guards(data["lessons"], data["tiers"], source.get("producer"),
                                  source.get("check"))
+        if rules is not None:
+            guards = [dict(g, level=rules[g["lesson"]]["level"]) for g in guards
+                      if g.get("lesson") in rules and rules[g["lesson"]].get("level")]
         if guards:
             finding["guarded_by"] = guards
+
+
+def _excepted(found, inputs, context, now=None):
+    """[(finding, reason)]: the findings whose rule a person excepted for this run - an
+    exception of the run's knowledge-contract or granted since (compliance.run_exceptions)
+    that holds now and whose scope covers the finding's check and viewport. Each is marked
+    `excepted`. Nothing without a contract: an exception is of a rule the run applies."""
+    contract = _load(inputs, "knowledge-contract")
+    if not contract:
+        return []
+    try:
+        from wgf_quality import compliance
+        data = _registry(context)
+        lessons = data.get("lessons") if data else None
+        offered = list(contract.get("exceptions") or ()) + compliance.run_exceptions(context)
+        honoured = compliance.honoured_exceptions(offered, contract, lessons,
+                                                  now or compliance.now_utc())
+    except Exception:  # noqa: BLE001 - an exception that cannot be read excepts nothing
+        return []
+    out = []
+    for finding in found or []:
+        source = finding.get("source") or {}
+        for guard in finding.get("guarded_by") or ():
+            record = next((r for r in honoured if r.get("rule_id") == guard.get("lesson")
+                           and compliance.scope_covers(r, guard.get("check"),
+                                                       source.get("project"))), None)
+            if record is None:
+                continue
+            who = (record.get("approved_by") or {}).get("identifier")
+            finding["excepted"] = {"rule_id": record["rule_id"], "approved_by": who,
+                                   "reason": record.get("reason"),
+                                   "expires_at": record.get("expires_at")}
+            out.append((finding, f"rule {record['rule_id']} is excepted for this run by "
+                                 f"{who or 'a person'} until {record.get('expires_at')}: "
+                                 f"{record.get('reason')}"))
+            break
+    return out
 
 
 def _lesson_candidates(previous, proto):
@@ -210,6 +256,7 @@ class TriageStep(WorkflowStep):
     roles_path = None
 
     def execute(self, inputs, context):
+        self._held_excepted = []
         try:
             routing = Routing.load(self.routing_path, self.roles_path)
         except RoutingError as exc:
@@ -305,6 +352,9 @@ class TriageStep(WorkflowStep):
         if not found and entered and entered.rpartition(".")[2] not in ("success", ""):
             found.append(self._unnamed(routing, entered))
         found = self._unique(found)
+        _guard(found, context, _load(inputs, "knowledge-contract"))
+        self._held_excepted = [{"finding": f["id"], "reason": why}
+                               for f, why in _excepted(found, inputs, context)]
         return self._fresh(context, inputs, routing, found, entered, title_id, commit, ledger,
                            first_pass=not found)
 
@@ -320,8 +370,10 @@ class TriageStep(WorkflowStep):
                                   message="nothing on the current build is left to route",
                                   current=[])
             return StepResult.success([report], message="triage: nothing to route")
-        groups = routing.groups(found)
+        excepted = {h["finding"] for h in getattr(self, "_held_excepted", None) or ()}
+        groups = routing.groups([f for f in found if f["id"] not in excepted])
         takeable, held = self._split(groups, found)
+        held = list(getattr(self, "_held_excepted", None) or ()) + held
         deferred = []
         if takeable and takeable[0]["route"] == "design":
             selected, pending, deferred = takeable[0], [], takeable[1:]
@@ -502,7 +554,7 @@ class TriageStep(WorkflowStep):
             routing_version=life.get("routing_version") or routing.version,
             build_of=life.get("build_of") or (lambda kind: {"commit": commit, "digest": None}),
             handed=life.get("handed"))
-        _guard(findings, context)
+        _guard(findings, context, _load(inputs, "knowledge-contract"))
         candidates = _lesson_candidates(_load(inputs, "triage-report"), life.get("proto"))
         body = {
             "provenance": provenance.build(

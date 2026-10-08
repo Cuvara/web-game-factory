@@ -64,6 +64,14 @@ WHITE, NAVY = [255, 255, 255, 1], [20, 30, 60]
 ENTITY_ROLES = ("player", "threat", "goal", "target", "projectile", "collectible", "hazard")
 CONTENT_ROLES = ("threat", "goal", "target", "projectile", "collectible", "hazard")
 SFX_IN_A_RELEASE = 10
+# The deterministic model checks the assets step runs on every GLB it ships
+# (core/reference/check-tiers.yaml model-review), and the browser-QA checks verification
+# reports per viewport (core/reference/browser-qa.yaml): what the real steps record of a
+# release-quality build.
+MODEL_CHECKS = ("model.valid", "model.parts", "model.primitive", "model.bounds",
+                "model.normals", "model.triangles", "model.palette", "model.contrast",
+                "model.silhouette")
+BROWSER_VIEWPORTS = ("desktop-standard", "mobile")
 
 # The degradations, each a defect a build can carry. `art` defects live in the assets, and
 # only the assets step can take them out; `listing` ones in the store listing, which only
@@ -202,7 +210,12 @@ class World:
     def content_data(self, build):
         units = self.built_units(build)
         data = {"schema": "wgf-content/1", "unit_kind": self.spec["content"]["unit_kind"],
-                "generation": {"mode": "authored"}, "units": units}
+                "generation": {"mode": "authored"}, "units": units,
+                # The layouts' notation, declared as a real build declares it (play-realism
+                # level.clearance): rows of cells, `#` solid - none here, so every passage
+                # is open.
+                "play_geometry": {"grid": {"key": "layout", "cell": [32, 32], "solid": "#"},
+                                  "body": {"radius": 8}}}
         if not {"remove-progression", "flat-progression"} & set(build["defects"]):
             groups = [g["id"] for g in self.spec["content"].get("groups") or []]
             data["unlocks"] = [{"opens": later, "after": earlier,
@@ -236,7 +249,9 @@ class World:
                     "role": asset.get("role") or "prop",
                     "placeholder": placeholder and asset.get("role") == "player",
                     "production_ready": not (placeholder and asset.get("role") == "player"),
-                    "quality": {"verdict": "pass", "checks": []},
+                    "quality": {"verdict": "pass", "checks": (
+                        [{"id": check, "status": "pass", "summary": f"{check} passed"}
+                         for check in MODEL_CHECKS] if asset["type"] == "model" else [])},
                     "files": [{"path": f"public/assets/{folder}/{asset['id']}.{fmt}",
                                "format": fmt, "bytes": 2048,
                                "content_hash": "sha256:" + hashlib.sha256(
@@ -807,6 +822,7 @@ class FixtureVerifyStep(_Fixture):
                                 "content_hash": "sha256:" + hashlib.sha256(
                                     ship.encode()).hexdigest()}
         vr["evidence_status"] = "PASS_MOCK"
+        vr["checks"] = list(vr.get("checks") or []) + browser_checks()
         vr["platform_readiness"] = [{"platform_id": "yandex", "profile": "yandex@1.2.0",
                                      "role": "required", "readiness": "ready",
                                      "checks": ["build.build"], "blocking_checks": [],
@@ -816,6 +832,24 @@ class FixtureVerifyStep(_Fixture):
         report = _seal(self, "qa-report", qa, inputs, context, self.role,
                        also=[("verification-report", verification.content)])
         return StepResult.success([verification, report], message="verify (fixture)")
+
+
+def browser_checks():
+    """verification-report checks as browser QA records them for a build that passes it:
+    `browser.run`, then every check of core/reference/browser-qa.yaml per viewport."""
+    contract = load_file(os.path.join(paths.REFERENCE, "browser-qa.yaml"))
+    out = [{"id": "browser.run", "category": "gameplay", "title": "browser QA ran",
+            "status": "PASS", "required": True, "message": "the browser-QA spec ran",
+            "evidence": [{"kind": "observation", "summary": "fixture: the spec ran"}]}]
+    for check in contract.get("checks") or []:
+        for viewport in BROWSER_VIEWPORTS:
+            out.append({"id": f"browser.{check['id']}:{viewport}", "category": "gameplay",
+                        "title": check.get("what") or check["id"], "status": "PASS",
+                        "required": check.get("tier") != "advisory",
+                        "message": f"[{check.get('tier')}] passed",
+                        "evidence": [{"kind": "observation",
+                                      "summary": "fixture: a release-quality build"}]})
+    return out
 
 
 class FixtureListingStep(mock.MockStoreListingStep):

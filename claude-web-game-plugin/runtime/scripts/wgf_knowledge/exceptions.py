@@ -43,7 +43,8 @@ import re
 from . import model
 
 __all__ = ["EVENT", "ExceptionRefused", "approver", "approver_problem", "request",
-           "requests_from_file", "grant", "granted", "from_config", "SCOPE_KEYS"]
+           "requests_from_file", "grant", "recorded", "granted", "from_config",
+           "SCOPE_KEYS"]
 
 EVENT = "KNOWLEDGE_EXCEPTION_GRANTED"
 RESUMED_EVENT = "WORKFLOW_RESUMED"
@@ -323,28 +324,40 @@ def _corroborated(events, index, nonce):
     return False
 
 
-def granted(events):
-    """The exception records a person's resume recorded on the run, oldest first. An event a
-    step's process tree wrote (decided_by missing or `automation`), one no engine-recorded
-    resume corroborates (a line appended to events.jsonl), or one whose record is not a
-    person's (mode not human, an approver that names no one) is no one's act and is not
-    read."""
+def recorded(events):
+    """[(record, why)] for every EVENT on the run, oldest first: `why` None for a person's
+    act, else why it is not one - an event a step's process tree wrote (decided_by missing
+    or `automation`), one no engine-recorded resume corroborates (a line appended to
+    events.jsonl), or a record that is not a person's (mode not human, an approver that
+    names no one). The one reader of the event: granted() keeps the first kind, and the
+    quality gate lists the others refused (wgf_quality.compliance.run_exceptions)."""
     events = [e for e in events or () if isinstance(e, dict)]
     out = []
     for index, event in enumerate(events):
         if event.get("event") != EVENT:
             continue
         data = event.get("data") if isinstance(event.get("data"), dict) else {}
-        if data.get("decided_by") in (None, "automation"):
-            continue
-        if not _corroborated(events, index, data.get("resume_nonce")):
-            continue
-        record = data.get("exception")
-        approved = record.get("approved_by") if isinstance(record, dict) else None
-        if (isinstance(approved, dict) and approved.get("mode") == "human"
-                and approver_problem(approved.get("identifier")) is None):
-            out.append(dict(record))
+        record = data.get("exception") if isinstance(data.get("exception"), dict) else {}
+        approved = record.get("approved_by") if isinstance(record.get("approved_by"),
+                                                           dict) else {}
+        who = data.get("decided_by")
+        why = None
+        if who in (None, "", "automation"):
+            why = f"the event was not recorded by a person (decided_by {who!r})"
+        elif not _corroborated(events, index, data.get("resume_nonce")):
+            why = "the event is not corroborated by the resume that recorded it"
+        elif approved.get("mode") != "human":
+            why = f"the record's approver is not a person (mode {approved.get('mode')!r})"
+        elif approver_problem(approved.get("identifier")):
+            why = approver_problem(approved.get("identifier"))
+        out.append((dict(record), why))
     return out
+
+
+def granted(events):
+    """The exception records a person's resume recorded on the run, oldest first: those
+    recorded() finds a person's act. Any other is no one's and is not read."""
+    return [record for record, why in recorded(events) if why is None]
 
 
 def from_config(config):

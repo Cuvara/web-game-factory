@@ -247,7 +247,8 @@ def render(specialist):
         for rule in vocabulary.rules_for(finding):
             lines.append(f"  - Not a fix: {rule}")
         for guard in finding.get("guarded_by") or []:
-            lines.append(f"  - Known lesson {guard.get('lesson')}: held by "
+            level = f", {guard['level']} rule" if guard.get("level") else ""
+            lines.append(f"  - Known lesson {guard.get('lesson')}{level}: held by "
                          f"`{guard.get('check')}` ({guard.get('status')}) - a failure the "
                          "Factory has seen before; fix the cause, not the check")
     lines.append("")

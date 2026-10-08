@@ -38,9 +38,10 @@ Every command that does work is a slice of one workflow definition, executed by 
                                          a decision, with the step, gate and choices
     wgf pause <run-id> | cancel <run-id> neither imports a step module
     wgf knowledge validate | show [ID] | resolve [--family F --render R --platform P --tier T]
-                  | contract <run-id> | table
+                  | contract <run-id> | report <run-id> [--md|--json] | table
                                          the Factory's knowledge: rules, derived levels,
-                                         scope, and what applies to a run
+                                         scope, what applies to a run, and how its build
+                                         complied
                                          (scripts/wgf_knowledge/cli.py)
     wgf where [--json]                   the Factory runtime and the project this command
                                          resolves: where core/ is read, where runs are kept
@@ -587,7 +588,8 @@ def build_parser(commands):
     # Listed for help; its arguments are its own parser's (scripts/wgf_knowledge/cli.py), and
     # main() hands them over before this parser sees them.
     knowledge = sub.add_parser(
-        "knowledge", help="the Factory's knowledge: validate, show, resolve, contract, table",
+        "knowledge", help="the Factory's knowledge: validate, show, resolve, contract, report, "
+                          "table",
         add_help=False)
     knowledge.add_argument("rest", nargs=argparse.REMAINDER)
     knowledge.set_defaults(handler=cmd_knowledge)

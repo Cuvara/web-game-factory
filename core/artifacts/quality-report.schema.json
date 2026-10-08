@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/quality-report.schema.json",
   "title": "Quality report",
-  "description": "The Factory quality gate's scorecard of ONE build: every quality dimension (gameplay, content sufficiency, variety, progression, visual, UI, audio, consistency, polish, technical/performance, platform readiness, store) scored from the reports the producing steps wrote about that same build - playability, production-quality, visual-qa, content-sufficiency, verify, review, sdk, and the store listing's validation once it exists - against the versioned quality contract (core/reference/quality-floor.yaml: the universal floor every game carries, the genre family's contract and the 3D contract) and the release bars of core/reference/quality-benchmark.yaml at the run's quality tier, as the run pinned them when it started. A dimension passes only at or above its floor: no average carries a dimension past a failed blocker criterion, and no dimension's score carries another's. Evidence about another commit than the build's is stale and blocks the report. Each failing criterion is a typed finding with its owner discipline and route, carried open across builds and closed only by a re-measurement on a newer build. The release decision is `release` only at the release tier with every dimension at its floor; a run at tier mvp is `development`, never release. Added in Factory 2.8.0 (WS-7).",
+  "description": "The Factory quality gate's scorecard of ONE build: every quality dimension (gameplay, content sufficiency, variety, progression, visual, UI, audio, consistency, polish, technical/performance, platform readiness, store) scored from the reports the producing steps wrote about that same build - playability, production-quality, visual-qa, content-sufficiency, verify, review, sdk, and the store listing's validation once it exists - against the versioned quality contract (core/reference/quality-floor.yaml: the universal floor every game carries, the genre family's contract and the 3D contract) and the release bars of core/reference/quality-benchmark.yaml at the run's quality tier, as the run pinned them when it started. A dimension passes only at or above its floor: no average carries a dimension past a failed blocker criterion, and no dimension's score carries another's. Evidence about another commit than the build's is stale and blocks the report. Each failing criterion is a typed finding with its owner discipline and route, carried open across builds and closed only by a re-measurement on a newer build. The release decision is `release` only at the release tier with every dimension at its floor; a run at tier mvp is `development`, never release. Added in Factory 2.8.0 (WS-7). Since 1.3.0 a `compliance` section holds the build to the run's knowledge-contract: every applicable rule of core/reference/lessons.yaml with its status, cited by its producers' reports.",
   "x-wgf": {
     "id": "quality-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "producer": "title:prototype",
     "consumers": [
       "title:design",
@@ -98,6 +98,103 @@
         "minimum": {},
         "maximum": {},
         "preferred": {}
+      },
+      "additionalProperties": false
+    },
+    "complianceEvidence": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "The producer's report the check was read from: its artifact id, content hash and the commit it describes - never an agent's word. `self`: this quality-report's own criteria (its content hash is its provenance's). null: the run holds no report of the producer.",
+      "required": [
+        "artifact_type",
+        "artifact_id",
+        "content_hash",
+        "commit",
+        "current"
+      ],
+      "properties": {
+        "artifact_type": {
+          "type": "string"
+        },
+        "artifact_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "current": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "true: the report describes this build; false: another (stale); null: the producer is not tied to a commit of the build (the design, the asset manifest)."
+        },
+        "self": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "complianceCount": {
+      "type": "object",
+      "required": [
+        "applicable",
+        "satisfied",
+        "failed",
+        "unmeasured",
+        "excepted",
+        "deferred",
+        "not_applicable",
+        "not_enforced"
+      ],
+      "properties": {
+        "applicable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "satisfied": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unmeasured": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "excepted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deferred": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "not_applicable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "not_enforced": {
+          "type": "integer",
+          "minimum": 0
+        }
       },
       "additionalProperties": false
     }
@@ -971,12 +1068,454 @@
     "ledger": {
       "type": "object",
       "description": "The run's finding ledger as the gate advanced it on this build's reports and its own (scripts/wgf_triage/ledger.py): every finding with its lifecycle, which open ones a gate raised (`open`: they hold the build BLOCKED) and which wait for the person at G4 (`awaiting`). Absent when the gate was blocked before scoring. Added in 1.1.0.",
-      "required": ["blocking_severities", "open", "awaiting", "lifecycle"],
+      "required": [
+        "blocking_severities",
+        "open",
+        "awaiting",
+        "lifecycle"
+      ],
       "properties": {
-        "blocking_severities": { "type": "array", "items": { "$ref": "./shared/quality-finding.schema.json#/$defs/severity" } },
-        "open": { "type": "array", "items": { "type": "string" } },
-        "awaiting": { "type": "array", "items": { "type": "string" } },
-        "lifecycle": { "type": "array", "items": { "$ref": "./shared/quality-finding.schema.json#/$defs/record" } }
+        "blocking_severities": {
+          "type": "array",
+          "items": {
+            "$ref": "./shared/quality-finding.schema.json#/$defs/severity"
+          }
+        },
+        "open": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "awaiting": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lifecycle": {
+          "type": "array",
+          "items": {
+            "$ref": "./shared/quality-finding.schema.json#/$defs/record"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "compliance": {
+      "type": "object",
+      "description": "Added in 1.3.0. Knowledge compliance (scripts/wgf_quality/compliance.py, docs/knowledge-enforcement.md): every rule of the run's knowledge-contract that applies to this title, held to the checks that hold it on this build's current reports (read where check-tiers.yaml `status_at` says). A blocking or required rule FAILED or UNMEASURED and not excepted by a person makes the verdict RELEASE_BLOCKED; `enforcing`, that makes the release decision not-release. `advisory` (a development build, or a run started before the knowledge model, whose rules are resolved now from what it pinned) is shown and changes nothing. Exceptions are listed whatever their status; nothing is skipped silently.",
+      "required": [
+        "mode",
+        "contract",
+        "versions",
+        "counts",
+        "rules",
+        "exceptions",
+        "regression",
+        "lessons_applied",
+        "new_lessons",
+        "blocking",
+        "verdict",
+        "holds_release"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "enforcing",
+            "advisory"
+          ]
+        },
+        "advisory_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "contract": {
+          "type": "object",
+          "required": [
+            "artifact_id",
+            "content_hash",
+            "retroactive"
+          ],
+          "properties": {
+            "artifact_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "content_hash": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "retroactive": {
+              "type": "boolean",
+              "description": "The run made no knowledge-contract: its rules were resolved now from the knowledge it pinned."
+            }
+          },
+          "additionalProperties": false
+        },
+        "versions": {
+          "type": "object",
+          "description": "What the rules were resolved from: the contract's `versions` (Factory version and commit, quality policy, benchmark, floor, lessons, check tiers, workflow, platform profiles)."
+        },
+        "facets": {
+          "type": "object",
+          "description": "The run's facets the contract was resolved for."
+        },
+        "counts": {
+          "type": "object",
+          "required": [
+            "by_level",
+            "total"
+          ],
+          "properties": {
+            "by_level": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/complianceCount"
+              }
+            },
+            "total": {
+              "$ref": "#/$defs/complianceCount"
+            }
+          },
+          "additionalProperties": false
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "level",
+              "status",
+              "checks",
+              "blocks"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Za-z0-9-]*$"
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "level": {
+                "enum": [
+                  "blocking",
+                  "required",
+                  "recommended",
+                  "experimental"
+                ]
+              },
+              "category": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "SATISFIED",
+                  "FAILED",
+                  "UNMEASURED",
+                  "DEFERRED",
+                  "NOT_APPLICABLE",
+                  "EXCEPTED",
+                  "NOT_ENFORCED"
+                ]
+              },
+              "measured_status": {
+                "enum": [
+                  "FAILED",
+                  "UNMEASURED"
+                ],
+                "description": "An EXCEPTED rule's status before the exception."
+              },
+              "checks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "check",
+                    "status",
+                    "evidence"
+                  ],
+                  "properties": {
+                    "check": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9-]+:[A-Za-z0-9._*-]+$"
+                    },
+                    "tier": {
+                      "enum": [
+                        "hard",
+                        "quality",
+                        "advisory",
+                        null
+                      ]
+                    },
+                    "producer": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "status": {
+                      "enum": [
+                        "PASS",
+                        "FAIL",
+                        "UNMEASURED",
+                        "DEFERRED",
+                        "NOT_APPLICABLE"
+                      ]
+                    },
+                    "results": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "evidence": {
+                      "$ref": "#/$defs/complianceEvidence"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "exception": {
+                "type": "object",
+                "properties": {
+                  "rule_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "scope": {},
+                  "approved_by": {},
+                  "created_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "expires_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "gap": {
+                "type": "string"
+              },
+              "blocks": {
+                "type": "boolean",
+                "description": "A blocking or required rule FAILED or UNMEASURED: it holds the release."
+              },
+              "warning": {
+                "type": "boolean",
+                "description": "A recommended or experimental rule not satisfied: reported, never blocking."
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "not_applicable": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "why_not"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "why_not": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "exceptions": {
+          "type": "array",
+          "description": "Every exception offered for the run - the contract's and those a person granted since - with whether it held at this gate's clock: `honoured`, `expired` (the rule is held again), `refused` (never honoured).",
+          "items": {
+            "type": "object",
+            "required": [
+              "rule_id",
+              "status",
+              "problems"
+            ],
+            "properties": {
+              "rule_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scope": {},
+              "approved_by": {},
+              "created_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "expires_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "honoured",
+                  "expired",
+                  "refused"
+                ]
+              },
+              "problems": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "regression": {
+          "type": "object",
+          "required": [
+            "checks_run",
+            "checks_passed",
+            "checks_failed",
+            "checks_unmeasured",
+            "suite"
+          ],
+          "properties": {
+            "checks_run": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "checks_passed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "checks_failed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "checks_unmeasured": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "suite": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The applicable rules' tests (catches, passes, generalizes): the Factory's regression firewall for this title's rules, run by its CI, not in a game run."
+            },
+            "suite_run_here": {
+              "type": "boolean"
+            },
+            "note": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "lessons_applied": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Every rule the build was held to."
+        },
+        "new_lessons": {
+          "type": "array",
+          "items": {
+            "$ref": "./shared/quality-finding.schema.json#/$defs/lesson_candidate"
+          },
+          "description": "The lesson candidates this run surfaced (the report's `lesson_candidates`)."
+        },
+        "blocking": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The rules that hold the release."
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "routes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "design-gap",
+              "assets",
+              "develop",
+              "listing"
+            ]
+          }
+        },
+        "problem": {
+          "type": "string",
+          "description": "Why the run's knowledge could not be read or resolved."
+        },
+        "contract_missing": {
+          "type": "string",
+          "description": "A run that recorded its knowledge has no contract here: RELEASE_BLOCKED, never skipped."
+        },
+        "verdict": {
+          "enum": [
+            "PASS",
+            "RELEASE_BLOCKED"
+          ]
+        },
+        "holds_release": {
+          "type": "boolean",
+          "description": "Enforcing and RELEASE_BLOCKED: the release decision is not-release because of it."
+        }
       },
       "additionalProperties": false
     },

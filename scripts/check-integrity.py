@@ -545,12 +545,14 @@ KNOWLEDGE_BASE = "origin/main"
 def _git(*args):
     """(returncode, stdout bytes) of a git command in the working directory; (None, b"")
     when git cannot run."""
-    import subprocess
-    try:
-        done = subprocess.run(["git", *args], capture_output=True, timeout=60, check=False)
-    except (OSError, subprocess.SubprocessError):
+    # Through wgflib.procs, like every child the Factory starts: its tree is owned and
+    # ended on a timeout (test_core_process).
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from wgflib import procs
+    done = procs.run(["git", *args], timeout=60, heartbeat_seconds=0)
+    if done.error or done.returncode is None or done.timed_out:
         return None, b""
-    return done.returncode, done.stdout
+    return done.returncode, (done.stdout or "").encode("utf-8")
 
 
 def _commit(ref):

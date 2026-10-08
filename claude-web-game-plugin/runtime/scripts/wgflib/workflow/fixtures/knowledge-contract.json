@@ -10,8 +10,8 @@
       "sha256": "sha256:b94039a8ff54a0c114dbd26386d8f98e07e533f10773cc07008ee0e5789ede2d"
     },
     "check_tiers": {
-      "version": "1.1.0",
-      "sha256": "sha256:4ccc9c2a443f2e6dcdb0392c6d81c48b5b9bcbb6fbe4a4c9aea01aa0e10bac03"
+      "version": "1.2.0",
+      "sha256": "sha256:ca491f80fdef2ee0a33f211832ed5442f5ca2f4aa1da2c55b4e09fcffc711e4d"
     },
     "quality_policy": "1.4.0",
     "quality_benchmark": "1.6.0",
@@ -19,11 +19,12 @@
     "genre_models": "1.2.1",
     "workflow": {
       "id": "new-game",
-      "version": 17
+      "version": 17,
+      "sha256": "sha256:81972091bd16c9bed64c900727736a040a1290a1cb4017a996c351bc00f0644e"
     },
     "platform_profiles": {
-      "crazygames": "crazygames@1.3.0",
-      "yandex": "yandex@1.3.0"
+      "crazygames": "crazygames@1.1.0",
+      "yandex": "yandex@1.1.0"
     }
   },
   "facets": {
@@ -1261,8 +1262,8 @@
   "constraints": {
     "genre": "genre-models@1.2.1#arcade",
     "platforms": [
-      "crazygames@1.3.0",
-      "yandex@1.3.0"
+      "crazygames@1.1.0",
+      "yandex@1.1.0"
     ]
   },
   "exceptions": [],

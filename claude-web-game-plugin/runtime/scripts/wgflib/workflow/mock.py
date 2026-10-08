@@ -349,6 +349,7 @@ class MockQualityGateStep(MockStep):
     DIMENSION = {"design-gap": "content", "assets": "visual", "develop": "ui"}
 
     def execute(self, inputs, context):
+        self._inputs = inputs
         result = super().execute(inputs, context)
         route = "develop" if result.route == "fail" else result.route
         if route in self.ROUTES:
@@ -358,9 +359,57 @@ class MockQualityGateStep(MockStep):
                                     "(mock)")
         return result
 
+    def _compliance(self):
+        """The compliance section of a mock quality gate over the run's knowledge-contract:
+        advisory - nothing was measured, so every blocking, required and recommended rule
+        is UNMEASURED and every experimental one NOT_ENFORCED - the shape the real gate
+        (wgf_quality.compliance) writes, and never a release. None without a contract."""
+        inputs = getattr(self, "_inputs", None)
+        if inputs is None or "knowledge-contract" not in getattr(inputs, "refs", {}):
+            return None
+        contract = inputs.load("knowledge-contract")
+        ref = inputs.refs["knowledge-contract"]
+        fields = ("applicable", "satisfied", "failed", "unmeasured", "excepted", "deferred",
+                  "not_applicable", "not_enforced")
+        total = dict.fromkeys(fields, 0)
+        by_level, rules = {}, []
+        for rule in contract.get("rules") or []:
+            level = rule.get("level")
+            status = "NOT_ENFORCED" if level == "experimental" else "UNMEASURED"
+            row = by_level.setdefault(level, dict.fromkeys(fields, 0))
+            for counts in (row, total):
+                counts["applicable"] += 1
+                counts[status.lower()] += 1
+            rules.append({"id": rule.get("id"), "title": rule.get("title"), "level": level,
+                          "category": rule.get("category"), "status": status, "checks": [],
+                          "blocks": False})
+        blocking = [r["id"] for r in rules
+                    if r["level"] in ("blocking", "required") and r["status"] == "UNMEASURED"]
+        return {"mode": "advisory",
+                "advisory_reason": "a mock run: every step is a placeholder that measures "
+                                   "nothing",
+                "contract": {"artifact_id": (contract.get("provenance") or {})
+                             .get("artifact_id"),
+                             "content_hash": getattr(ref, "content_hash", None),
+                             "retroactive": False},
+                "versions": contract.get("versions") or {},
+                "facets": contract.get("facets") or {},
+                "counts": {"by_level": by_level, "total": total},
+                "rules": rules, "exceptions": [],
+                "regression": {"checks_run": 0, "checks_passed": 0, "checks_failed": 0,
+                               "checks_unmeasured": 0,
+                               "suite": list(contract.get("regression_suite") or [])},
+                "lessons_applied": [r["id"] for r in rules], "new_lessons": [],
+                "blocking": blocking,
+                "verdict": "RELEASE_BLOCKED" if blocking else "PASS",
+                "holds_release": False}
+
     def customize(self, body, artifact_type, context, entry):
         if artifact_type != "quality-report":
             return
+        section = self._compliance()
+        if section is not None:
+            body["compliance"] = section
         route = "develop" if entry == "fail" else entry
         if route not in self.ROUTES:
             return

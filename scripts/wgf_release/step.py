@@ -10,6 +10,9 @@
                                            one per platform (build/platforms/<id>/dist), else
                                            the one bundle, packaged for the platform it boots
     game repo `release:manifest`       ──► release/<release-id>/manifest.json (state draft)
+    knowledge-contract + quality-report ──► release/<release-id>/knowledge-contract.json,
+                                           knowledge-compliance.json and .md: the rules the
+                                           build was held to, and how it met them
     every package                      ──► checksum recorded and matching; audited (package.py)
                                        ──► release-manifest: the game's manifest, extended with
                                            what it was cleared by; schema-valid; written back
@@ -68,8 +71,11 @@ DEFAULT_TIMEOUTS = {"git": 30, "package": 900, "manifest": 300}
 INPUTS = ("qa-report", "verification-report", "sdk-report", "prototype-report",
           "scaffold-record", "review-report", "production-quality-report", "visual-qa-report",
           "store-listing", "listing-validation-report", "quality-report",
-          "playability-report", "content-sufficiency-report")
+          "playability-report", "content-sufficiency-report", "knowledge-contract")
 LISTING_DIR = "listing"
+KNOWLEDGE_CONTRACT_FILE = "knowledge-contract.json"
+COMPLIANCE_FILE = "knowledge-compliance.json"
+COMPLIANCE_REPORT = "knowledge-compliance.md"
 
 
 def utc_now():
@@ -242,7 +248,8 @@ class ReleaseStep(WorkflowStep):
                 gates_passed=getattr(context, "gates_passed", None) or (),
                 required_gates=required_gates, allow_unreviewed=allow_unreviewed,
                 required_reports=required_reports, required_listing=required_listing,
-                required_quality=required_quality)
+                required_quality=required_quality,
+                run_class=_run_quality(context).get("class"))
             if refusals:
                 raise _Refused(refusals)
             # The step's own `with:` only: a factory.release key is not a checkout path.
@@ -266,8 +273,9 @@ class ReleaseStep(WorkflowStep):
             manifest, packages = self._collect(root, release_id, head, loaded, game_config,
                                                builds)
             listing = self._ship_listing(root, release_id, loaded, inputs, context)
+            knowledge = self._ship_knowledge(root, release_id, loaded, inputs)
             artifact = self._manifest(manifest, packages, release_id, head, root, loaded,
-                                      inputs, context, game_config, listing)
+                                      inputs, context, game_config, listing, knowledge)
         except _Refused as refused:
             return self._refusal(refused.refusals, context)
 
@@ -719,6 +727,41 @@ class ReleaseStep(WorkflowStep):
             template.update(version=version, source=source)
         return template
 
+    def _ship_knowledge(self, root, release_id, loaded, inputs):
+        """Write the run's knowledge-contract and the quality-report's knowledge compliance
+        (JSON, and markdown for a person) beside the release's packages, and return the
+        manifest's evidence.knowledge - or None when the run holds neither."""
+        from wgf_quality import compliance as knowledge_compliance
+        made = loaded.get("knowledge-contract")
+        section = (loaded.get("quality-report") or {}).get("compliance")
+        if not isinstance(made, dict) and not isinstance(section, dict):
+            return None
+        directory = os.path.dirname(os.path.join(
+            root, *contract.release_path(release_id, KNOWLEDGE_CONTRACT_FILE)))
+        os.makedirs(directory, exist_ok=True)
+        out = {"contract": None, "compliance": None}
+        if isinstance(made, dict):
+            _replace(os.path.join(directory, KNOWLEDGE_CONTRACT_FILE),
+                     json.dumps(made, indent=2, ensure_ascii=False) + "\n")
+            out["contract"] = {
+                "artifact_id": (made.get("provenance") or {}).get("artifact_id"),
+                "content_hash": getattr(inputs.refs.get("knowledge-contract"), "content_hash",
+                                        None),
+                "path": KNOWLEDGE_CONTRACT_FILE}
+        if isinstance(section, dict):
+            _replace(os.path.join(directory, COMPLIANCE_FILE),
+                     json.dumps(section, indent=2, ensure_ascii=False) + "\n")
+            _replace(os.path.join(directory, COMPLIANCE_REPORT),
+                     knowledge_compliance.render_markdown(section))
+            out["compliance"] = {
+                "verdict": section.get("verdict"), "mode": section.get("mode"),
+                "retroactive": bool((section.get("contract") or {}).get("retroactive")),
+                "lessons_applied": list(section.get("lessons_applied") or []),
+                "exceptions": [f"{e.get('rule_id')} {e.get('status')}"
+                               for e in section.get("exceptions") or []],
+                "path": COMPLIANCE_FILE, "report": COMPLIANCE_REPORT}
+        return out
+
     def _ship_listing(self, root, release_id, loaded, inputs, context):
         """Copy the validated store listing's package beside the release's archives
         (release/<id>/listing/) and return (store_metadata, evidence.store_listing), or
@@ -783,7 +826,7 @@ class ReleaseStep(WorkflowStep):
         return store_metadata, evidence
 
     def _manifest(self, game_manifest, packages, release_id, head, root, loaded, inputs,
-                  context, game_config, listing=(None, None)):
+                  context, game_config, listing=(None, None), knowledge=None):
         qa, vr = loaded["qa-report"], loaded["verification-report"]
         refs = inputs.refs
         produced_at = self.clock()
@@ -875,6 +918,8 @@ class ReleaseStep(WorkflowStep):
         if workflow.get("run_id"):
             artifact["workflow"] = workflow
         artifact["evidence"]["quality"] = _run_quality(context)
+        if knowledge:
+            artifact["evidence"]["knowledge"] = knowledge
         template = self._template(root, loaded.get("scaffold-record"))
         if template:
             artifact["template"] = template

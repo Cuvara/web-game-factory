@@ -25,10 +25,20 @@ by step or artifact type, so any checkpoint whose inputs carry the same fields s
                                                    floor, the open findings and the release
                                                    decision (G4) - `development` for a tier-mvp
                                                    run, never a release
+    rules + required_validators + counts           (knowledge-contract) the rules the build
+                                                   is held to by level, the steps that
+                                                   validate them, the exceptions granted or
+                                                   refused and by whom (G3)
     scorecard + missing_gates + lesson_candidates  (quality-report) the per-discipline lines
                                                    with the hard blockers listed on their own,
                                                    the gates the run's workflow lacks, and the
                                                    lessons specialists proposed (WS-9)
+    compliance           (quality-report)          the run's knowledge compliance: enforcing or
+                                                   advisory (and why), the verdict, the rules
+                                                   by level - satisfied, failed, unmeasured,
+                                                   excepted - the rules that hold the release,
+                                                   every exception with its status, the
+                                                   versions the rules came from
 
 Read-only and presentation only: it decides nothing, and a guard or a gate never reads it.
 """
@@ -137,6 +147,87 @@ def _quality(content):
                                   or [] if isinstance(c, dict) and c.get("summary")]}
 
 
+def _compliance(content):
+    """The knowledge compliance of an artifact carrying a `compliance` section with a
+    `verdict` (quality-report 1.3.0), or None."""
+    section = content.get("compliance")
+    if not isinstance(section, dict) or "verdict" not in section:
+        return None
+    by_level = ((section.get("counts") or {}).get("by_level") or {})
+    versions = section.get("versions") or {}
+    lessons = versions.get("lessons")
+    tiers = versions.get("check_tiers")
+    failing = []
+    for rule in section.get("rules") or []:
+        if isinstance(rule, dict) and rule.get("status") in ("FAILED", "UNMEASURED"):
+            failing.append({"id": rule.get("id"), "level": rule.get("level"),
+                            "status": rule.get("status"), "blocks": bool(rule.get("blocks")),
+                            "checks": [c.get("check") for c in rule.get("checks") or []
+                                       if isinstance(c, dict)
+                                       and c.get("status") in ("FAIL", "UNMEASURED")]})
+    return {"mode": section.get("mode"), "verdict": section.get("verdict"),
+            "holds_release": bool(section.get("holds_release")),
+            "advisory_reason": section.get("advisory_reason"),
+            "retroactive": bool((section.get("contract") or {}).get("retroactive")),
+            "levels": {k: v for k, v in by_level.items()
+                       if isinstance(v, dict) and v.get("applicable")},
+            "failing": failing,
+            "exceptions": [{"rule_id": e.get("rule_id"), "status": e.get("status"),
+                            "by": (e.get("approved_by") or {}).get("identifier")
+                            if isinstance(e.get("approved_by"), dict) else None,
+                            "expires_at": e.get("expires_at"), "reason": e.get("reason")}
+                           for e in section.get("exceptions") or [] if isinstance(e, dict)],
+            "versions": {"lessons": lessons.get("version") if isinstance(lessons, dict)
+                         else lessons,
+                         "check_tiers": tiers.get("version") if isinstance(tiers, dict)
+                         else tiers,
+                         "factory": (versions.get("factory") or {}).get("version")
+                         if isinstance(versions.get("factory"), dict) else None},
+            "new_lessons": len(section.get("new_lessons") or [])}
+
+
+def _contract(content):
+    """The knowledge contract of an artifact carrying `rules`, `required_validators` and
+    `counts` (knowledge-contract, G3), or None: the counts by level, the blocking and
+    required rule ids, the validating steps, the experimental gaps, every exception honoured
+    or refused (by whom), whether it is advisory, and the versions it was made from."""
+    if not all(key in content for key in ("rules", "required_validators", "counts")):
+        return None
+    rules = [r for r in content.get("rules") or [] if isinstance(r, dict)]
+    versions = content.get("versions") or {}
+
+    def version(key):
+        value = versions.get(key)
+        return value.get("version") if isinstance(value, dict) else value
+
+    def exception(record, status, problems=()):
+        approved = record.get("approved_by") if isinstance(record.get("approved_by"),
+                                                           dict) else {}
+        return {"rule_id": record.get("rule_id"), "status": status,
+                "by": approved.get("identifier"), "expires_at": record.get("expires_at"),
+                "problems": list(problems)}
+
+    refused = []
+    for entry in content.get("exceptions_refused") or []:
+        if isinstance(entry, dict) and isinstance(entry.get("exception"), dict):
+            refused.append(exception(entry["exception"], "refused",
+                                     entry.get("problems") or ()))
+    advisory = content.get("advisory") if isinstance(content.get("advisory"), dict) else None
+    return {"counts": dict(content.get("counts") or {}),
+            "blocking": [r.get("id") for r in rules if r.get("level") == "blocking"],
+            "required": [r.get("id") for r in rules if r.get("level") == "required"],
+            "validators": list(content.get("required_validators") or []),
+            "experimental": [e.get("id") for e in content.get("experimental") or []
+                             if isinstance(e, dict)],
+            "exceptions": [exception(e, "granted") for e in content.get("exceptions") or []
+                           if isinstance(e, dict)] + refused,
+            "advisory": (advisory or {}).get("problems") if advisory else None,
+            "facets": {k: v for k, v in (content.get("facets") or {}).items()
+                       if v not in (None, [])},
+            "versions": {"lessons": version("lessons"), "check_tiers": version("check_tiers"),
+                         "factory": version("factory")}}
+
+
 def _fidelity(blocker):
     text = " ".join(str(blocker.get(k) or "") for k in ("summary", "file", "id")).lower()
     return any(word in text for word in FIDELITY)
@@ -147,10 +238,13 @@ def summarize(artifacts):
     "features"} from {artifact_type: content}, or None when no input carries any of the fields above."""
     criteria, playtests, reports = [], [], []
     content_rules, coverage, gaps, played, reviews, left_out = [], [], [], [], [], []
-    quality = []
+    quality, knowledge_contracts = [], []
     for artifact_type, content in sorted(artifacts.items()):
         if not isinstance(content, dict):
             continue
+        contract = _contract(content)
+        if contract:
+            knowledge_contracts.append({"artifact": artifact_type, **contract})
         rules = _content_rules(content)
         if rules:
             content_rules.append({"artifact": artifact_type, **rules})
@@ -163,6 +257,9 @@ def summarize(artifacts):
                              "assumed": gap.get("assumed")})
         scorecard = _quality(content)
         if scorecard:
+            knowledge = _compliance(content)
+            if knowledge:
+                scorecard["compliance"] = knowledge
             quality.append({"artifact": artifact_type, **scorecard})
         omitted = _left_out(content)
         if omitted:
@@ -195,11 +292,12 @@ def summarize(artifacts):
             reports.append({"artifact": artifact_type, "verdict": content.get("verdict"),
                             "evidence_status": content.get("evidence_status")})
     if not (criteria or playtests or reports or content_rules or coverage or gaps or played
-            or reviews or left_out or quality):
+            or reviews or left_out or quality or knowledge_contracts):
         return None
     return {"criteria": criteria, "playtests": playtests, "reports": reports,
             "content": content_rules, "coverage": coverage, "gaps": gaps, "played": played,
             "reviews": reviews, "features": left_out, "quality": quality,
+            "knowledge": knowledge_contracts,
             "unmeasured": [c["criterion_id"] for c in criteria if c["status"] == UNMEASURED]}
 
 
@@ -209,6 +307,32 @@ def _value(measured):
     if isinstance(measured, bool):
         return "yes" if measured else "no"
     return str(measured)
+
+
+def _compliance_lines(knowledge):
+    if not knowledge:
+        return []
+    versions = knowledge.get("versions") or {}
+    lines = [f"    knowledge compliance: {knowledge['verdict']} ({knowledge['mode']}"
+             + (", holds the release" if knowledge.get("holds_release") else "") + ")"
+             + f" - lessons {versions.get('lessons') or '?'}, check-tiers "
+               f"{versions.get('check_tiers') or '?'}"]
+    if knowledge.get("advisory_reason"):
+        lines.append(f"      advisory: {knowledge['advisory_reason'][:110]}")
+    for level, row in (knowledge.get("levels") or {}).items():
+        lines.append(f"      {level:<13} {row.get('applicable')} applicable, "
+                     f"{row.get('satisfied')} satisfied, {row.get('failed')} failed, "
+                     f"{row.get('unmeasured')} unmeasured, {row.get('excepted')} excepted")
+    for rule in knowledge.get("failing") or []:
+        lines.append(f"      {'!' if rule['blocks'] else '-'} {rule['id']} ({rule['level']}) "
+                     f"{rule['status']}: {', '.join(rule['checks'][:4])}")
+    for entry in knowledge.get("exceptions") or []:
+        lines.append(f"      exception {entry['rule_id']} {str(entry['status']).upper()} "
+                     f"(by {entry.get('by') or '?'}, until {entry.get('expires_at')}): "
+                     f"{str(entry.get('reason') or '')[:70]}")
+    if knowledge.get("new_lessons"):
+        lines.append(f"      {knowledge['new_lessons']} new lesson candidate(s) above")
+    return lines
 
 
 def render(evidence):
@@ -311,6 +435,39 @@ def render(evidence):
         for summary in (entry.get("lesson_candidates") or [])[:6]:
             lines.append(f"    lesson candidate (promote to core/reference/lessons.yaml, or "
                          f"not): {summary[:90]}")
+        lines.extend(_compliance_lines(entry.get("compliance")))
+    for entry in evidence.get("knowledge") or []:
+        counts = entry.get("counts") or {}
+        versions = entry.get("versions") or {}
+        lines.append(f"  knowledge contract: {counts.get('blocking', 0)} blocking, "
+                     f"{counts.get('required', 0)} required, "
+                     f"{counts.get('experimental', 0)} experimental, "
+                     f"{counts.get('not_applicable', 0)} not applicable - lessons "
+                     f"{versions.get('lessons') or '?'}, check-tiers "
+                     f"{versions.get('check_tiers') or '?'}")
+        if entry.get("facets"):
+            lines.append("    facets: " + ", ".join(f"{k} {v}" for k, v in
+                                                     entry["facets"].items()))
+        if entry.get("blocking"):
+            lines.append(f"    blocking: {', '.join(entry['blocking'])}")
+        if entry.get("required"):
+            lines.append(f"    required: {', '.join(entry['required'])}")
+        if entry.get("validators"):
+            lines.append(f"    validated by: {', '.join(entry['validators'])}")
+        if entry.get("experimental"):
+            lines.append(f"    experimental (guidance, not enforced): "
+                         f"{', '.join(entry['experimental'])}")
+        for exception in entry.get("exceptions") or []:
+            lines.append(f"    exception {exception['rule_id']} {exception['status'].upper()} "
+                         f"(by {exception.get('by') or '?'}, until "
+                         f"{exception.get('expires_at') or '?'})"
+                         + (f": {'; '.join(exception['problems'])[:90]}"
+                            if exception.get("problems") else ""))
+        if entry.get("advisory") is not None:
+            lines.append("    ! ADVISORY: a run started before the knowledge model - "
+                         "reported, never enforced")
+            for problem in entry["advisory"][:4]:
+                lines.append(f"      - {problem[:100]}")
     for report in evidence.get("reports") or []:
         lines.append(f"  {report['artifact']}: verdict {report['verdict']}, evidence "
                      f"{report['evidence_status']}")

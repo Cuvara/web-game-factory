@@ -90,7 +90,19 @@
         "route": { "$ref": "#/$defs/route" },
         "assets": { "type": "array", "items": { "type": "string" }, "description": "Asset ids it concerns, when the producer names them." },
         "build": { "$ref": "#/$defs/build" },
-        "guarded_by": { "type": "array", "items": { "$ref": "#/$defs/guard" }, "description": "Since quality-report 1.2.0 / triage-report 1.2.0. The regression guards this failure already has: the lessons of core/reference/lessons.yaml whose check this finding's check is, with the tests that prove the check catches it. Empty or absent: no lesson names it, and a systemic cause is a lesson candidate." }
+        "guarded_by": { "type": "array", "items": { "$ref": "#/$defs/guard" }, "description": "Since quality-report 1.2.0 / triage-report 1.2.0. The regression guards this failure already has: the lessons of core/reference/lessons.yaml whose check this finding's check is, with the tests that prove the check catches it. Empty or absent: no lesson names it, and a systemic cause is a lesson candidate." },
+        "excepted": {
+          "type": "object",
+          "description": "The rule of the run's knowledge-contract this failure falls under is excepted by a person for this run (an active knowledge exception, core/artifacts/shared/knowledge-exception.schema.json): the triage lists the finding and does not route it. The producer's verdict is unchanged.",
+          "required": ["rule_id", "expires_at"],
+          "properties": {
+            "rule_id": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9-]*$" },
+            "approved_by": { "type": ["string", "null"] },
+            "reason": { "type": ["string", "null"] },
+            "expires_at": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },
@@ -103,6 +115,7 @@
         "lesson": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9-]*$" },
         "check": { "type": "string", "pattern": "^[a-z0-9-]+:[A-Za-z0-9._*-]+$" },
         "status": { "enum": ["enforced", "partial"] },
+        "level": { "enum": ["blocking", "required", "recommended", "experimental"], "description": "The rule's enforcement level in the run's knowledge-contract (derived from its checks' tiers)." },
         "tests": { "type": "array", "items": { "type": "string" } }
       },
       "additionalProperties": false

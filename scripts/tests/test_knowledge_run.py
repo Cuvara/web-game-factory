@@ -301,6 +301,29 @@ class TheContract(_Case):
         self.assertEqual([c.split("@")[0] for c in contract["constraints"]["platforms"]],
                          ["yandex"])
 
+    def test_g3_shows_the_contract(self):
+        from wgflib import gate_evidence
+        api, state = self.to_g4(self.api(api_class=Arcade2DYandexAPI))
+        contract = self.contract(api, state)
+        evidence = gate_evidence.summarize({"knowledge-contract": contract,
+                                            "game-design": {}, "tech-plan": {}})
+        entry = evidence["knowledge"][0]
+        self.assertEqual(entry["counts"], contract["counts"])
+        self.assertIn("L23", entry["required"])
+        self.assertEqual(entry["validators"], contract["required_validators"])
+        text = "\n".join(gate_evidence.render(evidence))
+        self.assertIn("knowledge contract:", text)
+        self.assertIn("validated by:", text)
+        # A G3 held for a person shows it with the checkpoint's evidence.
+        held = self.api({"checkpoints": {"auto_approve": ["G2"]}},
+                        api_class=Arcade2DYandexAPI)
+        state = held.run(RunRequest())
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "tech-plan-review"),
+                         state.message)
+        pending = held.pending(state)
+        self.assertEqual(pending["gate"], "G3")
+        self.assertIn("L23", pending["evidence"]["knowledge"][0]["required"])
+
     def test_a_mock_new_game_reaches_g4_with_the_knowledge_step(self):
         api = WorkflowAPI(config=FactoryConfig({"storage": {"fsync": False}}),
                           store_dir=self.store_dir)
@@ -311,6 +334,14 @@ class TheContract(_Case):
         self.assertIn("knowledge", state.params["quality"])
         contract = self.contract(api, state)
         self.assertTrue(contract["rules"])
+        # The placeholder quality gate reports compliance over the contract: advisory, as
+        # nothing was measured, and never a release.
+        report = api.store.read_artifact(state.run_id, state.latest_of_type("quality-report"))
+        section = report["compliance"]
+        self.assertEqual((section["mode"], section["holds_release"]), ("advisory", False))
+        self.assertEqual(section["contract"]["artifact_id"],
+                         contract["provenance"]["artifact_id"])
+        self.assertEqual(section["counts"]["total"]["applicable"], len(contract["rules"]))
 
     def test_knowledge_follows_design_and_precedes_tech_plan_and_never_continues_on_failure(self):
         workflow = load_definition("new-game")

@@ -575,7 +575,7 @@ class Exceptions(unittest.TestCase):
 class Versions(unittest.TestCase):
     def test_the_knowledge_versions_a_run_records(self):
         self.assertEqual(versions.knowledge(root=ROOT),
-                         {"lessons": "lessons@2.0.0", "check-tiers": "check-tiers@1.1.0"})
+                         {"lessons": "lessons@2.0.0", "check-tiers": "check-tiers@1.2.0"})
 
     def test_collect_records_every_version_and_the_knowledge_digests(self):
         import hashlib
@@ -587,7 +587,7 @@ class Versions(unittest.TestCase):
                 digest = "sha256:" + hashlib.sha256(handle.read()).hexdigest()
             self.assertEqual(found[key]["sha256"], digest)
         self.assertEqual(found["lessons"]["version"], "2.0.0")
-        self.assertEqual(found["check_tiers"]["version"], "1.1.0")
+        self.assertEqual(found["check_tiers"]["version"], "1.2.0")
         with open(os.path.join(ROOT, "VERSION"), encoding="utf-8") as handle:
             self.assertEqual(found["factory"]["version"], handle.read().strip())
         commit = found["factory"]["commit"]

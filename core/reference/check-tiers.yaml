@@ -65,7 +65,37 @@
 #               `presence` status
 #   absent      {field, map}: a check with no entry reads the report's `field` through `map`
 #               (a review that approved has no gate-gaming blocker: PASS); otherwise, and
-#               when a report has no entry for a check, it is UNMEASURED - never a pass
+#               when a report has no entry for a check, it is UNMEASURED - never a pass.
+#   not_reported  (1.2.0) [group]: a producer that reports a check only for a build it
+#               concerns. A report with no entry for a check a group lists (`checks`, or
+#               "*" for every check of the source) reads NOT_APPLICABLE only when every
+#               condition of the group holds - otherwise UNMEASURED, and no report at all is
+#               always UNMEASURED:
+#                 verdict   the report's verdict is one of these (the producer finished: a
+#                           BLOCKED report proves nothing)
+#                 ran       an entry whose id starts so exists (the check's family ran)
+#                 render    the run's render facet is one of these
+#                 none_of   {report, path, values, agrees_with?}: `path` holds something in
+#                           another report of the run, and none of it is one of `values` (the
+#                           design declares its assets' roles, and no moving body); a path that
+#                           holds nothing proves nothing. `agrees_with` {file, path}: integrity
+#                           holds `values` equal to that list of a reference file
+#                 one_of    {report, path, values}: `path` in another report holds one of
+#                           `values` (the layout source was read, or none was declared)
+#                 missing   {report, path}: nothing is at `path` in another report (no
+#                           adopted content floor)
+#                 other     {report, list, id, status}: another report carries that check
+#                           at one of those statuses (the content data file was read)
+#                 why       why the producer does not report it (required)
+#               A group needs `verdict` or `ran`: an absent entry is never NOT_APPLICABLE on
+#               nothing but its absence.
+#   not_applicable  {field, values} (1.2.0): an entry whose `field` (dotted, in the entry)
+#               holds one of `values` is the producer saying the check does not concern this
+#               build (a clear rate with no accepted build to fall from): NOT_APPLICABLE
+#   covered     {field, values} (1.2.0): a WARNING entry whose `field` (a mapping or list)
+#               holds only `values` is a proxy its producer made advisory because another
+#               check measured what it stands for - read on its own; it reads PASS
+#               (`covered`), never hiding the other check
 #
 # check-integrity holds that every locator's path exists in the producer's schema
 # (core/artifacts/<producer>.schema.json).
@@ -74,7 +104,7 @@
 # and triage's `guarded_by`), scripts/wgf_knowledge/ (levels, the applicability resolver).
 # Add a check to a source file and it is classified here, or the integrity check fails.
 
-version: 1.1.0
+version: 1.2.0
 
 applies_at: release
 
@@ -101,7 +131,16 @@ sources:
     file: core/reference/quality-floor.yaml
     producer: quality-report
     enumerate: floor-criteria        # universal + genres.*.criteria + dimensions_contracts.*.criteria
-    status_at: {list: criteria, id: id, status: status}
+    # The report scores the criteria of the build's own contract (its genre family, its render,
+    # an `applies` the build meets): a criterion it does not carry does not concern this build.
+    status_at:
+      list: criteria
+      id: id
+      status: status
+      not_reported:
+        - checks: "*"
+          ran: floor.
+          why: the report scores the criteria of the build's own contract (its genre family, its render, an `applies` the build meets)
     # A release blocker is hard when it is pass/fail (a check share, a verdict, a count of
     # zero) and quality when it reads a calibrated bar (a `quality-benchmark:` or
     # `visual-qa-rubric:` reference, or a rubric score); a release warning is advisory; a
@@ -158,6 +197,17 @@ sources:
     file: core/reference/content-sufficiency.yaml
     producer: content-sufficiency-report
     enumerate: {keys: checks}
+    # content.regression is reported only for a run that adopted a game (a floor to keep).
+    status_at:
+      list: checks
+      id: id
+      status: status
+      not_reported:
+        - checks: [content.regression]
+          verdict: [PASS, FAIL]
+          ran: content.
+          missing: {report: game-design, path: existing_content}
+          why: reported only for a run that adopted a game, whose design carries the floor
     # Required at the release tier, every one fails the step's verdict. Pass/fail ones are
     # hard; one that counts the build against a tier's bar (the benchmark) is quality.
     checks:
@@ -180,6 +230,16 @@ sources:
   playability:
     producer: playability-report
     defined_in: scripts/wgf_playability
+    # depth.stall is reported only where the ramp was sampled in timed, endless play.
+    status_at:
+      list: checks
+      id: id
+      status: status
+      not_reported:
+        - checks: [depth.stall]
+          verdict: [PASS, FAIL]
+          ran: depth.ramp
+          why: reported only where the ramp was sampled in timed, endless play
     checks:
       probe.present: hard
       start.playable: hard
@@ -219,6 +279,45 @@ sources:
   play-realism:
     producer: playability-report
     defined_in: scripts/wgf_playability
+    # Reported only where a check concerns the build (play-realism.yaml): physics on a 2D
+    # board with a moving body, drift and alignment on a 3D path, level.geometry and
+    # unit_length on path layouts, level.clearance on grid layouts. Each absence is
+    # NOT_APPLICABLE only with the evidence its group names - the report finished, realism
+    # ran on a viewport (its runtime checks are reported for every viewport the bot
+    # recorded), the content data file was read - else UNMEASURED. naive.clear_rate with no
+    # accepted build (`measured.unmeasured: no-accepted-build`) is, in the producer's words,
+    # never held: a game with no accepted build has no clear rate to fall from. A
+    # level.clearance the producer made advisory because each failing unit's clear rate was
+    # measured (`measured.gate` advisory or clear-rate-failed, realism.gate_clearance) is
+    # covered by naive.clear_rate, which is read on its own.
+    status_at:
+      list: checks
+      id: id
+      status: status
+      not_applicable: {field: measured.unmeasured, values: [no-accepted-build]}
+      covered: {field: measured.gate, values: [advisory, clear-rate-failed]}
+      not_reported:
+        - checks: [physics.undrawn_collision, physics.collider_size]
+          verdict: [PASS, FAIL]
+          ran: runtime.
+          render: [3d]
+          why: judged on a 2D board only - a 3D build's screen positions are a moving camera's
+        - checks: [physics.undrawn_collision, physics.collider_size]
+          verdict: [PASS, FAIL]
+          ran: runtime.
+          render: [2d]
+          none_of: {report: game-design, path: "build_spec.assets[].role", values: [projectile], agrees_with: {file: core/reference/play-realism.yaml, path: physics.roles}}
+          why: judged on the bodies the simulation moves (play-realism.yaml physics.roles), and the design declares none
+        - checks: [naive.drift, naive.alignment]
+          verdict: [PASS, FAIL]
+          ran: naive.
+          render: [2d]
+          why: judged on a 3D path only (play-realism.yaml drift and alignment dimensions)
+        - checks: [level.geometry, level.unit_length, level.clearance]
+          verdict: [PASS, FAIL]
+          other: {report: content-sufficiency-report, list: checks, id: content.data_present, status: [PASS]}
+          one_of: {report: content-sufficiency-report, path: layout_source.status, values: [read, none]}
+          why: judged on the layouts the content data file declares - paths, grids - and it declares none of that kind
     # core/reference/play-realism.yaml: a measured FAIL holds the build at the tiers
     # `enforce.fail_required_at` names (release, premium); an unmeasured one follows
     # quality-policy.yaml skipped_checks. Pass/fail ones are hard; one held to a

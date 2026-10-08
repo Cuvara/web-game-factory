@@ -7,7 +7,7 @@
     "id": "quality-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "producer": "title:prototype",
     "consumers": [
       "title:design",
@@ -1240,6 +1240,21 @@
                   "UNMEASURED"
                 ],
                 "description": "An EXCEPTED rule's status before the exception."
+              },
+              "trace": {
+                "type": "object",
+                "description": "Added in 1.4.0 (K5). The design's decision-trace entry for this rule (game-design `knowledge_applied`), beside the measured status, so knowledge -> decision -> implementation -> verification is one record. A claim only: it never changes `status`, which the checks alone decide.",
+                "required": ["rule", "applied"],
+                "properties": {
+                  "rule": { "type": "string" },
+                  "revision": { "type": "integer", "minimum": 1 },
+                  "applied": { "type": "boolean" },
+                  "where": { "type": "array", "items": { "type": "string" } },
+                  "how": { "type": "string" },
+                  "verified_by": { "type": "array", "items": { "type": "string" } },
+                  "design": { "type": ["string", "null"], "description": "The game-design artifact the trace was read from." }
+                },
+                "additionalProperties": false
               },
               "checks": {
                 "type": "array",

@@ -69,6 +69,7 @@ from wgflib.workflow.contracts import ArtifactContracts
 
 from . import commitments, consistency, content, depth, existing, experience, presentation
 from . import features as feature_check
+from . import knowledge as design_knowledge
 from .authors import AUTHORS, AuthorError, resolve_author
 from .compose import buildability, finalize
 from .platforms import PlatformError, load_platforms
@@ -202,6 +203,8 @@ class DesignStep(WorkflowStep):
                  # attempt's files go, and the installation's configuration.
                  "config": context.config or {},
                  "run_dir": getattr(context, "run_dir", None),
+                 # The run's params: where its pinned knowledge is (wgf_design/knowledge.py).
+                 "environment": getattr(context, "environment", None) or {},
                  "visit": getattr(context, "visit", 1),
                  "attempt": getattr(context, "attempt", 1)}
         if self._floor:
@@ -444,8 +447,14 @@ class DesignStep(WorkflowStep):
             outcome.update(features=True)
             problems += found
         now = self.clock()
+        # The Factory knowledge an author of this game is given (the run's pinned knowledge,
+        # resolved over the design's family and the strategy's platforms): what the design's
+        # decision trace is held against (consistency knowledge.trace_matches_design).
+        given = design_knowledge.provisional(
+            (design.get("genre") or {}).get("family"), strategy,
+            getattr(context, "environment", None) or {}, getattr(context, "run_dir", None))
         block, blocking, warnings = consistency.evaluate(design, strategy, platforms, now,
-                                                         self.rules)
+                                                         self.rules, knowledge=given)
         if blocking:
             # A breached blocking rule is `descope` for an author that cannot repair; one
             # that can is told which rule it breached, what was measured against what
@@ -484,6 +493,15 @@ class DesignStep(WorkflowStep):
                     "The repository this run adopts already ships this content "
                     "(game-design.existing_content). Plan at least as much: keep its units, "
                     "groups, climax units and elements, and add to them.",
+                "content.introductions_one_at_a_time":
+                    "After the opening unit, a unit debuts at most one element, mechanic or "
+                    "introduction no earlier unit named. Give each extra new element a unit "
+                    "of its own before the unit that combines it with another new one.",
+                "knowledge.trace_matches_design":
+                    "The design's knowledge_applied says something the design does not do. "
+                    "Make the design follow each rule it claims applied (its checks are "
+                    "named), or record the rule as not applied with why; name only rules, "
+                    "revisions, units and checks the request gave.",
             }
             for rule_id in blocking:
                 stated = consistency.breach_problems(block, [rule_id], ruleset) or [

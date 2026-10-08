@@ -12,7 +12,7 @@
 # artifact plus the resolved platform profiles. Keep them few and obvious — a rule nobody
 # understands gets waived, and a waived rule is worse than no rule.
 
-version: 2.2.0  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms; 2.0.0: mechanics, not words (below); 2.1.0: brief commitments and the existing-content floor (below); 2.1.1: brief-commitments 1.1.0 (the probe floor); 2.2.0: content.introductions_one_at_a_time (below)
+version: 2.2.0  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms; 2.0.0: mechanics, not words (below); 2.1.0: brief commitments and the existing-content floor (below); 2.1.1: brief-commitments 1.1.0 (the probe floor); 2.2.0: content.introductions_one_at_a_time and knowledge.trace_matches_design (below)
 
 # 2.0.0. The concept rules compared words: "tap hops" in a design read as a foreign `jump`
 # for a brief that asked for hops, a goal gate read as a checkpoint `gate`, and an author
@@ -225,6 +225,23 @@ rules:
     rationale: >
       An open-ended progression with no designed end state produces an endless content
       obligation, which is exactly what a 7-14 day production model cannot service.
+
+  # 2.2.0. The design's decision trace (game-design 1.16.0 `knowledge_applied`): what the
+  # author says it did with each Factory rule it was given. A claim the design contradicts is
+  # a breach. Listed LAST: it reads the result of every rule above it.
+  - id: knowledge.trace_matches_design
+    label: The design's knowledge trace says what the design does
+    severity: blocking
+    # `knowledge.problems` (wgf_design/knowledge.py trace_view): an entry naming a rule the
+    # design was not given (not applicable to the game), a revision it was not given, units
+    # the design does not have, checks that are not the rule's - or `applied: true` while one
+    # of the rule's own design-side checks (design-consistency) is breached on this design.
+    # An absent trace is not a breach; a trace with no knowledge to check it against is.
+    when: { left: knowledge.problems, op: neq, right: [] }
+    rationale: >
+      A trace is a claim, and a claim nobody checks is decoration. It never makes a rule
+      satisfied - only the rule's checks do, on the build - but a design that says it applied
+      a rule it breaks is wrong about itself, and every reader downstream would believe it.
 
 evaluation:
   pass_condition: No rule with severity=blocking is breached.

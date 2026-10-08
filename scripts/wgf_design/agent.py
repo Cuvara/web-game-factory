@@ -65,6 +65,7 @@ from . import commitments as brief_commitments
 from . import content as content_rules
 from . import features as feature_check
 from . import identity
+from . import knowledge as design_knowledge
 from .authors import (ArchetypeAuthor, AuthorError, DesignAuthor, register_author,
                       split_reason)
 from .depth import load_rules as load_depth_rules
@@ -171,6 +172,18 @@ PROMPT_CONTENT = (
       " `art`), and score secondary goals in"
       " build_spec.content.secondary_goals. A design short of its tier fails; it is never"
       " passed at a lower tier than the strategy committed to."
+)
+# Appended when the request carries the Factory's knowledge (wgf_design/knowledge.py): the
+# rules that apply to this game, each with its principle and the checks that hold it, and the
+# decision trace the design records for the design-domain ones.
+PROMPT_KNOWLEDGE = (
+    " The request's `knowledge.rules` are the Factory's rules that apply to this game,"
+    " resolved from its facets: each has an id, revision, domain, level, principle,"
+    " anti_pattern and the checks that hold it - design so each one holds. For every rule"
+    " whose `trace` is true, add an entry to the draft's top-level `knowledge_applied` list:"
+    " {rule, revision, applied, where (the unit ids it shaped), how, verified_by (its checks)}."
+    " A claim the design contradicts fails the design; an entry for a rule not in the list"
+    " fails too."
 )
 # Put FIRST when a report named gaps in the design: what this visit must act on. The gaps are
 # also in their own small file and are the request's first key, so an agent that pages a large
@@ -385,26 +398,16 @@ class AgentRunFailed(RuntimeError):
     """The agent host failed, timed out or went silent. Retryable."""
 
 
-def _provisional_knowledge(starting, strategy):
-    """The Factory's rules that may apply to the design about to be written: resolved over
-    what is known before it (the family, the strategy's platforms; 2D/3D and tier are
-    undetermined, which never excludes a rule). Provisional - the run's knowledge-contract,
-    made after design, is what the build is held to. None when the knowledge cannot be read
-    (the knowledge step, not this one, stops a run for it)."""
-    try:
-        from wgf_knowledge import resolve as resolver
-        from wgf_quality import registry
-        data = registry.load()
-        checks, _ = registry.classify(data["tiers"])
-        family = ((starting or {}).get("genre") or {}).get("family")
-        facets = resolver.facets_from({"genre": {"family": family}}, strategy)
-        body = resolver.resolve(data["lessons"], checks, data["tiers"], facets)
-    except Exception:  # noqa: BLE001 - guidance only; nothing is decided here
-        return None
-    return {"provisional": True,
-            "rules": [{"id": r["id"], "level": r["level"], "category": r.get("category"),
-                       "lesson": " ".join(str(r.get("lesson") or "").split())}
-                      for r in body["rules"]]}
+def _provisional_knowledge(starting, strategy, environment=None, run_dir=None):
+    """The Factory's rules that may apply to the design about to be written
+    (wgf_design/knowledge.py provisional): the resolver's output over what is known before
+    it - the family, the strategy's platforms; 2D/3D and tier undetermined, which never
+    excludes a rule - read from the run's pinned knowledge, each rule with its revision,
+    domain, principle, anti-pattern, level and checks. Provisional - the run's
+    knowledge-contract, made after design, is what the build is held to. None when the
+    knowledge cannot be read (the knowledge step, not this one, stops a run for it)."""
+    family = ((starting or {}).get("genre") or {}).get("family")
+    return design_knowledge.provisional(family, strategy, environment, run_dir)
 
 
 def _last_json_object(text):
@@ -672,7 +675,8 @@ class AgentAuthor(DesignAuthor):
             # The content shape research coded for this cell, with its tiers and claims: the
             # family, what one unit is, the progression, the difficulty shape and the axes.
             request["design_constraints"] = constraints
-        knowledge = _provisional_knowledge(starting, brief.get("strategy"))
+        knowledge = _provisional_knowledge(starting, brief.get("strategy"),
+                                           brief.get("environment"), run_dir)
         if knowledge:
             request["knowledge"] = knowledge
         with open(request_path, "w", encoding="utf-8", newline="\n") as handle:
@@ -703,6 +707,8 @@ class AgentAuthor(DesignAuthor):
             values["prompt"] += PROMPT_ART_KIT
         values["prompt"] += (PROMPT_DEPTH + PROMPT_CONTENT + PROMPT_FEATURES
                              + PROMPT_COMMITMENTS)
+        if knowledge:
+            values["prompt"] += PROMPT_KNOWLEDGE
         if adoption:
             ids = [str(i) for i in adoption.get("unit_ids") or []]
             values["prompt"] += PROMPT_ADOPTION.format(

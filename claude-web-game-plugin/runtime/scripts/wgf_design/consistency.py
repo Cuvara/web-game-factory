@@ -20,6 +20,11 @@ The rules are written against a projection, not the raw artifact:
     adopted.*                 game-design.existing_content - what an adopted repository
                               already ships - and what the design plans fewer of
                               (wgf_design/existing.py)
+    knowledge.*               the design's decision trace (`knowledge_applied`) against the
+                              Factory knowledge the author was given and the results of every
+                              rule evaluated before it (wgf_design/knowledge.py trace_view): a
+                              rule reading `knowledge.` is evaluated after the rules listed
+                              before it, so the ruleset lists it last
     introductions.*           what each content unit debuts - the elements, mechanics and
                               introductions no earlier unit named - and every unit after the
                               opening one that debuts more than one (content.introductions_view)
@@ -191,7 +196,8 @@ def concept_view(design, strategy, lexicon=None):
             "pillars_asked": asked, "pillars_unrealized": unrealized}
 
 
-def projection(design, strategy, platform=None, lexicon=None, concept=None, stated=None):
+def projection(design, strategy, platform=None, lexicon=None, concept=None, stated=None,
+               trace=None):
     spec = design.get("build_spec") or {}
     cost = sum(item.get("est_cost", 0) for item in (spec.get("assets") or []) + (spec.get("audio") or []))
     return {
@@ -207,6 +213,7 @@ def projection(design, strategy, platform=None, lexicon=None, concept=None, stat
         "commitments": stated if stated is not None else brief_commitments.view(design, strategy),
         "adopted": existing.floor_view(design),
         "introductions": content_rules.introductions_view(design),
+        "knowledge": trace if trace is not None else {"present": False, "problems": []},
     }
 
 
@@ -235,8 +242,10 @@ def _measured(value):
     return value
 
 
-def evaluate(design, strategy, platforms, evaluated_at, rules=None):
-    """Return the `consistency` block for `design`."""
+def evaluate(design, strategy, platforms, evaluated_at, rules=None, knowledge=None):
+    """Return the `consistency` block for `design`. `knowledge`: the Factory knowledge the
+    author was given (wgf_design/knowledge.py provisional), which the design's decision
+    trace is held against; None when it could not be read."""
     ruleset = rules or load_rules()
     concept = concept_view(design, strategy, load_lexicon(ruleset))
     vocabulary = load_commitments(ruleset)
@@ -248,9 +257,14 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None):
 
     for rule in ruleset["rules"]:
         reads_platform = any(p.startswith("platform.") for p in _paths(rule["when"]))
+        trace = None
+        if any(p.startswith("knowledge.") for p in _paths(rule["when"])):
+            # The trace is judged on the results of every rule evaluated before it.
+            from . import knowledge as design_knowledge
+            trace = design_knowledge.trace_view(design, knowledge, results)
         if not reads_platform:
             result = _evaluate_once(rule, projection(design, strategy, concept=concept,
-                                                     stated=stated))
+                                                     stated=stated, trace=trace))
         else:
             per_platform, notes, breached = [], [], False
             for platform in required:
@@ -288,6 +302,12 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None):
             result["note"] = (f"{view['units']} unit(s); after the opening one, none debuts more "
                               "than one element" if view["units"] else
                               "the design lists no content units: nothing debuts, the rule holds")
+        if trace is not None and not result.get("note"):
+            result["note"] = ("no decision trace (knowledge_applied): nothing claimed, nothing "
+                              "to contradict" if not trace["present"] else
+                              f"{trace['entries']} trace entr(ies), {len(trace['applied'])} "
+                              f"applied" + (f"; contradicted: {', '.join(trace['contradicted'])}"
+                                            if trace["contradicted"] else ""))
         if result.get("note") is None:
             result.pop("note", None)
         results.append(result)

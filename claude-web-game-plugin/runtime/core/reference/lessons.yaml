@@ -1083,9 +1083,12 @@ lessons:
       catches:
         - scripts/tests/test_lesson_l29.py::test_L29_the_check_fails_the_defect
         - scripts/tests/test_lesson_l29.py::test_L29_a_compliant_design_and_a_violating_build_fail_the_build
+        - scripts/tests/test_knowledge_transfer.py::test_a_violating_designer_breaches_and_is_repaired
+        - scripts/tests/test_knowledge_transfer.py::test_a_violating_build_fails_content_sufficiency_and_is_repaired
       passes:
         - scripts/tests/test_lesson_l29.py::test_L29_the_check_passes_the_fixed_build
         - scripts/tests/test_lesson_l29.py::test_L29_the_accepted_2d_validation_game_passes
         - scripts/tests/test_lesson_l29.py::test_L29_the_accepted_3d_validation_game_passes
       generalizes:
         - scripts/tests/test_lesson_l29.py::test_L29_generalizes_to_a_synthetic_3d_racer
+        - scripts/tests/test_knowledge_transfer.py::test_session_b_a_fresh_session_applies_the_principle

@@ -69,14 +69,19 @@ physics:
   # short of the drawn bar above it (the undrawn ceiling). The explained turns met their
   # surface within 1-2 px; any tolerance from 2 to 200 px separates the two builds.
   tolerance_px: 6
-  # physics.collider_size: the drawn box over the collider, per axis, for every entity that
-  # reports one. Above the maximum the player sees a hit that did not happen (the sprite
-  # overlaps a brick the body has not reached); below the minimum a hit lands on nothing
-  # drawn. No 2026-10 build reports a collider, so nothing here is calibrated on a probe: the
-  # bar is the ledger's (L11: "<= ~1.3x"). For the record, from the builds' own tuning: r1
-  # draws its ball 32.5 px across over an 11.9 px body on desktop (2.7x), 894b4b8 over a
-  # 21.7 px body (1.5x) - both would FAIL once they report colliders, and the ball's
-  # visibility bar (production-quality, escalated to a person 2026-10-07) pulls the other way.
+  # physics.collider_size: what is drawn over the collider, per axis, for every entity that
+  # reports one - its opaque BODY (the probe's `entities[].body`) when it reports one, else
+  # its whole drawn box. Above the maximum the player sees a hit that did not happen (the
+  # drawing overlaps a brick the body has not reached); below the minimum a hit lands on
+  # nothing drawn. A soft glow or halo around an opaque body is not the body: the probe
+  # declares it (`halo: true`) WITH the body box, and the body is judged. A collider is never
+  # passed without something drawn to hold it to - a halo without a body, an empty body, or a
+  # body outside the drawn box FAILs. No 2026-10 build reports a collider yet, so the bar is
+  # the ledger's (L11: "<= ~1.3x"). From the builds' own tuning (board units, ball radius
+  # and sprite): r1 96f5cea draws a 56.8 glow around a 22 collider (2.6x on the sprite);
+  # r1-forward 894b4b8 draws a solid disc of exactly its 40 collider inside the same 56.8
+  # glow - 1.0x on its body (PASS), 1.42x on the whole sprite (FAIL), which is why the body
+  # is what is judged; a sprite enlarged with the collider unchanged still FAILs on its body.
   max_drawn_to_collider: 1.3
   min_drawn_to_collider: 0.77
 
@@ -226,6 +231,21 @@ geometry:
 # 0.23-0.31 on r1, 0.15-0.20 on 894b4b8.
 clearance:
   min_widest_to_body: 2.0
+  # The bar is a PROXY, calibrated on one build: 894b4b8's collider growth (r11 -> r20) on
+  # 96f5cea's layouts, and the w4-l7 thread rates by radius. What it stands for is whether
+  # the level is still cleared, which naive.clear_rate measures directly. So it is held per
+  # unit by what was measured (realism.gate_clearance):
+  #   - no clear rate against the accepted build measured for the unit: the clearance
+  #     finding is a QUALITY GATE - blocking at the tiers `enforce` names;
+  #   - the unit's clear rate measured and passing: ADVISORY - reported, never blocking (the
+  #     fix/steel-gaps branch keeps w3-l7's one-cell lanes, 1.8 x a 40 px ball, at r1's clear
+  #     rate: 65/72/14 of 200 against r1's 62/72/16 per player model);
+  #   - the unit's clear rate measured and failing: both reported, naive.clear_rate blocks
+  #     (894b4b8 w4-l7: 78/138/107 of 200 against 158/199/188).
+  # Evidence: rebase/evidence/2d/steel-gaps.json (the game's own simulation, 200 runs per
+  # level per model), scripts/tests/fixtures/real/play-realism/clear-rates-2d-steel-gaps.json.
+  basis: proxy-measured-1
+  gate: unmeasured-clear-rate
 
 # -- runtime.*: what the console says while the bot plays ------------------------------------
 # runtime.console_errors: console.error messages logged from the game's own origin (the

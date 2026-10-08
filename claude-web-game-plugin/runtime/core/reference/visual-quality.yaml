@@ -15,7 +15,16 @@
 # 1.2.0: the ramp recording is health-recorded and made again too (depth.ramp, depth.stall); a
 # check that read a failure or is required is BLOCKED on a degraded host at every tier, never a
 # warning; a cut unit played on for the whole variety_extend_s is judged as seen whole.
-version: 1.2.0
+# 1.3.0: `viewports` - the bot's viewports are data here, no longer a list in the step's code.
+version: 1.3.0
+
+# The viewports the bot plays every build on (one Playwright project each): `device` the
+# Playwright device descriptor it starts from, `width`/`height` its CSS viewport (the
+# descriptor's own for a phone). Every playability check is judged per viewport; the ids are
+# the projects the records, frames and reports are keyed by (desktop, mobile).
+viewports:
+  - {id: desktop, device: Desktop Chrome, width: 1280, height: 720}
+  - {id: mobile, device: Pixel 5, width: 393, height: 851}
 
 frames:
   # What is lit: the share of a frame's pixels at or above `lit_luminance` (relative

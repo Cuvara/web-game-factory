@@ -55,7 +55,24 @@ REQUIRED_INPUTS = ("prototype-report", "game-design", "scaffold-record")
 # beat (a new best, a unit cleared) is seen rather than cut off at the bar.
 SESSION_MARGIN_S = 45
 
-PROJECTS = (("desktop", 1280, 720), ("mobile", 393, 851))
+
+
+def _viewports(path=None):
+    """((id, width, height, device), ...) - the viewports the bot plays on, from
+    core/reference/visual-quality.yaml `viewports`. Never defaulted in code."""
+    found = []
+    for entry in (load_file(path or RULES_PATH) or {}).get("viewports") or []:
+        if isinstance(entry, dict) and entry.get("id"):
+            found.append((str(entry["id"]), int(entry["width"]), int(entry["height"]),
+                          str(entry.get("device") or "Desktop Chrome")))
+    if not found:
+        raise ValueError(f"{RULES_PATH} lists no viewports")
+    return tuple(found)
+
+
+VIEWPORTS = _viewports()
+# (id, width, height) per viewport, as the report lists them.
+PROJECTS = tuple(v[:3] for v in VIEWPORTS)
 # The bot's records per viewport (bot.spec.ts): <out>/<project>/<name>.json.
 RECORDS = ("first-session", "act", "win", "lose", "pause", "traverse", "persist", "session",
            "ramp", "showcase", "survey", "naive", "risk")
@@ -100,8 +117,7 @@ export default defineConfig({{
   reporter: [["line"]],
   use: {{ baseURL: "http://localhost:{port}", launchOptions: {{ args: gl }}, ...proxy }},
   projects: [
-    {{ name: "desktop", use: {{ ...devices["Desktop Chrome"], viewport: {{ width: 1280, height: 720 }} }} }},
-    {{ name: "mobile", use: {{ ...devices["Pixel 5"] }} }},
+__WGF_PROJECTS__
   ],
   webServer: {{
     command: "pnpm preview --port {port} --strictPort",
@@ -130,6 +146,15 @@ def _sha256(path):
 
 def load_rules(path=None):
     return load_file(path or RULES_PATH)
+
+
+def projects_config(viewports=None):
+    """The Playwright `projects` entries of the generated config, one per viewport."""
+    lines = []
+    for vid, width, height, device in viewports or VIEWPORTS:
+        lines.append(f'    {{ name: {json.dumps(vid)}, use: {{ ...devices[{json.dumps(device)}], '
+                     f'viewport: {{ width: {width}, height: {height} }} }} }},')
+    return "\n".join(lines)
 
 
 class PlayabilityStep(WorkflowStep):
@@ -266,6 +291,8 @@ class PlayabilityStep(WorkflowStep):
                 frames += self._frames(frames_dir, project, context.run_dir)
             # The level geometry the played commit declares: once per build, not per viewport.
             checks += self._layout_checks(out, design, realism_rules, strength, scope_tiers)
+            # Clearance is a proxy: it blocks only a unit whose clear rate was not measured.
+            checks = realism.gate_clearance(checks, strength)
             if not blocked and not any(p["ran"] for p in projects):
                 blocked = "the bot produced no records on any viewport; see " + os.path.join(logs, "bot.log")
             records_dir = (os.path.relpath(out, context.run_dir).replace(os.sep, "/")
@@ -662,7 +689,7 @@ class PlayabilityStep(WorkflowStep):
         with open(os.path.join(repo, "playwright.wgf-play.config.ts"), "w", encoding="utf-8") as h:
             retries = max(0, int((settings.get("environment") or {}).get("max_attempts") or 1) - 1)
             h.write(CONFIG.format(port=port, proxy_var=BROWSER_PROXY_VAR, bypass=BROWSER_BYPASS,
-                                  retries=retries))
+                                  retries=retries).replace("__WGF_PROJECTS__", projects_config()))
         config_path = os.path.join(out, "settings.json")
         os.makedirs(out, exist_ok=True)
         with open(config_path, "w", encoding="utf-8") as handle:

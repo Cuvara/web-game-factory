@@ -336,8 +336,12 @@ def _physics_checks(records, design, rules, project, strength):
                 f"{first['frame']}), and the probe reports no playfield, so a board edge it does "
                 "not report may explain them", measured=measured, expected=expected))
 
-    # physics.collider_size: drawn box over collider, per axis, per entity reporting one.
-    ratios = {}
+    # physics.collider_size: what is drawn over the collider, per axis, per entity reporting
+    # one - its opaque BODY when the probe reports one (a solid disc inside a glow), else its
+    # whole drawn box. A collider is never passed without something drawn to hold it to: a
+    # halo declared without a body, an empty body or a body outside the drawn box fails.
+    ratios, sources, broken = {}, {}, {}
+    slack = 1.0
     for entities in frames:
         for s in entities or []:
             collider = s[9] if len(s) > 9 else None
@@ -346,26 +350,49 @@ def _physics_checks(records, design, rules, project, strength):
             cw, ch = float(collider[3]), float(collider[4])
             if cw <= 0 or ch <= 0:
                 continue
-            ratios.setdefault(s[0], []).append((float(s[5]) / cw, float(s[6]) / ch))
+            body = s[10] if len(s) > 10 else None
+            halo = s[11] if len(s) > 11 else None
+            drawn = _box(*s[3:7])
+            if isinstance(body, (list, tuple)) and len(body) >= 4:
+                bw, bh = float(body[2]), float(body[3])
+                inner = _box(*body[:4])
+                if bw <= 0 or bh <= 0:
+                    broken.setdefault(s[0], "its reported body is empty")
+                    continue
+                if (inner[0] < drawn[0] - slack or inner[1] < drawn[1] - slack
+                        or inner[2] > drawn[2] + slack or inner[3] > drawn[3] + slack):
+                    broken.setdefault(s[0], "its reported body lies outside its drawn box")
+                    continue
+                ratios.setdefault(s[0], []).append((bw / cw, bh / ch))
+                sources.setdefault(s[0], set()).add("body")
+            elif halo is True:
+                broken.setdefault(s[0], "it declares a halo but reports no body inside it")
+            else:
+                ratios.setdefault(s[0], []).append((float(s[5]) / cw, float(s[6]) / ch))
+                sources.setdefault(s[0], set()).add("sprite")
     hi = float(bars.get("max_drawn_to_collider", 1.3))
     lo = float(bars.get("min_drawn_to_collider", 0.77))
-    size_expected = {"drawn_to_collider": f"{lo} - {hi} per axis"}
-    if frames and not ratios and movers:
+    size_expected = {"drawn_to_collider": f"{lo} - {hi} per axis",
+                     "judged_on": "the reported body, else the whole drawn box"}
+    if frames and not ratios and not broken and movers:
         checks.append(_unmeasured(
             "physics.collider_size", project, strength,
             "the probe reports no entities[].collider, so what collides cannot be held to "
             "what is drawn", expected=size_expected))
-    elif ratios:
+    elif ratios or broken:
         per = {eid: [round(statistics.median(r[0] for r in rs), 2),
-                     round(statistics.median(r[1] for r in rs), 2)] for eid, rs in ratios.items()}
+                   round(statistics.median(r[1] for r in rs), 2)] for eid, rs in ratios.items()}
         off = {eid: r for eid, r in per.items() if max(r) > hi or min(r) < lo}
+        problems = ([f"{eid} {r[0]}x{r[1]} ({'/'.join(sorted(sources[eid]))})"
+                     for eid, r in sorted(off.items())[:5]]
+                    + [f"{eid}: {why}" for eid, why in sorted(broken.items())[:5]])
         checks.append(_measured_check(
-            "physics.collider_size", project, not off,
-            (f"drawn size over collider is within {lo}-{hi} for {len(per)} entities" if not off
-             else "drawn size over collider out of bounds: " + ", ".join(
-                 f"{eid} {r[0]}x{r[1]}" for eid, r in sorted(off.items())[:5])),
+            "physics.collider_size", project, not off and not broken,
+            (f"drawn size over collider is within {lo}-{hi} for {len(per)} entities"
+             if not problems else "drawn size over collider out of bounds: " + "; ".join(problems)),
             strength, measured={"ratios": dict(sorted(per.items())[:20]),
-                                "out_of_bounds": sorted(off)},
+                                "judged_on": {e: sorted(v) for e, v in sorted(sources.items())[:20]},
+                                "out_of_bounds": sorted(off), "no_drawn_body": dict(sorted(broken.items()))},
             expected=size_expected))
     return checks
 
@@ -1108,3 +1135,50 @@ def _clearance_checks(content, rules, strength, source, project, unit_key):
         "level.clearance", project, True,
         f"every one of {rows_judged} solid rows leaves a passage at least {bar} x the body",
         strength, measured=measured, expected=expected)]
+
+
+# -- level.clearance against the clear rate: a proxy blocks only where the measure is missing --
+
+def gate_clearance(checks, strength=None):
+    """`checks` with level.clearance held as play-realism.yaml `clearance.gate` says: its
+    failing units BLOCK (at the tiers `enforce` names) only where no per-unit clear rate
+    against the accepted build was measured for that unit. Where naive.clear_rate measured
+    the unit and it passed, the clearance finding is advisory - reported, not blocking;
+    where the clear rate failed, both are reported and the clear rate is what blocks."""
+    strength = strength or Strength()
+    clearance = next((c for c in checks if c.get("id") == "level.clearance"), None)
+    if clearance is None or clearance.get("status") not in ("FAIL", "WARNING"):
+        return checks
+    failing = (clearance.get("measured") or {}).get("failing") or []
+    if not failing:
+        return checks
+    measured, regressed = set(), set()
+    for check in checks:
+        if check.get("id") != "naive.clear_rate":
+            continue
+        for entry in (check.get("measured") or {}).get("compared") or []:
+            measured.add(str(entry.get("unit")))
+            if entry.get("regressed"):
+                regressed.add(str(entry.get("unit")))
+    gate = {}
+    for item in failing:
+        unit = str(item.get("unit"))
+        gate[unit] = ("clear-rate-failed" if unit in regressed else
+                      "advisory" if unit in measured else "quality-gate")
+    blocking = sorted(u for u, g in gate.items() if g == "quality-gate")
+    required = strength.fail_required and bool(blocking)
+    clearance["measured"] = dict(clearance.get("measured") or {}, gate=gate)
+    clearance["required"] = required
+    clearance["status"] = "FAIL" if required else "WARNING"
+    note = []
+    if blocking:
+        note.append(f"blocking for {', '.join(blocking)} (no clear rate measured against the "
+                    "accepted build)")
+    advisory = sorted(u for u, g in gate.items() if g == "advisory")
+    if advisory:
+        note.append(f"advisory for {', '.join(advisory)} (clear rate at the accepted build's)")
+    failed = sorted(u for u, g in gate.items() if g == "clear-rate-failed")
+    if failed:
+        note.append(f"{', '.join(failed)} also fail naive.clear_rate, which blocks")
+    clearance["summary"] = clearance["summary"] + " - " + "; ".join(note)
+    return checks

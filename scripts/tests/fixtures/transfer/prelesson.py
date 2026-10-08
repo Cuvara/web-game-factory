@@ -144,9 +144,11 @@ def knowledge_root(directory, lesson_only=False):
     return root
 
 
-def install(directory=None):
+def install(directory=None, pins_only=False):
     """Patch this process to read the pre-L29 Factory wherever a run reads those files.
-    Returns the directory holding the filtered copies."""
+    `pins_only`: only the copies a run pins when it STARTS - a run started on the Factory
+    before L29, whose steps then run on today's code and today's live files (what a person
+    resuming an old run gets). Returns the directory holding the filtered copies."""
     from wgflib.workflow import references
     from wgf_design import consistency
     from wgf_sufficiency import audit
@@ -159,6 +161,8 @@ def install(directory=None):
                 for relpath, data in real(relpaths, root).items()}
 
     references.collect = collect
+    if pins_only:
+        return directory
     consistency.RULES_PATH = paths["core/reference/design-consistency-rules.yaml"]
     audit.RULES_PATH = paths["core/reference/content-sufficiency.yaml"]
     return directory

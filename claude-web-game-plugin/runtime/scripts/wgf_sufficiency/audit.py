@@ -853,7 +853,9 @@ def _audit(design, strategy, data, records, rules=None, benchmark=None, models=N
                "every shipped unit carries the design's commitments",
                measured={"drift": drift[:40]}, route="develop" if drift else None))
     if "content.introductions_one_at_a_time" in (rules.get("checks") or {}):
-        # Run only where the content-sufficiency file this build is judged by declares it.
+        # Run only where the content-sufficiency file this build is judged by declares it:
+        # the run's pinned copy (wgf_sufficiency.step.run_rules), so a run started before
+        # the check existed is never held to it.
         add(introductions_check(shipped, built_units))
     return _finish(out, rules, order=True)
 

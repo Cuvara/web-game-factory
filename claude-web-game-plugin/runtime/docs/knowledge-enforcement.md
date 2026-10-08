@@ -540,6 +540,11 @@ level is derived over all of them.
 `model.lesson_digest`): a run pinned under `L29@r2` keeps exactly that text when its
 contract is made again after the Factory moves on, and a run started after the move gets
 the new one (`test_knowledge_transfer` Versioning). It also records the design's `trace`.
+The checks are pinned like the rules: the design step judges a design by the run's pinned
+`design-consistency-rules.yaml` and content-sufficiency a build by the run's pinned
+`content-sufficiency.yaml` (the live files only for a run that pinned none), so a run
+started before a rule or check existed never meets it - not on resume, not when design is
+entered again (`test_knowledge_transfer` PinnedBefore).
 
 **The design request.** The `agent` design author's request carries `knowledge`: the
 resolver's output over the facets known before the design (family, platforms), read from

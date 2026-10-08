@@ -27,8 +27,11 @@ step** (an agent author is asked to repair it), and a build whose units.json doe
 content-sufficiency; a units.json that names no unit's elements leaves the check
 unmeasured, which a release-tier quality gate holds. The genre seed author's second teaching
 unit debuted two mechanics for four families; it now debuts one. Existing artifacts stay
-valid (every schema change is additive); a run already past design is not re-judged until
-it passes design again.
+valid (every schema change is additive). A run is held to the rule files it pinned when it
+started: the design step reads the run's pinned design-consistency-rules.yaml and
+content-sufficiency its pinned content-sufficiency.yaml (the live file only for a run that
+pinned none), so a run started before this change never meets the new design rules or the
+new build check - not on resume, not when design is entered again.
 
 **A run is held to its knowledge, and a person's exception is the run's own record**
 (quality-policy 1.4.0 rule 8, new-game 17, gates 1.7.0, knowledge-contract 1.1.0,

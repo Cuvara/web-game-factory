@@ -350,6 +350,52 @@ class Control(unittest.TestCase):
         self.assertIsNone(check_of(self.control.newest("content-sufficiency-report"), CHECK))
 
 
+class PinnedBefore(unittest.TestCase):
+    """A run started on the Factory before L29 and resumed on today's code is held to the
+    rules it pinned: the design step and content-sufficiency read the run's pinned copies,
+    never a rule or check added to the Factory since - on the design and on the build."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp(prefix="wgf-k5-pinned-")
+        started = session(cls.tmp, "old-run", "--session", "b", "--knowledge", "pinned-before",
+                          "--hold-g2")
+        cls.started = started
+        # Resumed in another process with nothing filtered: today's code and live files.
+        cls.resumed = Run(session(cls.tmp, "old-run", "--session", "b", "--resume",
+                                  started["run_id"]))
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_a_run_pinned_without_the_checks_never_gets_them_on_resume(self):
+        self.assertEqual((self.started["status"], self.started["cursor"]),
+                         ("WAITING", "strategy-review"))
+        run = self.resumed
+        self.assertTrue(run.summary["waiting_at_g4"], run.summary["message"])
+        with open(os.path.join(run.dir, references.DIRECTORY, *LESSONS.split("/")),
+                  encoding="utf-8") as handle:
+            self.assertNotIn("id: L29", handle.read())
+        # the designer's own plan debuts two elements at once, and nothing the run pinned
+        # holds it: no design rule, no trace rule, no build check, no rule in its contract
+        design = run.newest("game-design")
+        from wgf_design import content
+        self.assertTrue(content.introductions_view(design)["over_one"])
+        judged = [r["criterion_id"] for r in design["consistency"]["rule_results"]]
+        self.assertNotIn(CHECK, judged)
+        # exactly the rules of the file the run pinned, none of the live file's others
+        with open(os.path.join(run.dir, references.DIRECTORY, "core", "reference",
+                               "design-consistency-rules.yaml"), encoding="utf-8") as handle:
+            pinned = [r["id"] for r in load_yaml(handle.read())["rules"]]
+        self.assertEqual([r for r in judged if "." not in r or r.startswith("knowledge.")],
+                         [r for r in pinned if "." not in r or r.startswith("knowledge.")])
+        self.assertTrue(set(pinned) <= set(judged))
+        for report in run.versions("content-sufficiency-report"):
+            self.assertIsNone(check_of(report, CHECK))
+        self.assertNotIn("L29", [r["id"] for r in run.newest("knowledge-contract")["rules"]])
+
+
 class Held(unittest.TestCase):
     """The lesson present: a designer that ignores it, a build that breaks it, and a false
     claim of applying it are each caught."""

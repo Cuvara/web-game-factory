@@ -337,6 +337,9 @@ def run(args):
     os.makedirs(args.store, exist_ok=True)
     if args.session == "a" or args.knowledge == "without":
         prelesson.install(os.path.join(args.store, "factory-before-l29"))
+    elif args.knowledge == "pinned-before" and not args.resume:
+        # Started on the Factory before L29; nothing else is filtered, here or on resume.
+        prelesson.install(os.path.join(args.store, "factory-before-l29"), pins_only=True)
     family = args.family or ("puzzle" if args.session == "a" else "racing")
     design, result = designs.design(family)
     if design is None:
@@ -380,7 +383,8 @@ def run(args):
                 registry.register(cls.type, (lambda c: (lambda d: c(d, world)))(cls))
             return registry
 
-    config = {"storage": {"fsync": False}, "checkpoints": {"auto_approve": ["G2", "G3"]},
+    gates = ["G3"] if args.hold_g2 or args.resume else ["G2", "G3"]
+    config = {"storage": {"fsync": False}, "checkpoints": {"auto_approve": gates},
               "design": {"author": "agent",
                          "agent": {"argv": [sys.executable, DESIGNER, args.designer,
                                             "{request}", "{draft}"],
@@ -389,7 +393,11 @@ def run(args):
                                      "argv": [sys.executable, worlds.JUDGE, "{frames_dir}",
                                               "{verdict}"]}}}
     api = API(config=FactoryConfig(config), store_dir=os.path.join(args.store, "store"))
-    state = api.run(RunRequest())
+    if args.resume:
+        state = api.run(RunRequest(resume=args.resume, decision="approve",
+                                   decided_by="human", note="K5 transfer test"))
+    else:
+        state = api.run(RunRequest())
     summary = {"session": args.session, "run_id": state.run_id, "status": str(state.status),
                "waiting_at_g4": (state.status, state.cursor) == (RunStatus.WAITING,
                                                                   "prototype-review"),
@@ -422,7 +430,10 @@ def main(argv=None):
     r.add_argument("--session", choices=("a", "b"), required=True)
     r.add_argument("--store", required=True)
     r.add_argument("--out", required=True)
-    r.add_argument("--knowledge", choices=("with", "without"), default="with")
+    r.add_argument("--knowledge", choices=("with", "without", "pinned-before"),
+                   default="with")
+    r.add_argument("--hold-g2", action="store_true", help="stop at G2 (a person's gate)")
+    r.add_argument("--resume", metavar="RUN_ID", help="approve G2 of this run and go on")
     r.add_argument("--designer", choices=("follow", "violate", "claim"), default="follow")
     r.add_argument("--developer", choices=("faithful", "violating"), default="faithful")
     r.add_argument("--family")

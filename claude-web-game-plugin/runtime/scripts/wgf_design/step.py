@@ -65,6 +65,8 @@ import re
 
 from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+from wgflib.workflow import references as pinned_references
+from wgflib.yamllite import load as load_yaml
 from wgflib.workflow.contracts import ArtifactContracts
 
 from . import commitments, consistency, content, depth, existing, experience, presentation
@@ -177,6 +179,14 @@ class DesignStep(WorkflowStep):
             platforms = load_platforms(strategy, self.platforms_dir)
         except PlatformError as exc:
             return StepResult.blocked(str(exc))
+        # The consistency rules as the run pinned them (the live file for a run that pinned
+        # none): a design is never held to a rule added to the Factory after its run started.
+        try:
+            self._run_rules = self.rules or self.pinned_rules(context)
+        except (pinned_references.PinError, ValueError) as exc:
+            return StepResult.blocked(f"the design consistency rules this run started under "
+                                      f"cannot be read ({exc}): no design is judged against "
+                                      "rules edited after the start")
 
         # The existing-content floor: what an adopted repository already ships. Measured on
         # every visit at the commit the checkout ships (HEAD less this run's own commits): a
@@ -390,6 +400,14 @@ class DesignStep(WorkflowStep):
                               + (f", revises v{revision['version']}" if revision else "")
                               + (f", {len(warnings)} warning(s) for G3" if warnings else ""))
 
+    @staticmethod
+    def pinned_rules(context):
+        """core/reference/design-consistency-rules.yaml as the run pinned it, else live."""
+        text, _digest, _pinned = pinned_references.read(
+            consistency.RULES_FILE, getattr(context, "environment", None),
+            getattr(context, "run_dir", None))
+        return load_yaml(text)
+
     def _compose(self, draft, platforms, title_id, strategy, ref, context, author, contracts,
                  revision=None):
         """The draft finalized into the game-design artifact, and what makes it invalid: the
@@ -453,8 +471,9 @@ class DesignStep(WorkflowStep):
         given = design_knowledge.provisional(
             (design.get("genre") or {}).get("family"), strategy,
             getattr(context, "environment", None) or {}, getattr(context, "run_dir", None))
+        ruleset = getattr(self, "_run_rules", None) or self.rules
         block, blocking, warnings = consistency.evaluate(design, strategy, platforms, now,
-                                                         self.rules, knowledge=given)
+                                                         ruleset, knowledge=given)
         if blocking:
             # A breached blocking rule is `descope` for an author that cannot repair; one
             # that can is told which rule it breached, what was measured against what
@@ -462,7 +481,7 @@ class DesignStep(WorkflowStep):
             # concept view found, first. A breach was the one invalid-design class the
             # author was never shown, so a design whose only fault was three assets too
             # many died at `descope` with the fix one round away.
-            ruleset = self.rules or consistency.load_rules()
+            ruleset = ruleset or consistency.load_rules()
             lexicon = consistency.load_lexicon(ruleset)
             concept = consistency.concept_view(design, strategy, lexicon)
             realizing = {pid: (entry or {}).get("realized_by") or []

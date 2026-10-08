@@ -50,6 +50,8 @@ __all__ = ["RULES_PATH", "load_rules", "load_lexicon", "load_commitments", "proj
            "concept_view", "evaluate", "breach_problems"]
 
 RULES_PATH = os.path.join(paths.REFERENCE, "design-consistency-rules.yaml")
+# The same file relative to the Factory root: what a run pins (wgflib.workflow.references).
+RULES_FILE = "core/reference/design-consistency-rules.yaml"
 
 
 def load_rules(path=None):

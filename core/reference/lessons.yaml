@@ -1056,7 +1056,7 @@ lessons:
     category: level_design
     domain: level-design
     classification: BLOCKING
-    revision: 1
+    revision: 2
     principle: >-
       After the opening unit, a unit introduces at most one element the player has not met,
       so every new element is first met on its own and practised before it is combined with

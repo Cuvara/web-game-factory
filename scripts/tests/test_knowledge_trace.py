@@ -33,6 +33,7 @@ from wgf_quality import compliance, registry  # noqa: E402
 TRACE = "knowledge.trace_matches_design"
 DATA = registry.load(ROOT)
 TIERS = DATA["tiers"]
+REVISION = next(l for l in DATA["lessons"]["lessons"] if l["id"] == "L29")["revision"]
 
 
 def given():
@@ -40,7 +41,7 @@ def given():
 
 
 def entry(**changes):
-    out = {"rule": "L29", "revision": 1, "applied": True, "where": ["u-02", "u-03"],
+    out = {"rule": "L29", "revision": REVISION, "applied": True, "where": ["u-02", "u-03"],
            "how": "each unit debuts one element", "verified_by": [
                "design-consistency:content.introductions_one_at_a_time"]}
     out.update(changes)
@@ -70,7 +71,7 @@ class TheRequest(unittest.TestCase):
         self.assertNotIn("L19", ids)
         rule = next(r for r in knowledge["rules"] if r["id"] == "L29")
         self.assertEqual((rule["domain"], rule["level"], rule["version"], rule["trace"]),
-                         ("level-design", "blocking", "L29@r1", True))
+                         ("level-design", "blocking", f"L29@r{REVISION}", True))
         self.assertEqual(rule["checks"], [
             "design-consistency:content.introductions_one_at_a_time",
             "content-sufficiency:content.introductions_one_at_a_time"])
@@ -94,7 +95,8 @@ class TheTrace(unittest.TestCase):
 
     def test_a_true_trace_holds(self):
         found, _ = result(traced(l29.paced(), entry(),
-                                 entry(rule="L17", applied=False, where=[], verified_by=[],
+                                 entry(rule="L17", revision=1, applied=False, where=[],
+                                       verified_by=[],
                                        how="not held by a check yet")))
         self.assertFalse(found["breached"], found)
         self.assertIn("2 trace entr(ies), 1 applied", found["note"])
@@ -111,7 +113,8 @@ class TheTrace(unittest.TestCase):
                           (entry(where=["u-02", "u-99"]), "unit(s) the design does not have: u-99"),
                           (entry(verified_by=["browser-qa:browser.overflow"]),
                            "not checks of L29"),
-                          (entry(revision=2), "claims revision 2; the design was given r1")):
+                          (entry(revision=REVISION + 1),
+                           f"claims revision {REVISION + 1}; the design was given r{REVISION}")):
             with self.subTest(text=text):
                 found, _ = result(traced(l29.paced(), bad))
                 self.assertTrue(found["breached"])

@@ -119,7 +119,7 @@
     "core/reference/feature-catalogue.yaml": "sha256:88d646a4061bbe5c557fe48ab92a41768e04e04015004c6e8262ffc42bc4fc91",
     "core/reference/gate-gaming.yaml": "sha256:1140114ca195f1dafc6802df9f7c4222f003099dce6464ee20089df12a3f546c",
     "core/reference/genre-models.yaml": "sha256:f2f99c3ca2fe3fe4867a63ec225a141798f536a50175af6a794edb2ebcf209b5",
-    "core/reference/lessons.yaml": "sha256:d2bdb61e49882d5122e28e5b4ec3f7dac133b48086336009b3c27240ffbdb218",
+    "core/reference/lessons.yaml": "sha256:5d2378f7db4063b1151d882edc6f2e1931856a19209cc11d457b2943c2fe5bde",
     "core/reference/mechanic-lexicon.yaml": "sha256:3676bcc67b8fc08c7c0b0b2d777a03a20b8f82d90c32fb1b6d51afc53ee033bf",
     "core/reference/platforms/crazygames.yaml": "sha256:b79f1b4a4321753ac8c6c285187af1bc9985d1fdaf8db41034180ec5edc05c4b",
     "core/reference/platforms/gamedistribution.yaml": "sha256:54d33391e176e5d0afad9b117bb6de1769ddaf6a1c765176229a958b98f334cf",

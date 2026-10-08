@@ -31,7 +31,8 @@ host, no network):
               in the design step's repair round; a build that breaks a compliant design FAILs
               content-sufficiency (compliance RELEASE_BLOCKED on L29) and is repaired; a
               designer that claims the rule applied while breaking it breaches the trace rule.
-  Versions    a run pinned under L29@r1 keeps r1 after the Factory moves to r2.
+  Versions    a run pinned under L29 at its shipped revision keeps it after the Factory
+              moves to the next.
 
     python -m unittest scripts.tests.test_knowledge_transfer
 """
@@ -68,10 +69,14 @@ DESIGN_CHECK = f"design-consistency:{CHECK}"
 BUILD_CHECK = f"content-sufficiency:{CHECK}"
 SHIPPED = {l["id"]: l for l in registry.load(ROOT)["lessons"]["lessons"]}
 TITLE = SHIPPED["L29"]["title"]
+# The shipped revision of L29 (r2: its entry changed after it was first committed - the
+# transfer tests were added to its tests - so its revision rose, as check-integrity holds).
+REVISION = SHIPPED["L29"]["revision"]
+VERSION = f"L29@r{REVISION}"
 # What a person adds to promote's draft before the pull request merges: the lesson's title
 # and problem stated generally (the draft's problem is the run's own symptom), the tests
-# written, and the date it lands.
-COMPLETION = ("title", "problem", "tests", "introduced")
+# written, the date it lands - and the revision its later edits raised (a draft is r1).
+COMPLETION = ("title", "problem", "tests", "introduced", "revision")
 
 
 def scrubbed_env(project, foreign=()):
@@ -262,7 +267,7 @@ class SessionAToB(unittest.TestCase):
         self.assertTrue(self.b["waiting_at_g4"], self.b["message"])
         contract = self.run_b.newest("knowledge-contract")
         rule = next(r for r in contract["rules"] if r["id"] == "L29")
-        self.assertEqual((rule["version"], rule["level"]), ("L29@r1", "blocking"))
+        self.assertEqual((rule["version"], rule["level"]), (VERSION, "blocking"))
         self.assertEqual(rule["digest"], model.lesson_digest(SHIPPED["L29"]))
         self.assertEqual(rule["why_applicable"], ["global"])
         self.assertEqual(contract["facets"]["render"], "3d")
@@ -272,7 +277,7 @@ class SessionAToB(unittest.TestCase):
         request = self.run_b.design_file("1-1.request.json")
         given = next(r for r in request["knowledge"]["rules"] if r["id"] == "L29")
         self.assertEqual((given["version"], given["domain"], given["trace"]),
-                         ("L29@r1", "level-design", True))
+                         (VERSION, "level-design", True))
         self.assertEqual(given["principle"], " ".join(SHIPPED["L29"]["principle"].split()))
         seen = self.run_b.design_file("seen-1-1.json")
         self.assertEqual((seen["rule"]["id"], seen["paced"]), ("L29", True))
@@ -280,7 +285,8 @@ class SessionAToB(unittest.TestCase):
         design = self.run_b.newest("game-design")
         trace = design["knowledge_applied"][0]
         unit_ids = {u["id"] for u in design["build_spec"]["content"]["units"]}
-        self.assertEqual((trace["rule"], trace["revision"], trace["applied"]), ("L29", 1, True))
+        self.assertEqual((trace["rule"], trace["revision"], trace["applied"]),
+                         ("L29", REVISION, True))
         self.assertTrue(trace["where"] and set(trace["where"]) <= unit_ids)
         self.assertFalse(rule_result(design, CHECK)["breached"])
         self.assertFalse(rule_result(design, "knowledge.trace_matches_design")["breached"])
@@ -411,30 +417,32 @@ class Held(unittest.TestCase):
 LESSONS_TEXT = "core/reference/lessons.yaml"
 
 
-def moved_to_r2(text):
-    """lessons.yaml with L29 revised in place to r2 - the Factory moving on after a run
-    pinned r1: its lesson text sharpened, its revision raised."""
+def moved_on(text):
+    """lessons.yaml with L29 revised in place to its next revision - the Factory moving on
+    after a run pinned the shipped one: its lesson text sharpened, its revision raised."""
     head, sep, tail = text.partition("  - id: L29\n")
     assert sep, "L29 is not in lessons.yaml"
     entry, nxt, rest = tail.partition("\n  - id: ")
-    entry, count = re.subn(r"(?m)^    revision: 1$", "    revision: 2", entry)
+    entry, count = re.subn(rf"(?m)^    revision: {REVISION}$", f"    revision: {REVISION + 1}",
+                           entry)
     assert count == 1
     entry = entry.replace("    lesson: >-\n", "    lesson: >-\n      Revised: ", 1)
     return head + sep + entry + nxt + rest
 
 
 class Versioning(runs._Case):
-    """A run's contract pins each rule by revision and digest: a run pinned under L29@r1 keeps
-    r1 after the Factory moves to r2; a run started after the move gets r2."""
+    """A run's contract pins each rule by revision and digest: a run pinned under L29 at its
+    shipped revision keeps it after the Factory moves to the next; a run started after the
+    move gets the next."""
 
     def rule(self, api, state, rule_id="L29"):
         contract = self.contract(api, state)
         return next(r for r in contract["rules"] if r["id"] == rule_id), contract
 
-    def test_an_old_run_keeps_r1_and_a_new_run_gets_r2(self):
+    def test_an_old_run_keeps_its_revision_and_a_new_run_gets_the_next(self):
         api, old = self.to_g4()
         first, contract = self.rule(api, old)
-        self.assertEqual((first["revision"], first["version"]), (1, "L29@r1"))
+        self.assertEqual((first["revision"], first["version"]), (REVISION, VERSION))
         self.assertEqual(first["digest"], model.lesson_digest(SHIPPED["L29"]))
         # every rule, applicable or not, is pinned by digest
         self.assertTrue(all(r.get("digest") for r in contract["rules"]))
@@ -447,14 +455,15 @@ class Versioning(runs._Case):
         def collect(relpaths, root=None):
             found = real(relpaths, root)
             if LESSONS_TEXT in found:
-                found[LESSONS_TEXT] = moved_to_r2(
+                found[LESSONS_TEXT] = moved_on(
                     found[LESSONS_TEXT].decode("utf-8")).encode("utf-8")
             return found
 
         with patch.patch.object(references, "collect", collect):
             _, new = self.to_g4(api)
             second, _ = self.rule(api, new)
-            self.assertEqual((second["revision"], second["version"]), (2, "L29@r2"))
+            self.assertEqual((second["revision"], second["version"]),
+                             (REVISION + 1, f"L29@r{REVISION + 1}"))
             self.assertNotEqual(second["digest"], first["digest"])
             self.assertTrue(second["lesson"].startswith("Revised:"))
             # The old run's contract made again after the move: still the r1 it pinned.
@@ -463,7 +472,7 @@ class Versioning(runs._Case):
             self.assertGreater(self.executed(again).count(runs.STEP),
                                self.executed(old).count(runs.STEP), "not made again")
             kept, _ = self.rule(api, again)
-            self.assertEqual((kept["revision"], kept["digest"]), (1, first["digest"]))
+            self.assertEqual((kept["revision"], kept["digest"]), (REVISION, first["digest"]))
 
 
 if __name__ == "__main__":

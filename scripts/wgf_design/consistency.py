@@ -174,6 +174,14 @@ def concept_view(design, strategy, lexicon=None):
     for action in actions:
         core_ids |= mechanics.ids_in(action.get("action", ""), lexicon)
     foreign = sorted(i for i in core_ids - implied if mechanics.kind(i, lexicon) == "defining")
+    # Where each foreign id was read: the design's own mechanics and controls, by id and name,
+    # so an author can find it - the id is the lexicon's word, often not one the design used.
+    sources = {}
+    for i in foreign:
+        sources[i] = [f"mechanic {m.get('id')} ({m.get('name')!r})" for m in built
+                      if is_core(m) and i in ids[m.get("id")]] + [
+            f"control {a.get('action')!r}" for a in actions
+            if i in mechanics.ids_in(a.get("action", ""), lexicon)]
     words = mechanics.stems(allowed_text)
     for m in built:
         own = mechanics.stems(f"{m.get('id', '')} {m.get('name', '')}")
@@ -195,6 +203,7 @@ def concept_view(design, strategy, lexicon=None):
             "implied": sorted(implied),
             "uncarried": sorted(wanted - carried),
             "foreign": foreign,
+            "foreign_sources": sources,
             "pillars_asked": asked, "pillars_unrealized": unrealized}
 
 

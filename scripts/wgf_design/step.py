@@ -503,7 +503,11 @@ class DesignStep(WorkflowStep):
                     "and no MVP mechanic or MVP control of the design builds them.",
                 "design_adds_no_foreign_mechanic":
                     f"The design builds the mechanics {concept.get('foreign')} as core "
-                    "mechanics, and neither the brief nor the strategy implies them. Remove "
+                    "mechanics, and neither the brief nor the strategy implies them"
+                    + "".join(f"; {fid} is read from " + ", ".join(where)
+                              for fid, where in (concept.get("foreign_sources") or {}).items()
+                              if where)
+                    + ". Remove "
                     "each one with the content units and controls that use it; renaming it "
                     "does not change what it is, and a new mechanic is a strategy change for "
                     "G2.",

@@ -123,6 +123,25 @@ class EveryFamilySeed(unittest.TestCase):
         for family in FAMILIES:
             cls.results[family] = design_for(family)
 
+    def test_the_agents_starting_point_takes_the_seed_for_a_persons_idea(self):
+        """A person's idea in a family no design archetype carries: the archetype author as
+        the agent's STARTING POINT returns the family seed's shape (the agent rewrites it into
+        the idea); as the design itself it refuses, naming the agent author (07126cd)."""
+        from wgf_design.authors import ArchetypeAuthor, AuthorError
+        from wgf_design.platforms import load_platforms
+        idea = "A fox springs between crumbling ledges while the wind pushes it back"
+        family = "platformer"
+        self.assertNotIn(family, archetypes.ARCHETYPES)
+        strategy = strategy_for(family)
+        strategy = dict(strategy, brief=idea,
+                        concept=dict(strategy["concept"], core_mechanic=idea))
+        brief = {"title_id": "idea-title", "strategy": strategy,
+                 "platforms": load_platforms(strategy), "params": {}}
+        draft = ArchetypeAuthor(starting_point=True).draft(brief)
+        self.assertEqual(draft["genre"]["family"], family)
+        with self.assertRaisesRegex(AuthorError, "agent author"):
+            ArchetypeAuthor().draft(brief)
+
     def test_mechanics_are_introduced_one_per_unit_never_piled_into_the_opener(self):
         """core/craft "Introduce one mechanic per unit at most" and L29: after the opening
         unit each MVP unit debuts at most one mechanic, never on the climax or the last MVP

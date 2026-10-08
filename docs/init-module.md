@@ -167,7 +167,7 @@ reusing it — and even then only if it came from the configured template.
 | `template_ref` | the pin | `local` only: if set, must resolve to the pinned commit |
 | `visibility` | `private` | `private`, `internal` or `public` |
 | `projects_dir` | — | Deprecated alias of `factory.checkouts` (below) |
-| `adopt_existing` | `false` | Authorize reusing a repository or directory this run did not create. What it already ships becomes the run's existing-content floor: the design step counts it at the checkout's HEAD (`game-design.existing_content`), and the design, every develop commit and the build are held to no less ([development-module.md](development-module.md#an-adopted-game)) |
+| `adopt_existing` | `false` | Authorize reusing a repository or directory this run did not create. What it already ships becomes the run's existing-content floor: the design step counts it on every visit at the checkout's HEAD less the run's own commits, or at `accepted_baseline` when set (`game-design.existing_content`), and the design, every develop commit and the build are held to no less ([development-module.md](development-module.md#an-adopted-game)) |
 | `populate_timeout_seconds` | `60` | `github` only: how long to wait for GitHub to generate the contents |
 | `commit_author` | `{name: wgf-init, email: wgf-init@users.noreply.invalid}` | Author of the configuration commit |
 

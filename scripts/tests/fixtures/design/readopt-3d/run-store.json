@@ -1,0 +1,877 @@
+{
+ "_about": "Replayed from the 3D validation run new-game-20261005-002923-597b5e (2026-10-07): the floor its game-design v4 recorded (counted at f7434a0, an intermediate commit of the run's own build), the units v4 planned, and the human-accepted content a person moved the checkout to (c340631, public/content/units.json, layouts left out), under the run's init commit 703ca4c.",
+ "run_id": "new-game-20261005-002923-597b5e",
+ "commits": {
+  "head": "703ca4c63968a021c3ebd028d559ed92aa79f764",
+  "shipped": "c3406310582f48f9133c987c1dc1f29c1fa8aeea",
+  "floor_v4": "f7434a0c89cbc592c290cdec42f9ef73ac41008f"
+ },
+ "init_message": "chore(scaffold): configure sky-marble from its tech plan\n\nWgf-Init-Key: wgf-init:new-game-20261005-002923-597b5e:init\nWgf-Tech-Plan: sha256:7fc27c91eaea4258df753cdc69a316203bebd819c173979c97b2259d6acf9ebb\n",
+ "design_v4_floor": {
+  "source": {
+   "method": "content-data",
+   "path": "public/content/units.json",
+   "commit": "f7434a0c89cbc592c290cdec42f9ef73ac41008f",
+   "checkout": "<checkout>",
+   "located_by": "WGF_GAME_REPO"
+  },
+  "ruleset": "brief-commitments@1.1.0",
+  "units": 12,
+  "groups": 3,
+  "climax_units": 1,
+  "elements": 8,
+  "unit_ids": [
+   "meadow-roll",
+   "pad-hop",
+   "gem-garden",
+   "meadow-circuit",
+   "ramp-climb",
+   "gap-hops",
+   "bumper-pond",
+   "windmill-gauntlet",
+   "lift-crossing",
+   "timed-lifts",
+   "gem-rings",
+   "storm-crown"
+  ],
+  "measured_by": {
+   "units": "every unit listed",
+   "groups": "units[].group",
+   "climax_units": "a climax term in units[].objective/success/name/title",
+   "elements": "units[].elements"
+  }
+ },
+ "design_v4_unit_ids": [
+  "meadow-roll",
+  "pad-hop",
+  "gem-garden",
+  "meadow-circuit",
+  "ramp-climb",
+  "gap-hops",
+  "bumper-pond",
+  "windmill-gauntlet",
+  "lift-crossing",
+  "timed-lifts",
+  "gem-rings",
+  "storm-crown"
+ ],
+ "shipped_content": {
+  "schema": "wgf-content/1",
+  "source": "baseline-r1 (64ff4c6): the twelve courses the human accepted",
+  "genre": {
+   "family": "arcade",
+   "node": "arcade",
+   "ending": "finite",
+   "session_profile": "casual"
+  },
+  "unit_kind": "course",
+  "layout_notation": "metres, degrees (positive turns left), lateral offsets metres right of the centre line",
+  "generation": {
+   "mode": "authored",
+   "expected_units": 12
+  },
+  "difficulty_axes": {
+   "speed": "mean speed of the reference line over the marble's top speed",
+   "density": "obstacles (jumps, moving platforms, drops, bumpers, walls) per 100 m, over 6",
+   "variety": "distinct elements beyond the gate and checkpoints, over 9",
+   "precision": "path width and narrowest bridge against an 8 m path, plus hairpins"
+  },
+  "groups": [
+   {
+    "id": "meadow-isles",
+    "index": 1,
+    "name": "tier.1",
+    "units": [
+     "first-roll",
+     "twin-bends",
+     "drifting-isles",
+     "bumper-garden"
+    ]
+   },
+   {
+    "id": "sunset-cliffs",
+    "index": 2,
+    "name": "tier.2",
+    "units": [
+     "narrow-way",
+     "stone-chicane",
+     "cliff-steps",
+     "sunset-run"
+    ]
+   },
+   {
+    "id": "storm-peaks",
+    "index": 3,
+    "name": "tier.3",
+    "units": [
+     "hairpin-rise",
+     "switchbacks",
+     "the-gauntlet",
+     "the-summit"
+    ]
+   }
+  ],
+  "units": [
+   {
+    "id": "first-roll",
+    "index": 1,
+    "tier": "mvp",
+    "group": "meadow-isles",
+    "name": "course.1",
+    "structure": "railed-teach",
+    "elements": [
+     "goal-gate",
+     "checkpoint",
+     "gem",
+     "rail",
+     "ramp",
+     "gap",
+     "bumper"
+    ],
+    "objective_kind": "reach-goal",
+    "objective": "Roll the marble through the goal gate before the clock reaches 36 s; within par 18 s for three stars",
+    "mechanics": [
+     "steering",
+     "par-timer",
+     "checkpoints",
+     "gems"
+    ],
+    "introduces": [
+     "goal-gate",
+     "checkpoint",
+     "gem",
+     "rail",
+     "ramp",
+     "gap",
+     "bumper"
+    ],
+    "difficulty": {
+     "speed": 0.95,
+     "density": 0.14,
+     "variety": 0.56,
+     "precision": 0
+    },
+    "expected_duration_s": 15.6,
+    "success": "The marble passes the goal gate before 36 s: one star for the clear, two within 22.5 s, three within par 18 s",
+    "failure": "The clock reaches 36 s with the goal gate not passed; the fail card offers Retry (and, with an ad, a continue)",
+    "parameters": {
+     "par_s": 18,
+     "limit_s": 36,
+     "length_m": 237.6,
+     "width_m": 8,
+     "min_width_m": 8,
+     "turns": 1,
+     "hairpins": 0,
+     "climb_m": 0,
+     "gems": 10,
+     "checkpoints": 3,
+     "jumps": 1,
+     "moving_platforms": 0,
+     "bumpers": 1,
+     "walls": 0,
+     "drops": 0
+    }
+   },
+   {
+    "id": "twin-bends",
+    "index": 2,
+    "tier": "mvp",
+    "group": "meadow-isles",
+    "name": "course.2",
+    "structure": "s-bends",
+    "elements": [
+     "goal-gate",
+     "checkpoint",
+     "gem",
+     "ramp",
+     "gap"
+    ],
+    "objective_kind": "reach-goal",
+    "objective": "Roll the marble through the goal gate before the clock reaches 40 s; within par 20 s for three stars",
+    "mechanics": [
+     "steering",
+     "par-timer",
+     "checkpoints",
+     "gems"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.97,
+     "density": 0.06,
+     "variety": 0.33,
+     "precision": 0.09
+    },
+    "expected_duration_s": 16.8,
+    "success": "The marble passes the goal gate before 40 s: one star for the clear, two within 25 s, three within par 20 s",
+    "failure": "The clock reaches 40 s with the goal gate not passed; the fail card offers Retry (and, with an ad, a continue)",
+    "parameters": {
+     "par_s": 20,
+     "limit_s": 40,
+     "length_m": 260.1,
+     "width_m": 7.5,
+     "min_width_m": 7.5,
+     "turns": 4,
+     "hairpins": 0,
+     "climb_m": 0,
+     "gems": 10,
+     "checkpoints": 3,
+     "jumps": 1,
+     "moving_platforms": 0,
+     "bumpers": 0,
+     "walls": 0,
+     "drops": 0
+    }
+   },
+   {
+    "id": "drifting-isles",
+    "index": 3,
+    "tier": "mvp",
+    "group": "meadow-isles",
+    "name": "course.3",
+    "structure": "drifting-platforms",
+    "elements": [
+     "goal-gate",
+     "checkpoint",
+     "gem",
+     "ramp",
+     "gap",
+     "moving-platform"
+    ],
+    "objective_kind": "reach-goal",
+    "objective": "Roll the marble through the goal gate before the clock reaches 42 s; within par 21 s for three stars",
+    "mechanics": [
+     "steering",
+     "par-timer",
+     "checkpoints",
+     "gems"
+    ],
+    "introduces": [
+     "moving-platform"
+    ],
+    "difficulty": {
+     "speed": 0.95,
+     "density": 0.19,
+     "variety": 0.44,
+     "precision": 0.18
+    },
+    "expected_duration_s": 17.5,
+    "success": "The marble passes the goal gate before 42 s: one star for the clear, two within 26.3 s, three within par 21 s",
+    "failure": "The clock reaches 42 s with the goal gate not passed; the fail card offers Retry (and, with an ad, a continue)",
+    "parameters": {
+     "par_s": 21,
+     "limit_s": 42,
+     "length_m": 264,
+     "width_m": 7,
+     "min_width_m": 7,
+     "turns": 3,
+     "hairpins": 0,
+     "climb_m": 0,
+     "gems": 10,
+     "checkpoints": 3,
+     "jumps": 1,
+     "moving_platforms": 2,
+     "bumpers": 0,
+     "walls": 0,
+     "drops": 0
+    }
+   },
+   {
+    "id": "bumper-garden",
+    "index": 4,
+    "tier": "mvp",
+    "group": "meadow-isles",
+    "name": "course.4",
+    "structure": "bumper-plazas",
+    "elements": [
+     "goal-gate",
+     "checkpoint",
+     "gem",
+     "ramp",
+     "gap",
+     "moving-platform",
+     "bumper"
+    ],
+    "objective_kind": "reach-goal",
+    "objective": "Roll the marble through the goal gate before the clock reaches 48 s; within par 24 s for three stars",
+    "mechanics": [
+     "steering",
+     "par-timer",
+     "checkpoints",
+     "gems"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.86,
+     "density": 0.54,
+     "variety": 0.56,
+     "precision": 0.27
+    },
+    "expected_duration_s": 20.1,
+    "success": "The marble passes the goal gate before 48 s: one star for the clear, two within 30 s, three within par 24 s",
+    "failure": "The clock reaches 48 s with the goal gate not passed; the fail card offers Retry (and, with an ad, a continue)",
+    "parameters": {
+     "par_s": 24,
+     "limit_s": 48,
+     "length_m": 276.9,
+     "width_m": 6.5,
+     "min_width_m": 6.5,
+     "turns": 3,
+     "hairpins": 0,
+     "climb_m": 0,
+     "gems": 10,
+     "checkpoints": 3,
+     "jumps": 1,
+     "moving_platforms": 1,
+     "bumpers": 7,
+     "walls": 0,
+     "drops": 0
+    }
+   },
+   {
+    "id": "narrow-way",
+    "index": 5,
+    "tier": "mvp",
+    "group": "sunset-cliffs",
+    "name": "course.5",
+    "structure": "narrow-bridges",
+    "elements": [
+     "goal-gate",
+     "checkpoint",
+     "gem",
+     "ramp",
+     "gap",
+     "moving-platform",
+     "narrow-bridge"
+    ],
+    "objective_kind": "reach-goal",
+    "objective": "Roll the marble through the goal gate before the clock reaches 54 s; within par 27 s for three stars",
+    "mechanics": [
+     "steering",
+     "par-timer",
+     "checkpoints",
+     "gems"
+    ],
+    "introduces": [
+     "narrow-bridge"
+    ],
+    "difficulty": {
+     "speed": 0.96,
+     "density": 0.1,
+     "variety": 0.56,
+     "precision": 0.45
+    },
+    "expected_duration_s": 22.4,
+    "success": "The marble passes the goal gate before 54 s: one star for the clear, two within 33.8 s, three within par 27 s",
+    "failure": "The clock reaches 54 s with the goal gate not passed; the fail card offers Retry (and, with an ad, a continue)",
+    "parameters": {
+     "par_s": 27,
+     "limit_s": 54,
+     "length_m": 345.6,
+     "width_m": 6.5,
+     "min_width_m": 3,
+     "turns": 4,
+     "hairpins": 0,
+     "climb_m": 5,
+     "gems": 10,
+     "checkpoints": 3,
+     "jumps": 1,
+     "moving_platforms": 1,
+     "bumpers": 0,
+     "walls": 0,
+     "drops": 0
+    }
+   },
+   {
+    "id": "stone-chicane",
+    "index": 6,
+    "tier": "mvp",
+    "group": "sunset-cliffs",
+    "name": "course.6",
+    "structure": "stone-chicanes",
+    "elements": [
+     "goal-gate",
+     "checkpoint",
+     "gem",
+     "ramp",
+     "gap",
+     "low-wall",
+     "narrow-bridge"
+    ],
+    "objective_kind": "reach-goal",
+    "objective": "Roll the marble through the goal gate before the clock reaches 58 s; within par 29 s for three stars",
+    "mechanics": [
+     "steering",
+     "par-timer",
+     "checkpoints",
+     "gems"
+    ],
+    "introduces": [
+     "low-wall"
+    ],
+    "difficulty": {
+     "speed": 0.8,
+     "density": 0.43,
+     "variety": 0.56,
+     "precision": 0.52
+    },
+    "expected_duration_s": 24.2,
+    "success": "The marble passes the goal gate before 58 s: one star for the clear, two within 36.3 s, three within par 29 s",
+    "failure": "The clock reaches 58 s with the goal gate not passed; the fail card offers Retry (and, with an ad, a continue)",
+    "parameters": {
+     "par_s": 29,
+     "limit_s": 58,
+     "length_m": 310.7,
+     "width_m": 6,
+     "min_width_m": 3,
+     "turns": 4,
+     "hairpins": 0,
+     "climb_m": 0,
+     "gems": 10,
+     "checkpoints": 3,
+     "jumps": 1,
+     "moving_platforms": 0,
+     "bumpers": 0,
+     "walls": 7,
+     "drops": 0
+    }
+   },
+   {
+    "id": "cliff-steps",
+    "index": 7,
+    "tier": "mvp",
+    "group": "sunset-cliffs",
+    "name": "course.7",
+    "structure": "cliff-steps",
+    "elements": [
+     "goal-gate",
+     "checkpoint",
+     "gem",
+     "ramp",
+     "gap",
+     "moving-platform",
+     "bumper",
+     "cliff-drop",
+     "narrow-bridge"
+    ],
+    "objective_kind": "reach-goal",
+    "objective": "Roll the marble through the goal gate before the clock reaches 58 s; within par 29 s for three stars",
+    "mechanics": [
+     "steering",
+     "par-timer",
+     "checkpoints",
+     "gems"
+    ],
+    "introduces": [
+     "cliff-drop"
+    ],
+    "difficulty": {
+     "speed": 0.95,
+     "density": 0.32,
+     "variety": 0.78,
+     "precision": 0.51
+    },
+    "expected_duration_s": 24.2,
+    "success": "The marble passes the goal gate before 58 s: one star for the clear, two within 36.3 s, three within par 29 s",
+    "failure": "The clock reaches 58 s with the goal gate not passed; the fail card offers Retry (and, with an ad, a continue)",
+    "parameters": {
+     "par_s": 29,
+     "limit_s": 58,
+     "length_m": 369.1,
+     "width_m": 6,
+     "min_width_m": 3.2,
+     "turns": 4,
+     "hairpins": 0,
+     "climb_m": 1.5,
+     "gems": 10,
+     "checkpoints": 3,
+     "jumps": 1,
+     "moving_platforms": 1,
+     "bumpers": 2,
+     "walls": 0,
+     "drops": 3
+    }
+   },
+   {
+    "id": "sunset-run",
+    "index": 8,
+    "tier": "mvp",
+    "group": "sunset-cliffs",
+    "name": "course.8",
+    "structure": "sunset-medley",
+    "elements": [
+     "goal-gate",
+     "checkpoint",
+     "gem",
+     "ramp",
+     "gap",
+     "moving-platform",
+     "bumper",
+     "low-wall",
+     "cliff-drop",
+     "narrow-bridge"
+    ],
+    "objective_kind": "reach-goal",
+    "objective": "Roll the marble through the goal gate before the clock reaches 67 s; within par 33.5 s for three stars",
+    "mechanics": [
+     "steering",
+     "par-timer",
+     "checkpoints",
+     "gems"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.85,
+     "density": 0.44,
+     "variety": 0.89,
+     "precision": 0.58
+    },
+    "expected_duration_s": 27.8,
+    "success": "The marble passes the goal gate before 67 s: one star for the clear, two within 41.9 s, three within par 33.5 s",
+    "failure": "The clock reaches 67 s with the goal gate not passed; the fail card offers Retry (and, with an ad, a continue)",
+    "parameters": {
+     "par_s": 33.5,
+     "limit_s": 67,
+     "length_m": 379.6,
+     "width_m": 5.5,
+     "min_width_m": 3,
+     "turns": 4,
+     "hairpins": 0,
+     "climb_m": 2,
+     "gems": 10,
+     "checkpoints": 3,
+     "jumps": 1,
+     "moving_platforms": 2,
+     "bumpers": 3,
+     "walls": 3,
+     "drops": 1
+    }
+   },
+   {
+    "id": "hairpin-rise",
+    "index": 9,
+    "tier": "mvp",
+    "group": "storm-peaks",
+    "name": "course.9",
+    "structure": "hairpin-climb",
+    "elements": [
+     "goal-gate",
+     "checkpoint",
+     "gem",
+     "ramp",
+     "gap",
+     "bumper",
+     "narrow-bridge",
+     "hairpin"
+    ],
+    "objective_kind": "reach-goal",
+    "objective": "Roll the marble through the goal gate before the clock reaches 62 s; within par 31 s for three stars",
+    "mechanics": [
+     "steering",
+     "par-timer",
+     "checkpoints",
+     "gems"
+    ],
+    "introduces": [
+     "hairpin"
+    ],
+    "difficulty": {
+     "speed": 0.87,
+     "density": 0.14,
+     "variety": 0.67,
+     "precision": 0.73
+    },
+    "expected_duration_s": 25.9,
+    "success": "The marble passes the goal gate before 62 s: one star for the clear, two within 38.8 s, three within par 31 s",
+    "failure": "The clock reaches 62 s with the goal gate not passed; the fail card offers Retry (and, with an ad, a continue)",
+    "parameters": {
+     "par_s": 31,
+     "limit_s": 62,
+     "length_m": 360.5,
+     "width_m": 5.5,
+     "min_width_m": 3,
+     "turns": 5,
+     "hairpins": 3,
+     "climb_m": 5.5,
+     "gems": 10,
+     "checkpoints": 3,
+     "jumps": 1,
+     "moving_platforms": 0,
+     "bumpers": 2,
+     "walls": 0,
+     "drops": 0
+    }
+   },
+   {
+    "id": "switchbacks",
+    "index": 10,
+    "tier": "mvp",
+    "group": "storm-peaks",
+    "name": "course.10",
+    "structure": "switchback-descent",
+    "elements": [
+     "goal-gate",
+     "checkpoint",
+     "gem",
+     "ramp",
+     "gap",
+     "moving-platform",
+     "low-wall",
+     "cliff-drop",
+     "narrow-bridge",
+     "hairpin"
+    ],
+    "objective_kind": "reach-goal",
+    "objective": "Roll the marble through the goal gate before the clock reaches 70 s; within par 35 s for three stars",
+    "mechanics": [
+     "steering",
+     "par-timer",
+     "checkpoints",
+     "gems"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.87,
+     "density": 0.25,
+     "variety": 0.89,
+     "precision": 0.81
+    },
+    "expected_duration_s": 29,
+    "success": "The marble passes the goal gate before 70 s: one star for the clear, two within 43.8 s, three within par 35 s",
+    "failure": "The clock reaches 70 s with the goal gate not passed; the fail card offers Retry (and, with an ad, a continue)",
+    "parameters": {
+     "par_s": 35,
+     "limit_s": 70,
+     "length_m": 405.2,
+     "width_m": 5,
+     "min_width_m": 2.8,
+     "turns": 5,
+     "hairpins": 2,
+     "climb_m": 1.2,
+     "gems": 10,
+     "checkpoints": 4,
+     "jumps": 1,
+     "moving_platforms": 2,
+     "bumpers": 0,
+     "walls": 2,
+     "drops": 1
+    }
+   },
+   {
+    "id": "the-gauntlet",
+    "index": 11,
+    "tier": "mvp",
+    "group": "storm-peaks",
+    "name": "course.11",
+    "structure": "gauntlet",
+    "elements": [
+     "goal-gate",
+     "checkpoint",
+     "gem",
+     "ramp",
+     "gap",
+     "moving-platform",
+     "bumper",
+     "low-wall",
+     "narrow-bridge",
+     "hairpin"
+    ],
+    "objective_kind": "reach-goal",
+    "objective": "Roll the marble through the goal gate before the clock reaches 78 s; within par 39 s for three stars",
+    "mechanics": [
+     "steering",
+     "par-timer",
+     "checkpoints",
+     "gems"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.8,
+     "density": 0.44,
+     "variety": 0.89,
+     "precision": 0.81
+    },
+    "expected_duration_s": 32.5,
+    "success": "The marble passes the goal gate before 78 s: one star for the clear, two within 48.8 s, three within par 39 s",
+    "failure": "The clock reaches 78 s with the goal gate not passed; the fail card offers Retry (and, with an ad, a continue)",
+    "parameters": {
+     "par_s": 39,
+     "limit_s": 78,
+     "length_m": 415.4,
+     "width_m": 5,
+     "min_width_m": 2.8,
+     "turns": 4,
+     "hairpins": 2,
+     "climb_m": 0,
+     "gems": 10,
+     "checkpoints": 4,
+     "jumps": 1,
+     "moving_platforms": 2,
+     "bumpers": 4,
+     "walls": 4,
+     "drops": 0
+    }
+   },
+   {
+    "id": "the-summit",
+    "index": 12,
+    "tier": "mvp",
+    "group": "storm-peaks",
+    "name": "course.12",
+    "structure": "summit-ascent",
+    "elements": [
+     "goal-gate",
+     "checkpoint",
+     "gem",
+     "ramp",
+     "gap",
+     "moving-platform",
+     "bumper",
+     "low-wall",
+     "cliff-drop",
+     "narrow-bridge",
+     "hairpin"
+    ],
+    "objective_kind": "reach-goal",
+    "objective": "Roll the marble through the goal gate before the clock reaches 78 s; within par 39 s for three stars",
+    "mechanics": [
+     "steering",
+     "par-timer",
+     "checkpoints",
+     "gems"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.85,
+     "density": 0.38,
+     "variety": 1,
+     "precision": 0.88
+    },
+    "expected_duration_s": 32.7,
+    "success": "The marble passes the goal gate before 78 s: one star for the clear, two within 48.8 s, three within par 39 s",
+    "failure": "The clock reaches 78 s with the goal gate not passed; the fail card offers Retry (and, with an ad, a continue)",
+    "parameters": {
+     "par_s": 39,
+     "limit_s": 78,
+     "length_m": 443.8,
+     "width_m": 4.5,
+     "min_width_m": 2.8,
+     "turns": 4,
+     "hairpins": 2,
+     "climb_m": 6.5,
+     "gems": 10,
+     "checkpoints": 4,
+     "jumps": 1,
+     "moving_platforms": 2,
+     "bumpers": 3,
+     "walls": 3,
+     "drops": 1
+    }
+   }
+  ],
+  "unlocks": [
+   {
+    "id": "unlock-twin-bends",
+    "opens": "twin-bends",
+    "after": "first-roll",
+    "condition": "Clear first-roll",
+    "total_stars": 0
+   },
+   {
+    "id": "unlock-drifting-isles",
+    "opens": "drifting-isles",
+    "after": "twin-bends",
+    "condition": "Clear twin-bends",
+    "total_stars": 0
+   },
+   {
+    "id": "unlock-bumper-garden",
+    "opens": "bumper-garden",
+    "after": "drifting-isles",
+    "condition": "Clear drifting-isles",
+    "total_stars": 0
+   },
+   {
+    "id": "unlock-narrow-way",
+    "opens": "narrow-way",
+    "after": "bumper-garden",
+    "condition": "Clear bumper-garden and hold 8 stars in total",
+    "total_stars": 8
+   },
+   {
+    "id": "unlock-stone-chicane",
+    "opens": "stone-chicane",
+    "after": "narrow-way",
+    "condition": "Clear narrow-way",
+    "total_stars": 0
+   },
+   {
+    "id": "unlock-cliff-steps",
+    "opens": "cliff-steps",
+    "after": "stone-chicane",
+    "condition": "Clear stone-chicane",
+    "total_stars": 0
+   },
+   {
+    "id": "unlock-sunset-run",
+    "opens": "sunset-run",
+    "after": "cliff-steps",
+    "condition": "Clear cliff-steps",
+    "total_stars": 0
+   },
+   {
+    "id": "unlock-hairpin-rise",
+    "opens": "hairpin-rise",
+    "after": "sunset-run",
+    "condition": "Clear sunset-run and hold 18 stars in total",
+    "total_stars": 18
+   },
+   {
+    "id": "unlock-switchbacks",
+    "opens": "switchbacks",
+    "after": "hairpin-rise",
+    "condition": "Clear hairpin-rise",
+    "total_stars": 0
+   },
+   {
+    "id": "unlock-the-gauntlet",
+    "opens": "the-gauntlet",
+    "after": "switchbacks",
+    "condition": "Clear switchbacks",
+    "total_stars": 0
+   },
+   {
+    "id": "unlock-the-summit",
+    "opens": "the-summit",
+    "after": "the-gauntlet",
+    "condition": "Clear the-gauntlet",
+    "total_stars": 0
+   }
+  ],
+  "tuning": {
+   "steering": {
+    "accel_m_s2": 18,
+    "max_speed": 16,
+    "rolling_drag_per_s": 0.6,
+    "air_control": 0.3,
+    "full_drag_px": 90,
+    "wall_restitution": 0.5
+   },
+   "par-timer": {
+    "two_star_factor": 1.25,
+    "time_over_factor": 2,
+    "assist_cap_bonus_share": 0.25
+   },
+   "checkpoints": {
+    "fall_depth_m": 10,
+    "respawn_s": 0.8,
+    "fall_penalty_s": 3,
+    "min": 3,
+    "max": 5
+   },
+   "gems": {
+    "per_course": 10,
+    "points": 100
+   }
+  }
+ }
+}

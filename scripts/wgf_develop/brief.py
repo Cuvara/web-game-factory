@@ -625,6 +625,12 @@ def existing_floor(design):
             "floor, and no shipped unit, asset file or feature is deleted or "
             "replaced by a primitive unless a finding in this brief asks for "
             "exactly that change.")
+    ids = [str(u) for u in floor.get("unit_ids") or []] if not unmeasured else []
+    if ids:
+        rule += (" EXTEND and improve the shipped units - "
+                 + ", ".join(f"`{u}`" for u in ids[:24])
+                 + (f" and {len(ids) - 24} more" if len(ids) > 24 else "")
+                 + " - each under its own id; never replace one with a new unit.")
     if unmeasured or source.get("method") == "probe":
         rule += (" Its content lives in source code, not in a content data file: until a "
                  "content data file counts it, no commit may delete a shipped source file "

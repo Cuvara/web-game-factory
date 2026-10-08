@@ -454,6 +454,17 @@ class DevelopStep(WorkflowStep):
                 specialist=spec,
             )
 
+        if content_floor.adopted(design) and not committed:
+            # A design that replaces the adopted game's units instead of extending them is
+            # refused before any developer session is paid for (floor.replacement).
+            refused = content_floor.replacement(design, git, phase,
+                                                run_id=getattr(context, "run_id", None),
+                                                config=getattr(context, "config", None))
+            if refused:
+                context.logger.error("develop refuses a replacement of the adopted game",
+                                     reason=refused)
+                return StepResult.blocked(refused)
+
         if (phase == "greybox" and content_floor.adopted(design) and spec is None
                 and not committed and playability is None):
             # An adopted game that already ships production content is improved, never

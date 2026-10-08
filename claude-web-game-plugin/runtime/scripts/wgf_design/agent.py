@@ -283,6 +283,19 @@ PROMPT_COMMITMENTS = (
     " every unit it ships under its own id, and plan at least as much; the shipped build is"
     " counted through the play probe before any developer change and held to."
 )
+# Appended when the run adopts a repository whose shipped units the run's last design does not
+# plan (a first design, or a person moved the checkout): the starting units ARE the game.
+PROMPT_ADOPTION = (
+    " This repository already ships a game, and this design ADOPTS it. The starting draft's"
+    " build_spec.content.units are the units it ships at commit {commit} (the request's"
+    " `adoption`; every shipped unit in full, layout included, is in {units}). EXTEND and"
+    " improve them: keep every shipped unit under its own id ({ids}), complete what each"
+    " lacks, and add units beside them where the brief, the strategy or the tier asks for"
+    " more. Never replace a shipped unit with a new one, rename it, plan a different set"
+    " of units, or reuse a shipped id for another unit (another objective, structure,"
+    " elements, mechanics or difficulty): the design fails when a shipped unit id is missing"
+    " from it, and develop refuses a design that rewrites the shipped units under their ids."
+)
 # Appended when the step asks again: the previous draft and exactly what made it invalid.
 PROMPT_REPAIR = (
     " Your previous draft (the request's `repair.previous_draft`) was invalid for the reasons"
@@ -465,6 +478,19 @@ class AgentAuthor(DesignAuthor):
             # The built-in author's draft is the starting point: the exact shape the module
             # requires, already inside the strategy's scope. The agent improves it.
             starting = ArchetypeAuthor(starting_point=True).draft(brief)
+        adoption = None if gaps else brief.get("adoption")
+        adopted_path = os.path.join(directory, f"{stem}.adopted-units.json")
+        if adoption:
+            # The shipped units are the starting units: the design extends the game the
+            # repository ships, never a game of other content (step.py `_adoption`).
+            spec = starting.setdefault("build_spec", {})
+            content_spec = spec.get("content") if isinstance(spec.get("content"), dict) else {}
+            content_spec["units"] = copy.deepcopy(adoption.get("units") or [])
+            spec["content"] = content_spec
+            with open(adopted_path, "w", encoding="utf-8", newline="\n") as handle:
+                json.dump({"commit": adoption.get("commit"), "path": adoption.get("path"),
+                           "units": adoption.get("shipped_units") or adoption.get("units")},
+                          handle, indent=2, ensure_ascii=False, default=str)
         idea = (brief.get("strategy") or {}).get("brief")
         rules = load_rules()
         models = genre_models.load()
@@ -556,6 +582,14 @@ class AgentAuthor(DesignAuthor):
         if not gaps:
             # On a gap repair the starting draft is the draft file itself.
             request["starting_draft"] = starting
+        if adoption:
+            request["adoption"] = {
+                "commit": adoption.get("commit"), "path": adoption.get("path"),
+                "unit_ids": adoption.get("unit_ids"), "units_file": adopted_path,
+                "rewritten": adoption.get("rewritten") or [],
+                "supersedes": adoption.get("supersedes"),
+                "rule": "Every unit id the repository ships stays in the design under its "
+                        "own id; extend and improve the shipped units, never replace them."}
         if revision:
             # The identity is kept, so no other look is offered.
             request["revision"] = {"revises_version": revision.get("version"),
@@ -604,6 +638,12 @@ class AgentAuthor(DesignAuthor):
             values["prompt"] += PROMPT_ART_KIT
         values["prompt"] += (PROMPT_DEPTH + PROMPT_CONTENT + PROMPT_FEATURES
                              + PROMPT_COMMITMENTS)
+        if adoption:
+            ids = [str(i) for i in adoption.get("unit_ids") or []]
+            values["prompt"] += PROMPT_ADOPTION.format(
+                commit=str(adoption.get("commit") or "")[:12], units=adopted_path,
+                ids=", ".join(ids[:16]) + (f" and {len(ids) - 16} more" if len(ids) > 16
+                                           else ""))
         if repair:
             values["prompt"] += PROMPT_REPAIR
         try:
@@ -637,8 +677,9 @@ class AgentAuthor(DesignAuthor):
             except (OSError, UnicodeDecodeError, ValueError) as exc:
                 raise AuthorError(f"the design draft is not readable JSON: {exc}") from exc
             # A revision of a design whose strategy did not change may stand as it was.
-            unchanged_ok = (bool(revision) and not repair and
-                            (revision.get("strategy_delta") or {}).get("unchanged") is True)
+            unchanged_ok = bool(adoption) or (
+                bool(revision) and not repair and
+                (revision.get("strategy_delta") or {}).get("unchanged") is True)
             if text == seed and not unchanged_ok and not gaps:
                 raise AuthorError(f"the design agent left the draft at {draft_path} "
                                   f"unchanged")

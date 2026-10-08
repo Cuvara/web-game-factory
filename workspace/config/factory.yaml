@@ -151,6 +151,9 @@ factory:
     # Take over a repository or directory init did not create in this run. Leave false:
     # set it only to adopt a specific existing project, then set it back.
     adopt_existing: false
+    # accepted_baseline: <tag-or-sha>   # adopted runs: the commit whose content is the floor
+    #                                   # (default: HEAD less this run's own commits). Not a
+    #                                   # branch: its tip moves with the run's commits.
     populate_timeout_seconds: 60        # GitHub generates from a template asynchronously
 
   # The verification module (scripts/wgf_verification, docs/verification-module.md). It

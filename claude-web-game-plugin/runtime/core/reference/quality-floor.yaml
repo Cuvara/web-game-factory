@@ -125,7 +125,10 @@ build_evidence:
 # Evaluator kinds (scripts/wgf_quality/scoring.py), read generically:
 #   checks    `report`'s `checks[]` whose id is listed (a trailing `*` is a prefix); with
 #             `projects`, each viewport is measured on its own and the lowest share counts;
-#             `required_only: false` counts optional checks too. Observed: the share of PASS.
+#             `required_only: false` counts optional checks too; `required_only: passed` counts
+#             an optional check only when it passed (a producer that holds a check by the
+#             run's own tier reports it optional below the release class, its failure there a
+#             WARNING and an unmeasured one a note). Observed: the share of PASS.
 #   verdict   `report`'s `field` (default verdict) is one of `pass`. Observed: the value.
 #   scores    `report`'s `field` map, the `keys` listed, aggregated by `aggregate` (min|mean).
 #   count     the length of `report`'s `field` list, filtered by `where` (a value, a list of
@@ -642,7 +645,7 @@ universal:
     dimension: gameplay
     scorecard: feel
     metric: share of the physics-vs-drawing checks that pass - every turn at a drawn surface, the drawn body the size of the collider
-    evaluate: {kind: checks, report: playability-report, checks: [physics.undrawn_collision, physics.collider_size], applies: reported}
+    evaluate: {kind: checks, report: playability-report, checks: [physics.undrawn_collision, physics.collider_size], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
     severity: {release: blocker}
@@ -654,7 +657,7 @@ universal:
   - id: floor.naive_control
     dimension: gameplay
     metric: share of the naive-control checks that pass - lateral drift on the path, camera forward against control forward
-    evaluate: {kind: checks, report: playability-report, checks: [naive.drift, naive.alignment], applies: reported}
+    evaluate: {kind: checks, report: playability-report, checks: [naive.drift, naive.alignment], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
     severity: {release: blocker}
@@ -666,7 +669,7 @@ universal:
   - id: floor.naive_challenge
     dimension: content
     metric: share of the naive-play checks that pass - setbacks in the opening unit, time to clear against par, the shortest unit, the clear rate against the accepted build
-    evaluate: {kind: checks, report: playability-report, checks: [naive.setbacks, naive.pace, naive.unit_duration, naive.clear_rate], applies: reported}
+    evaluate: {kind: checks, report: playability-report, checks: [naive.setbacks, naive.pace, naive.unit_duration, naive.clear_rate], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
     severity: {release: blocker}
@@ -678,7 +681,7 @@ universal:
   - id: floor.level_geometry
     dimension: content
     metric: share of the declared-geometry checks that pass - bends no tighter than the track, units long enough for the tier
-    evaluate: {kind: checks, report: playability-report, checks: [level.geometry, level.unit_length], applies: reported}
+    evaluate: {kind: checks, report: playability-report, checks: [level.geometry, level.unit_length], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
     severity: {release: blocker}
@@ -691,7 +694,7 @@ universal:
     dimension: technical
     scorecard: browser
     metric: share of the console checks that pass while the bot plays - no console error from the game's own origin
-    evaluate: {kind: checks, report: playability-report, checks: [runtime.console_errors], applies: reported}
+    evaluate: {kind: checks, report: playability-report, checks: [runtime.console_errors], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
     severity: {release: blocker}
@@ -704,7 +707,7 @@ universal:
     dimension: technical
     scorecard: performance
     metric: no WebGL context lost while the bot plays
-    evaluate: {kind: checks, report: playability-report, checks: [runtime.webgl_context], applies: reported}
+    evaluate: {kind: checks, report: playability-report, checks: [runtime.webgl_context], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
     severity: {release: blocker}
@@ -723,7 +726,7 @@ universal:
     dimension: technical
     scorecard: browser
     metric: share of the browser boot and runtime checks that pass on every viewport - the spec ran, the page loads, a canvas is drawn, loading completes, no page or console error, no context menu
-    evaluate: {kind: checks, report: verification-report, checks: [browser.run, "browser.loads*", "browser.canvas*", "browser.ready*", "browser.page-errors*", "browser.console-errors*", "browser.context-menu*"], applies: reported}
+    evaluate: {kind: checks, report: verification-report, checks: [browser.run, "browser.loads*", "browser.canvas*", "browser.ready*", "browser.page-errors*", "browser.console-errors*", "browser.context-menu*"], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
     severity: {release: blocker}
@@ -736,7 +739,7 @@ universal:
     dimension: gameplay
     scorecard: browser
     metric: share of the browser session checks that pass - win, loss and restart reached, pause and resume, play held while the page is hidden
-    evaluate: {kind: checks, report: verification-report, checks: ["browser.win*", "browser.lose*", "browser.restart*", "browser.pause-resume*", "browser.hidden-pause*"], applies: reported}
+    evaluate: {kind: checks, report: verification-report, checks: ["browser.win*", "browser.lose*", "browser.restart*", "browser.pause-resume*", "browser.hidden-pause*"], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
     severity: {release: blocker}
@@ -748,7 +751,7 @@ universal:
   - id: floor.browser_layout
     dimension: ui
     metric: share of the browser layout checks that pass on every viewport - menus reach play, no scroll, nothing clipped, no overlap, no UI over a gameplay-critical entity
-    evaluate: {kind: checks, report: verification-report, checks: ["browser.menus*", "browser.overflow*", "browser.clipping*", "browser.ui-overlap*", "browser.ui-covers-play*"], applies: reported}
+    evaluate: {kind: checks, report: verification-report, checks: ["browser.menus*", "browser.overflow*", "browser.clipping*", "browser.ui-overlap*", "browser.ui-covers-play*"], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
     severity: {release: blocker}
@@ -772,7 +775,7 @@ universal:
   - id: floor.browser_audio
     dimension: audio
     metric: share of the browser audio checks that pass - every clip decodes, actions and end states sound, one-shots never loop, mute works, silence while hidden, a balanced mix
-    evaluate: {kind: checks, report: verification-report, checks: ["browser.audio-*"], applies: reported}
+    evaluate: {kind: checks, report: verification-report, checks: ["browser.audio-*"], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
     severity: {release: blocker}
@@ -785,7 +788,7 @@ universal:
     dimension: technical
     scorecard: performance
     metric: share of the browser performance checks that pass - load and first input in time, stable frames, bounded heap growth, no oversized texture, no lost WebGL context
-    evaluate: {kind: checks, report: verification-report, checks: ["browser.load-time*", "browser.first-interaction*", "browser.frame-stability*", "browser.memory-growth*", "browser.oversized-textures*", "browser.webgl-context*"], applies: reported}
+    evaluate: {kind: checks, report: verification-report, checks: ["browser.load-time*", "browser.first-interaction*", "browser.frame-stability*", "browser.memory-growth*", "browser.oversized-textures*", "browser.webgl-context*"], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
     severity: {release: blocker}

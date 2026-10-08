@@ -140,7 +140,13 @@ verify itself holds BLOCKED at release) is not. `floor.physics_drawn` (game feel
 design), `floor.runtime_console`, `floor.browser_boot` and `floor.browser_session` (browser),
 `floor.browser_layout` (UI/UX), `floor.browser_audio` (audio), `floor.webgl_context` and
 `floor.browser_performance` (performance) are release blockers; `floor.browser_ui_advisory`
-and `floor.browser_asset_weight` read the advisory checks and are warnings. A timing check
+and `floor.browser_asset_weight` read the advisory checks and are warnings. The blockers
+read `required_only: passed`: both producers hold a check by the run's own tier class, so
+below the release class a quality check is optional - its failure the producer's WARNING,
+an unmeasured one its note - and the floor counts its passes but is not held by the rest; a
+criterion whose checks are all optional and none passed does not apply. At the release class
+the producers report them required (an unmeasured one held as a required FAIL), and every
+one counts. A timing check
 verify could only measure on a degraded host is BLOCKED there, and counts here as not passed:
 the build is measured again on a quiet host before it can pass.
 

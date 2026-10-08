@@ -299,6 +299,43 @@ class BrowserQAAndPlayRealism(unittest.TestCase):
         result = _score(docs)
         self.assertEqual(_line(result, "level_design")["status"], "PASS")
 
+    def test_below_the_release_class_an_optional_failure_is_the_producers_warning(self):
+        # A run below the release class (tier mvp over a release-tier design): play realism
+        # and browser QA report their quality checks optional - a failure is a WARNING, an
+        # unmeasured check a note. The floor counts their passes and is not held by them.
+        docs = _with_browser_and_realism(qg.release_build())
+        for report in (docs["verification-report"], docs["playability-report"]):
+            for check in report["checks"]:
+                if check["id"].startswith(("browser.", "physics.", "naive.", "level.",
+                                           "runtime.")):
+                    check["required"] = False
+        _set(docs["verification-report"], "browser.audio-events", "WARNING")
+        _set(docs["playability-report"], "physics.collider_size", "WARNING")
+        result = _score(docs)
+        self.assertEqual(result["verdict"], "PASS")
+        self.assertIn("floor.physics_drawn", _line(result, "feel")["criteria"])
+
+    def test_checks_all_optional_and_none_passed_do_not_apply(self):
+        # A 3D build reports no screen turns, and its collider unmeasured below the release
+        # class: physics_drawn has nothing the producer holds - it does not apply, rather
+        # than blocking as UNMEASURED.
+        docs = _with_browser_and_realism(qg.release_build())
+        docs["playability-report"]["checks"] = [
+            c for c in docs["playability-report"]["checks"]
+            if c["id"] != "physics.undrawn_collision"]
+        _set(docs["playability-report"], "physics.collider_size", "WARNING", required=False)
+        result = _score(docs)
+        self.assertEqual(result["verdict"], "PASS")
+        self.assertNotIn("floor.physics_drawn", _line(result, "feel")["criteria"])
+
+    def test_at_the_release_class_an_unmeasured_held_check_blocks(self):
+        # The same collider unmeasured at the release class is held (quality-policy
+        # skipped_checks): a required FAIL, and the line is below its floor.
+        docs = _with_browser_and_realism(qg.release_build())
+        _set(docs["playability-report"], "physics.collider_size", "FAIL")
+        result = _score(docs)
+        self.assertEqual(_line(result, "feel")["status"], "BELOW_FLOOR")
+
     def test_a_build_without_browser_qa_or_realism_is_not_scored_on_them(self):
         result = _score(qg.release_build())
         self.assertNotIn("floor.browser_boot", _line(result, "browser")["criteria"])

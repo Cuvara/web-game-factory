@@ -46,6 +46,13 @@ LISTING_PHASE = "listing"
 # lists one of its checks, in any status (a SKIPPED one too, which measured nothing and is
 # therefore UNMEASURED): the producer decides whether the check concerns this game at all.
 APPLIES_REPORTED = "reported"
+# `evaluate.required_only: passed` (checks only): every required check counts, and an optional
+# one only when it passed. A producer whose strength follows the run's own tier (play
+# realism, browser QA) reports a check optional below the release class - a failure there is
+# its WARNING, an unmeasured one its note - while its passes still show what was measured.
+# With `applies: reported`, a criterion whose checks are all optional and none passed does
+# not apply: the producer holds none of them at this run's strength.
+REQUIRED_PASSED = "passed"
 
 
 class ContractError(ValueError):
@@ -99,6 +106,11 @@ def _criteria_problems(where, criteria, dimensions):
         if not isinstance(evaluate, dict) or evaluate.get("kind") not in KINDS \
                 or not evaluate.get("report"):
             problems.append(f"{at}: evaluate needs a kind of {', '.join(KINDS)} and a report")
+        elif evaluate.get("required_only") not in (None, True, False, REQUIRED_PASSED) or (
+                evaluate.get("required_only") == REQUIRED_PASSED
+                and evaluate.get("kind") != "checks"):
+            problems.append(f"{at}: evaluate.required_only is true, false or "
+                            f"{REQUIRED_PASSED!r} (checks only)")
         elif evaluate.get("applies") not in (None, APPLIES_REPORTED) or (
                 evaluate.get("applies") and evaluate.get("kind") != "checks"):
             problems.append(f"{at}: evaluate.applies may only be {APPLIES_REPORTED!r}, on a "
@@ -287,7 +299,8 @@ def _measure(evaluate, report):
         checks = [c for c in report.get("checks") or [] if isinstance(c, dict)
                   and _matches(c.get("id"), evaluate.get("checks"))
                   and c.get("status") in MEASURED
-                  and (c.get("required") or not required_only)]
+                  and (c.get("required") or not required_only
+                       or (required_only == REQUIRED_PASSED and c.get("status") == "PASS"))]
         projects = evaluate.get("projects")
         if projects:
             shares = {}
@@ -412,6 +425,13 @@ def _evaluate(layer, criterion, loaded, evidence_by_type, tier, references, defe
     if evaluate.get("applies") == APPLIES_REPORTED and not any(
             isinstance(c, dict) and _matches(c.get("id"), evaluate.get("checks"))
             for c in report.get("checks") or []):
+        return None
+    if evaluate.get("required_only") == REQUIRED_PASSED and evaluate.get("applies") ==             APPLIES_REPORTED and not any(
+                isinstance(c, dict) and _matches(c.get("id"), evaluate.get("checks"))
+                and (c.get("required") or c.get("status") == "PASS")
+                for c in report.get("checks") or []):
+        # Every check it reads is one the producer does not hold at this run's strength,
+        # and none passed: the producer's own WARNINGs say so; nothing applies here.
         return None
     observed, share, measured = _measure(evaluate, report)
     if not measured:

@@ -340,6 +340,113 @@ class ContractExceptions(unittest.TestCase):
                          ["rule L15 does not apply to this run"])
 
 
+class ReviewFixes(unittest.TestCase):
+    """The independent review of K1: each loophole, closed and shown closed."""
+
+    def test_an_unclassifiable_check_is_a_missing_validator_never_a_silent_exclusion(self):
+        data = knowledge(rule("X1", "global", checks=("playability:no.such.check",)))
+        body = resolve(data)
+        self.assertEqual(ids(body), [])
+        self.assertNotIn("X1", [e["id"] for e in body["not_applicable"]])
+        self.assertEqual(body["missing_validators"],
+                         [{"check": "playability:no.such.check", "producer": None,
+                           "rule": "X1", "why": "no source of check-tiers classifies it"}])
+        data = knowledge(dict(rule("X2", "global"), checks=[]))
+        self.assertEqual(resolve(data)["missing_validators"][0]["rule"], "X2")
+
+    def test_an_unknown_scope_key_applies_like_an_undetermined_facet(self):
+        body = resolve(knowledge(rule("K1", {"engines": ["phaser"]})), render="2d")
+        self.assertEqual(ids(body), ["K1"])
+        self.assertEqual(body["rules"][0]["why_applicable"],
+                         ["scope key 'engines' is not a facet: applies"])
+
+    def test_facets_are_normalised_or_refused(self):
+        self.assertEqual(resolver.facets(platforms="y8")["platforms"], ["y8"])
+        self.assertEqual(resolver.facets(render="3D", family=" Racing ",
+                                         platforms=["Y8", "y8", ""], tier="Release"),
+                         {"family": "racing", "genre": None, "render": "3d",
+                          "platforms": ["y8"], "tier": "release", "profile": None,
+                          "archetype": None})
+        for bad in ({"render": "4d"}, {"render": 3}, {"platforms": [7]}, {"family": ["a"]}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                resolver.facets(**bad)
+        # a string platform matches as the platform, never as its letters
+        body = resolve(knowledge(rule("P1", {"platforms": ["y8"]})), platforms="y8")
+        self.assertEqual(ids(body), ["P1"])
+        body = resolve(knowledge(rule("P2", {"platforms": ["y"]})), platforms="y8")
+        self.assertEqual(ids(body), [])
+        # facets passed to resolve() are normalised too
+        self.assertEqual(ids(resolve(LESSONS, render="2D")), ids(resolve(LESSONS, render="2d")))
+        self.assertEqual(resolver.facets_from({"engine": {"dimension": "3D"}})["render"], "3d")
+
+    def test_a_lesson_retired_with_only_a_reason_stays_visible_as_advisory(self):
+        retired = dict(rule("R1", "global", checks=("playability:probe.present",)),
+                       lifecycle="deprecated", reason="replaced by the portal's own probe")
+        body = resolve(knowledge(retired))
+        self.assertEqual(ids(body), ["R1"])
+        self.assertEqual(body["rules"][0]["level"], "recommended")
+        self.assertIn("deprecated (replaced by the portal's own probe): reported as "
+                      "advisory, never blocks", body["rules"][0]["why_applicable"])
+        self.assertEqual(body["required_validators"], [])
+        successor = dict(retired, superseded_by="R2")
+        body = resolve(knowledge(successor, rule("R2", "global")))
+        self.assertEqual(why_not(body, "R1"), "deprecated: superseded by R2")
+
+    def test_no_exception_holds_without_the_time_it_is_read_at(self):
+        body = resolver.resolve(LESSONS, CHECKS, TIERS, resolver.facets(), workflow=WORKFLOW,
+                                exceptions=[exception()])
+        self.assertEqual(body["exceptions"], [])
+        self.assertTrue(any("no time was given" in p
+                            for p in body["exceptions_refused"][0]["problems"]))
+
+    def test_an_exception_scoped_to_a_platform_the_run_does_not_target_is_refused(self):
+        vocabulary = model.vocabulary(ROOT)
+        record = exception(scope={"platforms": ["crazygames"]})
+        body = resolver.resolve(LESSONS, CHECKS, TIERS, resolver.facets(platforms=["y8"]),
+                                workflow=WORKFLOW, exceptions=[record], now=NOW,
+                                vocabulary=vocabulary)
+        self.assertEqual(body["exceptions"], [])
+        self.assertTrue(any("not targeted by this run" in p
+                            for p in body["exceptions_refused"][0]["problems"]))
+        record = exception(scope={"platforms": ["y8"]})
+        body = resolver.resolve(LESSONS, CHECKS, TIERS, resolver.facets(platforms=["y8"]),
+                                workflow=WORKFLOW, exceptions=[record], now=NOW,
+                                vocabulary=vocabulary)
+        self.assertEqual(body["exceptions"], [record])
+
+    def test_platform_profiles_are_the_runs_pins_not_the_live_files(self):
+        strategy = {"platform_set": [{"id": "yandex", "profile_version": "1.1.0"},
+                                     {"id": "y8"}]}
+        pins = resolver.platform_pins(strategy)
+        self.assertEqual(pins, {"yandex": "yandex@1.1.0"})
+        found = versions.collect(root=ROOT, platforms=["yandex", "y8"], pins=pins)
+        self.assertEqual(found["platform_profiles"]["yandex"], "yandex@1.1.0")
+        self.assertTrue(found["platform_profiles"]["y8"].startswith("y8@"))
+
+        def read(relpath):
+            if relpath == "core/reference/platforms/y8.yaml":
+                return b"id: y8\nversion: 9.9.9\n"
+            with open(os.path.join(ROOT, *relpath.split("/")), "rb") as handle:
+                return handle.read()
+        found = versions.collect(read=read, root=ROOT, platforms=["y8"])
+        self.assertEqual(found["platform_profiles"]["y8"], "y8@9.9.9")
+
+    def test_pinned_check_tiers_are_classified_against_pinned_files(self):
+        live = registry._read(ROOT, "core/reference/browser-qa.yaml")
+        pinned = copy.deepcopy(live)
+        for check in pinned["checks"]:
+            if check["id"] == "context-menu":
+                check["tier"] = "hard"
+
+        def reader(relative):
+            if relative == "core/reference/browser-qa.yaml":
+                return pinned
+            return registry._read(ROOT, relative)
+        checks, _ = registry.classify(TIERS, ROOT, reader=reader)
+        self.assertEqual(checks["browser-qa:browser.context-menu"]["tier"], "hard")
+        self.assertEqual(CHECKS["browser-qa:browser.context-menu"]["tier"], "quality")
+
+
 class Cli(unittest.TestCase):
     def wgf(self, *args, expect=0):
         done = subprocess.run([sys.executable, WGF, *args], cwd=ROOT, capture_output=True,

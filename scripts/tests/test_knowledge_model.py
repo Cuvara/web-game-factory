@@ -410,13 +410,29 @@ class ExceptionPolicy(Lessons):
         self.write("core/reference/lessons.yaml", data)
         self.has("max_days is a positive number of days")
 
+    def test_a_window_has_an_upper_bound(self):
+        data = self.lessons()
+        data["exceptions"]["max_days"] = model.MAX_EXCEPTION_DAYS + 1
+        self.write("core/reference/lessons.yaml", data)
+        self.has(f"max_days {model.MAX_EXCEPTION_DAYS + 1} is over "
+                 f"{model.MAX_EXCEPTION_DAYS}")
+        data["exceptions"]["max_days"] = model.MAX_EXCEPTION_DAYS
+        self.write("core/reference/lessons.yaml", data)
+        self.assertEqual(self.problems(), [])
+
+
+VOCABULARY = model.vocabulary(ROOT)
+RUN = {"platforms": ["y8", "yandex"]}
+
 
 class Exceptions(unittest.TestCase):
     def setUp(self):
         self.schema = _exception_schema()
 
-    def problems(self, record, lessons=LESSONS, now=NOW):
-        return model.exception_problems(record, lessons, CHECKS, now=now)
+    def problems(self, record, lessons=LESSONS, now=NOW, run_facets=RUN,
+                 vocabulary=VOCABULARY):
+        return model.exception_problems(record, lessons, CHECKS, now, run_facets=run_facets,
+                                        vocabulary=vocabulary)
 
     def test_a_persons_exception_is_valid(self):
         record = exception()
@@ -439,12 +455,34 @@ class Exceptions(unittest.TestCase):
         self.assertTrue(self.schema.iter_errors(record))
         self.assertTrue(any("at least 20 characters" in p for p in self.problems(record)))
 
+    def test_a_padded_reason_is_refused(self):
+        # 23 letters pass the schema's length floor; the model reads what they say
+        self.assertEqual(self.schema.iter_errors(exception(reason="a" * 23)), [])
+        for padded, why in (("a" * 23, "at least 4 distinct words"),
+                            ("accepted accepted accepted accepted ok", "4 distinct words"),
+                            ("fine fine fine fine fine fine for this launch now",
+                             "repeats one word"),
+                            ("12345678901234567890 ok ok", "4 distinct words")):
+            with self.subTest(reason=padded):
+                self.assertTrue(any(why in p for p in self.problems(exception(reason=padded))),
+                                self.problems(exception(reason=padded)))
+
     def test_an_expired_exception_is_refused(self):
         record = exception()
         later = datetime.datetime(2026, 10, 21, tzinfo=datetime.timezone.utc)
         self.assertEqual(self.schema.iter_errors(record), [])   # the schema cannot know
         self.assertIn("expired at 2026-10-20T09:00:00Z", self.problems(record, now=later))
         self.assertFalse(model.exception_active(record, later))
+
+    def test_an_exception_read_without_a_time_does_not_hold(self):
+        problems = self.problems(exception(), now=None)
+        self.assertTrue(any("no time was given, so it does not hold" in p for p in problems))
+        self.assertFalse(model.exception_active(exception(), None))
+
+    def test_an_exception_created_in_the_future_is_refused(self):
+        record = exception(created_at="2026-10-09T09:00:00Z")
+        self.assertTrue(any("created in the future" in p for p in self.problems(record)))
+        self.assertFalse(model.exception_active(record, NOW))
 
     def test_an_exception_without_expiry_is_refused(self):
         record = exception(expires_at=None)
@@ -474,6 +512,14 @@ class Exceptions(unittest.TestCase):
         self.assertTrue(any("a person, never automation" in p
                             for p in self.problems(blocking, lessons)))
 
+    def test_the_record_alone_is_not_trusted_about_its_approver(self):
+        # A record that calls a bot a person passes the shape and the policy: what makes it
+        # a person's is the operator act that stamps `mode` itself (K2), which the model's
+        # contract states - so the docstring says so, and this test pins that it does.
+        record = exception(approved_by={"identifier": "bot", "mode": "human"})
+        self.assertEqual(self.problems(record), [])
+        self.assertIn("never trusted on its own", model.exception_problems.__doc__)
+
     def test_an_unknown_approver_mode_is_refused_by_the_schema(self):
         record = exception(approved_by={"identifier": "x", "mode": "config"})
         self.assertTrue(self.schema.iter_errors(record))
@@ -490,6 +536,33 @@ class Exceptions(unittest.TestCase):
     def test_a_scope_check_outside_the_rule_is_refused(self):
         record = exception(scope={"checks": ["playability:depth.ramp"]})
         self.assertTrue(any("are not checks of rule L26" in p for p in self.problems(record)))
+
+    def test_a_scope_platform_outside_the_run_or_the_factory_is_refused(self):
+        record = exception(scope={"platforms": ["crazygames"]})
+        self.assertTrue(any("crazygames are not targeted by this run" in p
+                            for p in self.problems(record)))
+        record = exception(scope={"platforms": ["nowhere"]})
+        self.assertTrue(any("nowhere are not platforms" in p for p in self.problems(record)))
+        # undetermined run platforms: the vocabulary still holds it
+        self.assertEqual(self.problems(exception(), run_facets={}), [])
+        # without the vocabulary nothing can be checked: refused
+        self.assertTrue(any("cannot be checked" in p
+                            for p in self.problems(exception(), vocabulary=None)))
+
+    def test_a_scope_platform_outside_the_rules_scope_is_refused(self):
+        lessons = copy.deepcopy(LESSONS)
+        next(l for l in lessons["lessons"] if l["id"] == "L26")["scope"] = {
+            "platforms": ["yandex"]}
+        self.assertTrue(any("y8 are outside rule L26's scope" in p
+                            for p in self.problems(exception(), lessons)))
+
+    def test_a_scope_viewport_must_be_one_a_gate_plays(self):
+        self.assertEqual(self.problems(exception(scope={"viewports": ["tablet", "mobile"]})),
+                         [])
+        self.assertTrue(any("phablet are not viewports" in p for p in self.problems(
+            exception(scope={"viewports": ["phablet"]}))))
+        self.assertTrue(any("scope.viewports cannot be checked" in p for p in self.problems(
+            exception(scope={"viewports": ["tablet"]}), vocabulary=None)))
 
     def test_the_schemas_reason_floor_is_the_models(self):
         self.assertEqual(self.schema.schema["properties"]["reason"]["minLength"],
@@ -545,50 +618,146 @@ class Versions(unittest.TestCase):
 # -------------------------------------------------------------------------- weakening
 
 
+def _classify(tiers):
+    checks, _ = registry.classify(tiers, ROOT)
+    return checks
+
+
+def _lesson(data, lesson_id):
+    return next(l for l in data["lessons"] if l["id"] == lesson_id)
+
+
 class Weakening(unittest.TestCase):
     def current(self):
         return copy.deepcopy(LESSONS)
 
+    def weak(self, previous, current, previous_checks=CHECKS, current_checks=None):
+        return model.weakening_problems(previous, current, previous_checks, current_checks)
+
+    def has(self, problems, text):
+        self.assertTrue(any(text in p for p in problems), problems)
+
     def test_an_unchanged_file_has_no_problem(self):
-        self.assertEqual(model.weakening_problems(LESSONS, self.current(), CHECKS), [])
+        self.assertEqual(self.weak(LESSONS, self.current()), [])
 
     def test_a_weakened_level_without_supersession_fails_integrity(self):
         previous = self.current()
-        next(l for l in previous["lessons"] if l["id"] == "L23")["level"] = "blocking"
-        problems = model.weakening_problems(previous, self.current(), CHECKS)
-        self.assertTrue(any("L23: level weakened in place (blocking -> required)" in p
-                            for p in problems), problems)
+        _lesson(previous, "L23")["level"] = "blocking"
+        self.has(self.weak(previous, self.current()),
+                 "L23: weakened in place - held blocking in a run before, required now")
+
+    def test_a_blocking_lesson_turned_process_fails(self):
+        current = self.current()
+        _lesson(current, "L5").update(status="process", category="process",
+                                      held_by="a note")
+        self.has(self.weak(LESSONS, current), "L5: weakened in place - held blocking in a "
+                                              "run before, in no run now")
+
+    def test_a_lesson_sent_back_to_candidate_fails(self):
+        current = self.current()
+        _lesson(current, "L25")["lifecycle"] = "candidate"
+        self.has(self.weak(LESSONS, current),
+                 "L25: weakened in place - held required in a run before, experimental now")
+
+    def test_a_check_removed_from_a_rule_fails_even_at_the_same_level(self):
+        current = self.current()
+        l27 = _lesson(current, "L27")
+        l27["checks"] = [c for c in l27["checks"] if c != "browser-qa:browser.audio-mute"]
+        self.assertEqual(model.level_of(l27, CHECKS), "required")
+        self.has(self.weak(LESSONS, current),
+                 "L27: no longer held by browser-qa:browser.audio-mute")
+
+    def test_a_demoted_check_tier_is_judged_by_each_sides_own_tiers(self):
+        tiers = copy.deepcopy(DATA["tiers"])
+        tiers["overrides"] = {"production-quality:assets.runtime": "quality"}
+        demoted = _classify(tiers)
+        problems = self.weak(LESSONS, self.current(), CHECKS, demoted)
+        self.has(problems, "L3: production-quality:assets.runtime was demoted from hard to "
+                           "quality")
+        self.has(problems, "L3: weakened in place - held blocking in a run before, required")
+        # judged with one side's tiers only, the demotion would be invisible
+        self.assertEqual(self.weak(LESSONS, self.current(), demoted, demoted), [])
+
+    def test_a_promoted_check_tier_is_no_problem(self):
+        tiers = copy.deepcopy(DATA["tiers"])
+        tiers["overrides"] = {"play-realism:naive.clear_rate": "hard"}
+        self.assertEqual(self.weak(LESSONS, self.current(), CHECKS, _classify(tiers)), [])
 
     def test_a_narrowed_scope_fails(self):
         current = self.current()
-        next(l for l in current["lessons"] if l["id"] == "L1")["scope"] = {"render": ["2d"]}
-        problems = model.weakening_problems(LESSONS, current, CHECKS)
-        self.assertTrue(any("L1: scope narrowed in place" in p for p in problems), problems)
+        _lesson(current, "L1")["scope"] = {"render": ["2d"]}
+        self.has(self.weak(LESSONS, current), "L1: scope narrowed in place")
 
     def test_a_widened_scope_and_a_stronger_level_pass(self):
         current = self.current()
-        l15 = next(l for l in current["lessons"] if l["id"] == "L15")
-        l15["scope"] = "global"
-        next(l for l in current["lessons"] if l["id"] == "L23")["level"] = "blocking"
-        self.assertEqual(model.weakening_problems(LESSONS, current, CHECKS), [])
+        _lesson(current, "L15")["scope"] = "global"
+        _lesson(current, "L23")["level"] = "blocking"
+        self.assertEqual(self.weak(LESSONS, current), [])
 
     def test_a_deleted_lesson_fails(self):
         current = self.current()
         current["lessons"] = [l for l in current["lessons"] if l["id"] != "L25"]
-        problems = model.weakening_problems(LESSONS, current, CHECKS)
-        self.assertTrue(any("L25: deleted" in p for p in problems), problems)
+        self.has(self.weak(LESSONS, current), "L25: deleted")
 
-    def test_a_superseded_lesson_may_be_weakened(self):
+    def successor(self, current, of, **changes):
+        old = _lesson(current, of)
+        new = dict(copy.deepcopy(old), id="L29", **changes)
+        old.update(lifecycle="deprecated", superseded_by="L29")
+        current["lessons"].append(new)
+        return new
+
+    def test_a_successor_as_strong_and_as_wide_may_replace_a_lesson(self):
         current = self.current()
-        l1 = next(l for l in current["lessons"] if l["id"] == "L1")
-        l1.update(scope={"render": ["2d"]}, lifecycle="deprecated", superseded_by="L26")
-        self.assertEqual(model.weakening_problems(LESSONS, current, CHECKS), [])
+        self.successor(current, "L1", title="L1 restated")
+        self.assertEqual(self.weak(LESSONS, current), [])
 
-    def test_a_1x_previous_version_is_not_compared(self):
+    def test_a_weaker_or_narrower_successor_fails(self):
+        current = self.current()
+        self.successor(current, "L5", checks=["playability:depth.ramp"])
+        problems = self.weak(LESSONS, current)
+        self.has(problems, "L5: weakened in place - held blocking in a run before, required "
+                           "now (through its successor L29)")
+        self.has(problems, "L5: no longer held by playability:content.units_reachable "
+                           "(through its successor L29)")
+        current = self.current()
+        self.successor(current, "L1", scope={"render": ["2d"]})
+        self.has(self.weak(LESSONS, current), "L1: scope narrowed in place (through its "
+                                              "successor L29)")
+
+    def test_a_lesson_retired_with_a_reason_stays_advisory_and_visible(self):
+        current = self.current()
+        _lesson(current, "L25").update(lifecycle="deprecated", reason="replaced by a portal "
+                                       "rule that every target now enforces")
+        self.assertEqual(model.run_level(_lesson(current, "L25"), CHECKS), "recommended")
+        # a weakening, held where it is visible: advisory in every run, never silent
+        self.has(self.weak(LESSONS, current),
+                 "L25: weakened in place - held required in a run before, recommended now")
+
+    def test_the_exception_policy_is_never_loosened_in_place(self):
+        for change, text in ((lambda p: p["approvers"]["required"].append("automation"),
+                              "approvers.required gained automation"),
+                             (lambda p: p.update(max_days=60), "max_days widened in place "
+                                                               "(30 -> 60)")):
+            current = self.current()
+            change(current["exceptions"])
+            with self.subTest(text):
+                self.has(self.weak(LESSONS, current), text)
+        previous = self.current()
+        previous["exceptions"]["levels"] = ["blocking"]
+        self.has(self.weak(previous, self.current()), "required rules became exceptable")
+        tighter = self.current()
+        tighter["exceptions"]["max_days"] = 14
+        self.assertEqual(self.weak(LESSONS, tighter), [])
+
+    def test_against_a_1x_file_only_deletions_count(self):
         previous = dict(self.current(), version="1.0.0")
+        for lesson in previous["lessons"]:
+            lesson.pop("scope", None)
         current = self.current()
+        _lesson(current, "L15")["scope"] = {"render": ["3d"]}
+        self.assertEqual(self.weak(previous, current), [])
         current["lessons"] = current["lessons"][:3]
-        self.assertEqual(model.weakening_problems(previous, current, CHECKS), [])
+        self.has(self.weak(previous, current), "L4: deleted")
 
 
 class Integrity(unittest.TestCase):
@@ -600,24 +769,71 @@ class Integrity(unittest.TestCase):
         spec.loader.exec_module(module)
         return module
 
-    def test_check_integrity_holds_the_knowledge_model(self):
+    def run_check(self, base, strict):
         module = self.module()
-        cwd, base = os.getcwd(), os.environ.get("WGF_KNOWLEDGE_BASE")
+        saved = {k: os.environ.get(k) for k in ("WGF_KNOWLEDGE_BASE", "WGF_KNOWLEDGE_STRICT")}
+        cwd = os.getcwd()
         os.chdir(ROOT)
-        os.environ["WGF_KNOWLEDGE_BASE"] = "refs/heads/no-such-branch-for-k1"
+        os.environ["WGF_KNOWLEDGE_BASE"] = base
+        os.environ["WGF_KNOWLEDGE_STRICT"] = "1" if strict else "0"
         try:
             module.ERRORS.clear()
             module.NOTES.clear()
             module.check_regression_registry()
         finally:
             os.chdir(cwd)
-            if base is None:
-                del os.environ["WGF_KNOWLEDGE_BASE"]
-            else:
-                os.environ["WGF_KNOWLEDGE_BASE"] = base
+            for key, value in saved.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+        return module
+
+    def test_a_missing_base_is_a_note_locally_and_an_error_in_ci(self):
+        local = self.run_check("refs/heads/no-such-branch-for-k1", strict=False)
+        self.assertEqual(local.ERRORS, [])
+        self.assertTrue(any("no base to compare the knowledge with" in n
+                            for n in local.NOTES), local.NOTES)
+        ci = self.run_check("refs/heads/no-such-branch-for-k1", strict=True)
+        self.assertTrue(any("no base to compare the knowledge with" in e for e in ci.ERRORS),
+                        ci.ERRORS)
+
+    def test_a_base_that_is_head_compares_with_its_parent(self):
+        module = self.module()
+        cwd = os.getcwd()
+        os.chdir(ROOT)
+        try:
+            head = module._commit("HEAD")
+            parent = module._commit("HEAD^")
+            base, why = module.knowledge_base("HEAD")
+        finally:
+            os.chdir(cwd)
+        if head is None or parent is None:
+            self.skipTest("not a git checkout with history")
+        self.assertNotEqual(base, head)
+        self.assertEqual(base, parent)
+
+    def test_the_comparison_runs_against_a_real_base(self):
+        module = self.run_check("HEAD", strict=True)
+        if any("no base" in e or "HEAD has no parent" in e for e in module.ERRORS):
+            self.skipTest("not a git checkout with history")
         self.assertEqual(module.ERRORS, [])
-        self.assertTrue(any("not compared with a previous version" in n
-                            for n in module.NOTES))
+        self.assertTrue(any(n.startswith("lessons: compared with") or "introduced" in n
+                            for n in module.NOTES), module.NOTES)
+
+    def test_the_previous_knowledge_is_read_with_its_own_tiers(self):
+        module = self.module()
+        cwd = os.getcwd()
+        os.chdir(ROOT)
+        try:
+            head = module._commit("HEAD")
+            if head is None:
+                self.skipTest("not a git checkout")
+            lessons, checks = module.previous_knowledge(head)
+        finally:
+            os.chdir(cwd)
+        self.assertIsNotNone(lessons)
+        self.assertGreater(len(checks), 100)
 
     def test_the_runtime_mode_skips_test_existence_only(self):
         lessons = copy.deepcopy(LESSONS)

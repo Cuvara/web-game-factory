@@ -60,6 +60,9 @@
 #   map         raw status -> PASS | FAIL | WARNING | BLOCKED | SKIPPED | UNMEASURED |
 #               DEFERRED; an unmapped raw status is upper-cased
 #   presence    instead of `status`: an entry present means this status (a blocker is FAIL)
+#   attribute   false: the entries carry no check id the source declares (a judge's
+#               free-form ids); any selected entry is every check of the source at the
+#               `presence` status
 #   absent      {field, map}: a check with no entry reads the report's `field` through `map`
 #               (a review that approved has no gate-gaming blocker: PASS); otherwise, and
 #               when a report has no entry for a check, it is UNMEASURED - never a pass
@@ -115,9 +118,11 @@ sources:
     producer: visual-qa-report
     enumerate: {list: blockers}
     tier: {all: hard}
-    # A blocker finding under the rubric blocker's id is that check failing; a report that
-    # passed has no blocker finding, so the check passed. Any other report: UNMEASURED.
-    status_at: {list: findings, where: {severity: blocker}, presence: FAIL, absent: {field: verdict, map: {PASS: PASS}}}
+    # The judge names its findings freely (wgf_visualqa/rubric.py: "short-kebab-id"; the
+    # baseline judge writes baseline-regression-<frame>): a blocker finding cannot be told
+    # to be one rubric blocker rather than another, so any blocker finding leaves every
+    # rubric blocker UNMEASURED, and a judged report with none passed them all.
+    status_at: {list: findings, where: {severity: blocker}, attribute: false, presence: UNMEASURED, absent: {field: verdict, map: {PASS: PASS, FAIL: PASS}}}
   visual-qa-score:
     file: core/reference/visual-qa-rubric.yaml
     producer: visual-qa-report

@@ -151,9 +151,12 @@ def _literal_in(root, folder, check_id):
     return False
 
 
-def classify(tiers, root=None):
-    """({"<source>:<id>": {"source", "id", "tier", "producer"}}, problems)."""
+def classify(tiers, root=None, reader=None):
+    """({"<source>:<id>": {"source", "id", "tier", "producer"}}, problems). `reader`
+    (relative path -> parsed data) reads the source files - a run's pinned copies - instead
+    of the files under `root`; code a source is `defined_in` is always read under `root`."""
     root = _root(root)
+    reader = reader or (lambda relative: _read(root, relative))
     out, problems = {}, []
     if not isinstance(tiers, dict):
         return out, [f"{TIERS_FILE}: not a mapping"]
@@ -173,7 +176,7 @@ def classify(tiers, root=None):
         if source.get("file"):
             if source["file"] not in cache:
                 try:
-                    cache[source["file"]] = _read(root, source["file"])
+                    cache[source["file"]] = reader(source["file"])
                 except (OSError, ValueError) as exc:
                     problems.append(f"{where}: {source['file']} cannot be read ({exc})")
                     cache[source["file"]] = None
@@ -249,11 +252,11 @@ def classify(tiers, root=None):
         if entry["tier"] not in TIERS:
             problems.append(f"{TIERS_FILE}: {check_id} has tier {entry['tier']!r}, not one of "
                             f"{', '.join(TIERS)}")
-    problems += _floor_closure(tiers, out, cache, root)
+    problems += _floor_closure(tiers, out, cache, reader)
     return out, problems
 
 
-def _floor_closure(tiers, checks, cache, root):
+def _floor_closure(tiers, checks, cache, reader):
     """Every check a quality-floor criterion reads from a producer the registry enumerates is
     classified, and one a release blocker reads is never advisory."""
     problems = []
@@ -264,7 +267,7 @@ def _floor_closure(tiers, checks, cache, root):
     floor = cache.get(floor_file)
     if floor is None:
         try:
-            floor = _read(root, floor_file)
+            floor = reader(floor_file)
         except (OSError, ValueError):
             return problems
     by_producer = {}
@@ -424,7 +427,7 @@ def _all_tests(lesson):
 RESULT_STATUSES = ("PASS", "FAIL", "WARNING", "BLOCKED", "SKIPPED", "UNMEASURED", "DEFERRED",
                    "MEASURED")
 LOCATOR_KEYS = ("list", "keys", "id", "id_pattern", "id_split", "where", "status", "map",
-                "presence", "absent")
+                "presence", "absent", "attribute")
 
 
 def status_at(tiers, source):
@@ -512,7 +515,17 @@ def check_status(tiers, check_id, report):
     locator = status_at(tiers, source)
     if locator is None:
         return [{"check": wanted, "status": "UNMEASURED", "raw": None, "value": None}]
-    found = [r for r in check_results(locator, report) if r["check"] == wanted]
+    found = check_results(locator, report)
+    if locator.get("attribute") is False:
+        # The producer's entries carry no check id (a judge's free-form finding ids): any
+        # selected entry is every check of the source at the `presence` status - which of
+        # them it is, nothing says.
+        if found:
+            return [{"check": wanted, "status": found[0]["status"], "raw": None,
+                     "value": None, "unattributed": [r["check"] for r in found]}]
+        found = []
+    else:
+        found = [r for r in found if r["check"] == wanted]
     if found:
         return found
     absent = locator.get("absent") or {}

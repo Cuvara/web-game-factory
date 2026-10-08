@@ -23,7 +23,7 @@
       "required": ["identifier", "mode"],
       "properties": {
         "identifier": { "type": "string", "minLength": 1, "description": "Who approved it: a person's handle or name." },
-        "mode": { "enum": ["human", "automation"], "description": "human: a person, from outside the run. automation: a decision made inside a Factory step's process tree - refused for every level as shipped, and always for a blocking rule." }
+        "mode": { "enum": ["human", "automation"], "description": "human: a person, from outside the run. automation: a decision made inside a Factory step's process tree - refused for every level as shipped, and always for a blocking rule. Never trusted from the record alone: the operator act that grants the exception stamps the mode from who runs it." }
       },
       "additionalProperties": false
     },

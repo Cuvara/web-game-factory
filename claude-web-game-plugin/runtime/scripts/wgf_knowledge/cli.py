@@ -174,12 +174,13 @@ def cmd_show(args):
     return EXIT_OK
 
 
-def _resolve(root, data, checks, run_facets, workflow, exceptions=(), now=None, read=None):
+def _resolve(root, data, checks, run_facets, workflow, exceptions=(), now=None, read=None,
+             pins=None):
     found_versions = versions.collect(read=read, root=root, workflow=workflow,
-                                      platforms=run_facets.get("platforms") or ())
+                                      platforms=run_facets.get("platforms") or (), pins=pins)
     body = resolver.resolve(data["lessons"], checks, data["tiers"], run_facets,
                             workflow=workflow, exceptions=exceptions, now=now,
-                            versions=found_versions)
+                            versions=found_versions, vocabulary=model.vocabulary(root))
     return dict({"versions": found_versions}, **body)
 
 
@@ -210,11 +211,13 @@ def _render(body, header=None):
 def cmd_resolve(args):
     root = _root()
     data, checks = _load(root)
-    run_facets = resolver.facets(family=args.family, genre=args.genre, render=args.render,
-                                 platforms=args.platform, tier=args.tier,
-                                 profile=args.profile, archetype=args.archetype)
     try:
+        run_facets = resolver.facets(family=args.family, genre=args.genre, render=args.render,
+                                     platforms=args.platform, tier=args.tier,
+                                     profile=args.profile, archetype=args.archetype)
         body = _resolve(root, data, checks, run_facets, _workflow(root))
+    except ValueError as exc:
+        raise Unusable(str(exc))
     except model.KnowledgeError as exc:
         raise Unusable(str(exc))
     if args.json:
@@ -268,18 +271,23 @@ def cmd_contract(args):
         lessons = load_yaml(read(versions.FILES["lessons"]).decode("utf-8"))
         tiers = load_yaml(read(versions.FILES["check_tiers"]).decode("utf-8"))
         from wgf_quality import registry
-        checks, _ = registry.classify(tiers, root)
+        # The run's pinned check tiers, classified against the run's pinned copies of the
+        # files they enumerate (the live file where the run pinned none) - never the live
+        # tiers against pinned files, or the reverse.
+        checks, _ = registry.classify(
+            tiers, root, reader=lambda relative: load_yaml(read(relative).decode("utf-8")))
         data = {"lessons": lessons, "tiers": tiers}
         tier = ((state.params or {}).get("quality") or {}).get("tier")
-        run_facets = resolver.facets_from(artifact("game-design"), artifact("title-strategy"),
-                                          tier)
+        strategy = artifact("title-strategy")
+        run_facets = resolver.facets_from(artifact("game-design"), strategy, tier)
         workflow = None
         source = getattr(state, "workflow_source", None)
         source = os.path.join(root, source) if source else None
         if source and os.path.isfile(source):
             workflow = _workflow(root, source)
         workflow = workflow or _workflow(root)
-        body = _resolve(root, data, checks, run_facets, workflow, read=read)
+        body = _resolve(root, data, checks, run_facets, workflow, read=read,
+                        pins=resolver.platform_pins(strategy))
     except (OSError, ValueError, StoreError, model.KnowledgeError) as exc:
         raise Unusable(f"run {state.run_id}: the knowledge cannot be resolved ({exc})")
     body = dict({"recorded": False, "run_id": state.run_id}, **body)

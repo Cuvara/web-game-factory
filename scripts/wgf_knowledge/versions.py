@@ -6,7 +6,7 @@
                                    - the seed a run records at start; raises KnowledgeError
                                    when either file is missing, unreadable, versionless, or
                                    not a knowledge file (no `lessons` list, no `sources`)
-    collect(read=None, root=None, workflow=None, platforms=())
+    collect(read=None, root=None, workflow=None, platforms=(), pins=None)
                                    every version of a knowledge-contract's `versions`
     factory(root=None)             {"version", "commit"} of the Factory checkout
 
@@ -143,15 +143,18 @@ def factory(root=None):
     return {"version": version, "commit": _git_commit(root)}
 
 
-def _platform_versions(root, platforms):
-    from wgflib.yamllite import load as load_yaml
+def _platform_versions(read, platforms, pins):
+    """{platform: "<id>@<version>"}: the version the run pinned (the title-strategy's
+    `profile_version`, `pins`), else the profile `read` gives - the run's pinned reader when
+    one is passed. None for a platform neither knows."""
     out = {}
     for platform in platforms or ():
-        path = os.path.join(root, "core", "reference", "platforms", f"{platform}.yaml")
+        if (pins or {}).get(platform):
+            out[platform] = pins[platform]
+            continue
         try:
-            with open(path, encoding="utf-8") as handle:
-                data = load_yaml(handle.read()) or {}
-        except (OSError, ValueError):
+            data = _parse(read(f"core/reference/platforms/{platform}.yaml"), platform) or {}
+        except (OSError, LookupError, ValueError, model.KnowledgeError):
             out[platform] = None
             continue
         version = model.version_of(data)
@@ -159,10 +162,11 @@ def _platform_versions(root, platforms):
     return out
 
 
-def collect(read=None, root=None, workflow=None, platforms=()):
+def collect(read=None, root=None, workflow=None, platforms=(), pins=None):
     """The `versions` block of a knowledge-contract: the Factory's version and commit, the
     lessons and check-tiers versions with their digests, the quality policy, benchmark,
-    floor and genre models versions, the workflow, and each targeted platform's profile."""
+    floor and genre models versions, the workflow, and each targeted platform's profile -
+    as the run pinned it (`pins`: resolve.platform_pins(strategy)), else through `read`."""
     root = _root(root)
     read = read or _default_reader(root)
     knowledge(read)                 # refuses what a run must not be judged by
@@ -176,5 +180,5 @@ def collect(read=None, root=None, workflow=None, platforms=()):
             out[key] = version
     out["workflow"] = ({"id": workflow.get("id"), "version": workflow.get("version")}
                        if isinstance(workflow, dict) else None)
-    out["platform_profiles"] = _platform_versions(root, platforms)
+    out["platform_profiles"] = _platform_versions(read, platforms, pins)
     return out

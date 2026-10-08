@@ -15,12 +15,14 @@
                                       what is wrong with the 2.0.0 fields of every lesson
     file_problems(lessons)            what is wrong with the file's own blocks (version,
                                       lifecycles, levels, exceptions)
-    weakening_problems(previous, current, checks)
-                                      a lesson deleted, or its level or scope weakened in
-                                      place, against the previous version of the file
-    exception_problems(exception, lessons, checks, now=None)
-                                      why a person's exception cannot hold
-    exception_active(exception, now)  True while it has not expired
+    run_level(lesson, checks)         the level it is held at in a run (None: never in one)
+    weakening_problems(previous, current, previous_checks, current_checks=None)
+                                      what the file now lets a run get away with that its
+                                      previous version did not, each side judged by its
+                                      own check tiers
+    exception_problems(exception, lessons, checks, now, run_facets=None, vocabulary=None)
+                                      why a person's exception cannot hold at `now`
+    exception_active(exception, now)  True from its creation until it expires
 
 `checks` is wgf_quality.registry.classify()'s first value: {"<source>:<id>": {"tier", ...}}.
 Pure: no process, no network, no clock (a caller passes `now`). Nothing here names a game,
@@ -32,7 +34,8 @@ import os
 import re
 
 __all__ = ["LEVELS", "LIFECYCLES", "SCOPE_KEYS", "RESERVED_SCOPE_KEYS", "TEST_KINDS",
-           "SOURCE_KINDS", "APPROVER_MODES", "REASON_MIN_LENGTH", "PROCESS", "KnowledgeError",
+           "SOURCE_KINDS", "APPROVER_MODES", "REASON_MIN_LENGTH", "REASON_MIN_WORDS",
+           "MAX_EXCEPTION_DAYS", "PROCESS", "KnowledgeError", "run_level", "reason_problem",
            "tests_of", "all_tests", "scope_of", "derive_level", "level_of", "level_rank",
            "is_process", "vocabulary", "lesson_problems", "file_problems",
            "weakening_problems", "exception_problems", "exception_active", "parse_time",
@@ -52,6 +55,10 @@ SOURCE_KINDS = ("run", "review", "benchmark", "research-principle")
 APPROVER_MODES = ("human", "automation")
 # core/artifacts/shared/knowledge-exception.schema.json `reason.minLength`.
 REASON_MIN_LENGTH = 20
+# Distinct words (three letters or more) a reason carries: padding is not a reason.
+REASON_MIN_WORDS = 4
+# The longest exception window an installation may configure: a run's, not a standing waiver.
+MAX_EXCEPTION_DAYS = 90
 PROCESS = "process"
 RENDERS = ("2d", "3d")
 CHECKED = ("enforced", "partial")
@@ -164,10 +171,11 @@ def _reader(root):
 
 
 def vocabulary(root=None):
-    """{"families", "render", "platforms", "tiers", "categories", "category_render"}: what a
-    scope and a category may name, from genre-models families, the platform profiles,
-    quality-benchmark tiers and the quality-floor scorecard. Raises KnowledgeError when one
-    of them cannot be read."""
+    """{"families", "render", "platforms", "tiers", "viewports", "categories",
+    "category_render"}: what a scope, an exception's scope and a category may name, from
+    genre-models families, the platform profiles, quality-benchmark tiers, the viewports
+    browser QA and the playability bot play (browser-qa.yaml, visual-quality.yaml) and the
+    quality-floor scorecard. Raises KnowledgeError when one of them cannot be read."""
     if root is None:
         from wgflib import paths
         root = paths.ROOT
@@ -181,10 +189,15 @@ def vocabulary(root=None):
         directory = os.path.join(root, "core", "reference", "platforms")
         platforms = sorted(name[:-len(".yaml")] for name in os.listdir(directory)
                            if name.endswith(".yaml"))
+        viewports = sorted({str(v.get("id")) for name in ("browser-qa.yaml",
+                                                           "visual-quality.yaml")
+                            for v in (read(f"core/reference/{name}") or {}).get("viewports")
+                            or () if isinstance(v, dict) and v.get("id")})
     except (OSError, ValueError) as exc:
         raise KnowledgeError(f"the knowledge vocabularies cannot be read ({exc})")
     return {"families": families, "render": list(RENDERS), "platforms": platforms,
-            "tiers": tiers, "categories": sorted(scorecard) + [PROCESS],
+            "tiers": tiers, "viewports": viewports,
+            "categories": sorted(scorecard) + [PROCESS],
             "category_render": {k: v.get("render") for k, v in scorecard.items()
                                 if isinstance(v, dict) and v.get("render")}}
 
@@ -407,19 +420,81 @@ def file_problems(lessons):
     days = policy.get("max_days")
     if not isinstance(days, int) or isinstance(days, bool) or days < 1:
         problems.append(f"{LESSONS_FILE} exceptions: max_days is a positive number of days")
+    elif days > MAX_EXCEPTION_DAYS:
+        problems.append(f"{LESSONS_FILE} exceptions: max_days {days} is over "
+                        f"{MAX_EXCEPTION_DAYS} - an exception is a run's, not a standing waiver")
     return problems
 
 
-def weakening_problems(previous, current, checks):
-    """[problem]: against the previous version of the file (from 2.0.0 on), a lesson
-    deleted, or one not deprecated whose level is weaker or whose scope is narrower."""
+def run_level(lesson, checks):
+    """The level a lesson is held at in a run: None when it is never in a run's contract (a
+    process lesson, or one deprecated in favour of a successor - the successor carries it);
+    `recommended` for one deprecated with only a reason, which stays visible as advisory and
+    never blocks; level_of otherwise."""
+    if is_process(lesson):
+        return None
+    if (lesson or {}).get("lifecycle") == "deprecated":
+        return None if lesson.get("superseded_by") else "recommended"
+    return level_of(lesson, checks)
+
+
+_TIER_RANK = {"advisory": 0, "quality": 1, "hard": 2}
+
+
+def _effective(lesson, by_id):
+    """The lesson that carries `lesson`'s rule in a run: its successor when it is deprecated
+    in favour of one (followed to the end of the chain), else itself."""
+    seen = set()
+    while lesson.get("lifecycle") == "deprecated" and lesson.get("superseded_by") \
+            and lesson["superseded_by"] in by_id and lesson["id"] not in seen:
+        seen.add(lesson["id"])
+        lesson = by_id[lesson["superseded_by"]]
+    return lesson
+
+
+def _policy_problems(previous, current):
+    old = (previous or {}).get("exceptions") or {}
+    new = (current or {}).get("exceptions") or {}
+    at = f"{LESSONS_FILE} exceptions"
+    problems = []
+    added = sorted(set(new.get("levels") or ()) - set(old.get("levels") or ()))
+    if added:
+        problems.append(f"{at}: {', '.join(added)} rules became exceptable in place")
+    for level, modes in ((new.get("approvers") or {}).items()):
+        gained = sorted(set(modes or ()) - set(((old.get("approvers") or {}).get(level)) or ()))
+        if gained and level in (old.get("levels") or ()):
+            problems.append(f"{at}: approvers.{level} gained {', '.join(gained)} in place")
+    before, after = old.get("max_days"), new.get("max_days")
+    if isinstance(before, int) and isinstance(after, int) and after > before:
+        problems.append(f"{at}: max_days widened in place ({before} -> {after})")
+    return problems
+
+
+def weakening_problems(previous, current, previous_checks, current_checks=None):
+    """[problem]: what the current lessons file lets a run get away with that the previous
+    version (from 2.0.0 on) did not - each side judged by its OWN check tiers
+    (`previous_checks`, `current_checks`; the latter defaults to the former):
+
+      * a lesson deleted (ids are never deleted);
+      * a rule held at a weaker level in a run - its level derived lower (a check's tier
+        demoted, a lifecycle back to candidate, a status turned process or gap), or a
+        successor weaker than the lesson it supersedes;
+      * a check a rule named that it no longer names, or whose tier was demoted;
+      * a scope narrowed in place (or a successor's narrower than its predecessor's);
+      * the exception policy loosened: a level made exceptable, an approver mode added,
+        the window widened.
+
+    A lesson deprecated with only a reason is held as advisory in every run it applied to
+    (run_level), visibly, and never blocks - the explicit, reviewed way to retire a rule
+    without a successor. Against a 1.x file only deletions are checked: it had no levels
+    or scopes to weaken."""
     if not isinstance(previous, dict) or not isinstance(current, dict):
         return []
-    version = version_of(previous)
-    if version is None or int(version.split(".")[0]) < 2:
-        return []
+    current_checks = previous_checks if current_checks is None else current_checks
     now = {l.get("id"): l for l in current.get("lessons") or [] if isinstance(l, dict)}
     problems = []
+    version = version_of(previous)
+    modern = version is not None and int(version.split(".")[0]) >= 2
     for old in previous.get("lessons") or []:
         if not isinstance(old, dict) or not old.get("id"):
             continue
@@ -429,17 +504,37 @@ def weakening_problems(previous, current, checks):
             problems.append(f"{at}: deleted - a lesson id is never deleted or reused; "
                             "deprecate it")
             continue
-        if new.get("lifecycle") == "deprecated" or old.get("lifecycle") == "deprecated":
+        if not modern or is_process(old) or old.get("lifecycle") == "deprecated":
             continue
-        before, after = level_of(old, checks), level_of(new, checks)
-        if before and after and level_rank(after) < level_rank(before):
-            problems.append(f"{at}: level weakened in place ({before} -> {after}) - supersede "
-                            "it with a new lesson")
-        old_scope, new_scope = scope_of(old), scope_of(new)
-        if old_scope is not None and new_scope is not None \
-                and not scope_covers(new_scope, old_scope):
-            problems.append(f"{at}: scope narrowed in place - a rule that applied to a run "
-                            "would silently stop applying; supersede it with a new lesson")
+        carried = _effective(new, now)
+        via = "" if carried is new else f" (through its successor {carried['id']})"
+        before = run_level(old, previous_checks)
+        after = run_level(carried, current_checks)
+        if before is not None and level_rank(after) < level_rank(before):
+            problems.append(f"{at}: weakened in place - held {before} in a run before, "
+                            f"{after or 'in no run'} now{via}; supersede it with a lesson at "
+                            "least as strong")
+        if carried.get("lifecycle") == "deprecated":
+            continue                # retired with a reason: advisory, visible (above)
+        kept = set(carried.get("checks") or ())
+        for check in old.get("checks") or ():
+            if check not in kept:
+                problems.append(f"{at}: no longer held by {check}{via} - a check is removed "
+                                "from a rule only by a superseding lesson")
+                continue
+            was = _TIER_RANK.get((previous_checks or {}).get(check, {}).get("tier"))
+            is_ = _TIER_RANK.get((current_checks or {}).get(check, {}).get("tier"))
+            if was is not None and (is_ is None or is_ < was):
+                problems.append(f"{at}: {check} was demoted from "
+                                f"{previous_checks[check]['tier']} to "
+                                f"{(current_checks or {}).get(check, {}).get('tier')}")
+        old_scope, new_scope = scope_of(old), scope_of(carried)
+        if old_scope is not None and (new_scope is None
+                                      or not scope_covers(new_scope, old_scope)):
+            problems.append(f"{at}: scope narrowed in place{via} - a rule that applied to a "
+                            "run would silently stop applying; supersede it with a new lesson")
+    if modern:
+        problems += _policy_problems(previous, current)
     return problems
 
 
@@ -462,18 +557,55 @@ def parse_time(value):
 
 def exception_active(exception, now):
     expires = parse_time((exception or {}).get("expires_at"))
-    return expires is not None and now is not None and now < expires
+    created = parse_time((exception or {}).get("created_at"))
+    return (expires is not None and created is not None and now is not None
+            and created <= now < expires)
 
 
-def exception_problems(exception, lessons, checks, now=None):
+def reason_problem(reason):
+    """Why `reason` does not say why a rule is accepted unmet, or None: at least
+    REASON_MIN_LENGTH characters, at least REASON_MIN_WORDS distinct words of three letters
+    or more, and no word making up more than half of them (padding is not a reason)."""
+    if not isinstance(reason, str) or len(reason.strip()) < REASON_MIN_LENGTH:
+        return (f"the reason says why the rule is accepted unmet, in at least "
+                f"{REASON_MIN_LENGTH} characters")
+    words = [w.lower() for w in re.findall(r"[^\W\d_]{3,}", reason)]
+    if len(set(words)) < REASON_MIN_WORDS:
+        return (f"the reason is not a sentence: at least {REASON_MIN_WORDS} distinct words "
+                "say why the rule is accepted unmet")
+    top = max(words.count(w) for w in set(words))
+    if top * 2 > len(words):
+        return "the reason repeats one word: padding is not a reason"
+    return None
+
+
+def exception_problems(exception, lessons, checks, now, run_facets=None, vocabulary=None):
     """[problem] why `exception` (core/artifacts/shared/knowledge-exception.schema.json)
-    cannot hold for the knowledge in `lessons`: an unknown rule, a level that cannot be
-    excepted, a reason too short, an approver the policy does not accept for the rule's
-    level (automation, by default for every level, and always for a blocking rule), no
-    expiry or one past the policy's window, and - given `now` - one that has expired."""
+    cannot hold, read at `now` (required: an exception is judged at the moment it is read,
+    never without one):
+
+      * an unknown rule, or one whose run level cannot be excepted (exceptions.levels);
+      * no reason, or one that does not say anything (reason_problem);
+      * an approver the policy does not accept for the rule's level - automation for every
+        level as shipped, and for a blocking rule always;
+      * created after `now`, expiring before it was created, past the policy's window, or
+        expired at `now`;
+      * a scope outside the rule or the run: checks the rule does not name, platforms the
+        run does not target (`run_facets`) or the rule is not scoped to, platforms and
+        viewports the Factory does not know (`vocabulary`, model.vocabulary(); without it a
+        platform or viewport scope cannot be checked and is refused).
+
+    The record's `approved_by` is what the record says; it is never trusted on its own. The
+    operator act that grants an exception stamps `approved_by.mode` itself, from who is
+    running the command (a command inside a Factory step's process tree is `automation`),
+    and the run keeps it as its own event - a record written anywhere else is not an
+    exception."""
     if not isinstance(exception, dict):
         return ["an exception is a mapping"]
     problems = []
+    if now is None:
+        problems.append("an exception is judged at the moment it is read: no time was given, "
+                        "so it does not hold")
     for key in ("rule_id", "reason", "scope", "approved_by", "created_at", "expires_at"):
         if exception.get(key) in (None, ""):
             problems.append(f"an exception needs `{key}`")
@@ -485,18 +617,18 @@ def exception_problems(exception, lessons, checks, now=None):
     if rule_id and rule is None:
         problems.append(f"rule {rule_id!r} is not a lesson")
     elif rule is not None:
-        level = level_of(rule, checks)
-        if rule.get("lifecycle") == "deprecated" or is_process(rule):
+        level = run_level(rule, checks)
+        if level is None:
             problems.append(f"rule {rule_id} is never in a run's contract; nothing to except")
         elif level not in (policy.get("levels") or ()):
             problems.append(f"rule {rule_id} is {level}: only "
                             f"{' or '.join(policy.get('levels') or ()) or 'no'} rules are "
                             "excepted (the others never block)")
     reason = exception.get("reason")
-    if reason not in (None, "") and (not isinstance(reason, str)
-                                     or len(reason.strip()) < REASON_MIN_LENGTH):
-        problems.append(f"the reason says why the rule is accepted unmet, in at least "
-                        f"{REASON_MIN_LENGTH} characters")
+    if reason not in (None, ""):
+        why = reason_problem(reason)
+        if why:
+            problems.append(why)
     approved = exception.get("approved_by")
     if approved not in (None, ""):
         mode = approved.get("mode") if isinstance(approved, dict) else None
@@ -512,11 +644,8 @@ def exception_problems(exception, lessons, checks, now=None):
     scope = exception.get("scope")
     if scope not in (None, "") and not isinstance(scope, dict):
         problems.append("scope is a mapping (empty: the whole run)")
-    elif isinstance(scope, dict) and rule is not None:
-        stray = [c for c in scope.get("checks") or () if c not in (rule.get("checks") or ())]
-        if stray:
-            problems.append(f"scope.checks {', '.join(map(str, stray))} are not checks of "
-                            f"rule {rule_id}")
+    elif isinstance(scope, dict):
+        problems += _exception_scope_problems(scope, rule, rule_id, run_facets, vocabulary)
     created = parse_time(exception.get("created_at"))
     expires = parse_time(exception.get("expires_at"))
     if exception.get("created_at") not in (None, "") and created is None:
@@ -529,6 +658,55 @@ def exception_problems(exception, lessons, checks, now=None):
         days = policy.get("max_days")
         if isinstance(days, int) and expires - created > datetime.timedelta(days=days):
             problems.append(f"expires_at is at most {days} days after created_at")
+    if now is not None and created is not None and created > now:
+        problems.append(f"created in the future ({exception.get('created_at')}): an exception "
+                        "exists from when a person granted it")
     if now is not None and expires is not None and now >= expires:
         problems.append(f"expired at {exception.get('expires_at')}")
+    return problems
+
+
+def _exception_scope_problems(scope, rule, rule_id, run_facets, vocabulary):
+    problems = []
+    unknown = sorted(set(scope) - {"platforms", "checks", "viewports"})
+    if unknown:
+        problems.append(f"scope has unknown key(s) {', '.join(unknown)}")
+    if rule is not None:
+        stray = [c for c in scope.get("checks") or () if c not in (rule.get("checks") or ())]
+        if stray:
+            problems.append(f"scope.checks {', '.join(map(str, stray))} are not checks of "
+                            f"rule {rule_id}")
+    platforms = [str(p) for p in scope.get("platforms") or ()]
+    if platforms:
+        known = (vocabulary or {}).get("platforms")
+        targeted = list((run_facets or {}).get("platforms") or ())
+        ruled = (scope_of(rule) or {}).get("platforms") if rule is not None else None
+        if known is None:
+            problems.append("scope.platforms cannot be checked without the platform "
+                            "vocabulary; it is refused")
+        else:
+            stray = [p for p in platforms if p not in known]
+            if stray:
+                problems.append(f"scope.platforms {', '.join(stray)} are not platforms")
+        if targeted:
+            stray = [p for p in platforms if p not in targeted]
+            if stray:
+                problems.append(f"scope.platforms {', '.join(stray)} are not targeted by "
+                                "this run")
+        if ruled:
+            stray = [p for p in platforms if p not in ruled]
+            if stray:
+                problems.append(f"scope.platforms {', '.join(stray)} are outside rule "
+                                f"{rule_id}'s scope")
+    viewports = [str(v) for v in scope.get("viewports") or ()]
+    if viewports:
+        known = (vocabulary or {}).get("viewports")
+        if known is None:
+            problems.append("scope.viewports cannot be checked without the viewport "
+                            "vocabulary; it is refused")
+        else:
+            stray = [v for v in viewports if v not in known]
+            if stray:
+                problems.append(f"scope.viewports {', '.join(stray)} are not viewports a "
+                                "gate plays")
     return problems

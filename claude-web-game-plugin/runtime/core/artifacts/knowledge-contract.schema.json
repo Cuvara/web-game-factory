@@ -165,7 +165,7 @@
         "derived_level": { "anyOf": [{ "$ref": "#/$defs/level" }, { "type": "null" }], "description": "The level its checks' tiers give; `level` is stronger only where the lesson declares so." },
         "category": { "type": "string", "minLength": 1, "description": "The quality-floor scorecard line." },
         "status": { "enum": ["enforced", "partial", "gap"] },
-        "lifecycle": { "enum": ["candidate", "active", "validated"] },
+        "lifecycle": { "enum": ["candidate", "active", "validated", "deprecated"], "description": "deprecated: retired with only a reason - held as recommended, reported, never blocking." },
         "lesson": { "type": ["string", "null"] },
         "gap": { "type": "string", "description": "What is not held yet (partial and gap lessons)." },
         "checks": {

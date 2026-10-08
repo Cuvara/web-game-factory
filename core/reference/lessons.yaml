@@ -66,11 +66,14 @@
 #   validated    enforced, with catches, passes and generalizes tests, and the instance
 #                evidence's `verified` leg: the check passed on the game that raised it after
 #                the fix
-#   deprecated   kept, never deleted; names `superseded_by` or a `reason`
+#   deprecated   kept, never deleted; names `superseded_by` (a successor at least as strong,
+#                holding every check, covering the scope) or a `reason` - then it stays in
+#                every run it applied to as recommended: reported, never blocking
 #
 # Versioning: adding a lesson, a stricter scope or a stricter level is a minor version. A
-# weaker level or a narrower scope of an existing lesson is never an edit in place: a new
-# lesson supersedes it (check-integrity compares with the previous version of this file).
+# weaker rule - a lower level, a check removed or demoted, a narrower scope, a looser
+# exception policy - is never an edit in place: a new lesson supersedes it. check-integrity
+# compares with the knowledge at the base commit, each side by its own check tiers.
 #
 # A quality finding a gate raises on a check named here carries the lesson as `guarded_by`
 # (core/artifacts/shared/quality-finding.schema.json). A specialist visit that finds a systemic
@@ -99,8 +102,9 @@ levels: [blocking, required, recommended, experimental]
 # `approved_by.mode` each level accepts: `human` is a person; `automation` is a decision made
 # inside a Factory step's process tree. A blocking exception is a person's, always -
 # check-integrity refuses `automation` there. A run's exception is never granted by
-# configuration, says why in at least 20 characters (the schema's), and expires: at most
-# `max_days` after it was created.
+# configuration, says why in at least 20 characters (the schema's) and 4 distinct words, and
+# expires: at most `max_days` (never over 90) after it was created. The record alone is
+# never trusted about its approver: the operator act that grants one stamps the mode.
 exceptions:
   levels: [blocking, required]
   approvers:

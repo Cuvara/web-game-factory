@@ -24,7 +24,7 @@ Pure: no clock (pass `now`), no process, no network, no file read.
 
 from . import model
 
-__all__ = ["FACET_KEYS", "facets", "facets_from", "resolve", "applies"]
+__all__ = ["FACET_KEYS", "facets", "facets_from", "platform_pins", "resolve", "applies"]
 
 # scope key -> facet key
 SCOPE_FACETS = {"families": "family", "render": "render", "platforms": "platforms",
@@ -33,11 +33,38 @@ FACET_KEYS = ("family", "genre", "render", "platforms", "tier", "profile", "arch
 COUNTED = ("blocking", "required", "recommended", "experimental")
 
 
+RENDERS = ("2d", "3d")
+
+
+def _word(name, value):
+    """A facet value, normalised: stripped and lower-cased; None for nothing. Anything but a
+    string is refused (ValueError) - a facet is matched as a word, never as a type."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"facet {name} is a word, not {value!r}")
+    value = value.strip().lower()
+    return value or None
+
+
 def facets(family=None, genre=None, render=None, platforms=None, tier=None, profile=None,
            archetype=None):
-    return {"family": family or None, "genre": genre or None, "render": render or None,
-            "platforms": sorted({str(p) for p in platforms or () if p}),
-            "tier": tier or None, "profile": profile or None, "archetype": archetype or None}
+    """A facet set, normalised (lower case, stripped); None or an empty list is
+    undetermined. A single platform given as a string is one platform, never its letters.
+    Raises ValueError for a value that is not a word, or a render that is not 2d or 3d."""
+    if isinstance(platforms, str):
+        platforms = [platforms]
+    found = set()
+    for platform in platforms or ():
+        word = _word("platforms", platform)
+        if word:
+            found.add(word)
+    render = _word("render", render)
+    if render is not None and render not in RENDERS:
+        raise ValueError(f"facet render is 2d or 3d, not {render!r}")
+    return {"family": _word("family", family), "genre": _word("genre", genre),
+            "render": render, "platforms": sorted(found), "tier": _word("tier", tier),
+            "profile": _word("profile", profile), "archetype": _word("archetype", archetype)}
 
 
 def facets_from(design=None, strategy=None, tier=None):
@@ -49,6 +76,17 @@ def facets_from(design=None, strategy=None, tier=None):
                  if isinstance(p, dict)]
     return facets(family=genre.get("family"), genre=genre.get("node"),
                   render=engine.get("dimension"), platforms=platforms, tier=tier)
+
+
+def platform_pins(strategy):
+    """{platform id: "<id>@<profile_version>"} the title-strategy pinned each targeted
+    platform's profile at - the version the run is held to, not the live file's."""
+    out = {}
+    for entry in (strategy or {}).get("platform_set") or ():
+        if isinstance(entry, dict) and entry.get("id") and entry.get("profile_version"):
+            out[str(entry["id"]).strip().lower()] = \
+                f"{str(entry['id']).strip().lower()}@{entry['profile_version']}"
+    return out
 
 
 def applies(lesson, run_facets):
@@ -66,9 +104,12 @@ def applies(lesson, run_facets):
     for key, values in scope.items():
         facet = SCOPE_FACETS.get(key)
         if facet is None:
-            return False, f"scope key {key!r} is not a facet"
+            # A key no facet answers is undetermined, like a facet the run has not set:
+            # it never excludes a rule (check-integrity refuses the key).
+            why.append(f"scope key {key!r} is not a facet: applies")
+            continue
         value = (run_facets or {}).get(facet)
-        allowed = [str(v) for v in values or ()]
+        allowed = [str(v).strip().lower() for v in values or ()]
         if value in (None, "", []):
             why.append(f"{facet} undetermined: applies (scoped to {', '.join(allowed)})")
             continue
@@ -109,7 +150,7 @@ def _constraints(run_facets, versions):
 
 
 def resolve(lessons, checks, tiers, run_facets, workflow=None, exceptions=(), now=None,
-            versions=None):
+            versions=None, vocabulary=None):
     """The contract body for `run_facets` (see facets()): rules, not_applicable,
     experimental, required_validators (+ missing_validators), regression_suite, constraints,
     exceptions (+ exceptions_refused) and counts.
@@ -118,9 +159,15 @@ def resolve(lessons, checks, tiers, run_facets, workflow=None, exceptions=(), no
     (for each check's source and producer). `workflow`: the run's workflow mapping; without
     one, required_validators is empty and missing_validators names every producer.
     `exceptions`: knowledge-exception records; one that cannot hold at `now`
-    (model.exception_problems) is listed in exceptions_refused with why, never honoured.
+    (model.exception_problems; without `now` none holds) is listed in exceptions_refused
+    with why, never honoured. `vocabulary` (model.vocabulary()) checks an exception's
+    platforms and viewports; without it a platform or viewport scope is refused.
+
+    A rule whose level cannot be derived (a check no source classifies) is a missing
+    validator - the contract cannot be made - never a rule that silently does not apply. A
+    lesson deprecated with only a reason stays in the contract as recommended, with why.
     `versions`: wgf_knowledge.versions.collect(), for the versioned constraint references."""
-    run_facets = dict(facets(), **(run_facets or {}))
+    run_facets = facets(**{k: (run_facets or {}).get(k) for k in FACET_KEYS})
     producers = _producer_steps(workflow)
     sources = (tiers or {}).get("sources") or {}
     rules, excluded, experimental = [], [], []
@@ -134,21 +181,27 @@ def resolve(lessons, checks, tiers, run_facets, workflow=None, exceptions=(), no
             excluded.append({"id": lesson_id, "why_not": "a process lesson, never in a run's "
                              f"contract (held by: {held})"})
             continue
-        if lesson.get("lifecycle") == "deprecated":
-            successor = lesson.get("superseded_by")
-            excluded.append({"id": lesson_id, "why_not": "deprecated" + (
-                f": superseded by {successor}" if successor else
-                f": {lesson.get('reason') or 'withdrawn'}")})
+        deprecated = lesson.get("lifecycle") == "deprecated"
+        if deprecated and lesson.get("superseded_by"):
+            excluded.append({"id": lesson_id,
+                             "why_not": f"deprecated: superseded by {lesson['superseded_by']}"})
             continue
         ok, why = applies(lesson, run_facets)
         if not ok:
             excluded.append({"id": lesson_id, "why_not": why})
             continue
-        level = model.level_of(lesson, checks)
+        level = model.run_level(lesson, checks)
         if level is None:
-            excluded.append({"id": lesson_id, "why_not": "no enforcement level can be "
-                             "derived (check-integrity refuses it)"})
+            unclassified = [c for c in lesson.get("checks") or () if c not in (checks or {})]
+            for check_id in unclassified or [None]:
+                missing.append({"check": check_id, "producer": None, "rule": lesson_id,
+                                "why": ("no source of check-tiers classifies it"
+                                        if check_id else "no level can be derived: it names "
+                                        "no check")})
             continue
+        if deprecated:
+            why = list(why) + [f"deprecated ({lesson.get('reason') or 'withdrawn'}): reported "
+                               "as advisory, never blocks"]
         held = []
         for check_id in lesson.get("checks") or ():
             entry = (checks or {}).get(check_id) or {}
@@ -162,7 +215,8 @@ def resolve(lessons, checks, tiers, run_facets, workflow=None, exceptions=(), no
                     validators += steps
                 elif not any(m["check"] == check_id for m in missing):
                     missing.append({"check": check_id, "producer": producer,
-                                    "rule": lesson_id})
+                                    "rule": lesson_id,
+                                    "why": f"no step of the workflow outputs {producer}"})
         tests = model.tests_of(lesson)
         rule = {"id": lesson_id, "title": lesson.get("title"), "level": level,
                 "derived_level": model.derive_level(lesson, checks),
@@ -179,7 +233,8 @@ def resolve(lessons, checks, tiers, run_facets, workflow=None, exceptions=(), no
     honoured, refused = [], []
     applicable = {r["id"] for r in rules}
     for record in exceptions or ():
-        why = model.exception_problems(record, lessons, checks, now=now)
+        why = model.exception_problems(record, lessons, checks, now, run_facets=run_facets,
+                                       vocabulary=vocabulary)
         if not why and isinstance(record, dict) and record.get("rule_id") not in applicable:
             why = [f"rule {record.get('rule_id')} does not apply to this run"]
         if why:

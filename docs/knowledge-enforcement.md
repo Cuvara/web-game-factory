@@ -88,19 +88,25 @@ A scope is `global` or a mapping:
 
 Keys are AND-ed and values OR-ed; a `platforms` scope matches when any targeted platform is
 listed. **A facet the run has not determined never makes a rule inapplicable** - the rule
-applies, and its `why_applicable` says the facet was undetermined. Narrow scope is the risky
+applies, and its `why_applicable` says the facet was undetermined. The same holds for a
+scope key no facet answers, and for a lesson with no scope at all (a run that pinned a
+1.x file). Facets are normalised before they are matched (`resolve.facets`): stripped and
+lower-cased (`3D` is `3d`), a single platform given as a string is one platform; a value
+that is not a word, or a render other than 2d or 3d, is refused. Narrow scope is the risky
 direction (a wrong one silently drops a rule from runs), so it is always the conservative
 choice that wins.
 
 `resolve.resolve(lessons, checks, tiers, facets, workflow, exceptions, now, versions)` is
 pure. For every rule that applies it returns the level, category, checks (tier, producer,
 the workflow steps that produce it), tests and why it applies; for every rule that does not,
-the facet that excluded it - or that it is a process or deprecated lesson. An agent never
-decides scope. It also returns:
+the facet that excluded it - or that it is a process lesson or one superseded by a
+successor. An agent never decides scope. It also returns:
 
 - `required_validators`: the workflow steps that produce the applicable blocking and required
-  rules' checks, and `missing_validators`: a check no step produces. A run cannot make its
-  contract while one is missing (the contract schema holds `missing_validators` empty);
+  rules' checks, and `missing_validators`: a check no step produces, or a rule whose level
+  cannot be derived (a check no source of check-tiers classifies) - never a rule that
+  silently does not apply. A run cannot make its contract while one is missing (the contract
+  schema holds `missing_validators` empty);
 - `regression_suite`: every test of the applicable rules;
 - `constraints`: the genre family's contract and each platform's profile, by version;
 - `exceptions` honoured, and `exceptions_refused` with why;
@@ -120,7 +126,7 @@ playability, play-realism, production-quality, content-sufficiency). The irregul
 |---|---|
 | quality-floor | `criteria[].id` / `status` of the quality-report |
 | quality-dimension | `dimensions[]`; `BELOW_FLOOR` is FAIL |
-| visual-qa-blocker | a blocker finding under the blocker's id is FAIL; none in a report that passed is PASS |
+| visual-qa-blocker | `attribute: false`: the judge names its findings freely (`flat-primitive-entities`, `baseline-regression-<frame>`), so a blocker finding cannot be told to be one rubric blocker; any blocker finding leaves every rubric blocker UNMEASURED, and a judged report (PASS or FAIL) with none passed them all |
 | visual-qa-score | `scores` (MEASURED, with the value; the bar is the rubric's) |
 | gate-gaming | review `blockers[]` named `gate-gaming-<pattern>-<n>` are FAIL; none in an approved review is PASS |
 | design-consistency | `consistency.rule_results[]`, `breached` true is FAIL |
@@ -129,9 +135,14 @@ playability, play-realism, production-quality, content-sufficiency). The irregul
 
 A report with no entry for a check reads it as UNMEASURED - never a pass.
 `registry.check_status(tiers, "<source>:<id>", report)` reads one check;
-check-integrity holds that every locator's path exists in the producer's schema, and
-`test_regression_registry.StatusAt` resolves a failing and a passing result for every source
-on a schema-valid report of its producer.
+check-integrity holds that every locator's path exists in the producer's schema.
+`test_regression_registry` resolves a failing and a passing result for every source on a
+schema-valid report of its producer, reads the irregular ones on what the producers actually
+write (browser QA's judge on a validation game's records, the realism judge on the regressed
+2D head, the review's gate-gaming pre-check, the design step's consistency evaluator, the
+model checks on a real GLB, a real visual judge's verdict), and holds that the quality gate's
+reader (`wgf_quality.scoring`) and this one agree on every check of real producer reports
+(`ParityWithScoring`): one report, one reading.
 
 ## Lifecycle
 
@@ -147,6 +158,12 @@ an active one is enforced or partial with `tests.catches`; a validated one is en
 all three test kinds, a `validated` stamp and the evidence's `verified` leg; a deprecated one
 names `superseded_by` or a `reason`. A candidate never edits `lessons.yaml` by itself - a
 person promotes it, with its check and tests, in a pull request.
+
+Deprecation never takes a rule out of a run silently. A lesson superseded by a successor is
+carried by the successor, which must be at least as strong, hold every check, and cover the
+scope (the weakening check follows the chain). A lesson retired with only a `reason` stays in
+every run it applied to as `recommended`: listed, reported, with the reason in its
+`why_applicable` - never blocking - and the weakening check reports the drop.
 
 ## Exceptions: a person's, explicit and expiring
 
@@ -169,13 +186,28 @@ exceptions:
   max_days: 30
 ```
 
-`model.exception_problems(exception, lessons, checks, now)` refuses an exception for an
-unknown rule or one that never blocks, with no or too short a reason, approved by a mode the
-policy does not accept for the rule's level (automation, for every level as shipped, and for
-a blocking rule always - whatever the data says), with no expiry or one beyond `max_days`,
-and - at `now` - one that has expired. An exception never makes a rule satisfied: it is
-reported EXCEPTED and listed wherever the rule's compliance is. It is run-scoped; no
-configuration grants one.
+`max_days` is at most 90 (`model.MAX_EXCEPTION_DAYS`).
+
+`model.exception_problems(exception, lessons, checks, now, run_facets, vocabulary)` is judged
+at `now`, which is required - without it no exception holds. It refuses:
+
+- an unknown rule, or one whose run level cannot be excepted;
+- no reason, one under 20 characters, one with fewer than 4 distinct words of three letters
+  or more, or one that repeats a word for more than half of it (padding is not a reason);
+- an approver mode the policy does not accept for the rule's level (automation, for every
+  level as shipped, and for a blocking rule always - whatever the data says);
+- created after `now`, expiring before it was created, beyond `max_days`, or expired;
+- a scope outside the rule or the run: checks the rule does not name, platforms the run does
+  not target or the rule is not scoped to, platforms and viewports the Factory does not know
+  (without the vocabulary a platform or viewport scope is refused).
+
+**The record alone is never trusted about who approved it.** A record can say
+`mode: human` for a bot. The operator act that grants an exception (`wgf resume <run>
+--except`, K2) stamps `approved_by.mode` itself from who runs the command - `automation`
+inside a Factory step's process tree (`default_decider`) - and the run keeps it as its own
+event; a record written anywhere else is not an exception. An exception never makes a rule
+satisfied: it is reported EXCEPTED and listed wherever the rule's compliance is. It is
+run-scoped; no configuration grants one.
 
 ## Versions and versioning
 
@@ -183,14 +215,33 @@ configuration grants one.
 `check-tiers@<v>` - and refuses a file that is missing, unreadable, versionless or not shaped
 as knowledge. `versions.collect()` is a contract's `versions` block: the Factory's version
 and commit, lessons and check-tiers with their sha256, the quality policy, benchmark, floor
-and genre models versions, the workflow, and each targeted platform's profile. Pass a run's
-pinned reader to record what the run pinned.
+and genre models versions, the workflow, and each targeted platform's profile - at the
+version the title-strategy pinned (`profile_version`, `resolve.platform_pins`), else through
+the reader. Pass a run's pinned reader to record what the run pinned.
 
 Adding a lesson, a stricter scope or a stricter level is a minor version of `lessons.yaml`.
-A weaker level or a narrower scope of an existing lesson is never an edit in place: a new
-lesson supersedes it. check-integrity compares the file with its version at
-`WGF_KNOWLEDGE_BASE` (default `origin/main`) and fails a lesson deleted, weakened or narrowed
-in place; a ref git cannot show is noted and skipped (CI on a full checkout holds it).
+A weaker rule is never an edit in place: a new lesson supersedes it. check-integrity
+compares the knowledge with the knowledge at a base commit, **each side judged by its own
+check tiers** (the base's `check-tiers.yaml`, classified against the files it enumerates as
+they were at that commit), and fails:
+
+- a lesson deleted;
+- a rule held weaker in a run - its level derived lower (a check's tier demoted, a
+  lifecycle back to candidate, a status turned process or gap), or a successor weaker than
+  the lesson it supersedes;
+- a check removed from a rule, or a check whose tier was demoted;
+- a scope narrowed (or a successor's narrower);
+- the exception policy loosened (a level made exceptable, an approver mode added, the window
+  widened).
+
+The base is the merge base of `WGF_KNOWLEDGE_BASE` (default `origin/main`) and HEAD - a pull
+request's base, a push's previous tip - and HEAD's parent when that merge base is HEAD itself
+(a push to, or a run on, the base branch). A base without `lessons.yaml` is the change that
+introduces it, and is allowed; against a 1.x file only deletions are checked. CI
+(`.github/workflows/acceptance.yml`) checks out the whole history, sets the base from the
+event (`origin/<base_ref>` for a pull request, `github.event.before` for a push, `HEAD^`
+otherwise) and `WGF_KNOWLEDGE_STRICT=1`: there a base that cannot be found fails integrity.
+Locally it is a note.
 
 ## Command line
 
@@ -206,7 +257,8 @@ wgf knowledge table --families arcade,racing --render 2d,3d --tiers mvp,release
 Exit status: 0 clean, 1 problems (validate) or a missing validator (resolve, table),
 2 the command could not run. `contract` prints the run's recorded contract; for a run that has
 none (started before the knowledge step), it resolves one now from the run's game-design,
-title-strategy, quality tier and pinned knowledge, marked `recorded: false`, and writes
+title-strategy, quality tier and pinned knowledge - the pinned check tiers classified
+against the pinned copies of the files they enumerate - marked `recorded: false`, and writes
 nothing.
 
 ## What is not here yet

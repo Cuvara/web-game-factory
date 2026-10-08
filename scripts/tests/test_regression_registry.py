@@ -92,7 +92,8 @@ class Sandbox(unittest.TestCase):
              "core/reference/quality-policy.yaml", "core/workflows/new-game.workflow.yaml",
              "workspace/lessons/evidence.yaml",
              # The knowledge model's scope vocabularies (wgf_knowledge.model.vocabulary).
-             "core/reference/genre-models.yaml", "core/reference/quality-benchmark.yaml")
+             "core/reference/genre-models.yaml", "core/reference/quality-benchmark.yaml",
+             "core/reference/visual-quality.yaml")
     TREES = ("scripts/wgf_playability", "scripts/wgf_production", "scripts/wgf_assets",
              "scripts/wgf_verification", "scripts/tests")
     # Copied whole (every file, not only .py): the platform profiles a scope names, and the
@@ -436,6 +437,9 @@ class StatusAt(unittest.TestCase):
                     if name == "visual-qa-score":
                         self.assertEqual(statuses, {"MEASURED"})
                         self.assertEqual(found[0]["value"], 1 if failing else 4)
+                    elif name == "visual-qa-blocker":
+                        # a blocker finding cannot be attributed to one rubric blocker
+                        self.assertEqual(statuses, {"UNMEASURED" if failing else "PASS"})
                     else:
                         self.assertEqual(statuses, {"FAIL" if failing else "PASS"})
 
@@ -484,6 +488,168 @@ class StatusAtIntegrity(Sandbox):
         self.write("core/reference/check-tiers.yaml", tiers)
         self.assertTrue(any("sources.playability: no `status_at`" in p
                             for p in self.problems()))
+
+
+# --------------------------------------------- the producers' own output, read through it
+
+
+def _real_play_realism():
+    """The playability bot's realism judge on the regressed 2D head (68a12b7) and the
+    accepted build: real records of a game the Factory built."""
+    import test_play_realism as tpr
+    head = tpr.real("physics-2d-head-run.json.gz")["visits"]["10-1"]["projects"]["mobile"]
+    checks = tpr.realism.judge({"win": head}, tpr.D2, tpr.RULES, "mobile", tpr.RELEASE)
+    return {"checks": [dict(c, project="mobile") for c in checks]}
+
+
+def _real_browser_qa(name=None):
+    """Browser QA's judge (wgf_verification.browser_qa.judge) on a replayed fixture of a
+    validation game, or on healthy records: the checks verify writes."""
+    from browser_qa_fixture import healthy_records
+    from wgf_verification import browser_qa
+    contract = browser_qa.load_contract()
+    if name is None:
+        checks = browser_qa.judge(healthy_records(contract), contract, klass="release",
+                                  action_audio=["pause", "launch"])
+    else:
+        with open(os.path.join(HERE, "fixtures", "browser-qa", name),
+                  encoding="utf-8") as handle:
+            fixture = json.load(handle)
+        checks = browser_qa.judge(fixture["records"], contract, klass=fixture["klass"],
+                                  action_audio=fixture["action_audio"],
+                                  bundle=fixture["bundle"])
+    return {"checks": [c.to_dict() for c in checks], "verdict": "FAIL"}
+
+
+class RealProducerOutput(unittest.TestCase):
+    """Each irregular locator read on what its producer actually writes."""
+
+    def statuses(self, check, report):
+        return sorted({r["status"] for r in registry.check_status(DATA["tiers"], check,
+                                                                  report)})
+
+    def test_browser_qa_from_the_judge_on_a_validation_games_records(self):
+        failing = _real_browser_qa("brick-breaker-worlds-894b4b8.json")
+        self.assertEqual(self.statuses("browser-qa:browser.context-menu", failing), ["FAIL"])
+        self.assertIn("FAIL", self.statuses("browser-qa:browser.ui-covers-play", failing))
+        healthy = _real_browser_qa()
+        self.assertEqual(self.statuses("browser-qa:browser.context-menu", healthy), ["PASS"])
+
+    def test_play_realism_from_the_bot_on_the_regressed_head(self):
+        report = _real_play_realism()
+        self.assertEqual(self.statuses("play-realism:physics.undrawn_collision", report),
+                         ["FAIL"])
+
+    def test_gate_gaming_from_the_review_precheck(self):
+        from wgf_review import gaming
+        result = {"commits": [{"commit": "c" * 40, "owner": "level-design",
+                               "findings": ["content.units_reachable"],
+                               "flags": [{"status": "flagged", "pattern": "play-area-change",
+                                          "file": "src/game/level.ts",
+                                          "detail": "bounds.height 600 -> 420"}]}]}
+        review = {"verdict": "request-changes", "blockers": gaming.blockers(result)}
+        self.assertTrue(review["blockers"][0]["id"].startswith("gate-gaming-"))
+        self.assertEqual(self.statuses("gate-gaming:play-area-change", review), ["FAIL"])
+        self.assertEqual(self.statuses("gate-gaming:sprite-size-without-collider", review),
+                         ["UNMEASURED"])
+        self.assertEqual(self.statuses("gate-gaming:play-area-change",
+                                       {"verdict": "approve", "blockers": []}), ["PASS"])
+
+    def test_design_consistency_from_the_design_steps_evaluator(self):
+        from wgf_design import consistency
+        from wgflib import paths
+        fixtures = os.path.join(paths.WGFLIB, "workflow", "fixtures")
+        with open(os.path.join(fixtures, "game-design.json"), encoding="utf-8") as handle:
+            design = json.load(handle)
+        with open(os.path.join(fixtures, "title-strategy.json"), encoding="utf-8") as handle:
+            strategy = json.load(handle)
+        block = consistency.evaluate(design, strategy, [], "2026-10-08T00:00:00Z")[0]
+        report = {"consistency": block}
+        breached = {r["criterion_id"]: r["breached"] for r in block["rule_results"]}
+        for rule_id, hit in breached.items():
+            with self.subTest(rule=rule_id):
+                self.assertEqual(self.statuses(f"design-consistency:{rule_id}", report),
+                                 ["FAIL" if hit else "PASS"])
+
+    def test_model_review_from_the_model_checks_on_a_real_glb(self):
+        from wgf_assets import model_quality
+        with open(os.path.join(HERE, "fixtures", "models", "hover-car.glb"), "rb") as handle:
+            quality = model_quality.assess(handle.read(), role="player")["quality"]
+        manifest = {"items": [{"id": "car", "quality": quality}]}
+        for entry in quality["checks"]:
+            with self.subTest(check=entry["id"]):
+                self.assertEqual(self.statuses(f"model-review:{entry['id']}", manifest),
+                                 [{"pass": "PASS", "fail": "FAIL",
+                                   "skipped": "SKIPPED"}[entry["status"]]])
+
+    def test_visual_qa_blockers_from_a_real_judges_verdict(self):
+        from wgf_visualqa import rubric
+        with open(os.path.join(HERE, "fixtures", "visual-qa", "arena-dodge.judge-verdict.json"),
+                  encoding="utf-8") as handle:
+            verdict = json.load(handle)
+        loaded = rubric.load_rubric()
+        decided, _failed, _routes = rubric.decide(verdict, loaded)[:3]
+        report = {"findings": verdict["findings"], "verdict": decided}
+        # The judge named its blocker "flat-primitive-entities": no rubric blocker id. It is
+        # not attributed to one, so every rubric blocker is unmeasured - never a pass.
+        self.assertNotIn(verdict["findings"][0]["id"],
+                         [b["id"] for b in loaded["blockers"]])
+        for blocker in loaded["blockers"]:
+            self.assertEqual(self.statuses(f"visual-qa-blocker:{blocker['id']}", report),
+                             ["UNMEASURED"])
+        clean = dict(verdict, findings=[f for f in verdict["findings"]
+                                        if f["severity"] != "blocker"])
+        report = {"findings": clean["findings"], "verdict": rubric.decide(clean, loaded)[0]}
+        self.assertEqual(self.statuses("visual-qa-blocker:primitive-entity", report), ["PASS"])
+        blocked = {"findings": [], "verdict": "BLOCKED"}
+        self.assertEqual(self.statuses("visual-qa-blocker:primitive-entity", blocked),
+                         ["UNMEASURED"])
+
+
+class ParityWithScoring(unittest.TestCase):
+    """The quality gate reads a producer's checks (wgf_quality.scoring._measure); the registry
+    reads them through `status_at`. Two readers of one report must agree: on real producer
+    reports, for every check the floor reads by id, the passes and the measured results are
+    the same."""
+
+    def reports(self):
+        import test_quality_gate as tqg
+        docs = tqg.release_build()
+        out = [(p, docs[p]) for p in ("playability-report", "production-quality-report",
+                                      "content-sufficiency-report")]
+        broken = tqg.mobile_40(copy.deepcopy(docs))
+        out += [(p, broken[p]) for p in ("playability-report", "production-quality-report")]
+        out.append(("playability-report", _real_play_realism()))
+        out.append(("verification-report", _real_browser_qa("sky-marble-c340631.json")))
+        out.append(("verification-report", _real_browser_qa()))
+        return out
+
+    def test_both_readers_agree_on_real_reports(self):
+        from wgf_quality import scoring
+        compared = 0
+        for producer, report in self.reports():
+            sources = [n for n, s in DATA["tiers"]["sources"].items()
+                       if s.get("producer") == producer]
+            ids = sorted({str(c.get("id")).split(":", 1)[0]
+                          for c in report.get("checks") or []})
+            for check in ids:
+                source = next((s for s in sources if f"{s}:{check}" in CHECKS), None)
+                if source is None:
+                    continue
+                with self.subTest(producer=producer, check=check):
+                    evaluate = {"kind": "checks", "checks": [check, f"{check}:*"],
+                                "required_only": False}
+                    observed, _share, measured = scoring._measure(evaluate, report)
+                    found = registry.check_status(DATA["tiers"], f"{source}:{check}", report)
+                    counted = [r for r in found if r["status"] in scoring.MEASURED]
+                    if not measured:
+                        self.assertEqual(counted, [])
+                        continue
+                    self.assertEqual(observed["of"], len(counted))
+                    self.assertEqual(observed["passed"],
+                                     sum(r["status"] == "PASS" for r in counted))
+                    compared += 1
+        self.assertGreater(compared, 40)
 
 
 class Integrity(unittest.TestCase):

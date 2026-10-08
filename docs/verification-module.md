@@ -290,6 +290,27 @@ not pass), which `floor.performance` reads. `with: {browser_qa: off}` skips the 
 leaves `browser.run` BLOCKED at the release tier (a WARNING below it): switching it off is
 never a pass.
 
+**Tiers, routing and the floor.** Each check's tier is classified once, in
+`core/reference/check-tiers.yaml` (source `browser-qa`, read from this file's `tier` with the
+`browser.` prefix; `browser.run` is `browser-qa-run`). A blocking defect reaches triage
+through the qa-report as `vr-<check>[-<viewport>]`; `core/reference/specialist-routing.yaml`
+qa-report `verification_checks` names the check and its owner - boot, runtime, visibility and
+the context menu to browser QA, layout to UI, sound to audio, timings and weight to the
+performance engineer, the session's outcomes to gameplay - the same dimension each check's
+`owner` here states (`test_browser_qa.py` holds that they agree). The quality gate reads them
+on its scorecard (`core/reference/quality-floor.yaml` 1.2.0, `applies: reported`):
+`floor.browser_boot` and `floor.browser_session` on the browser line, `floor.browser_layout`
+(and the advisory `floor.browser_ui_advisory`) on UI/UX, `floor.browser_audio` on audio,
+`floor.browser_performance` (and the advisory `floor.browser_asset_weight`) on performance.
+Lessons L24-L28 (`core/reference/lessons.yaml`) name these checks.
+
+**Context-menu suppression and the template.** The template's `main` already prevents the
+context menu in `bindPlatform` (web-game-template PR #27), so a game made from a template
+release that carries it passes `context-menu` without code of its own; a game made from an
+earlier pin (v1.2.0, `workspace/config/template.lock.json`) does not, which is what the
+calibration games show. Nothing here duplicates the template's handler: the check only
+measures it.
+
 **Calibration (2026-10-07).** The spec was run on the two validation games at their accepted
 commits - Brick Breaker Worlds (PixiJS, 894b4b8) and Sky Marble (three.js, c340631) - in
 clones of those commits, on a Windows 11 host with a GPU (ANGLE D3D11) that other agents were

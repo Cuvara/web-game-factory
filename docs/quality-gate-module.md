@@ -101,9 +101,10 @@ release separately requires the listing's validation (`docs/release-module.md`).
 ## The scorecard
 
 The same criteria are read a second way, per discipline a person judges a game by
-(`core/reference/quality-floor.yaml` `scorecard`, WS-9): gameplay, game feel and polish,
-level design and content, 2D art, 3D art, UI/UX, audio, performance and runtime, technical
-integrity, accessibility and readability, platform compliance and publishing readiness. Each
+(`core/reference/quality-floor.yaml` `scorecard`, 1.2.0): gameplay, game feel and polish,
+level design and content, 2D art, 3D art, UI/UX, audio, performance and runtime, browser
+compatibility, technical integrity, accessibility and readability, platform compliance and
+publishing readiness. Each
 line takes the criteria of the floor dimensions it lists; a criterion that belongs to another
 discipline than its dimension names its line itself (`scorecard: performance` on
 `floor.performance`, which `technical` scores). `art_2d` and `art_3d` read the same criteria
@@ -129,6 +130,19 @@ everywhere with one blocker fails).
 
 Which tier each check is in - Hard Gate, Quality Gate or Advisory - is
 `core/reference/check-tiers.yaml` (see docs/specialist-routing.md "Regression knowledge").
+
+Play realism (`docs/playability-module.md`, "Play realism") and browser QA
+(`docs/verification-module.md`, "Browser QA") are on the floor with `applies: reported`: a
+build whose reports carry their checks is scored on them, one that does not (a 3D build's
+screen turns, a grid game's path geometry, a verification that ran no browser QA - which
+verify itself holds BLOCKED at release) is not. `floor.physics_drawn` (game feel),
+`floor.naive_control` (gameplay), `floor.naive_challenge` and `floor.level_geometry` (level
+design), `floor.runtime_console`, `floor.browser_boot` and `floor.browser_session` (browser),
+`floor.browser_layout` (UI/UX), `floor.browser_audio` (audio), `floor.webgl_context` and
+`floor.browser_performance` (performance) are release blockers; `floor.browser_ui_advisory`
+and `floor.browser_asset_weight` read the advisory checks and are warnings. A timing check
+verify could only measure on a degraded host is BLOCKED there, and counts here as not passed:
+the build is measured again on a quiet host before it can pass.
 
 ## Gates the run's workflow lacks
 

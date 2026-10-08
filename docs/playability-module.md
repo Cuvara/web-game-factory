@@ -420,9 +420,19 @@ The **risk test** (`with: risk: true`, `play-realism.yaml risk`) plays sampled u
 game's own oracle policies `safe` and `greedy` through the probe's optional `play.policy` and
 writes `risk.json`; it judges nothing here (the level-design step reads it).
 
-Triage routes the checks by `core/reference/specialist-routing.yaml`: `physics.`, `runtime.`
-and `naive.alignment` to gameplay, the rest of `naive.` to difficulty, `level.` to the level
-designer. What is calibrated on which build, and what is only reasoned (`collider_size`,
+Triage routes the checks by `core/reference/specialist-routing.yaml` (1.6.0): `physics.` and
+`naive.alignment` to gameplay, `naive.pace`, `naive.unit_duration` and `level.` to the level
+designer, the rest of `naive.` to difficulty, `runtime.console_errors` to browser QA (as
+`page.errors` is) and `runtime.webgl_context` to the performance engineer. Each has a tier in
+`core/reference/check-tiers.yaml` (source `play-realism`: `physics.undrawn_collision` and
+`runtime.webgl_context` hard, the rest quality, `level.clearance` advisory unit by unit where
+its clear rate passed), and the quality gate places them on its scorecard
+(`core/reference/quality-floor.yaml` 1.2.0, `applies: reported`): `floor.physics_drawn` on game
+feel, `floor.naive_control` on gameplay, `floor.naive_challenge` and `floor.level_geometry` on
+level design, `floor.runtime_console` on the browser line and `floor.webgl_context` on
+performance. `level.clearance` is held by this step only: a proxy whose clear rate
+`naive.clear_rate` already carries to the floor. Lessons L11 (2D), L13, L14, L23 and L24
+(`core/reference/lessons.yaml`) name these checks. What is calibrated on which build, and what is only reasoned (`collider_size`,
 `alignment`, and `drift` on regressed builds), is stated beside each bar; the replay tests are
 `scripts/tests/test_play_realism.py` over `scripts/tests/fixtures/real/play-realism/`.
 

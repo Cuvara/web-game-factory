@@ -52,6 +52,17 @@ the quality gate's `floor.stable_runtime`) and publishing compliance (listing-va
 artists who work inside its direction; performance and the browser after the look and the
 sound exist.
 
+Play realism and browser QA (specialist-routing 1.6.0) route by check: playability's
+`physics.` and `naive.alignment` to gameplay, `naive.pace`, `naive.unit_duration` and
+`level.` to the level designer, the other `naive.` checks to the encounter designer,
+`runtime.console_errors` to browser QA and `runtime.webgl_context` to the performance
+engineer. A browser-QA defect reaches triage through the qa-report (`vr-<check>[-<viewport>]`);
+qa-report `verification_checks` names the check it was made from, and the finding is that
+check's (`qa-report:browser.context-menu@mobile`), owned by the dimension the table states -
+browser QA for boot, runtime, visibility and the context menu, UI for layout, audio for
+sound, the performance engineer for timings and weight, gameplay for the session's outcomes.
+A defect no table entry names keeps its id and goes to the generalist, as before.
+
 The rows are in visit order: structure, then systems, then the loop's code, then its look
 and sound, then platform wiring. Polish applied to a structure that is about to change is
 wasted work. Some producer words depend on the design's `engine.dimension`, which is the
@@ -342,12 +353,15 @@ Sources are read where they are declared - the quality floor's criteria (by rule
 blocker reading a calibrated bar is quality, a pass/fail one hard, a warning advisory), its
 dimensions, content-sufficiency's checks, the visual judge's blockers and scores, the
 gate-gaming patterns, the design rules (by severity) - or listed per producer whose checks
-are defined in code (playability, production-quality, the model checks; each id must appear
-in the producer's code). check-integrity fails on a check with no tier, a tier outside the
+are defined in code (playability, play realism, production-quality, browser QA's
+`browser.run`, the model checks; each id must appear in the producer's code) - and browser
+QA's own file, whose ids are reported under `prefix: browser.`; a source's `findings_via`
+names the report its failures reach triage through (the qa-report, for verify's checks), so
+a finding there carries its check's lessons too. check-integrity fails on a check with no tier, a tier outside the
 three, a check the floor reads that no producer table lists, and a check a release blocker
 reads that is advisory.
 
-The lessons the validation runs taught are `core/reference/lessons.yaml` (L1-L22), each
+The lessons the validation runs taught are `core/reference/lessons.yaml` (L1-L28), each
 stated generically - core names no game; which game showed it and where the evidence is
 lives in `workspace/lessons/evidence.yaml` - with its status (`enforced`, `partial`, `gap`,
 `process`), the check ids that hold it and the tests that prove the check catches it.

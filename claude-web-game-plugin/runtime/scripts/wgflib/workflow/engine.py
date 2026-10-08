@@ -59,6 +59,7 @@ Invariants the engine keeps:
 import contextlib
 import copy
 import datetime
+import hashlib
 import json
 import re
 import secrets
@@ -368,12 +369,16 @@ class WorkflowEngine:
         that follows them (`data`). A reader honours an operator event only when the
         engine's own resume record corroborates it - so a lone line appended to
         events.jsonl is not a person's act - and, for a knowledge exception, only when the
-        nonce is one the engine issued (`state.resume_nonces`, kept in state.json), so a
-        made-up pair of lines is not one either."""
+        nonce is one the engine issued AND the events carrying it are exactly the ones it
+        recorded (`state.resume_nonces`: {nonce: operator_digest of them}, kept in
+        state.json), so neither a made-up nonce nor a real one copied onto new lines makes
+        a person's act."""
         if not operator_events:
             return
         data["resume_nonce"] = secrets.token_hex(8)
-        state.resume_nonces = list(state.resume_nonces or []) + [data["resume_nonce"]]
+        issued = dict(state.resume_nonces or {})
+        issued[data["resume_nonce"]] = operator_digest(operator_events)
+        state.resume_nonces = issued
         for event, event_data in operator_events:
             self.record_operator_event(state, event, event_data, decided_by,
                                        resume_nonce=data["resume_nonce"])
@@ -1639,6 +1644,21 @@ def _route_used(step_state, limit_key):
     visits, base = step_state.route_visits or {}, step_state.route_base or {}
     return sum(count - base.get(key, 0) for key, count in visits.items()
                if _limit_counts(limit_key, key))
+
+
+# What the engine stamps on an operator event itself: left out of its digest.
+OPERATOR_STAMPS = ("decided_by", "decided_at", "resume_nonce")
+
+
+def operator_digest(acts):
+    """`sha256:<hex>` of a resume's operator events, [(event, data)] in the order they were
+    recorded, each data without the engine's own stamps (OPERATOR_STAMPS): canonical JSON
+    (sorted keys, no whitespace, UTF-8). A reader recomputes it from the events carrying
+    the resume's nonce and compares it with the one state.json kept."""
+    canonical = [[str(event), {k: v for k, v in (data or {}).items()
+                               if k not in OPERATOR_STAMPS}] for event, data in acts]
+    text = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def check_operator_event(event, data, decided_by):

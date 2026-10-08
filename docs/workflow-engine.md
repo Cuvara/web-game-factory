@@ -450,11 +450,16 @@ refuses every record unless all hold
 the run, platforms it targets and viewports its checks are judged on). A run started
 before the knowledge model has no contract to except from. No configuration grants one.
 Readers count an exception only when its resume corroborates it, like a raise, and only
-when its nonce is one the engine issued: every resume that records operator events keeps
-its nonce in state.json (`resume_nonces`), so a made-up nonce written into events.jsonl
-with a matching `WORKFLOW_RESUMED` line is no one's act (`exceptions.granted(events,
-issued_nonces(run_dir))`). Budget raises are still read by corroboration alone
-(`wgflib/budget.py`); the issued nonces are there for them too. A grant takes effect at
+when its nonce is one the engine issued and used once: every resume that records
+operator events keeps its nonce in state.json (`resume_nonces`) with the digest of exactly
+those events (`engine.operator_digest`: canonical JSON of each event's name and data, the
+engine's own stamps left out). A grant is honoured only when its nonce is there, one
+`WORKFLOW_RESUMED` carries it, and the events carrying it still digest to the kept value -
+so neither a made-up nonce nor a real one copied onto new lines of events.jsonl is a
+person's act, and without a run directory or state.json nothing is (fail closed;
+`exceptions.granted(events, issued_nonces(run_dir))`). Budget raises are still read by
+corroboration alone (`wgflib/budget.py`); their digests are kept too, for a reader that
+checks them. A grant takes effect at
 the next quality gate (`wgf resume <run> --from quality-gate` to judge the current build
 with it now), and in the run's contract at its next `knowledge-contract` - the command says
 so. A resume that ends the run by advancing past a step that had already succeeded still

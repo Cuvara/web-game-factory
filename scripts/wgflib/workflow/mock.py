@@ -362,13 +362,16 @@ class MockQualityGateStep(MockStep):
     def _compliance(self, context):
         """The compliance section of a mock quality gate over the run's knowledge-contract:
         advisory - nothing was measured, so every blocking, required and recommended rule
-        is UNMEASURED and every experimental one NOT_ENFORCED - the shape the real gate
-        (wgf_quality.compliance) writes, and never a release. None without a contract."""
+        is UNMEASURED (EXCEPTED where a person's exception holds) and every experimental
+        one NOT_ENFORCED - the shape the real gate (wgf_quality.compliance) writes, and
+        never a release. None without a contract."""
         inputs = getattr(self, "_inputs", None)
         if inputs is None or "knowledge-contract" not in getattr(inputs, "refs", {}):
             return None
         contract = inputs.load("knowledge-contract")
         ref = inputs.refs["knowledge-contract"]
+        offered = self._exceptions(context, contract)
+        honoured = {e.get("rule_id") for e in offered if e.get("status") == "honoured"}
         fields = ("applicable", "satisfied", "failed", "unmeasured", "excepted", "deferred",
                   "not_applicable", "not_enforced")
         total = dict.fromkeys(fields, 0)
@@ -376,13 +379,20 @@ class MockQualityGateStep(MockStep):
         for rule in contract.get("rules") or []:
             level = rule.get("level")
             status = "NOT_ENFORCED" if level == "experimental" else "UNMEASURED"
+            excepted = (status == "UNMEASURED" and level in ("blocking", "required")
+                        and rule.get("id") in honoured)
+            if excepted:
+                status = "EXCEPTED"  # a person accepted it unmet; its measure is kept beside
             row = by_level.setdefault(level, dict.fromkeys(fields, 0))
             for counts in (row, total):
                 counts["applicable"] += 1
                 counts[status.lower()] += 1
-            rules.append({"id": rule.get("id"), "title": rule.get("title"), "level": level,
-                          "category": rule.get("category"), "status": status, "checks": [],
-                          "blocks": False})
+            entry = {"id": rule.get("id"), "title": rule.get("title"), "level": level,
+                     "category": rule.get("category"), "status": status, "checks": [],
+                     "blocks": False}
+            if excepted:
+                entry["measured_status"] = "UNMEASURED"
+            rules.append(entry)
         blocking = [r["id"] for r in rules
                     if r["level"] in ("blocking", "required") and r["status"] == "UNMEASURED"]
         return {"mode": "advisory",
@@ -395,7 +405,7 @@ class MockQualityGateStep(MockStep):
                 "versions": contract.get("versions") or {},
                 "facets": contract.get("facets") or {},
                 "counts": {"by_level": by_level, "total": total},
-                "rules": rules, "exceptions": self._exceptions(context, contract),
+                "rules": rules, "exceptions": offered,
                 "regression": {"checks_run": 0, "checks_passed": 0, "checks_failed": 0,
                                "checks_unmeasured": 0,
                                "suite": list(contract.get("regression_suite") or [])},

@@ -438,8 +438,10 @@ budget raise:
 `exceptions.recorded(events, issued)` is the one reader (`granted()` keeps what it
 honours; the quality gate lists the rest refused): it honours an event only when its
 `decided_by` is `human`, the `WORKFLOW_RESUMED` with the same nonce follows it, that nonce
-is one the engine issued the run (state.json `resume_nonces`, `issued_nonces(run_dir)`),
-and the record's `approved_by` is mode human and names a person. `--approved-by` (or the
+is one the engine issued the run and used once - state.json `resume_nonces` keeps each
+with the digest of what its resume recorded, one `WORKFLOW_RESUMED` carries it, and the
+events carrying it still digest to it (`issued_nonces(run_dir)`; no run directory or
+state.json honours nothing) - and the record's `approved_by` is mode human and names a person. `--approved-by` (or the
 login name) is the person's own claim: the Factory refuses a role, a program or a
 placeholder (`human`, `the bot`, `an agent`, provider and tool names, `root`, ...) and
 never verifies that the name is who ran the command - identity is the installation's to

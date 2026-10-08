@@ -186,11 +186,17 @@ def granted(record, decided_by="human", nonce="resume-1", corroborated=True):
 
 def run_gate(test, docs, run_params=None, events=(), hashes=True, issued=("resume-1",)):
     """The real quality-gate step on `docs`, at a fixed clock; the report schema-checked.
-    `issued`: the resume nonces the engine issued the run (state.json `resume_nonces`)."""
+    `issued`: the resume nonces the engine issued the run, kept in state.json with the
+    digest of the operator events carrying each (what the engine records)."""
+    from wgflib.workflow.engine import operator_digest
     base = tempfile.mkdtemp(prefix="wgf-compliance-")
     test.addCleanup(shutil.rmtree, base, ignore_errors=True)
+    kept = {nonce: operator_digest([(e.get("event"), e.get("data") or {}) for e in events
+                                    if (e.get("data") or {}).get("resume_nonce") == nonce
+                                    and e.get("event") != "WORKFLOW_RESUMED"])
+            for nonce in issued}
     with open(os.path.join(base, "state.json"), "w", encoding="utf-8") as handle:
-        json.dump({"resume_nonces": list(issued)}, handle)
+        json.dump({"resume_nonces": kept}, handle)
 
     class Inputs:
         refs = {k: types.SimpleNamespace(

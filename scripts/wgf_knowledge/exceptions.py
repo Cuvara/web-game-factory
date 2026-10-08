@@ -17,9 +17,12 @@ and never past its expiry.
 
 The event's data is {"exception": <record>}; the engine adds `decided_by` (`human`: who the
 run records deciding), `decided_at` and `resume_nonce`, and keeps the nonce it issued in
-state.json (`resume_nonces`). A reader honours it only when `decided_by` is `human`, the
-record's mode is human and names a person, the resume with the same nonce corroborates it,
-and that nonce is one the engine issued the run (granted(events, issued_nonces(run_dir))).
+state.json (`resume_nonces`) with the digest of the operator events that resume recorded.
+A reader honours it only when `decided_by` is `human`, the record's mode is human and names
+a person, the resume with the same nonce corroborates it, that nonce is one the engine
+issued, exactly one WORKFLOW_RESUMED carries it, and the events carrying it still digest to
+what state.json kept (granted(events, issued_nonces(run_dir))). Without a run directory or
+state.json nothing is honoured (fail closed).
 
 `--approved-by` (or the login name) is the person's own claim of who they are, recorded as
 given: the Factory checks that it names someone - not a role, a program or a placeholder -
@@ -115,7 +118,10 @@ def _scope(pairs):
 # kind of decider rather than someone.
 _HANDLE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@ '-]{0,63}")
 # Words that name a kind of decider, a role or a program - never one person. A handle is
-# refused when, articles and punctuation aside, it is made only of these.
+# refused when, articles, punctuation and numbers aside, it is made only of these: "the
+# reviewer", "release team", "claude code". A name with a person's word in it passes -
+# "alice the reviewer" names alice - because the check refuses placeholders, it does not
+# verify identity: --approved-by is the person's own claim.
 NOT_A_PERSON = frozenset((
     "human", "humans", "person", "people", "someone", "somebody", "anyone", "everyone",
     "nobody", "none", "unknown", "anonymous", "n/a", "na", "user", "users", "operator",
@@ -124,7 +130,9 @@ NOT_A_PERSON = frozenset((
     "assistant", "llm", "model", "script", "ci", "pipeline", "runner", "github", "actions",
     "workflow", "factory", "wgf", "step", "developer", "reviewer", "tester", "qa",
     "claude", "anthropic", "codex", "openai", "gpt", "chatgpt", "copilot", "gemini", "bard",
-    "llama", "mistral", "cursor", "code"))
+    "llama", "mistral", "cursor", "code", "team", "cli", "tool", "service", "staff",
+    "crew", "group", "department", "approver", "maintainer", "manager", "lead", "ops",
+    "devops", "release", "publisher", "studio"))
 _ARTICLES = frozenset(("the", "a", "an", "my", "our", "your", "this", "that"))
 
 
@@ -347,16 +355,53 @@ STATE_FILE = "state.json"
 
 
 def issued_nonces(run_dir):
-    """The resume nonces the engine issued the run (state.json `resume_nonces`), or None
-    when the run directory is unknown. A run with none issued yields []."""
+    """{nonce: digest} the engine issued the run (state.json `resume_nonces`: each nonce
+    with the digest of the operator events its resume recorded). Fails closed: no run
+    directory, no state.json, or a state.json from before the digests (a list) gives
+    nothing a grant could be checked by - {} or {nonce: None} - and every grant is
+    refused."""
     if not run_dir:
-        return None
+        return {}
     try:
         with open(os.path.join(run_dir, STATE_FILE), encoding="utf-8") as handle:
             found = (json.load(handle) or {}).get("resume_nonces")
     except (OSError, ValueError, AttributeError):
-        return []
-    return [n for n in found or () if isinstance(n, str) and n]
+        return {}
+    if isinstance(found, dict):
+        return {n: d for n, d in found.items() if isinstance(n, str) and n}
+    return {n: None for n in found or () if isinstance(n, str) and n}
+
+
+def _resume_problem(events, nonce, issued):
+    """Why the operator events carrying `nonce` are not exactly what the engine recorded
+    for that resume, or None: the nonce was never issued, it was issued before digests were
+    kept, more than one WORKFLOW_RESUMED carries it (a copied nonce), or the events that
+    carry it no longer digest to what state.json kept (a grant added, removed or edited)."""
+    from wgflib.workflow.engine import operator_digest
+    if nonce not in issued:
+        return ("its resume nonce is not one the engine issued this run (state.json "
+                "resume_nonces): a forged pair of lines")
+    if issued[nonce] is None:
+        return ("its resume nonce was issued before the engine kept the digest of what each "
+                "resume recorded: it cannot be checked, so it is not honoured - grant it "
+                "again")
+    acts, resumes = [], 0
+    for event in events:
+        data = event.get("data") if isinstance(event.get("data"), dict) else {}
+        if data.get("resume_nonce") != nonce:
+            continue
+        if event.get("event") == RESUMED_EVENT:
+            resumes += 1
+        else:
+            acts.append((event.get("event"), data))
+    if resumes != 1:
+        return (f"its resume nonce corroborates {resumes} WORKFLOW_RESUMED events: a nonce "
+                "is used once, so one was copied")
+    if operator_digest(acts) != issued[nonce]:
+        return ("the events carrying its resume nonce are not the ones that resume recorded "
+                "(their digest differs from state.json's): lines were added, removed or "
+                "edited")
+    return None
 
 
 def recorded(events, issued=None):
@@ -364,12 +409,15 @@ def recorded(events, issued=None):
     act, else why it is not one - an event a step's process tree wrote (decided_by missing
     or `automation`), one no engine-recorded resume corroborates (a line appended to
     events.jsonl), or a record that is not a person's (mode not human, an approver that
-    names no one). `issued`: the nonces the engine issued the run (issued_nonces()); when
-    given, an event whose nonce is not among them is a forgery - a made-up nonce with a
-    hand-written WORKFLOW_RESUMED to match. The one reader of the event: granted() keeps
-    the first kind, and the quality gate lists the others refused
+    names no one). `issued`: issued_nonces(run_dir) - {nonce: digest}; None or {} refuses
+    every grant (fail closed). An event is honoured only when its nonce was issued, one
+    WORKFLOW_RESUMED carries it, and the operator events carrying it digest to what the
+    engine kept: a made-up nonce, or a real one copied onto new lines, is a forgery. The
+    one reader of the event: granted() keeps the first kind, and the quality gate lists
+    the others refused
     (wgf_quality.compliance.run_exceptions)."""
     events = [e for e in events or () if isinstance(e, dict)]
+    issued = issued if isinstance(issued, dict) else {}
     out = []
     for index, event in enumerate(events):
         if event.get("event") != EVENT:
@@ -384,9 +432,9 @@ def recorded(events, issued=None):
             why = f"the event was not recorded by a person (decided_by {who!r})"
         elif not _corroborated(events, index, data.get("resume_nonce")):
             why = "the event is not corroborated by the resume that recorded it"
-        elif issued is not None and data.get("resume_nonce") not in issued:
-            why = ("the event's resume nonce is not one the engine issued this run "
-                   "(state.json resume_nonces): a forged pair of lines")
+        elif _resume_problem(events, data.get("resume_nonce"), issued):
+            why = "the event is not the engine's record: " + _resume_problem(
+                events, data.get("resume_nonce"), issued)
         elif approved.get("mode") != "human":
             why = f"the record's approver is not a person (mode {approved.get('mode')!r})"
         elif approver_problem(approved.get("identifier")):

@@ -52,6 +52,19 @@ def _request(rule_ids, reason, expires, scope=(), approver="cuong"):
     return exceptions.request(rule_ids, reason, expires, scope, approver)
 
 
+def _issued(events):
+    """What the engine would have kept for `events`: each nonce's operator events, digested
+    (wgflib.workflow.engine.operator_digest)."""
+    from wgflib.workflow.engine import operator_digest
+    acts = {}
+    for event in events:
+        data = event.get("data") or {}
+        nonce = data.get("resume_nonce")
+        if nonce and event.get("event") != exceptions.RESUMED_EVENT:
+            acts.setdefault(nonce, []).append((event.get("event"), data))
+    return {nonce: operator_digest(found) for nonce, found in acts.items()}
+
+
 def _utc(days=0):
     return (datetime.datetime.now(datetime.timezone.utc)
             + datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -95,7 +108,9 @@ class Valid(_Case):
         self.assertEqual(record["rule_id"], "L23")
         self.assertEqual(record["scope"], {"platforms": ["yandex"]})
         self.assertTrue(record["expires_at"].endswith("T23:59:59Z"))
-        self.assertEqual(exceptions.granted(api.store.read_events(state.run_id)), [record])
+        self.assertEqual(exceptions.granted(api.store.read_events(state.run_id),
+                                            exceptions.issued_nonces(
+                                                api.store.run_dir(state.run_id))), [record])
         # Honoured by the next contract the run makes: listed, never a satisfied rule.
         state = self.remake(api, state.run_id)
         contract = self.contract(api, state)
@@ -200,48 +215,104 @@ class Unauthorized(_Case):
         record = {"rule_id": "L23", "approved_by": {"identifier": "cuong", "mode": "human"}}
         events = [{"event": exceptions.EVENT, "data": {
             "exception": record, "decided_by": "human", "resume_nonce": "n1"}}]
-        self.assertEqual(exceptions.granted(events), [])
+        self.assertEqual(exceptions.granted(events, _issued(events)), [])
         events.append({"event": exceptions.RESUMED_EVENT, "data": {"resume_nonce": "n1"}})
-        self.assertEqual(exceptions.granted(events), [record])
+        issued = _issued(events)
+        self.assertEqual(exceptions.granted(events, issued), [record])
+        # Fail closed: without what the engine issued, nothing is honoured.
+        self.assertEqual(exceptions.granted(events), [])
+        self.assertEqual(exceptions.granted(events, {}), [])
+        self.assertEqual(exceptions.issued_nonces(None), {})
         # A record that names no person, or not as a person, is no one's act.
         for approved in ({"identifier": "human", "mode": "human"},
                          {"identifier": "cuong", "mode": "automation"}, {}):
             events[0]["data"]["exception"] = dict(record, approved_by=approved)
-            self.assertEqual(exceptions.granted(events), [])
+            self.assertEqual(exceptions.granted(events, _issued(events)), [])
         events[0]["data"]["exception"] = record
         events[0]["data"].pop("decided_by")
-        self.assertEqual(exceptions.granted(events), [])
+        self.assertEqual(exceptions.granted(events, _issued(events)), [])
         events[0]["data"]["exception"] = record
         events[0]["data"]["decided_by"] = "automation"
-        self.assertEqual(exceptions.granted(events), [])
+        self.assertEqual(exceptions.granted(events, _issued(events)), [])
 
-    def test_a_forged_pair_with_a_made_up_nonce_is_no_ones_act(self):
-        # A real grant: its nonce is the one the engine issued and kept in state.json.
-        api, state = self.to_g4()
-        self.grant(api, state.run_id, _request(["L23"], REASON, _utc(5)[:10]))
-        run_dir = api.store.run_dir(state.run_id)
-        issued = exceptions.issued_nonces(run_dir)
-        real = self.granted_events(api, state.run_id)[0]["data"]["resume_nonce"]
-        self.assertEqual(issued, [real])
-        # A forger appends a grant and a WORKFLOW_RESUMED with a nonce of their own.
+    def _forge(self, run_dir, nonce):
         forged = _request(["L23"], REASON, _utc(5)[:10])[0]
         forged.update(approved_by={"identifier": "mallory", "mode": "human"},
                       created_at=_utc(0))
         with open(os.path.join(run_dir, "events.jsonl"), "a", encoding="utf-8") as handle:
             for line in ({"event": exceptions.EVENT, "data": {
-                    "exception": forged, "decided_by": "human", "resume_nonce": "f0rged"}},
-                    {"event": exceptions.RESUMED_EVENT, "data": {"resume_nonce": "f0rged"}}):
+                    "exception": forged, "decided_by": "human", "resume_nonce": nonce}},
+                    {"event": exceptions.RESUMED_EVENT, "data": {"resume_nonce": nonce}}):
                 handle.write(json.dumps(line) + "\n")
+
+    def test_a_forged_pair_with_a_made_up_nonce_is_no_ones_act(self):
+        # A real grant: its nonce, and the digest of what its resume recorded, are kept.
+        api, state = self.to_g4()
+        self.grant(api, state.run_id, _request(["L23"], REASON, _utc(5)[:10]))
+        run_dir = api.store.run_dir(state.run_id)
+        issued = exceptions.issued_nonces(run_dir)
+        real = self.granted_events(api, state.run_id)[0]["data"]["resume_nonce"]
+        self.assertEqual(list(issued), [real])
+        self.assertTrue(issued[real].startswith("sha256:"))
+        self._forge(run_dir, "f0rged")
         events = api.store.read_events(state.run_id)
         found = exceptions.recorded(events, issued)
         self.assertEqual([why is None for _, why in found], [True, False])
         self.assertIn("not one the engine issued", found[1][1])
-        self.assertEqual([r["approved_by"]["identifier"] for r in
-                          exceptions.granted(events, issued)], ["cuong"])
         # The contract the run makes next lists the real one only.
         state = self.remake(api, state.run_id)
         self.assertEqual([e["approved_by"]["identifier"]
                           for e in self.contract(api, state)["exceptions"]], ["cuong"])
+
+    def test_a_forged_pair_reusing_an_issued_nonce_is_no_ones_act(self):
+        # The nonce is copied from events.jsonl: issued, but used once - the copy makes a
+        # second WORKFLOW_RESUMED and changes what the nonce's resume recorded.
+        api, state = self.to_g4()
+        self.grant(api, state.run_id, _request(["L23"], REASON, _utc(5)[:10]))
+        run_dir = api.store.run_dir(state.run_id)
+        real = self.granted_events(api, state.run_id)[0]["data"]["resume_nonce"]
+        self._forge(run_dir, real)
+        events = api.store.read_events(state.run_id)
+        found = exceptions.recorded(events, exceptions.issued_nonces(run_dir))
+        self.assertEqual([why is None for _, why in found], [False, False])
+        self.assertTrue(all("2 WORKFLOW_RESUMED" in why for _, why in found), found)
+        # A grant line edited in place (one resume line, a changed record) is caught by the
+        # digest.
+        lines = [json.loads(l) for l in open(os.path.join(run_dir, "events.jsonl"),
+                                             encoding="utf-8")][:-2]
+        edited = [dict(e) for e in lines]
+        for event in edited:
+            if event.get("event") == exceptions.EVENT:
+                event["data"] = dict(event["data"], exception=dict(
+                    event["data"]["exception"], rule_id="L26"))
+        found = exceptions.recorded(edited, exceptions.issued_nonces(run_dir))
+        self.assertIn("digest differs", found[0][1])
+
+    def test_genuine_grants_are_honoured_across_resumes(self):
+        api, state = self.to_g4()
+        self.grant(api, state.run_id, _request(["L23"], REASON, _utc(5)[:10]))
+        state = self.grant(api, state.run_id, _request(["L26"], REASON, _utc(6)[:10],
+                                                       approver="Cuong N"))
+        run_dir = api.store.run_dir(state.run_id)
+        issued = exceptions.issued_nonces(run_dir)
+        self.assertEqual(len(issued), 2)
+        found = exceptions.granted(api.store.read_events(state.run_id), issued)
+        self.assertEqual([(r["rule_id"], r["approved_by"]["identifier"]) for r in found],
+                         [("L23", "cuong"), ("L26", "Cuong N")])
+
+    def test_a_state_from_before_the_digests_honours_nothing(self):
+        api, state = self.to_g4()
+        self.grant(api, state.run_id, _request(["L23"], REASON, _utc(5)[:10]))
+        run_dir = api.store.run_dir(state.run_id)
+        path = os.path.join(run_dir, "state.json")
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        data["resume_nonces"] = list(data["resume_nonces"])  # e81a941's list
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle)
+        found = exceptions.recorded(api.store.read_events(state.run_id),
+                                    exceptions.issued_nonces(run_dir))
+        self.assertIn("before the engine kept the digest", found[0][1])
 
     def test_only_a_human_decider_is_a_person(self):
         record = {"rule_id": "L23", "approved_by": {"identifier": "cuong", "mode": "human"}}
@@ -249,13 +320,16 @@ class Unauthorized(_Case):
             events = [{"event": exceptions.EVENT, "data": {
                 "exception": record, "decided_by": who, "resume_nonce": "n1"}},
                 {"event": exceptions.RESUMED_EVENT, "data": {"resume_nonce": "n1"}}]
-            self.assertEqual(exceptions.granted(events), [], who)
+            self.assertEqual(exceptions.granted(events, _issued(events)), [], who)
 
     def test_a_role_or_a_program_is_not_an_approver(self):
         for name in ("the human", "an agent", "claude", "Claude Code", "gpt-5", "the bot",
-                     "CI runner", "my reviewer", "42", "codex"):
+                     "CI runner", "my reviewer", "42", "codex", "team", "cli",
+                     "the reviewer", "release team", "QA lead"):
             self.assertIsNotNone(exceptions.approver_problem(name), name)
-        for name in ("cuong", "Cuong N", "duycu", "j.smith@studio"):
+        # A name with a person's word in it passes: the check refuses placeholders, it does
+        # not verify identity.
+        for name in ("cuong", "Cuong N", "duycu", "j.smith@studio", "alice the reviewer"):
             self.assertIsNone(exceptions.approver_problem(name), name)
 
     def test_the_grant_itself_refuses_automation(self):
@@ -309,6 +383,12 @@ class TakesEffect(_Case):
         self.assertEqual([(e["rule_id"], e["approved_by"]["identifier"]) for e in listed],
                          [("L23", "cuong")])
         self.assertEqual(listed[0]["status"], "honoured")
+        # The placeholder gate applies it: L23 EXCEPTED, counted so, never blocking.
+        section = report["compliance"]
+        l23 = next(r for r in section["rules"] if r["id"] == "L23")
+        self.assertEqual((l23["status"], l23.get("measured_status")), ("EXCEPTED", "UNMEASURED"))
+        self.assertEqual(section["counts"]["total"]["excepted"], 1)
+        self.assertNotIn("L23", section["blocking"])
 
     def test_the_command_says_when_a_grant_takes_effect(self):
         text = wgf.exception_hint("run-1", ["L23"])
@@ -375,7 +455,7 @@ class AdvancedPast(unittest.TestCase):
         acts = [e for e in events if e["event"] == "TEST_OPERATOR_ACT"]
         self.assertEqual(len(acts), 1)
         nonce = acts[0]["data"]["resume_nonce"]
-        self.assertEqual(case.store.load(run.run_id).resume_nonces, [nonce])
+        self.assertEqual(list(case.store.load(run.run_id).resume_nonces), [nonce])
         resumed = [e for e in events if e["event"] == exceptions.RESUMED_EVENT]
         self.assertEqual(resumed[-1]["data"].get("resume_nonce"), nonce)
 

@@ -369,8 +369,13 @@ def _counts(rules):
 def evaluate(contract, tiers, reports, *, refs=None, entries=None, build=None,
              self_report=None, tier=None, contract_ref=None, retroactive=False,
              contract_missing=None, exceptions=(), lessons=None, now=None, candidates=(),
-             problem=None, run_class=None):
+             problem=None, run_class=None, evaluated_by=None):
     """The quality-report's `compliance` section.
+
+    `evaluated_by`: {version, commit} of the Factory code that ran this evaluation (the
+        quality gate's own checkout), recorded beside `versions` - which are the contract's,
+        i.e. the Factory that resolved the rules - so an outcome can be attributed to the code
+        that judged it.
 
     `contract`: the run's knowledge-contract (or a retroactive one; None when none could be
     resolved). `tiers`: the check-tiers the run pinned. `reports`: {artifact type: report}
@@ -461,6 +466,9 @@ def evaluate(contract, tiers, reports, *, refs=None, entries=None, build=None,
         "advisory_reason": why,
         "contract": contract_block,
         "versions": dict((contract or {}).get("versions") or {}),
+        **({"evaluated_by": {"version": (evaluated_by or {}).get("version"),
+                             "commit": (evaluated_by or {}).get("commit")}}
+           if evaluated_by is not None else {}),
         "facets": dict((contract or {}).get("facets") or {}),
         "counts": _counts(rules),
         "rules": rules,

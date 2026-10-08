@@ -124,6 +124,20 @@ class Generations(unittest.TestCase):
         self.assertEqual(entry["quality_report"]["build_commit"], kr.COMMIT)
         self.assertIn("lessons@2.1.0", generations.generations(entries)[0]["key"])
 
+    def test_the_factory_code_that_judged_the_build_is_its_factory(self):
+        """compliance.versions copies the contract's Factory; evaluated_by is the code that
+        ran the quality gate, and the outcome's Factory code is attributed to it."""
+        self.mock_run("judged", "2.0.0", "2.7.0", ["L23"],
+                      dict(compliance("PASS", satisfied=["L23"]), versions={
+                          "factory": {"version": "2.7.0", "commit": "c" * 40},
+                          "lessons": {"version": "2.0.1"}, "check_tiers": {"version": "1.2.0"}},
+                           evaluated_by={"version": "2.9.0", "commit": "e" * 40}),
+                      "2026-10-08T09:00:00Z")
+        entry = generations.rows(self.store)[0][0]
+        self.assertEqual(entry["factory"], {"version": "2.9.0", "commit": "e" * 40})
+        self.assertEqual(entry["factory_from"], "quality-report evaluated_by")
+        self.assertEqual(entry["knowledge"]["lessons"], "lessons@2.0.1")
+
     def test_a_run_without_recorded_knowledge_is_unrecorded_and_a_broken_one_a_problem(self):
         kr.add_run(self.store, "old-run", params={"quality": {"tier": "mvp"}})
         broken = kr.add_run(self.store, "broken-run")

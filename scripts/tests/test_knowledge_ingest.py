@@ -342,11 +342,28 @@ class Promote(Base):
         with open(os.path.join(ROOT, *promote.EVIDENCE_PATH.split("/")), encoding="utf-8") as h:
             self.evidence_text = h.read()
 
+        # A genuine measured source: a run whose quality-report recorded finding f-1 on the
+        # build the candidate's report names, ingested the way `wgf knowledge ingest` does.
+        run = kr.add_run(self.store, "run-a")
+        kr.add_report(self.store, run, "quality-report", kr.quality_report(
+            [kr.candidate("Pause leaves the overlay", proposed_check=NEW_CHECK, finding="f-1")],
+            found=kr.findings(["f-1"])))
+        state = self.store.load("run-a")
+        observations, _ = ingest.extract(
+            state, lambda ref: self.store.read_artifact(state.run_id, ref))
+        self.measured_source = observations[0]["source"]
+        self.assertEqual(self.measured_source["basis"], "measured")
+        self.verify = ingest.verifier(self.store)
+
     def record(self, basis="measured", **extra):
-        source = {"run": "run-a", "artifact_id": "quality-report",
-                  "artifact_type": "review-report" if basis == "subjective" else "quality-report",
-                  "version": 1, "report_hash": "sha256:" + "d" * 64, "commit": kr.COMMIT,
-                  "basis": basis, "finding": "f-1", "date": "2026-10-08T10:00:00Z"}
+        if basis == "measured":
+            source = dict(self.measured_source, ingested_at="2026-10-08T10:00:00Z")
+        else:
+            source = {"run": "run-a", "artifact_id": "review-report",
+                      "artifact_type": "review-report", "version": 1,
+                      "report_hash": "sha256:" + "d" * 64, "commit": kr.COMMIT,
+                      "basis": basis, "finding": "f-1", "resolved_in": None,
+                      "date": "2026-10-08T10:00:00Z"}
         out = {"id": "C-7", "state": "open", "key": "k", "basis": basis, "duplicate_of": None,
                "summary": "A paused game was never resumed by any gate, so an overlay that "
                           "stays after resume passed",
@@ -359,8 +376,61 @@ class Promote(Base):
         return out
 
     def draft(self, record, **kw):
+        kw.setdefault("verify", self.verify)
         return promote.draft(record, self.data["lessons"], self.lessons_text, self.evidence_text,
                              self.checks, self.vocab, evidence=self.data["evidence"], **kw)
+
+    def test_a_genuine_measured_source_drafts_blocking(self):
+        lesson = self.draft(self.record(), level="blocking").lesson
+        self.assertEqual((lesson["status"], lesson.get("level")), ("enforced", "blocking"))
+
+    def test_an_edited_source_line_cannot_be_reverified_and_is_refused(self):
+        """The reviewer's probe: a source line edited by hand to claim a measured finding."""
+        forged = self.record(basis="subjective")
+        forged["sources"][0].update(basis="measured", artifact_type="quality-report",
+                                    artifact_id="quality-report", finding="f-made-up",
+                                    resolved_in={"artifact_id": "quality-report", "version": 1,
+                                                 "report_hash": "sha256:" + "e" * 64})
+        forged["basis"] = "measured"
+        for level in ("blocking", "required"):
+            with self.assertRaisesRegex(promote.PromoteRefused, "subjective"):
+                self.draft(forged, level=level)
+        # A genuine source with only its finding changed, or its digest, verifies nothing.
+        for change in ({"finding": "f-made-up"}, {"report_hash": "sha256:" + "f" * 64},
+                       {"commit": "c" * 40}, {"run": "another-run"}):
+            with self.subTest(change=change):
+                record = self.record()
+                record["sources"][0].update(change)
+                with self.assertRaisesRegex(promote.PromoteRefused, "subjective"):
+                    self.draft(record, level="blocking")
+
+    def test_a_run_store_that_is_gone_makes_the_evidence_subjective(self):
+        shutil.rmtree(self.store.run_dir("run-a"))
+        with self.assertRaisesRegex(promote.PromoteRefused, "subjective"):
+            self.draft(self.record(), level="blocking", verify=ingest.verifier(self.store))
+        lesson = self.draft(self.record(), verify=ingest.verifier(self.store)).lesson
+        self.assertEqual((lesson["status"], lesson["lifecycle"]), ("gap", "candidate"))
+        # And with no verifier at all, nothing is measured.
+        with self.assertRaisesRegex(promote.PromoteRefused, "subjective"):
+            promote.draft(self.record(), self.data["lessons"], self.lessons_text,
+                          self.evidence_text, self.checks, self.vocab, level="required")
+
+    def test_the_cli_promotes_a_measured_candidate_from_its_run_store(self):
+        run = kr.add_run(self.store, "run-cli")
+        kr.add_report(self.store, run, "quality-report", kr.quality_report(
+            [kr.candidate(proposed_check=NEW_CHECK, finding="f-1", proposed_level="blocking")],
+            found=kr.findings(["f-1"])))
+        self.ingest("run-cli")
+        code, out, err = run_cli("promote", "C-1", "--candidates", self.candidates,
+                                 "--store", self.store.directory, "--json")
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(json.loads(out)["lesson"]["level"], "blocking")
+        # The same candidate against another run store - its run not there - is refused.
+        other = os.path.join(self.tmp, "elsewhere")
+        code, out, _ = run_cli("promote", "C-1", "--candidates", self.candidates,
+                               "--store", other)
+        self.assertEqual(code, 1)
+        self.assertIn("subjective", out)
 
     def test_a_measured_candidate_is_drafted_as_a_patch_that_applies_and_holds(self):
         result = self.draft(self.record(), today="2026-10-08")

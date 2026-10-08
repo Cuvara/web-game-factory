@@ -267,7 +267,16 @@ def knowledge_compliance_of(context, inputs, loaded, refs, entries, result, buil
         self_report=self_report, tier=tier, contract_ref=contract_ref,
         retroactive=retroactive, contract_missing=missing, exceptions=offered,
         lessons=lessons, now=now, candidates=candidates, problem=problem,
-        run_class=run_class)
+        run_class=run_class, evaluated_by=_factory_now())
+
+
+def _factory_now():
+    """The Factory version and commit of the code running this gate (read from files)."""
+    from wgf_knowledge import versions
+    try:
+        return versions.factory()
+    except Exception:  # noqa: BLE001 - an unreadable checkout records nothing, never fails
+        return {"version": None, "commit": None}
 
 
 class QualityGateStep(WorkflowStep):

@@ -1506,6 +1506,15 @@
           "type": "string",
           "description": "A run that recorded its knowledge has no contract here: RELEASE_BLOCKED, never skipped."
         },
+        "evaluated_by": {
+          "type": "object",
+          "description": "The Factory version and commit of the code that ran this evaluation (the quality gate's checkout). `versions` are the contract's - the Factory that resolved the rules; this is the one that judged the build. `wgf knowledge generations` attributes an outcome's Factory code by it.",
+          "properties": {
+            "version": { "type": ["string", "null"] },
+            "commit": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        },
         "verdict": {
           "enum": [
             "PASS",

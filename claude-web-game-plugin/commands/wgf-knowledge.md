@@ -33,8 +33,11 @@ place.
 - **Learning from a run.** `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" knowledge ingest <run-id>` collects the run's lesson
   candidates (specialist, triage, quality-report and reviewer) into the project's
   `workspace/lessons/candidates.yaml`: schema-checked, each with a root cause, de-duplicated,
-  with the run, report and commit it came from. A candidate whose check an active lesson holds
-  is recorded as that lesson's regression. `candidates [--open]` lists them; a person rejects
+  with the run, report and commit it came from. A candidate on a check an active lesson holds
+  is that lesson's regression only when its finding is guarded by the lesson or it states the
+  lesson's problem; otherwise it is a new candidate naming the lesson (`related_lessons`).
+  Evidence is measured only when a gate of that run recorded the finding on that build, and
+  promote re-verifies it against the run store. `candidates [--open]` lists them; a person rejects
   one with `reject C-<n> --reason TEXT`.
 - **Promotion is a person's pull request.** `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" knowledge promote C-<n> [--out FILE]`
   prints a patch - the lessons.yaml entry, the evidence.yaml entry, failing test stubs - and

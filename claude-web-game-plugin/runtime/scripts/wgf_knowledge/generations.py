@@ -66,6 +66,10 @@ def row(store, state):
             factory, knowledge = found
             attributed = source
             break
+    judged_by = (compliance or {}).get("evaluated_by")
+    if isinstance(judged_by, dict) and (judged_by.get("version") or judged_by.get("commit")):
+        # The Factory code that judged the build, not the one that resolved its contract.
+        factory = {"version": judged_by.get("version"), "commit": judged_by.get("commit")}
     provenance = (report or {}).get("provenance") if isinstance(report, dict) else None
     provenance = provenance if isinstance(provenance, dict) else {}
     build = (report or {}).get("build") if isinstance(report, dict) else None
@@ -84,6 +88,9 @@ def row(store, state):
         "factory": {"version": factory.get("version"), "commit": factory.get("commit")},
         "knowledge": dict(sorted(knowledge.items())),
         "attributed_from": attributed,
+        "factory_from": ("quality-report evaluated_by" if isinstance(judged_by, dict)
+                         and (judged_by.get("version") or judged_by.get("commit"))
+                         else attributed),
         "started_with": {"factory": started_factory or None,
                          "knowledge": dict(sorted(started.items())) or None},
         "tier": quality.get("tier"), "class": quality.get("class"),

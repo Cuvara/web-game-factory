@@ -231,11 +231,13 @@ def _refs(state):
 
 
 def _measured_findings(docs):
-    """{finding id: {"commits": {build commits}, "guarded_by": {lesson ids}}} of the findings
+    """{finding id: {"commits": {build commits}, "guarded_by": {lesson ids}, "reports":
+    [(ref or None, report commits)]}} of the findings
     the run's measuring producers recorded (quality-report and triage-report `findings`): what
     a candidate's `finding` must resolve to before its evidence counts as measured."""
     out = {}
-    for kind, doc in docs:
+    for item in docs:
+        ref, kind, doc = item if len(item) == 3 else (None,) + tuple(item)
         if kind not in MEASURING:
             continue
         report_commits = {c for c in (_commit(kind, doc),
@@ -243,9 +245,12 @@ def _measured_findings(docs):
         for finding in doc.get("findings") or ():
             if not isinstance(finding, dict) or not finding.get("id"):
                 continue
-            entry = out.setdefault(str(finding["id"]), {"commits": set(), "guarded_by": set()})
+            entry = out.setdefault(str(finding["id"]), {"commits": set(), "guarded_by": set(),
+                                                        "reports": []})
             own = _get(finding, ("build", "commit"))
-            entry["commits"] |= ({own} if own else set()) | report_commits
+            commits = ({own} if own else set()) | report_commits
+            entry["commits"] |= commits
+            entry["reports"].append((ref, commits))
             entry["guarded_by"] |= {g.get("lesson") for g in finding.get("guarded_by") or ()
                                     if isinstance(g, dict) and g.get("lesson")}
     return out
@@ -274,7 +279,7 @@ def extract(state, read_artifact):
             raise IngestError(f"{ref.id} v{ref.version} is a {type(doc).__name__}, not a "
                               f"{ref.type}")
         docs.append((ref, doc))
-    measured = _measured_findings((ref.type, doc) for ref, doc in docs)
+    measured = _measured_findings([(ref, ref.type, doc) for ref, doc in docs])
     observations, problems = [], []
     for ref, doc in docs:
         reported = _get(doc, SOURCES[ref.type])
@@ -295,6 +300,8 @@ def extract(state, read_artifact):
             resolved = measured.get(str(finding)) if finding else None
             is_measured = (ref.type not in SUBJECTIVE and resolved is not None
                            and commit is not None and commit in resolved["commits"])
+            proof = next((r for r, commits in resolved["reports"] if commit in commits),
+                         None) if is_measured else None
             observations.append({"candidate": candidate, "source": {
                 "run": state.run_id, "artifact_id": ref.id, "artifact_type": ref.type,
                 "version": ref.version, "report_hash": ref.checksum,
@@ -302,22 +309,84 @@ def extract(state, read_artifact):
                 "commit": commit, "role": candidate.get("role"),
                 "finding": finding,
                 "basis": "measured" if is_measured else "subjective",
+                "resolved_in": None if proof is None else {
+                    "artifact_id": proof.id, "artifact_type": proof.type,
+                    "version": proof.version, "report_hash": proof.checksum},
                 "evidence_refs": list(candidate.get("evidence_refs") or []),
                 "date": provenance.get("produced_at") or ref.created_at},
                 "guarded_by": sorted(resolved["guarded_by"]) if is_measured else []})
     return observations, problems
 
 
-def basis_of(record):
+def basis_of(record, verify=None):
     """A stored candidate's basis, derived from its sources - never read from the record's
-    own `basis`, which a hand edit can change: measured only when a source from a measuring
-    report (not a review) says it resolved to a measured finding."""
+    own `basis`, which a hand edit can change.
+
+    Without `verify`, what the sources claim (a measured source from a measuring report, not
+    a review, naming a finding and the report it resolved in) - the store's own bookkeeping.
+    With `verify(source) -> bool` (promote: `verifier(store)`), only a source re-verified
+    against the run store counts; anything that cannot be re-verified is subjective."""
     for source in (record or {}).get("sources") or ():
-        if isinstance(source, dict) and source.get("basis") == "measured" \
-                and source.get("artifact_type") in SOURCES \
-                and source.get("artifact_type") not in SUBJECTIVE and source.get("finding"):
+        if not (isinstance(source, dict) and source.get("basis") == "measured"
+                and source.get("artifact_type") in SOURCES
+                and source.get("artifact_type") not in SUBJECTIVE and source.get("finding")
+                and isinstance(source.get("resolved_in"), dict)):
+            continue
+        if verify is None or verify(source):
             return "measured"
     return "subjective"
+
+
+def verify_source(source, state, read_artifact):
+    """True when the run store still proves a measured source: the report the candidate came
+    from is the run's, with the digest the source recorded, and still holds the candidate's
+    finding; the measuring report it resolved in is the run's, with its recorded digest; and
+    the finding is recorded there on the same build commit as the candidate's report."""
+    def ref_of(artifact_id, version, digest):
+        for ref in (state.artifacts or {}).get(artifact_id) or ():
+            if ref.version == version and ref.checksum == digest:
+                return ref
+        return None
+
+    proof = source.get("resolved_in") or {}
+    origin = ref_of(source.get("artifact_id"), source.get("version"), source.get("report_hash"))
+    measuring = ref_of(proof.get("artifact_id"), proof.get("version"), proof.get("report_hash"))
+    if state.run_id != source.get("run") or origin is None or measuring is None \
+            or origin.type in SUBJECTIVE or measuring.type not in MEASURING:
+        return False
+    try:
+        report, findings_doc = read_artifact(origin), read_artifact(measuring)
+    except Exception:  # noqa: BLE001 - a report that cannot be read proves nothing
+        return False
+    if not isinstance(report, dict) or not isinstance(findings_doc, dict):
+        return False
+    commit = _commit(origin.type, report)
+    reported = _get(report, SOURCES[origin.type]) or []
+    if commit is None or commit != source.get("commit") or not any(
+            isinstance(c, dict) and c.get("finding") == source.get("finding") for c in reported):
+        return False
+    entry = _measured_findings([(measuring, measuring.type, findings_doc)]).get(
+        str(source.get("finding")))
+    return entry is not None and commit in entry["commits"]
+
+
+def verifier(store):
+    """verify(source) over a RunStore: loads each run once; a run that is gone, or any
+    store error, verifies nothing."""
+    cache = {}
+
+    def verify(source):
+        run = source.get("run")
+        if run not in cache:
+            try:
+                cache[run] = store.load(run)
+            except Exception:  # noqa: BLE001 - a run store that is gone proves nothing
+                cache[run] = None
+        state = cache[run]
+        if state is None:
+            return False
+        return verify_source(source, state, lambda ref: store.read_artifact(state.run_id, ref))
+    return verify
 
 
 # --------------------------------------------------------------------------- de-duplication

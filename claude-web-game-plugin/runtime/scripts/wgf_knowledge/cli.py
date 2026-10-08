@@ -594,13 +594,19 @@ def cmd_promote(args):
             evidence_text = handle.read()
     except OSError as exc:
         raise Unusable(f"the knowledge files cannot be read ({exc})")
+    from wgflib.workflow.api import WorkflowAPI
+    try:
+        run_store = WorkflowAPI(config_path=args.config, store_dir=args.store).store
+    except (OSError, ValueError) as exc:
+        raise Unusable(f"the run store cannot be opened ({exc})")
     try:
         result = promote.draft(
             record, data["lessons"], lessons_text, evidence_text, checks,
             model.vocabulary(root), evidence=data.get("evidence"), lesson_id=args.id,
             level=args.level, check=args.check, category=args.category, title=args.title,
             scope=_scope_arg(args.scope) if args.scope else None,
-            promoted=ingest.promoted(data.get("evidence")))
+            promoted=ingest.promoted(data.get("evidence")),
+            verify=ingest.verifier(run_store))
     except promote.PromoteRefused as exc:
         if args.json:
             _print_json({"refused": str(exc)})
@@ -761,6 +767,7 @@ def build_parser():
     prom.add_argument("--scope", action="append", metavar="KEY=V,..")
     prom.add_argument("--out", metavar="FILE", help="write the patch here (else stdout)")
     prom.add_argument("--candidates", metavar="FILE")
+    store_args(prom)
     prom.add_argument("--json", action="store_true")
     prom.set_defaults(handler=cmd_promote)
     fw = sub.add_parser("firewall", help="every lesson's regression tests, run here")

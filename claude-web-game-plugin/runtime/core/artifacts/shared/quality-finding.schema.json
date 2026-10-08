@@ -203,6 +203,18 @@
         "role": { "type": ["string", "null"] },
         "finding": { "type": ["string", "null"] },
         "basis": { "enum": ["measured", "subjective"] },
+        "resolved_in": {
+          "type": ["object", "null"],
+          "description": "For a measured source: the measuring report (quality-report or triage-report) of the same run that recorded the finding on the same build - by id, version and the digest of its file - so promote can re-verify it against the run store. A source a promote cannot re-verify (run store gone, a digest that no longer matches, the finding absent) is subjective.",
+          "required": ["artifact_id", "version", "report_hash"],
+          "properties": {
+            "artifact_id": { "type": "string" },
+            "artifact_type": { "type": "string" },
+            "version": { "type": "integer" },
+            "report_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+          },
+          "additionalProperties": false
+        },
         "evidence_refs": { "type": "array", "items": { "type": "string" } },
         "date": { "type": ["string", "null"] },
         "ingested_at": { "type": "string" }

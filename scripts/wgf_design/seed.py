@@ -250,22 +250,22 @@ def _durations(purposes, mvp_count, run_seconds, profile, strategy):
 
 
 def _introductions(introduce_order, mechanics, purposes, mvp_count):
-    """Which unit teaches which mechanic: the family's `introduce_order`, split over the units
-    whose purpose is `teach`, the first of them taking the opening mechanics. Mechanics
-    accumulate, so a unit asks for everything taught up to and including it."""
+    """Which unit teaches which mechanic: the family's `introduce_order` over the units whose
+    purpose is `teach`. Every teaching unit after the first debuts exactly one mechanic, the
+    last ones in the order; the opening unit, where play begins, takes the rest - so no unit
+    after it debuts two never-seen mechanics at once (design-consistency
+    content.introductions_one_at_a_time). Mechanics accumulate, so a unit asks for
+    everything taught up to and including it."""
     order = [m for m in introduce_order or [] if m in mechanics]
     order += [m for m in mechanics if m not in order]
     teaching = [i for i, purpose in enumerate(purposes[:mvp_count]) if purpose == "teach"] or [0]
     teaching = [i for i in teaching if i < max(1, mvp_count - 1)] or [0]
     chunks = {position: [] for position in teaching}
-    size, extra = divmod(len(order), len(teaching))
-    cursor = 0
-    for rank, position in enumerate(teaching):
-        take = size + (1 if rank < extra else 0)
-        chunks[position] = order[cursor:cursor + take]
-        cursor += take
-    if not chunks[teaching[0]]:
-        chunks[teaching[0]] = order[:1]
+    later = teaching[1:][:max(0, len(order) - 1)]
+    opening = len(order) - len(later)
+    chunks[teaching[0]] = order[:max(1, opening)]
+    for rank, position in enumerate(later):
+        chunks[position] = order[opening + rank:opening + rank + 1]
     return chunks
 
 

@@ -611,8 +611,9 @@ class Promote(Base):
         for path, data in before.items():
             with open(os.path.join(ROOT, path), "rb") as handle:
                 self.assertEqual(handle.read(), data)
+        drafted = promote.next_id(registry.load(ROOT)["lessons"]).lower()
         self.assertFalse(os.path.exists(os.path.join(ROOT, "scripts", "tests",
-                                                     "test_lesson_l29.py")))
+                                                     f"test_lesson_{drafted}.py")))
 
 
 if __name__ == "__main__":

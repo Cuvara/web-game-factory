@@ -1050,3 +1050,42 @@ lessons:
         - scripts/tests/test_browser_qa.py::test_a_software_rasterizer_blocks_a_failure_and_keeps_a_pass
       passes: []
       generalizes: []
+
+  - id: L29
+    title: "Units debuted several new elements at once, and no check held it"
+    category: level_design
+    domain: level-design
+    classification: BLOCKING
+    revision: 1
+    principle: >-
+      After the opening unit, a unit introduces at most one element the player has not met,
+      so every new element is first met on its own and practised before it is combined with
+      another new one.
+    anti_pattern: >-
+      A unit that debuts two or more never-seen elements at once.
+    problem: >-
+      A unit that debuted two never-seen elements at once was cleared far less often than
+      the units around it, while every gate passed its design.
+    root_cause: >-
+      The design was checked only for teaching a mechanic before relying on it, never for how
+      many new elements one unit debuts, and nothing counted it on the built content.
+    lesson: >-
+      A unit that debuts two never-seen elements at once teaches neither: the player meets
+      both in the same breath, cannot tell which one beat them, and fails the unit far more
+      often than the units around it. Nothing counted how many new elements one unit
+      debuts, on the design or on the built content.
+    scope: global
+    status: enforced
+    lifecycle: active
+    introduced: {version: 2.8.0, date: 2026-10-09}
+    checks: [design-consistency:content.introductions_one_at_a_time, content-sufficiency:content.introductions_one_at_a_time]
+    tests:
+      catches:
+        - scripts/tests/test_lesson_l29.py::test_L29_the_check_fails_the_defect
+        - scripts/tests/test_lesson_l29.py::test_L29_a_compliant_design_and_a_violating_build_fail_the_build
+      passes:
+        - scripts/tests/test_lesson_l29.py::test_L29_the_check_passes_the_fixed_build
+        - scripts/tests/test_lesson_l29.py::test_L29_the_accepted_2d_validation_game_passes
+        - scripts/tests/test_lesson_l29.py::test_L29_the_accepted_3d_validation_game_passes
+      generalizes:
+        - scripts/tests/test_lesson_l29.py::test_L29_generalizes_to_a_synthetic_3d_racer

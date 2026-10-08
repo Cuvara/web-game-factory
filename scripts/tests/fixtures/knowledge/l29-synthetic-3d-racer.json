@@ -1,0 +1,19 @@
+{
+  "_comment": "L29 generalization (scripts/tests/test_lesson_l29.py): a synthetic game B of another family and render than the 2D puzzle-like game the lesson's pipeline scenario was learned on - a 3D kart racer whose courses introduce track elements. `regressed`: course 3 debuts ramps and rival karts at once, course 5 oil slicks and a shortcut at once. `fixed`: the same courses with every introduction on its own course first. Each list is both the design's build_spec.content.units (index order) and the built units.json; nothing here is a real game.",
+  "regressed": [
+    {"id": "c-01", "index": 1, "tier": "mvp", "elements": ["track", "boost-pad"], "mechanics": ["steer", "drift"]},
+    {"id": "c-02", "index": 2, "tier": "mvp", "elements": ["track", "boost-pad", "jump"], "mechanics": ["steer", "drift"]},
+    {"id": "c-03", "index": 3, "tier": "mvp", "elements": ["track", "ramp", "rival-kart"], "mechanics": ["steer", "drift"]},
+    {"id": "c-04", "index": 4, "tier": "mvp", "elements": ["track", "ramp", "rival-kart", "boost-pad"], "mechanics": ["steer", "drift"]},
+    {"id": "c-05", "index": 5, "tier": "mvp", "elements": ["track", "oil-slick", "shortcut", "jump"], "mechanics": ["steer", "drift"]},
+    {"id": "c-06", "index": 6, "tier": "mvp", "elements": ["track", "oil-slick", "shortcut", "rival-kart"], "mechanics": ["steer", "drift"]}
+  ],
+  "fixed": [
+    {"id": "c-01", "index": 1, "tier": "mvp", "elements": ["track", "boost-pad"], "mechanics": ["steer", "drift"]},
+    {"id": "c-02", "index": 2, "tier": "mvp", "elements": ["track", "boost-pad", "jump"], "mechanics": ["steer", "drift"]},
+    {"id": "c-03", "index": 3, "tier": "mvp", "elements": ["track", "ramp", "jump"], "mechanics": ["steer", "drift"]},
+    {"id": "c-04", "index": 4, "tier": "mvp", "elements": ["track", "ramp", "rival-kart", "boost-pad"], "mechanics": ["steer", "drift"]},
+    {"id": "c-05", "index": 5, "tier": "mvp", "elements": ["track", "oil-slick", "jump", "ramp"], "mechanics": ["steer", "drift"]},
+    {"id": "c-06", "index": 6, "tier": "mvp", "elements": ["track", "oil-slick", "shortcut", "rival-kart"], "mechanics": ["steer", "drift"]}
+  ]
+}

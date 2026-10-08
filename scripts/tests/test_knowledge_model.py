@@ -46,6 +46,7 @@ from wgflib.workflow.contracts import load_registry  # noqa: E402
 # (tests added, no rule changed) must not break these assertions.
 from wgflib.yamllite import load_file as _load_file  # noqa: E402
 LESSONS_VERSION = _load_file(os.path.join(ROOT, "core", "reference", "lessons.yaml"))["version"]
+TIERS_VERSION = _load_file(os.path.join(ROOT, "core", "reference", "check-tiers.yaml"))["version"]
 
 
 DATA = registry.load(ROOT)
@@ -55,7 +56,7 @@ BY_ID = {l["id"]: l for l in LESSONS["lessons"]}
 
 # The design's table (learning-enforcement design 2.3), computed from the integ registry.
 EXPECTED_LEVELS = {
-    "blocking": {"L3", "L5", "L10", "L12", "L15", "L22"},
+    "blocking": {"L3", "L5", "L10", "L12", "L15", "L22", "L29"},
     "required": {"L1", "L2", "L4", "L7", "L11", "L13", "L14", "L20", "L23", "L24", "L25",
                  "L26", "L27", "L28"},
     "experimental": {"L8", "L9", "L16", "L17", "L18", "L21"},
@@ -167,7 +168,7 @@ class Ingestion(Lessons):
         data = self.lessons()
         data["lessons"].append("L900 a sentence")
         self.write("core/reference/lessons.yaml", data)
-        self.has("lessons[28]: needs an id")
+        self.has(f"lessons[{len(LESSONS['lessons'])}]: needs an id")
 
     def test_a_malformed_file_is_unusable(self):
         path = os.path.join(self.root, "core", "reference", "lessons.yaml")
@@ -587,7 +588,7 @@ class Exceptions(unittest.TestCase):
 class Versions(unittest.TestCase):
     def test_the_knowledge_versions_a_run_records(self):
         self.assertEqual(versions.knowledge(root=ROOT),
-                         {"lessons": f"lessons@{LESSONS_VERSION}", "check-tiers": "check-tiers@1.2.0"})
+                         {"lessons": f"lessons@{LESSONS_VERSION}", "check-tiers": f"check-tiers@{TIERS_VERSION}"})
 
     def test_collect_records_every_version_and_the_knowledge_digests(self):
         import hashlib
@@ -599,7 +600,7 @@ class Versions(unittest.TestCase):
                 digest = "sha256:" + hashlib.sha256(handle.read()).hexdigest()
             self.assertEqual(found[key]["sha256"], digest)
         self.assertEqual(found["lessons"]["version"], LESSONS_VERSION)
-        self.assertEqual(found["check_tiers"]["version"], "1.2.0")
+        self.assertEqual(found["check_tiers"]["version"], TIERS_VERSION)
         with open(os.path.join(ROOT, "VERSION"), encoding="utf-8") as handle:
             self.assertEqual(found["factory"]["version"], handle.read().strip())
         commit = found["factory"]["commit"]

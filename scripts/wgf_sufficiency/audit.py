@@ -37,7 +37,7 @@ from wgflib import build_scope, genre_models, paths
 from wgflib.yamllite import load_file
 
 from wgf_design import existing, layouts as geometry_of
-from wgf_design.content import quality_tier
+from wgf_design.content import introduction_breaches, quality_tier, unit_debuts
 
 __all__ = ["RULES_PATH", "BENCHMARK_PATH", "load_rules", "load_benchmark", "owed_units",
            "built_unlocks",
@@ -50,7 +50,8 @@ CHECK_ORDER = ("content.contract", "content.data_present", "content.units_shippe
                "content.units_reachable", "content.entity_kinds", "content.elements",
                "content.combinations", "content.structure", "content.groups",
                "content.difficulty", "content.objectives", "content.climax",
-               "content.progression", "content.playtime", "content.drift")
+               "content.progression", "content.playtime", "content.drift",
+               "content.introductions_one_at_a_time")
 
 _WORD = re.compile(r"[a-z]+")
 _STOP = {"the", "a", "an", "and", "or", "to", "of", "in", "on", "you", "your", "all", "every",
@@ -851,7 +852,39 @@ def _audit(design, strategy, data, records, rules=None, benchmark=None, models=N
                 + (f" and {len(drift) - 6} more" if len(drift) > 6 else "")) if drift else
                "every shipped unit carries the design's commitments",
                measured={"drift": drift[:40]}, route="develop" if drift else None))
+    if "content.introductions_one_at_a_time" in (rules.get("checks") or {}):
+        # Run only where the content-sufficiency file this build is judged by declares it.
+        add(introductions_check(shipped, built_units))
     return _finish(out, rules, order=True)
+
+
+def introductions_check(shipped, built_units):
+    """content.introductions_one_at_a_time on the BUILT content: the shipped units in the
+    design's index order, each as the content data file states it (its `elements`,
+    `mechanics` and `introduces`), held to the design rule of the same id - after the
+    opening unit, none debuts more than one element. FAIL routes design-gap when the
+    design's own units debut two at once, develop when only the build does (a design that
+    claims compliance and a build that breaks it). SKIPPED as unmeasured when the content
+    data names no shipped unit's elements or mechanics: what a unit debuts cannot be counted,
+    and an absence is never a pass."""
+    cid = "content.introductions_one_at_a_time"
+    if not shipped:
+        return _skip(cid, "the build ships none of the units the design owes: nothing debuts")
+    built = [built_units[u.get("id")] for u in shipped]
+    debuts = unit_debuts(built)
+    if all(new is None for _unit, new in debuts):
+        return _check(cid, "SKIPPED", "UNMEASURED: the content data names no shipped unit's "
+                                      "elements, mechanics or introductions, so what each "
+                                      "unit debuts cannot be counted - unmeasured, never a "
+                                      "pass", route=None)
+    problems = introduction_breaches(built, at=lambda u: f"units.json {u.get('id')}")
+    design_problems = introduction_breaches(shipped, at=lambda u: f"design {u.get('id')}")
+    measured = {"debuts": {str(u.get("id")): new for u, new in debuts if new},
+                "units": len(built), "over_one": problems}
+    return _judged(cid, problems, design_problems,
+                   f"after the opening unit, none of the {len(built)} shipped unit(s) debuts "
+                   "more than one element", measured=measured,
+                   expected="after the opening unit, at most one element a unit debuts")
 
 
 def built_unlocks(data, shipped, built_units):

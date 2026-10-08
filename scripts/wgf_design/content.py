@@ -71,7 +71,8 @@ from . import layouts as geometry_of
 __all__ = ["MODELS_PATH", "VOCABULARY_PATH", "BENCHMARK_PATH", "RULES", "TIER_RULES",
            "MASTERY_MODELS", "load_models", "load_vocabulary", "load_benchmark",
            "family_of_node", "resolve_family", "profile_of", "units_of", "quality_tier",
-           "tier_bars", "check", "content_model_record"]
+           "tier_bars", "check", "content_model_record", "unit_debuts",
+           "introduction_breaches", "introductions_view"]
 
 MODELS_PATH = os.path.join(paths.REFERENCE, "genre-models.yaml")
 BENCHMARK_PATH = os.path.join(paths.REFERENCE, "quality-benchmark.yaml")
@@ -1470,6 +1471,55 @@ assert _NEEDS_CONTENT <= set(_CHECKS)
 
 def _result(rule_id, measured, breached, note):
     return {"criterion_id": rule_id, "measured": measured, "breached": breached, "note": note}
+
+
+# -- introductions one at a time (design-consistency content.introductions_one_at_a_time) --
+# The same count on the design (here, through consistency.projection `introductions`) and on
+# the built content data file (wgf_sufficiency.audit): what a unit puts in front of the
+# player is every element, mechanic and introduction it names; what it DEBUTS is the part of
+# that no earlier unit (in index order) named. After the opening unit, a unit debuts at most
+# one: every new element is first met on its own and practised before it is combined with
+# another new one.
+
+
+def unit_debuts(units):
+    """[(unit, [what it debuts])] over `units` in the order given: each unit's elements,
+    mechanics and introductions that no earlier unit named. A unit that names none of them
+    debuts nothing it can be held to (None, not [])."""
+    seen, out = set(), []
+    for unit in units:
+        if not isinstance(unit, dict):
+            continue
+        named = [str(x) for key in ("elements", "mechanics", "introduces")
+                 for x in (unit.get(key) or []) if isinstance(unit.get(key), list)]
+        declared = any(isinstance(unit.get(key), list) and unit.get(key)
+                       for key in ("elements", "mechanics", "introduces"))
+        new = sorted(set(named) - seen)
+        seen |= set(named)
+        out.append((unit, new if declared else None))
+    return out
+
+
+def introduction_breaches(units, at=lambda unit: str(unit.get("id"))):
+    """["<where> debuts a, b"] for every unit after the opening one that debuts more than one
+    element the player has not met. `units` in play (index) order."""
+    out = []
+    for position, (unit, new) in enumerate(unit_debuts(units)):
+        if position and new and len(new) > 1:
+            out.append(f"{at(unit)} debuts {len(new)} elements at once: {', '.join(new)}")
+    return out
+
+
+def introductions_view(design):
+    """consistency.projection `introductions`: {"units": n, "over_one": [breach],
+    "debuts": {unit id: [new]}} over the design's units not tiered optional, in index order.
+    A design with no units holds the rule and says so (`units` 0)."""
+    units = [u for u in units_of(design) if u.get("tier") != "optional"]
+    debuts = unit_debuts(units)
+    return {"units": len(units),
+            "over_one": introduction_breaches(
+                units, at=lambda u: f"build_spec.content.units[{u.get('id')}]"),
+            "debuts": {str(u.get("id")): new for u, new in debuts if new}}
 
 
 def check(design, strategy=None, models=None, vocabulary=None, benchmark=None):

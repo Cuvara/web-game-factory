@@ -178,7 +178,7 @@ class Applicability(unittest.TestCase):
             lesson["tests"] = model.all_tests(lesson)
         body = resolve(legacy, render="2d", tier="mvp")
         self.assertEqual({e["id"] for e in body["not_applicable"]}, {"L6", "L19"})
-        self.assertEqual(body["counts"]["blocking"], 6)
+        self.assertEqual(body["counts"]["blocking"], 7)
 
     def test_every_resolution_lists_its_excluded_rules_with_reasons(self):
         for facets in ({}, {"render": "2d", "tier": "mvp"}, {"render": "3d", "tier": "release"}):
@@ -214,7 +214,7 @@ class Applicability(unittest.TestCase):
         self.assertTrue(l23["tests"]["catches"] and l23["tests"]["passes"])
         for test in model.all_tests(model_lesson("L23")):
             self.assertIn(test, body["regression_suite"])
-        self.assertEqual(body["counts"], {"blocking": 5, "required": 14, "recommended": 0,
+        self.assertEqual(body["counts"], {"blocking": 6, "required": 14, "recommended": 0,
                                           "experimental": 6, "not_applicable": 3})
         self.assertEqual({e["id"] for e in body["experimental"]},
                          {"L8", "L9", "L16", "L17", "L18", "L21"})
@@ -468,7 +468,7 @@ class Cli(unittest.TestCase):
 
     def test_show_lists_every_rule_and_one_in_full(self):
         rows = json.loads(self.wgf("knowledge", "show", "--json").stdout)["rules"]
-        self.assertEqual(len(rows), 28)
+        self.assertEqual(len(rows), 29)
         self.assertEqual(next(r for r in rows if r["id"] == "L6")["level"], "process")
         one = json.loads(self.wgf("knowledge", "show", "L25", "--json").stdout)
         self.assertEqual(one["level"], "required")
@@ -480,7 +480,7 @@ class Cli(unittest.TestCase):
         out = json.loads(self.wgf("knowledge", "resolve", "--family", "arcade", "--render",
                                   "2d", "--platform", "yandex", "--tier", "release",
                                   "--json").stdout)
-        self.assertEqual(out["counts"]["blocking"], 5)
+        self.assertEqual(out["counts"]["blocking"], 6)
         self.assertEqual(out["versions"]["lessons"]["version"], LESSONS_VERSION)
         text = self.wgf("knowledge", "resolve", "--render", "2d").stdout
         self.assertIn("excluded     L15: render 2d is not in its scope (3d)", text)
@@ -530,7 +530,7 @@ class Cli(unittest.TestCase):
         import io
         with contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(cli.main(["show", "--json"]), 0)
-        self.assertEqual(len(json.loads(out.getvalue())["rules"]), 28)
+        self.assertEqual(len(json.loads(out.getvalue())["rules"]), 29)
 
 
 if __name__ == "__main__":

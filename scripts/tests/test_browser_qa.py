@@ -269,6 +269,39 @@ class Omissions(unittest.TestCase):
         for cid in ("browser.pause-resume:desktop-standard", "browser.audio-mute"):
             self.assertEqual((checks[cid].status, checks[cid].required), (WARNING, False), cid)
 
+    def test_a_golden_run_at_mvp_holds_an_omission_as_a_warning(self):
+        # The golden runs are tier mvp (scripts/golden/harness.py), class development: an
+        # omission there is the producer's WARNING, never what blocks verify.
+        self.vp["hidden"]["audio_hidden"] = None
+        checks = browser_qa.judge(self.records, CONTRACT, klass="development", tier="mvp",
+                                  action_audio=["pause", "launch"])
+        check = {c.id: c for c in checks}["browser.audio-hidden"]
+        self.assertEqual((check.status, check.required), (WARNING, False))
+
+    def test_a_page_never_hidden_during_play_is_blocked_at_every_class_and_says_why(self):
+        # PR #56 CI, golden 3D: audio-hidden BLOCKED at class development. Not an omission:
+        # the hidden probe found the game out of play (a dodge game left unsteered by the
+        # context-menu and pause probes ends within seconds). A hard check the bot could not
+        # make is BLOCKED wherever play started - unchanged - and the reason is now named.
+        self.vp["hidden"] = {"tried": False, "reason": "not playing (lost)",
+                             "reentered": "failed: lost"}
+        for klass in ("development", "release"):
+            check = judged(self.records, klass=klass)["browser.audio-hidden"]
+            self.assertEqual((check.status, check.required), (BLOCKED, True), klass)
+            self.assertIn("not playing (lost)", check.message)
+            self.assertIn("failed: lost", check.message)
+
+    def test_the_spec_brings_the_game_back_into_play_before_hiding_the_page(self):
+        with open(browser_qa.SPEC, encoding="utf-8") as handle:
+            spec = handle.read()
+        body = spec[spec.index("async function hiddenProbe("):]
+        body = body[:body.index("\n}\n")]
+        self.assertLess(body.index("backToPlay("), body.index("setHidden(true)"))
+        helper = spec[spec.index("async function backToPlay("):]
+        helper = helper[:helper.index("\n}\n")]
+        for step in ("resume(", "retryFrom(", "beginOf("):
+            self.assertIn(step, helper)
+
     def test_the_rule_is_the_quality_policys(self):
         self.assertTrue(browser_qa.omission_policy(None, "release").strict)
         self.assertFalse(browser_qa.omission_policy(None, "development").strict)

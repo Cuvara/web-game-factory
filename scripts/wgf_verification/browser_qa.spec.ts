@@ -893,10 +893,34 @@ function signature(s: Snapshot | null): string {
   return `${s.state}#${JSON.stringify(s.metrics ?? {})}#${entities}`;
 }
 
+// Back into play after the probes before this one left the game out of it, as a player would:
+// a game the context-menu and pause probes left unsteered may have ended (a dodge game is lost
+// within seconds) or still be paused. Retry from an end, resume a pause, begin from the title;
+// null when it was already playing, else how it got back (or "failed: <state>").
+async function backToPlay(page: Page, touch: boolean): Promise<string | null> {
+  const log: Played = { inputs: [], transitions: [] };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { s } = await snap(page);
+    if (s?.state === "playing") return attempt === 0 ? null : `re-entered (${attempt})`;
+    if (s?.state === "paused") await resume(page, touch);
+    else if (s?.state === "lost" || s?.state === "won") await retryFrom(page, touch, log);
+    else if (s) {
+      const move = beginOf(s);
+      if (move) await act(page, move, touch);
+    }
+    await until(page, ["playing"], 3000);
+  }
+  const { s } = await snap(page);
+  return s?.state === "playing" ? "re-entered (3)" : `failed: ${s?.state ?? "no probe"}`;
+}
+
 // The page hidden for two seconds while playing: does play hold, is it silent, does it resume.
 async function hiddenProbe(page: Page, touch: boolean): Promise<Record<string, unknown>> {
+  const reentered = await backToPlay(page, touch);
   const before = (await snap(page)).s;
-  if (before?.state !== "playing") return { tried: false, reason: `not playing (${before?.state ?? "no probe"})` };
+  if (before?.state !== "playing") {
+    return { tried: false, reason: `not playing (${before?.state ?? "no probe"})`, reentered };
+  }
   const audioBefore = before.audio ?? null;
   await page.evaluate(() => ((window as unknown as { __wgfQA: { setHidden(h: boolean): void } }).__wgfQA.setHidden(true)));
   await page.waitForTimeout(700);
@@ -909,7 +933,8 @@ async function hiddenProbe(page: Page, touch: boolean): Promise<Record<string, u
   const resumedBy = shown?.state === "playing" ? "itself" : await resume(page, touch);
   const after = (await snap(page)).s;
   return { tried: true, state_hidden: [a?.state ?? null, b?.state ?? null], still: signature(a) === signature(b),
-           audio_before: audioBefore, audio_hidden: b?.audio ?? null, state_after: after?.state ?? null, resumed_by: resumedBy };
+           audio_before: audioBefore, audio_hidden: b?.audio ?? null, state_after: after?.state ?? null, resumed_by: resumedBy,
+           reentered };
 }
 
 // The game's mute control: its probe input, else a visible control named for sound.

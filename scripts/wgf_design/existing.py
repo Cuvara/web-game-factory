@@ -24,7 +24,12 @@ that already shipped 32 units in 4 worlds with 4 bosses.
                                 checkout ships the same commit, else the one measured now -
                                 with `supersedes` when its content differs (a person moved
                                 the checkout)
-    adoption_units(units)       shipped units in the design's unit shape (the starting units)
+    derive(units, data)         what the floor reads off each unit: its group, whether it is
+                                a climax unit, and the method of each (measure counts it)
+    adoption_units(units)       shipped units in the design's unit shape (the starting units),
+                                each carrying the group and climax purpose the floor derives
+    adoption_derived(units)     the derived groups (with their unit ids) and climax unit ids,
+                                for the author's request
     units_digest(units)         the content of the shipped units, by hash: a person's rewrite
                                 under the same ids moves the floor (`supersedes`) too
     unit_changes(shipped, planned)
@@ -88,7 +93,8 @@ from . import commitments
 __all__ = ["measure", "read_floor", "read_adoption", "floor_view", "regression", "QUANTITIES",
            "UNMEASURED", "PROBE", "measured", "method", "probe_count", "probe_floor",
            "effective", "content_modules", "regression_counts", "run_probe_floor",
-           "shipped_commit", "run_commit", "reconcile", "adoption_units", "shipped_ids", "moved",
+           "shipped_commit", "run_commit", "reconcile", "adoption_units",
+           "adoption_derived", "derive", "shipped_ids", "moved",
            "units_digest", "unit_changes", "rewritten", "is_rewrite", "shipped_units_at"]
 
 # The quantities a floor holds, in report order, with their design-side reading.
@@ -115,44 +121,68 @@ def _units(data):
     return [u for u in (data or {}).get("units") or [] if isinstance(u, dict)]
 
 
+def derive(units, data=None):
+    """What the floor reads off each unit, by the method that counts it - the one place the
+    floor and an adoption's starting units are derived, so the design starts from what the
+    floor holds it to:
+
+        {"groups": {unit id: group} | None, "groups_by": method | None,
+         "climax": [unit id] | None, "climax_by": method | None}
+
+    `groups` by `units[].<field>` when every unit carries it, else by the unit id prefix
+    (`id_pattern`) when every id carries one and there are at least two; `climax` by
+    `units[].<field> == <value>` when any unit carries the field, else by a climax term in
+    the text fields. None: no method applies."""
+    data = data if data is not None else commitments.load()
+    rules = data.get("existing_content") or {}
+    units = [u for u in units or [] if isinstance(u, dict)]
+    out = {"groups": None, "groups_by": None, "climax": None, "climax_by": None}
+
+    group = rules.get("group") or {}
+    field = group.get("field")
+    if field and units and all(u.get(field) for u in units):
+        out["groups"] = {str(u.get("id")): str(u[field]) for u in units}
+        out["groups_by"] = f"units[].{field}"
+    elif group.get("id_pattern") and units:
+        pattern = re.compile(group["id_pattern"])
+        found = [pattern.match(str(u.get("id") or "").lower()) for u in units]
+        if all(found) and len({m.group(1) for m in found}) >= 2:
+            out["groups"] = {str(u.get("id")): m.group(1) for u, m in zip(units, found)}
+            out["groups_by"] = f"unit id prefix {group['id_pattern']}"
+
+    climax = rules.get("climax") or {}
+    field, value = climax.get("field"), climax.get("value")
+    if field and any(field in u for u in units):
+        out["climax"] = [str(u.get("id")) for u in units if u.get(field) == value]
+        out["climax_by"] = f"units[].{field} == {value}"
+    elif climax.get("text_fields") and units:
+        terms = ((data.get("quantities") or {}).get("climax") or {})
+        phrases = list(terms.get("singular") or []) + list(terms.get("plural") or [])
+        out["climax"] = [
+            str(u.get("id")) for u in units if mechanics.phrases_in(
+                " ".join(str(u.get(f) or "") for f in climax["text_fields"]), phrases)]
+        out["climax_by"] = f"a climax term in units[].{'/'.join(climax['text_fields'])}"
+    return out
+
+
 def measure(units, data=None):
     """{units, groups, climax_units, elements, unit_ids, measured_by}. A quantity no method
-    measures is None (and holds nothing)."""
+    measures is None (and holds nothing). Groups and climax units are counted on derive()."""
     data = data if data is not None else commitments.load()
     rules = data.get("existing_content") or {}
     units = [u for u in units or [] if isinstance(u, dict)]
     out = {"units": len(units), "unit_ids": [str(u.get("id")) for u in units if u.get("id")],
            "measured_by": {"units": "every unit listed"}}
 
-    group = rules.get("group") or {}
-    field = group.get("field")
-    groups = None
-    if field and units and all(u.get(field) for u in units):
-        groups = {str(u[field]) for u in units}
-        out["measured_by"]["groups"] = f"units[].{field}"
-    elif group.get("id_pattern") and units:
-        pattern = re.compile(group["id_pattern"])
-        found = [pattern.match(str(u.get("id") or "").lower()) for u in units]
-        if all(found) and len({m.group(1) for m in found}) >= 2:
-            groups = {m.group(1) for m in found}
-            out["measured_by"]["groups"] = f"unit id prefix {group['id_pattern']}"
-    out["groups"] = len(groups) if groups is not None else None
-
-    climax = rules.get("climax") or {}
-    field, value = climax.get("field"), climax.get("value")
-    if field and any(field in u for u in units):
-        out["climax_units"] = sum(1 for u in units if u.get(field) == value)
-        out["measured_by"]["climax_units"] = f"units[].{field} == {value}"
-    elif climax.get("text_fields") and units:
-        terms = ((data.get("quantities") or {}).get("climax") or {})
-        phrases = list(terms.get("singular") or []) + list(terms.get("plural") or [])
-        out["climax_units"] = sum(
-            1 for u in units if mechanics.phrases_in(
-                " ".join(str(u.get(f) or "") for f in climax["text_fields"]), phrases))
-        out["measured_by"]["climax_units"] = (
-            f"a climax term in units[].{'/'.join(climax['text_fields'])}")
-    else:
-        out["climax_units"] = None
+    found = derive(units, data)
+    out["groups"] = None
+    if found["groups"] is not None:
+        out["groups"] = len(set(found["groups"].values()))
+        out["measured_by"]["groups"] = found["groups_by"]
+    out["climax_units"] = None
+    if found["climax"] is not None:
+        out["climax_units"] = len(found["climax"])
+        out["measured_by"]["climax_units"] = found["climax_by"]
 
     field = (rules.get("elements") or {}).get("field")
     if field and any(isinstance(u.get(field), list) for u in units):
@@ -458,11 +488,48 @@ _UNIT_FIELDS = ("id", "index", "tier", "purpose", "objective", "objective_kind",
                 "variation_from_previous", "parameters")
 
 
-def adoption_units(units):
+def adoption_units(units, data=None):
     """The shipped units as the starting units of a design: each unit's design fields, in
-    shipped order, under its own id."""
-    return [{k: copy.deepcopy(u[k]) for k in _UNIT_FIELDS if k in u}
-            for u in units or [] if isinstance(u, dict) and u.get("id")]
+    shipped order, under its own id - with what the floor derives of it written in (derive):
+    the `group` the floor counts it in (a unit id prefix), and the climax `purpose` where a
+    climax term counts it, on a unit that does not state them. A design is counted by those
+    fields (commitments.design_counts): without them a design that keeps every shipped unit
+    plans fewer groups and climax units than the floor it is held to. Observed (2026-10-08,
+    the 2D run): 32 shipped units w1-l1..w4-l8 with no `group`, a floor of 4 groups by
+    prefix, and a design that kept all 32 and planned 0 groups. A field a unit states is
+    never overwritten."""
+    data = data if data is not None else commitments.load()
+    climax = (data.get("existing_content") or {}).get("climax") or {}
+    climax_field = climax.get("field") or "purpose"
+    climax_value = climax.get("value") or "climax"
+    found = derive(units, data)
+    out = []
+    for u in units or []:
+        if not (isinstance(u, dict) and u.get("id")):
+            continue
+        unit = {k: copy.deepcopy(u[k]) for k in _UNIT_FIELDS if k in u}
+        uid = str(u["id"])
+        if found["groups"] and not unit.get("group") and uid in found["groups"]:
+            unit["group"] = found["groups"][uid]
+        if (found["climax"] and uid in found["climax"] and climax_field in _UNIT_FIELDS
+                and not unit.get(climax_field)):
+            unit[climax_field] = climax_value
+        out.append(unit)
+    return out
+
+
+def adoption_derived(units, data=None):
+    """What the floor derives of the shipped units, for the author's request: the groups
+    with their unit ids in shipped order, the climax unit ids, and the method of each (None
+    where no method applies)."""
+    found = derive(units, data)
+    groups = None
+    if found["groups"] is not None:
+        groups = {}
+        for uid, group in found["groups"].items():
+            groups.setdefault(group, []).append(uid)
+    return {"groups": groups, "groups_measured_by": found["groups_by"],
+            "climax_unit_ids": found["climax"], "climax_measured_by": found["climax_by"]}
 
 
 def _design_counts(design):

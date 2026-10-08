@@ -298,6 +298,15 @@ level (`audio-hidden`), the bundle ships no runtime manifest (`audio-clips`,
 cannot pass over it; below it a WARNING. A game that genuinely has none of a thing (no pause
 or mute control, no declared win, no audio in its manifest) stays a WARNING at every class.
 
+**Back into play before the page is hidden.** The hidden probe (`hidden-pause`,
+`audio-hidden`) runs after the context-menu and pause probes, which leave the game unsteered:
+a game that ends within seconds without input (a dodge game) is lost by then, and one whose
+resume failed is still paused. The spec brings it back into play first, as a player would -
+retry from an end, resume a pause, begin from the title (`backToPlay`, recorded as
+`hidden.reentered`). A page it still cannot hide during play is BLOCKED for the hard
+`audio-hidden` at every class - the measurement was possible and was not made - and the
+check names why.
+
 **Pinned.** The contract, and the `visual-quality.yaml` values it reads, are the copies the
 run pinned when it started (new-game `pinned_references`): a resumed run is held to the checks
 and tiers it started under.

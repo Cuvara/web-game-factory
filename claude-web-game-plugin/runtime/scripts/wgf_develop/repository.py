@@ -246,6 +246,30 @@ class GitRepo:
         changed.update(self.dirty_paths(*pathspec))
         return sorted(changed)
 
+    def commits(self, head, depth=200):
+        """[(sha, message)] of `head` and its first-parent ancestors, newest first, at most
+        `depth`: [] when `head` is not a commit here."""
+        if not self.has_commit(head):
+            return []
+        result = self._git("log", "--first-parent", f"-n{depth}", "--format=%H%x00%B%x1e",
+                           head, "--", check=False)
+        if not result.ok:
+            return []
+        out = []
+        for record in result.output.split("\x1e"):
+            sha, _, body = record.strip().partition("\x00")
+            if sha:
+                out.append((sha, body))
+        return out
+
+    def resolve(self, ref):
+        """The commit `ref` (a sha, tag or branch) names here, or None."""
+        if not isinstance(ref, str) or not ref or ref.startswith("-"):
+            return None
+        result = self._git("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}",
+                           check=False)
+        return result.output.strip() if result.ok and result.output.strip() else None
+
     def keyed_commit(self, key, depth=200):
         """The newest commit on this branch carrying `key` in its trailer, or None."""
         result = self._git("log", f"-n{depth}", "--format=%H%x00%B%x1e", check=False)

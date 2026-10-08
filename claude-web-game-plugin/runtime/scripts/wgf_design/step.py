@@ -40,6 +40,11 @@ Outcomes, per docs/workflow-module-contract.md §7:
                                                first (consistency.breach_problems)
     otherwise                                  SUCCESS
 
+On an adopted repository every visit measures the existing-content floor again, at the
+commit the checkout ships (existing.py); when it ships units the run's last design does not
+plan, the visit is an adoption: the author starts from the shipped units (brief['adoption']),
+and the last design's gaps are not repaired.
+
 Re-entered in a new visit of the same run, an author that revises (the `agent` author) starts
 from the run's previous game-design, not from scratch, and is told what changed in the strategy
 since that design (revision.py). The design it produces records the one it revises in
@@ -62,7 +67,7 @@ from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.contracts import ArtifactContracts
 
-from . import consistency, content, depth, existing, experience, presentation
+from . import commitments, consistency, content, depth, existing, experience, presentation
 from . import features as feature_check
 from .authors import AUTHORS, AuthorError, resolve_author
 from .compose import buildability, finalize
@@ -172,14 +177,21 @@ class DesignStep(WorkflowStep):
         except PlatformError as exc:
             return StepResult.blocked(str(exc))
 
-        # The existing-content floor: what an adopted repository already ships. Counted once
-        # per run - a re-entered design keeps the floor its first visit recorded, never the
-        # run's own build in progress.
+        # The existing-content floor: what an adopted repository already ships. Measured on
+        # every visit at the commit the checkout ships (HEAD less this run's own commits): a
+        # re-entered design keeps its earlier floor while that commit is the same - the run's
+        # own build in progress never re-floors it - and takes the content a person moved the
+        # checkout to, recording the floor it replaces (existing.reconcile).
         try:
-            self._floor = self._existing_floor(context, title_id)
+            self._floor, shipped_units = self._existing_floor(context, title_id)
         except ValueError as exc:
             return StepResult.failed(f"the adopted repository's content cannot be counted: "
                                      f"{exc}", retryable=False)
+        # An adoption: the checkout ships units the run's last design does not plan (a first
+        # design, or a person moved the checkout). The author starts from the shipped units,
+        # and the design is not a repair of the last one - its gaps were found in a game of
+        # other content.
+        adoption = self._adoption(context, self._floor, shipped_units)
 
         author_name = (self.params.get("author")
                        or ((context.config or {}).get("design") or {}).get("author")
@@ -194,6 +206,8 @@ class DesignStep(WorkflowStep):
                  "attempt": getattr(context, "attempt", 1)}
         if self._floor:
             brief["existing_content"] = self._floor
+        if adoption:
+            brief["adoption"] = adoption
         # Re-entered through `design-gap`: the prototype-report names what the design did not
         # decide, and the draft starts from the design those gaps were found in (this step's
         # own previous output), so the design is repaired, never replaced.
@@ -214,6 +228,14 @@ class DesignStep(WorkflowStep):
         # report on a design since repaired is answered already).
         if "content-sufficiency-report" in inputs.refs:
             gaps += self._sufficiency_gaps(inputs.load("content-sufficiency-report"), context)
+        if gaps and adoption and self._previous_design(context) is not None:
+            context.logger.warning(
+                "design adopts the checkout's content: the design gaps found in the last "
+                "design are not repaired - it planned other units than the checkout ships "
+                "(missing ids, or the same ids as other units)",
+                gaps=len(gaps), missing_unit_ids=adoption["missing"][:20],
+                rewritten_unit_ids=adoption["rewritten"][:20])
+            gaps = []
         if gaps:
             previous = self._previous_design(context)
             if previous is None:
@@ -246,6 +268,12 @@ class DesignStep(WorkflowStep):
         # A resumed execution of this visit continues the repair of the last rejected draft
         # (an author that repairs is not asked for a new game and billed for it again).
         last = self._last_draft(context) if getattr(author, "repairs", False) else None
+        if last and adoption and not existing.shipped_ids(self._floor) <= {
+                str(u.get("id")) for u in commitments.planned_units(last["draft"])}:
+            # A draft of other content than the checkout ships: not this visit's to continue.
+            context.logger.info("design starts over: the last draft drops units the adopted "
+                                "checkout ships")
+            last = None
         accepted = None
         if last and not last["problems"]:
             # The step accepted this draft and something after it (the engine's lineage
@@ -497,23 +525,68 @@ class DesignStep(WorkflowStep):
         return outcome
 
     def _existing_floor(self, context, title_id):
-        """game-design.existing_content for this run, or None. ValueError: the adopted
-        repository ships content data that cannot be counted."""
+        """(game-design.existing_content for this run or None, the shipped units it was
+        counted on). Measured again on every visit; the floor the run's last design recorded
+        stands while the checkout ships the same commit (existing.reconcile). ValueError: the
+        adopted repository ships content data that cannot be counted."""
         previous = self._previous_design(context) or {}
-        if isinstance(previous.get("existing_content"), dict):
-            kept = previous["existing_content"]
+        kept = previous.get("existing_content")
+        kept = kept if isinstance(kept, dict) else None
+        floor, note, units = existing.read_adoption(
+            context.config, title_id, git=self.floor_git,
+            run_id=getattr(context, "run_id", None))
+        if floor is not None or "adopt" not in note:
+            context.logger.info("existing-content floor", floor=note)
+        if kept is not None and not existing.measured(kept):
             # Recorded unmeasured (the checkout ships no content data file): the shipped
             # build has been played since, and its probe floor is the run's - never the
-            # content data file the run's own build may have gained.
+            # content data file the run's own build may have gained, and never lost to an
+            # unmeasured floor at another commit (existing.reconcile).
             probed = existing.run_probe_floor(getattr(context, "run_dir", None), kept)
             if probed is not None:
                 context.logger.info("existing-content floor", floor=probed.get("reason"))
-                return probed
-            return kept
-        floor, note = existing.read_floor(context.config, title_id, git=self.floor_git)
-        if floor is not None or "adopt" not in note:
-            context.logger.info("existing-content floor", floor=note)
-        return floor
+                kept = probed
+        chosen = existing.reconcile(kept, floor)
+        self._floor_moved = existing.moved(kept, chosen)
+        if isinstance(chosen, dict) and chosen.get("supersedes"):
+            gone = chosen["supersedes"]
+            context.logger.warning(
+                "existing-content floor moved: the adopted checkout ships other content than "
+                "the run's last design recorded",
+                was=str(gone.get("commit") or "")[:12], was_units=gone.get("unit_ids")[:20],
+                now=str((chosen.get("source") or {}).get("commit") or "")[:12],
+                now_units=(chosen.get("unit_ids") or [])[:20])
+        # The shipped units describe the floor chosen when it is the floor read now.
+        same = (floor is not None and chosen is not None and existing.measured(floor)
+                and existing.shipped_ids(chosen) == existing.shipped_ids(floor))
+        return chosen, (units if same else [])
+
+    def _adoption(self, context, floor, units):
+        """brief['adoption'] when the adopted checkout ships units the run's last design does
+        not plan (or there is no last design), or - the floor moved to another commit (a
+        person changed the shipped content) - units the last design plans under the same ids
+        but as other units (existing.rewritten): the shipped units, in the design's unit
+        shape, are the starting units. None otherwise."""
+        shipped = existing.shipped_ids(floor)
+        if not shipped or not units:
+            return None
+        previous = self._previous_design(context)
+        planned_units = commitments.planned_units(previous) if previous else []
+        planned = {str(u.get("id")) for u in planned_units}
+        missing = sorted(shipped - planned)
+        changed = []
+        if previous is not None and getattr(self, "_floor_moved", False):
+            changed, _kept = existing.rewritten(units, planned_units)
+        if previous is not None and not missing and not changed:
+            return None
+        source = (floor or {}).get("source") or {}
+        return {"commit": source.get("commit"), "path": source.get("path"),
+                "unit_ids": list(floor.get("unit_ids") or []),
+                "units": existing.adoption_units(units),
+                "shipped_units": units,
+                "missing": missing,
+                "rewritten": changed,
+                "supersedes": floor.get("supersedes")}
 
     @staticmethod
     def _last_draft_path(context):

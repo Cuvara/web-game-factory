@@ -10,14 +10,44 @@ that already shipped 32 units in 4 worlds with 4 bosses.
                                 file's units, each by the first method of
                                 core/reference/brief-commitments.yaml `existing_content`
                                 that applies, the method recorded
-    read_floor(config, title_id, git=None)
-                                (floor, note): the adopted checkout's content at its HEAD
+    read_floor(config, title_id, git=None, run_id=None)
+                                (floor, note): the adopted checkout's content at its shipped
                                 commit - `game-design.existing_content` - or (None, why none)
+    read_adoption(config, title_id, git=None, run_id=None)
+                                (floor, note, units): read_floor and the shipped content data
+                                file's units themselves (the starting units of an adoption)
+    shipped_commit(reader, head, run_id, config=None)
+                                the commit the checkout ships: factory.init.accepted_baseline
+                                when set, else HEAD less the run's own commits on top of it
+    reconcile(previous, current)
+                                the floor a design visit records: the previous one while the
+                                checkout ships the same commit, else the one measured now -
+                                with `supersedes` when its content differs (a person moved
+                                the checkout)
+    adoption_units(units)       shipped units in the design's unit shape (the starting units)
+    units_digest(units)         the content of the shipped units, by hash: a person's rewrite
+                                under the same ids moves the floor (`supersedes`) too
+    unit_changes(shipped, planned)
+                                the fields a planned unit changes materially from the shipped
+                                unit under its id (fingerprint fields both carry)
+    rewritten(shipped_units, planned_units)
+                                the shipped unit ids a design rewrites materially: a
+                                replacement under the same ids when it is most of them
     floor_view(design)          {"floor": ..., "short": [...]}: rule existing_content_floor_kept
     regression(floor, data)     what a build's content data file drops below the floor
 
 The floor is read from the commit, never the working tree, and records that commit: an
 uncommitted edit is not what the repository ships.
+
+Every design visit measures it again. Observed (2026-10-07, the 3D run): a person moved the
+adopted checkout to a human-accepted content set (12 courses first-roll..the-summit) and
+resumed the run from strategy; the re-entered design kept the floor its earlier visit had
+counted at an intermediate commit of the run's own build (meadow-roll..storm-crown), kept
+those units, and greybox briefed a developer to rewrite the accepted courses into them. The
+shipped commit is HEAD less the commits this run made on top of it (each carries a
+`Wgf-<Step>-Key:` trailer naming the run id): the run's own build in progress never moves the
+floor, a person's commit always does. When the content measured now differs from the earlier
+floor, the new floor records the one it replaces in `supersedes`.
 
 A checkout whose HEAD ships no content data file still has a floor - a null floor never means
 no floor. Observed (2026-10-05, the 3D run): the adopted checkout predated the content
@@ -43,7 +73,9 @@ A floor once measured is the run's: a build that gains a content data file is he
 earlier count, never re-floored on its own file.
 """
 
+import copy
 import glob
+import hashlib
 import json
 import os
 import re
@@ -53,9 +85,11 @@ from wgflib.yamllite import load_file
 
 from . import commitments
 
-__all__ = ["measure", "read_floor", "floor_view", "regression", "QUANTITIES", "UNMEASURED",
-           "PROBE", "measured", "method", "probe_count", "probe_floor", "effective",
-           "content_modules", "regression_counts", "run_probe_floor"]
+__all__ = ["measure", "read_floor", "read_adoption", "floor_view", "regression", "QUANTITIES",
+           "UNMEASURED", "PROBE", "measured", "method", "probe_count", "probe_floor",
+           "effective", "content_modules", "regression_counts", "run_probe_floor",
+           "shipped_commit", "run_commit", "reconcile", "adoption_units", "shipped_ids", "moved",
+           "units_digest", "unit_changes", "rewritten", "is_rewrite", "shipped_units_at"]
 
 # The quantities a floor holds, in report order, with their design-side reading.
 QUANTITIES = ("units", "groups", "climax_units", "elements")
@@ -143,6 +177,66 @@ class _Git:
     def file_at(self, commit, path):
         return self.repo.file_at(commit, path)
 
+    def commits(self, head, depth=200):
+        return self.repo.commits(head, depth)
+
+    def resolve(self, ref):
+        return self.repo.resolve(ref)
+
+
+# A commit a workflow step made carries `Wgf-<Step>-Key: <key>`, and every step key names the
+# run id (`<run>:<step>:<visit>`, `wgf-init:<run>:init`).
+_KEY_TRAILER = re.compile(r"^Wgf-[A-Za-z-]+-Key:\s*(\S+)\s*$")
+
+
+def run_commit(message, run_id):
+    """Whether the commit `message` was made by a step of the run `run_id`."""
+    if not run_id:
+        return False
+    for line in str(message or "").splitlines():
+        found = _KEY_TRAILER.match(line.strip())
+        if found and str(run_id) in found.group(1).split(":"):
+            return True
+    return False
+
+
+def shipped_commit(reader, head, run_id, config=None, depth=200):
+    """(commit, how): the commit whose content is the floor. factory.init.accepted_baseline
+    when set (a ref the checkout must hold: a tag or a sha - a branch moves with the run);
+    else HEAD less the run's own commits on top of it - the newest first-parent ancestor of
+    HEAD this run did not make. A reader that cannot list commits gives HEAD. (None, why) when
+    the whole history is this run's (it created the repository: nothing shipped before it).
+    ValueError when the `depth` commits listed are all this run's and the history goes on:
+    the shipped commit is not found, and HEAD - the run's own build - is never taken for it."""
+    accepted = _section(config, "init").get("accepted_baseline")
+    if accepted is not None:
+        resolve = getattr(reader, "resolve", None)
+        commit = resolve(accepted) if resolve and isinstance(accepted, str) else None
+        if not commit:
+            raise ValueError(f"factory.init.accepted_baseline {accepted!r} names no commit of "
+                             "the adopted checkout")
+        return commit, f"factory.init.accepted_baseline {accepted}"
+    listing = getattr(reader, "commits", None)
+    if not run_id or listing is None:
+        return head, "HEAD"
+    skipped = 0
+    listed = listing(head, depth) or []
+    for sha, message in listed:
+        if not run_commit(message, run_id):
+            return sha, ("HEAD" if not skipped else
+                         f"HEAD less {skipped} commit(s) this run made on top of it")
+        skipped += 1
+    if listed and len(listed) >= depth:
+        raise ValueError(
+            f"the last {len(listed)} commits of the adopted checkout were all made by this run "
+            f"({run_id}): the commit it shipped before the run is not among them, and the "
+            "run's own build is never its floor. Name it in factory.init.accepted_baseline "
+            "(a tag or a sha) and resume")
+    if listed:
+        return None, (f"every commit of the adopted checkout was made by this run ({run_id}): "
+                      "nothing was shipped before it")
+    return head, "HEAD"
+
 
 def _section(config, name):
     if config is None:
@@ -152,24 +246,35 @@ def _section(config, name):
     return (config.get(name) if isinstance(config, dict) else None) or {}
 
 
-def read_floor(config, title_id, git=None, data=None, environ=None):
+def read_floor(config, title_id, git=None, data=None, environ=None, run_id=None):
     """(floor, note). The floor is None - and the note says why - when the run adopts nothing
-    (factory.init.adopt_existing is not true), there is no checkout yet, or its HEAD ships no
-    content data file. `git(root)` builds the reader (tests)."""
+    (factory.init.adopt_existing is not true), there is no checkout yet, or it has no commit.
+    `git(root)` builds the reader (tests); `run_id` names the run whose own commits on top of
+    HEAD are not what the checkout ships (shipped_commit)."""
+    floor, note, _units = read_adoption(config, title_id, git, data, environ, run_id)
+    return floor, note
+
+
+def read_adoption(config, title_id, git=None, data=None, environ=None, run_id=None):
+    """(floor, note, units): read_floor, and the units of the content data file the floor
+    was counted on ([] when it is unmeasured or there is none)."""
     if _section(config, "init").get("adopt_existing") is not True:
-        return None, "the run adopts no existing repository (factory.init.adopt_existing)"
+        return None, "the run adopts no existing repository (factory.init.adopt_existing)", []
     data = data if data is not None else commitments.load()
     path = (data.get("existing_content") or {}).get("path") or "public/content/units.json"
     try:
         root, source = checkout.locate(config, None, "init", None, environ, name=title_id)
     except checkout.CheckoutError as exc:
-        return None, f"no checkout to adopt: {exc}"
+        return None, f"no checkout to adopt: {exc}", []
     if not os.path.isdir(root):
-        return None, f"no checkout at {root} ({source}) yet: nothing shipped to floor"
+        return None, f"no checkout at {root} ({source}) yet: nothing shipped to floor", []
     reader = (git or _Git)(root)
-    commit = reader.head()
-    if not commit:
-        return None, f"{root} has no commit: nothing shipped to floor"
+    head = reader.head()
+    if not head:
+        return None, f"{root} has no commit: nothing shipped to floor", []
+    commit, how = shipped_commit(reader, head, run_id, config)
+    if commit is None:
+        return None, f"{root}: {how}", []
     text = reader.file_at(commit, path)
     if text is None:
         # Its content lives somewhere else (source code that predates the content contract):
@@ -181,7 +286,7 @@ def read_floor(config, title_id, git=None, data=None, environ=None):
                  "source": {"method": PROBE, "path": path, "commit": commit,
                             "checkout": root.replace(os.sep, "/"), "located_by": source},
                  "ruleset": f"brief-commitments@{data.get('version')}",
-                 "reason": reason}, reason)
+                 "reason": reason}, reason, [])
     try:
         content = json.loads(text)
     except ValueError as exc:
@@ -189,15 +294,175 @@ def read_floor(config, title_id, git=None, data=None, environ=None):
         raise ValueError(f"{path} at {commit[:12]} of the adopted checkout is not JSON: {exc}")
     if not isinstance(content, dict):
         raise ValueError(f"{path} at {commit[:12]} of the adopted checkout is not an object")
-    counted = measure(_units(content), data)
+    units = _units(content)
+    counted = measure(units, data)
     floor = {"source": {"method": CONTENT_DATA, "path": path, "commit": commit,
                         "checkout": root.replace(os.sep, "/"), "located_by": source},
              "ruleset": f"brief-commitments@{data.get('version')}"}
+    if commit != head:
+        floor["source"]["head"] = head
+        floor["source"]["baseline"] = how
     floor.update({k: counted[k] for k in QUANTITIES if counted.get(k) is not None})
     floor["unit_ids"] = counted["unit_ids"]
+    floor["units_digest"] = units_digest(units)
     floor["measured_by"] = counted["measured_by"]
     return floor, (f"the adopted checkout ships {counted['units']} unit(s) at "
-                   f"{commit[:12]}: the design's floor")
+                   f"{commit[:12]} ({how}): the design's floor"), units
+
+
+def shipped_ids(floor):
+    """The unit ids a measured floor ships, as a set (empty for an unmeasured one)."""
+    return {str(u) for u in (floor or {}).get("unit_ids") or []} if measured(floor) else set()
+
+
+def reconcile(previous, current):
+    """The floor this design visit records. `previous`: the floor the run's last design
+    recorded, or None; `current`: the one read now (read_floor), or None when nothing could
+    be read. The previous floor stands while the checkout ships the same commit - the run's
+    own build never re-floors it - and when nothing could be read now. Otherwise the floor is
+    the one measured now, and when its units or numbers differ from the previous one it
+    records that floor in `supersedes`: a person moved the checkout - to other units, or to
+    other content under the same ids (`units_digest`; a floor recorded without one is taken
+    to differ). A measured floor is never lost: when
+    the checkout read now ships no content data file (an unmeasured floor), the previous
+    floor - its probe count included, which the caller resolves first - stands."""
+    if not isinstance(previous, dict):
+        return current
+    if not isinstance(current, dict):
+        return previous
+    was = (previous.get("source") or {}).get("commit")
+    now = (current.get("source") or {}).get("commit")
+    if _same_commit(was, now):
+        return previous
+    if not measured(current):
+        # Nothing counts the content at the new commit: the count the run holds (a content
+        # data floor, or the probe floor of the shipped build) stands; two unmeasured floors
+        # keep the run's.
+        return previous
+    digests = (previous.get("units_digest"), current.get("units_digest"))
+    same = (measured(previous)
+            and list(previous.get("unit_ids") or []) == list(current.get("unit_ids") or [])
+            and all(previous.get(q) == current.get(q) for q in QUANTITIES)
+            and None not in digests and digests[0] == digests[1])
+    if same:
+        return current
+    out = copy.deepcopy(current)
+    gone = {"status": "measured" if measured(previous) else UNMEASURED,
+            "unit_ids": list(previous.get("unit_ids") or [])}
+    if was:
+        gone["commit"] = str(was)
+    if previous.get("units_digest"):
+        gone["units_digest"] = previous["units_digest"]
+    gone.update({q: previous[q] for q in QUANTITIES if isinstance(previous.get(q), int)})
+    out["supersedes"] = gone
+    return out
+
+
+def moved(previous, chosen):
+    """Whether the floor chosen this visit is counted at another commit than `previous`."""
+    if not isinstance(previous, dict) or not isinstance(chosen, dict):
+        return False
+    return not _same_commit((previous.get("source") or {}).get("commit"),
+                            (chosen.get("source") or {}).get("commit"))
+
+
+def units_digest(units):
+    """sha256 of the shipped units, canonical JSON: what they are, not only their ids."""
+    text = json.dumps([u for u in units or [] if isinstance(u, dict)], sort_keys=True,
+                      separators=(",", ":"), ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+# -- a rewrite under the same ids -----------------------------------------------------------
+# Observed (2026-10-07, the 2D run): a person restored the accepted 32 levels w1-l1..w4-l8;
+# the run's design held the same 32 ids with every level a different one ("break all 10
+# bricks" against the shipped "Break all 16 bricks - catch the capsule"). Ids alone call that
+# the same content. A unit is fingerprinted on the fields that make it the unit it is, and a
+# change is counted only on a field both sides carry; it is material at MATERIAL_FIELDS
+# changed fields, and a design is a rewrite when most of the shipped units it keeps are.
+FINGERPRINT = ("objective", "objective_kind", "structure", "elements", "mechanics",
+               "difficulty", "parameters", "layout")
+# A difficulty axis moved further than this between the shipped unit and the design's.
+AXIS_TOLERANCE = 0.1
+# Changed fingerprint fields that make a unit another unit.
+MATERIAL_FIELDS = 2
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+def _objective_changed(a, b):
+    a, b = str(a).lower(), str(b).lower()
+    if a == b:
+        return False
+    if set(_NUMBER.findall(a)) != set(_NUMBER.findall(b)):
+        return True
+    wa, wb = set(_WORD.findall(a)), set(_WORD.findall(b))
+    return bool(wa | wb) and len(wa & wb) / len(wa | wb) < 0.5
+
+
+def unit_changes(shipped, planned):
+    """The fingerprint fields `planned` (a design unit) changes from `shipped` (the content
+    data's unit under the same id). Conservative: only fields both carry are compared, a list
+    the design extends (keeping every shipped entry) is no change, a difficulty axis moved by
+    AXIS_TOLERANCE or less is none, and an objective reworded with the same numbers and most
+    of its words is none."""
+    changed = []
+    for field in FINGERPRINT:
+        if field not in shipped or field not in planned:
+            continue
+        a, b = shipped[field], planned[field]
+        if field == "objective":
+            differs = _objective_changed(a, b)
+        elif field in ("elements", "mechanics"):
+            differs = not {str(x) for x in a or []} <= {str(x) for x in b or []}
+        elif field == "difficulty" and isinstance(a, dict) and isinstance(b, dict):
+            differs = any(isinstance(a.get(k), (int, float)) and
+                          isinstance(b.get(k), (int, float)) and
+                          abs(float(a[k]) - float(b[k])) > AXIS_TOLERANCE for k in a)
+        elif field == "parameters" and isinstance(a, dict) and isinstance(b, dict):
+            differs = any(k in b and b[k] != a[k] for k in a)
+        else:
+            differs = a != b
+        if differs:
+            changed.append(field)
+    return changed
+
+
+def rewritten(shipped_units, planned_units):
+    """(rewritten, kept): the ids of shipped units the design keeps under their id but
+    changes materially (MATERIAL_FIELDS fingerprint fields or more), and of all it keeps."""
+    planned = {str(u.get("id")): u for u in planned_units or [] if isinstance(u, dict)}
+    kept, out = [], []
+    for unit in shipped_units or []:
+        if not isinstance(unit, dict) or str(unit.get("id")) not in planned:
+            continue
+        uid = str(unit["id"])
+        kept.append(uid)
+        if len(unit_changes(unit, planned[uid])) >= MATERIAL_FIELDS:
+            out.append(uid)
+    return out, kept
+
+
+def is_rewrite(shipped_units, planned_units):
+    """(bool, rewritten ids, kept ids): most of the shipped units the design keeps under their
+    ids - more than half, and at least two - are other units now."""
+    out, kept = rewritten(shipped_units, planned_units)
+    return (len(out) >= 2 and len(out) * 2 > len(kept)), out, kept
+
+
+# The fields of a shipped unit the design's unit shape holds (game-design
+# build_spec.content.units[]); the rest (a layout, a display name) stays in the content data.
+_UNIT_FIELDS = ("id", "index", "tier", "purpose", "objective", "objective_kind", "group",
+                "structure", "elements", "start_state", "end_state", "mechanics", "introduces",
+                "difficulty", "expected_duration_s", "success", "failure", "acceptance", "art",
+                "variation_from_previous", "parameters")
+
+
+def adoption_units(units):
+    """The shipped units as the starting units of a design: each unit's design fields, in
+    shipped order, under its own id."""
+    return [{k: copy.deepcopy(u[k]) for k in _UNIT_FIELDS if k in u}
+            for u in units or [] if isinstance(u, dict) and u.get("id")]
 
 
 def _design_counts(design):
@@ -473,3 +738,24 @@ def run_probe_floor(run_dir, floor):
         if measured(carried) and _same_commit((carried.get("source") or {}).get("commit"), at):
             found.append((int(stem) if stem.isdigit() else 10 ** 9, carried))
     return min(found, key=lambda item: item[0])[1] if found else None
+
+
+def shipped_units_at(reader, floor, run_id, config=None):
+    """(units, commit) of the content data file at the commit the checkout ships
+    (shipped_commit) - never HEAD while this run's own commits sit on it - or ([], None)."""
+    path = ((floor or {}).get("source") or {}).get("path") or "public/content/units.json"
+    head = reader.head() if reader is not None else None
+    if not head:
+        return [], None
+    try:
+        commit, _how = shipped_commit(reader, head, run_id, config)
+    except ValueError:
+        return [], None
+    text = reader.file_at(commit, path) if commit else None
+    if text is None:
+        return [], commit
+    try:
+        content = json.loads(text)
+    except ValueError:
+        return [], commit
+    return (_units(content) if isinstance(content, dict) else []), commit

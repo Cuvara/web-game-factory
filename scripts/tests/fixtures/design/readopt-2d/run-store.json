@@ -1,0 +1,2569 @@
+{
+ "_about": "Replayed from the 2D validation run new-game-20261005-002926-318384 (2026-10-07): the checkout a person restored to the accepted r1 content (HEAD 894b4b8, a person's commit), its public/content/units.json units in full, and game-design v1's units (fingerprint fields only) - the same 32 ids, every unit another one.",
+ "run_id": "new-game-20261005-002926-318384",
+ "commits": {
+  "head": "894b4b8290ce6f0cdd5c0dc9a6ac5aece898079a",
+  "floor_v1": "9f9293182447a2c74e21e1b5bfd294fb8ede9510"
+ },
+ "design_v1_floor": {
+  "source": {
+   "path": "public/content/units.json",
+   "commit": "9f9293182447a2c74e21e1b5bfd294fb8ede9510",
+   "checkout": "<checkout>",
+   "located_by": "WGF_GAME_REPO"
+  },
+  "ruleset": "brief-commitments@1.0.0",
+  "units": 32,
+  "groups": 4,
+  "climax_units": 4,
+  "unit_ids": [
+   "w1-l1",
+   "w1-l2",
+   "w1-l3",
+   "w1-l4",
+   "w1-l5",
+   "w1-l6",
+   "w1-l7",
+   "w1-l8",
+   "w2-l1",
+   "w2-l2",
+   "w2-l3",
+   "w2-l4",
+   "w2-l5",
+   "w2-l6",
+   "w2-l7",
+   "w2-l8",
+   "w3-l1",
+   "w3-l2",
+   "w3-l3",
+   "w3-l4",
+   "w3-l5",
+   "w3-l6",
+   "w3-l7",
+   "w3-l8",
+   "w4-l1",
+   "w4-l2",
+   "w4-l3",
+   "w4-l4",
+   "w4-l5",
+   "w4-l6",
+   "w4-l7",
+   "w4-l8"
+  ],
+  "measured_by": {
+   "units": "every unit listed",
+   "groups": "unit id prefix ^([a-z]+[0-9]+)[-_ ]",
+   "climax_units": "a climax term in units[].objective/success/name/title"
+  }
+ },
+ "design_v1_units": [
+  {
+   "id": "w1-l1",
+   "index": 1,
+   "tier": "mvp",
+   "purpose": "teach",
+   "group": "w1",
+   "structure": "static-field",
+   "objective_kind": "clear-all",
+   "objective": "Drag the paddle under the ball and break all 10 bricks",
+   "elements": [
+    "standard-brick"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating"
+   ],
+   "introduces": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "standard-brick"
+   ],
+   "difficulty": {
+    "speed": 0.15,
+    "density": 0.2,
+    "variety": 0.1,
+    "precision": 0.25
+   },
+   "parameters": {
+    "layout": "single-row-10",
+    "bricks": 10,
+    "balls": 3,
+    "par_s": 22
+   }
+  },
+  {
+   "id": "w1-l2",
+   "index": 2,
+   "tier": "mvp",
+   "purpose": "test",
+   "group": "w1",
+   "structure": "static-field",
+   "objective_kind": "clear-all",
+   "objective": "Clear the two-row wall of 16 bricks before three balls are lost",
+   "elements": [
+    "standard-brick"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating"
+   ],
+   "difficulty": {
+    "speed": 0.24,
+    "density": 0.2,
+    "variety": 0.1,
+    "precision": 0.25
+   },
+   "parameters": {
+    "layout": "double-row-16",
+    "bricks": 16,
+    "balls": 3,
+    "par_s": 28
+   }
+  },
+  {
+   "id": "w1-l3",
+   "index": 3,
+   "tier": "mvp",
+   "purpose": "breather",
+   "group": "w1",
+   "structure": "static-field",
+   "objective_kind": "collect",
+   "objective": "Break the gold-cornered bricks, catch 2 multi-ball capsules and clear the garden",
+   "elements": [
+    "standard-brick",
+    "multi-ball"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "introduces": [
+    "power-up-catch",
+    "multi-ball"
+   ],
+   "difficulty": {
+    "speed": 0.18,
+    "density": 0.2,
+    "variety": 0.1,
+    "precision": 0.25
+   },
+   "parameters": {
+    "layout": "garden-3x6",
+    "bricks": 18,
+    "capsules_needed": 2,
+    "capsule_kind": "multi-ball",
+    "balls": 3,
+    "par_s": 33
+   }
+  },
+  {
+   "id": "w1-l4",
+   "index": 4,
+   "tier": "mvp",
+   "purpose": "twist",
+   "group": "w1",
+   "structure": "gapped-wall",
+   "objective_kind": "clear-all",
+   "objective": "Break every brick - the clay ones crack on the first hit and break on the second",
+   "elements": [
+    "standard-brick",
+    "armored-brick"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating"
+   ],
+   "introduces": [
+    "armored-brick"
+   ],
+   "difficulty": {
+    "speed": 0.18,
+    "density": 0.2,
+    "variety": 0.24,
+    "precision": 0.25
+   },
+   "parameters": {
+    "layout": "clay-gate-20",
+    "bricks": 20,
+    "armored": 8,
+    "channel_bricks": 2,
+    "balls": 3,
+    "par_s": 33
+   }
+  },
+  {
+   "id": "w1-l5",
+   "index": 5,
+   "tier": "mvp",
+   "purpose": "test",
+   "group": "w1",
+   "structure": "stepped-field",
+   "objective_kind": "collect",
+   "objective": "Break the two golden clay bricks to drop capsules, catch both, and clear the stairs",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "multi-ball"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "difficulty": {
+    "speed": 0.28,
+    "density": 0.2,
+    "variety": 0.24,
+    "precision": 0.25
+   },
+   "parameters": {
+    "layout": "stairs-5x4",
+    "bricks": 20,
+    "armored": 6,
+    "capsules_needed": 2,
+    "balls": 3,
+    "par_s": 33
+   }
+  },
+  {
+   "id": "w1-l6",
+   "index": 6,
+   "tier": "mvp",
+   "purpose": "breather",
+   "group": "w1",
+   "structure": "arena",
+   "objective_kind": "defeat-boss",
+   "objective": "Hit the scarecrow's straw heart 6 times to empty its health bar; the bricks around it are only a shield",
+   "elements": [
+    "standard-brick",
+    "wide-paddle"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch",
+    "boss-fight"
+   ],
+   "introduces": [
+    "boss-fight",
+    "wide-paddle"
+   ],
+   "difficulty": {
+    "speed": 0.21,
+    "density": 0.2,
+    "variety": 0.24,
+    "precision": 0.25
+   },
+   "parameters": {
+    "layout": "scarecrow-shield-12",
+    "boss_pips": 6,
+    "shield_bricks": 12,
+    "capsules": 2,
+    "balls": 3,
+    "par_s": 33
+   }
+  },
+  {
+   "id": "w1-l7",
+   "index": 7,
+   "tier": "mvp",
+   "purpose": "twist",
+   "group": "w1",
+   "structure": "gapped-wall",
+   "objective_kind": "collect",
+   "objective": "Hit the gift scarecrow's heart 3 times; each hit drops a capsule - catch all three",
+   "elements": [
+    "armored-brick",
+    "multi-ball",
+    "wide-paddle"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch",
+    "boss-fight"
+   ],
+   "difficulty": {
+    "speed": 0.21,
+    "density": 0.34,
+    "variety": 0.24,
+    "precision": 0.25
+   },
+   "parameters": {
+    "layout": "gift-funnel-26",
+    "boss_pips": 3,
+    "bricks": 26,
+    "armored": 10,
+    "capsules_needed": 3,
+    "balls": 3,
+    "par_s": 36
+   }
+  },
+  {
+   "id": "w1-l8",
+   "index": 8,
+   "tier": "mvp",
+   "purpose": "climax",
+   "group": "w1",
+   "structure": "arena",
+   "objective_kind": "defeat-boss",
+   "objective": "Defeat the Dusk Moth boss: break both wing shields, then hit its glowing body 10 times",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "multi-ball",
+    "wide-paddle"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch",
+    "boss-fight"
+   ],
+   "difficulty": {
+    "speed": 0.32,
+    "density": 0.34,
+    "variety": 0.24,
+    "precision": 0.25
+   },
+   "parameters": {
+    "layout": "dusk-moth",
+    "boss_pips": 10,
+    "shield_bricks": 12,
+    "armored": 8,
+    "capsules": 3,
+    "balls": 3,
+    "par_s": 50
+   }
+  },
+  {
+   "id": "w2-l1",
+   "index": 9,
+   "tier": "post-mvp",
+   "purpose": "breather",
+   "group": "w2",
+   "structure": "gapped-wall",
+   "objective_kind": "clear-all",
+   "objective": "Break every brick except the riveted steel bars, which never break",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "steel-brick"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating"
+   ],
+   "introduces": [
+    "steel-brick"
+   ],
+   "difficulty": {
+    "speed": 0.32,
+    "density": 0.26,
+    "variety": 0.34,
+    "precision": 0.25
+   },
+   "parameters": {
+    "layout": "rivet-rows-34",
+    "bricks": 22,
+    "steel": 12,
+    "armored": 6,
+    "balls": 3,
+    "par_s": 38
+   }
+  },
+  {
+   "id": "w2-l2",
+   "index": 10,
+   "tier": "post-mvp",
+   "purpose": "twist",
+   "group": "w2",
+   "structure": "moving-field",
+   "objective_kind": "clear-all",
+   "objective": "Break the breakable bricks while rows 2 and 4 slide and wrap at the walls",
+   "elements": [
+    "standard-brick",
+    "steel-brick",
+    "sliding-row"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating"
+   ],
+   "introduces": [
+    "sliding-row"
+   ],
+   "difficulty": {
+    "speed": 0.32,
+    "density": 0.26,
+    "variety": 0.44,
+    "precision": 0.25
+   },
+   "parameters": {
+    "layout": "sliding-shelves-30",
+    "bricks": 24,
+    "steel": 6,
+    "slide_px_s": 90,
+    "balls": 3,
+    "par_s": 40
+   }
+  },
+  {
+   "id": "w2-l3",
+   "index": 11,
+   "tier": "post-mvp",
+   "purpose": "test",
+   "group": "w2",
+   "structure": "moving-field",
+   "objective_kind": "collect",
+   "objective": "Break the gold clay bricks on the sliding shelves and catch 3 wide-paddle capsules",
+   "elements": [
+    "armored-brick",
+    "steel-brick",
+    "sliding-row",
+    "wide-paddle"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "difficulty": {
+    "speed": 0.32,
+    "density": 0.38,
+    "variety": 0.44,
+    "precision": 0.25
+   },
+   "parameters": {
+    "layout": "belt-capsules-32",
+    "bricks": 26,
+    "steel": 6,
+    "capsules_needed": 3,
+    "slide_px_s": 90,
+    "balls": 3,
+    "par_s": 42
+   }
+  },
+  {
+   "id": "w2-l4",
+   "index": 12,
+   "tier": "post-mvp",
+   "purpose": "breather",
+   "group": "w2",
+   "structure": "static-field",
+   "objective_kind": "clear-all",
+   "objective": "Catch the laser capsule and shoot out the clay wall",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "laser",
+    "multi-ball"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "introduces": [
+    "laser"
+   ],
+   "difficulty": {
+    "speed": 0.24,
+    "density": 0.38,
+    "variety": 0.44,
+    "precision": 0.25
+   },
+   "parameters": {
+    "layout": "clay-wall-laser-28",
+    "bricks": 28,
+    "armored": 15,
+    "laser_s": 8,
+    "balls": 3,
+    "par_s": 38
+   }
+  },
+  {
+   "id": "w2-l5",
+   "index": 13,
+   "tier": "post-mvp",
+   "purpose": "twist",
+   "group": "w2",
+   "structure": "gapped-wall",
+   "objective_kind": "clear-all",
+   "objective": "Thread the ball through the steel maze and break every brick behind its walls",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "steel-brick",
+    "sliding-row",
+    "laser"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "difficulty": {
+    "speed": 0.24,
+    "density": 0.38,
+    "variety": 0.44,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "steel-maze-3ch",
+    "bricks": 30,
+    "steel": 18,
+    "channel_px": 48,
+    "slide_px_s": 60,
+    "balls": 3,
+    "par_s": 44
+   }
+  },
+  {
+   "id": "w2-l6",
+   "index": 14,
+   "tier": "post-mvp",
+   "purpose": "test",
+   "group": "w2",
+   "structure": "moving-field",
+   "objective_kind": "collect",
+   "objective": "Ride the conveyor: catch 4 capsules dropped by the sliding gold bricks",
+   "elements": [
+    "armored-brick",
+    "steel-brick",
+    "sliding-row",
+    "multi-ball",
+    "laser"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "difficulty": {
+    "speed": 0.38,
+    "density": 0.38,
+    "variety": 0.44,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "conveyor-4caps",
+    "bricks": 28,
+    "steel": 4,
+    "capsules_needed": 4,
+    "slide_px_s": 120,
+    "balls": 3,
+    "par_s": 44
+   }
+  },
+  {
+   "id": "w2-l7",
+   "index": 15,
+   "tier": "post-mvp",
+   "purpose": "breather",
+   "group": "w2",
+   "structure": "stepped-field",
+   "objective_kind": "clear-all",
+   "objective": "Clear the oil-vat steps with a wide paddle on your side",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "steel-brick",
+    "wide-paddle"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "difficulty": {
+    "speed": 0.38,
+    "density": 0.3,
+    "variety": 0.44,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "vat-steps-6x4",
+    "bricks": 24,
+    "steel": 6,
+    "balls": 3,
+    "par_s": 38
+   }
+  },
+  {
+   "id": "w2-l8",
+   "index": 16,
+   "tier": "post-mvp",
+   "purpose": "climax",
+   "group": "w2",
+   "structure": "arena",
+   "objective_kind": "defeat-boss",
+   "objective": "Defeat the Clockwork Press boss: break its steel-ringed shield, then hit its furnace core 14 times",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "steel-brick",
+    "sliding-row",
+    "laser",
+    "multi-ball"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch",
+    "boss-fight"
+   ],
+   "difficulty": {
+    "speed": 0.38,
+    "density": 0.44,
+    "variety": 0.44,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "clockwork-press",
+    "boss_pips": 14,
+    "shield_bricks": 16,
+    "steel": 8,
+    "capsules": 2,
+    "balls": 3,
+    "par_s": 62
+   }
+  },
+  {
+   "id": "w3-l1",
+   "index": 17,
+   "tier": "post-mvp",
+   "purpose": "breather",
+   "group": "w3",
+   "structure": "descending-wall",
+   "objective_kind": "beat-descent",
+   "objective": "Clear the frost wall before it creeps down to the red paddle line",
+   "elements": [
+    "standard-brick",
+    "descending-field"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating"
+   ],
+   "introduces": [
+    "descending-field"
+   ],
+   "difficulty": {
+    "speed": 0.29,
+    "density": 0.44,
+    "variety": 0.54,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "frost-wall-5x8",
+    "bricks": 40,
+    "descent_px": 24,
+    "descent_every_s": 8,
+    "balls": 3,
+    "par_s": 42
+   }
+  },
+  {
+   "id": "w3-l2",
+   "index": 18,
+   "tier": "post-mvp",
+   "purpose": "twist",
+   "group": "w3",
+   "structure": "descending-wall",
+   "objective_kind": "beat-descent",
+   "objective": "Clear the frost wall in a cold snap: it creeps down every 6 seconds",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "descending-field"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating"
+   ],
+   "difficulty": {
+    "speed": 0.4,
+    "density": 0.44,
+    "variety": 0.54,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "cold-snap-36",
+    "bricks": 36,
+    "armored": 10,
+    "descent_px": 24,
+    "descent_every_s": 6,
+    "balls": 3,
+    "par_s": 44
+   }
+  },
+  {
+   "id": "w3-l3",
+   "index": 19,
+   "tier": "post-mvp",
+   "purpose": "test",
+   "group": "w3",
+   "structure": "moving-field",
+   "objective_kind": "clear-all",
+   "objective": "Break the breakable bricks in the drifting ice rows while the wall creeps down",
+   "elements": [
+    "standard-brick",
+    "steel-brick",
+    "sliding-row",
+    "descending-field"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating"
+   ],
+   "difficulty": {
+    "speed": 0.4,
+    "density": 0.56,
+    "variety": 0.54,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "drift-ice-34",
+    "bricks": 34,
+    "steel": 8,
+    "slide_px_s": 90,
+    "descent_every_s": 8,
+    "balls": 3,
+    "par_s": 46
+   }
+  },
+  {
+   "id": "w3-l4",
+   "index": 20,
+   "tier": "post-mvp",
+   "purpose": "breather",
+   "group": "w3",
+   "structure": "gapped-wall",
+   "objective_kind": "collect",
+   "objective": "In the frozen pocket, catch 3 laser capsules; the wall is frozen and does not creep",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "steel-brick",
+    "laser",
+    "wide-paddle"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "difficulty": {
+    "speed": 0.4,
+    "density": 0.44,
+    "variety": 0.54,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "snow-pocket-30",
+    "bricks": 30,
+    "steel": 10,
+    "capsules_needed": 3,
+    "balls": 3,
+    "par_s": 40
+   }
+  },
+  {
+   "id": "w3-l5",
+   "index": 21,
+   "tier": "post-mvp",
+   "purpose": "twist",
+   "group": "w3",
+   "structure": "descending-wall",
+   "objective_kind": "beat-descent",
+   "objective": "Clear the wall before it creeps through the frozen steel gate",
+   "elements": [
+    "armored-brick",
+    "steel-brick",
+    "descending-field",
+    "multi-ball"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "difficulty": {
+    "speed": 0.4,
+    "density": 0.44,
+    "variety": 0.64,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "frozen-gate-28",
+    "bricks": 28,
+    "armored": 16,
+    "steel": 10,
+    "descent_every_s": 8,
+    "balls": 3,
+    "par_s": 48
+   }
+  },
+  {
+   "id": "w3-l6",
+   "index": 22,
+   "tier": "post-mvp",
+   "purpose": "test",
+   "group": "w3",
+   "structure": "stepped-field",
+   "objective_kind": "clear-all",
+   "objective": "Break the avalanche slope while its rows slide and it creeps down",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "sliding-row",
+    "descending-field",
+    "laser"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "difficulty": {
+    "speed": 0.4,
+    "density": 0.58,
+    "variety": 0.64,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "avalanche-slope-40",
+    "bricks": 40,
+    "armored": 12,
+    "slide_px_s": 60,
+    "descent_every_s": 8,
+    "balls": 3,
+    "par_s": 50
+   }
+  },
+  {
+   "id": "w3-l7",
+   "index": 23,
+   "tier": "post-mvp",
+   "purpose": "breather",
+   "group": "w3",
+   "structure": "static-field",
+   "objective_kind": "clear-all",
+   "objective": "Clear the thawing wall at a calm pace",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "steel-brick",
+    "wide-paddle",
+    "multi-ball"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "difficulty": {
+    "speed": 0.31,
+    "density": 0.58,
+    "variety": 0.64,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "thaw-islands-32",
+    "bricks": 32,
+    "steel": 6,
+    "balls": 3,
+    "par_s": 42
+   }
+  },
+  {
+   "id": "w3-l8",
+   "index": 24,
+   "tier": "post-mvp",
+   "purpose": "climax",
+   "group": "w3",
+   "structure": "arena",
+   "objective_kind": "defeat-boss",
+   "objective": "Defeat the Glacier Whale boss: break its plated back while the field creeps down, then hit its eye 18 times",
+   "elements": [
+    "armored-brick",
+    "steel-brick",
+    "sliding-row",
+    "descending-field",
+    "laser",
+    "multi-ball",
+    "wide-paddle"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch",
+    "boss-fight"
+   ],
+   "difficulty": {
+    "speed": 0.46,
+    "density": 0.58,
+    "variety": 0.64,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "glacier-whale",
+    "boss_pips": 18,
+    "shield_bricks": 18,
+    "steel": 6,
+    "descent_every_s": 10,
+    "capsules": 3,
+    "balls": 3,
+    "par_s": 68
+   }
+  },
+  {
+   "id": "w4-l1",
+   "index": 25,
+   "tier": "post-mvp",
+   "purpose": "breather",
+   "group": "w4",
+   "structure": "chain-cluster",
+   "objective_kind": "chain-reaction",
+   "objective": "Light the firecracker alley: break the red firecracker bricks so the blasts clear the cluster",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "explosive-brick",
+    "multi-ball"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "introduces": [
+    "explosive-brick"
+   ],
+   "difficulty": {
+    "speed": 0.46,
+    "density": 0.46,
+    "variety": 0.72,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "firecracker-alley-30",
+    "bricks": 30,
+    "explosive": 4,
+    "armored": 8,
+    "balls": 3,
+    "par_s": 46
+   }
+  },
+  {
+   "id": "w4-l2",
+   "index": 26,
+   "tier": "post-mvp",
+   "purpose": "twist",
+   "group": "w4",
+   "structure": "gauntlet",
+   "objective_kind": "clear-all",
+   "objective": "Clear the wall while embers rain down - dodge them with the paddle",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "falling-ember",
+    "wide-paddle"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "introduces": [
+    "falling-ember"
+   ],
+   "difficulty": {
+    "speed": 0.46,
+    "density": 0.46,
+    "variety": 0.8,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "cinder-fall-32",
+    "bricks": 32,
+    "armored": 10,
+    "ember_every_s": 3,
+    "ember_px_s": 160,
+    "burn_s": 3,
+    "balls": 3,
+    "par_s": 48
+   }
+  },
+  {
+   "id": "w4-l3",
+   "index": 27,
+   "tier": "post-mvp",
+   "purpose": "test",
+   "group": "w4",
+   "structure": "chain-cluster",
+   "objective_kind": "chain-reaction",
+   "objective": "Trigger the powder keg: chain 3 firecrackers through the steel pen while embers fall",
+   "elements": [
+    "armored-brick",
+    "steel-brick",
+    "explosive-brick",
+    "falling-ember",
+    "laser"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "difficulty": {
+    "speed": 0.46,
+    "density": 0.62,
+    "variety": 0.8,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "powder-keg-28",
+    "bricks": 28,
+    "explosive": 6,
+    "steel": 12,
+    "chain_needed": 3,
+    "ember_every_s": 4,
+    "balls": 3,
+    "par_s": 50
+   }
+  },
+  {
+   "id": "w4-l4",
+   "index": 28,
+   "tier": "post-mvp",
+   "purpose": "breather",
+   "group": "w4",
+   "structure": "gauntlet",
+   "objective_kind": "collect",
+   "objective": "In the ash fall, catch 3 capsules while slow embers drift down",
+   "elements": [
+    "standard-brick",
+    "explosive-brick",
+    "falling-ember",
+    "multi-ball",
+    "wide-paddle"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "difficulty": {
+    "speed": 0.36,
+    "density": 0.62,
+    "variety": 0.8,
+    "precision": 0.34
+   },
+   "parameters": {
+    "layout": "ash-fall-26",
+    "bricks": 26,
+    "explosive": 2,
+    "capsules_needed": 3,
+    "ember_every_s": 5,
+    "ember_px_s": 100,
+    "balls": 3,
+    "par_s": 42
+   }
+  },
+  {
+   "id": "w4-l5",
+   "index": 29,
+   "tier": "post-mvp",
+   "purpose": "twist",
+   "group": "w4",
+   "structure": "gapped-wall",
+   "objective_kind": "clear-all",
+   "objective": "Break every brick in the three narrow ember lanes; embers fall straight down the lanes",
+   "elements": [
+    "standard-brick",
+    "steel-brick",
+    "sliding-row",
+    "explosive-brick",
+    "falling-ember"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating"
+   ],
+   "difficulty": {
+    "speed": 0.36,
+    "density": 0.62,
+    "variety": 0.8,
+    "precision": 0.46
+   },
+   "parameters": {
+    "layout": "ember-lanes-3x10",
+    "bricks": 30,
+    "steel": 14,
+    "explosive": 3,
+    "lane_px": 96,
+    "slide_px_s": 60,
+    "ember_every_s": 3,
+    "balls": 3,
+    "par_s": 52
+   }
+  },
+  {
+   "id": "w4-l6",
+   "index": 30,
+   "tier": "post-mvp",
+   "purpose": "test",
+   "group": "w4",
+   "structure": "descending-wall",
+   "objective_kind": "beat-descent",
+   "objective": "Clear the burning ceiling before it creeps to the red line while embers fall",
+   "elements": [
+    "armored-brick",
+    "explosive-brick",
+    "descending-field",
+    "falling-ember",
+    "laser"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "difficulty": {
+    "speed": 0.56,
+    "density": 0.62,
+    "variety": 0.8,
+    "precision": 0.46
+   },
+   "parameters": {
+    "layout": "burning-ceiling-34",
+    "bricks": 34,
+    "armored": 12,
+    "explosive": 4,
+    "descent_every_s": 6,
+    "ember_every_s": 4,
+    "balls": 3,
+    "par_s": 54
+   }
+  },
+  {
+   "id": "w4-l7",
+   "index": 31,
+   "tier": "post-mvp",
+   "purpose": "breather",
+   "group": "w4",
+   "structure": "stepped-field",
+   "objective_kind": "clear-all",
+   "objective": "Clear the cooling vent steps at an easier pace",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "steel-brick",
+    "explosive-brick",
+    "falling-ember",
+    "wide-paddle"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch"
+   ],
+   "difficulty": {
+    "speed": 0.56,
+    "density": 0.5,
+    "variety": 0.8,
+    "precision": 0.46
+   },
+   "parameters": {
+    "layout": "cooling-vent-30",
+    "bricks": 30,
+    "steel": 8,
+    "explosive": 2,
+    "ember_every_s": 6,
+    "balls": 3,
+    "par_s": 44
+   }
+  },
+  {
+   "id": "w4-l8",
+   "index": 32,
+   "tier": "post-mvp",
+   "purpose": "climax",
+   "group": "w4",
+   "structure": "arena",
+   "objective_kind": "defeat-boss",
+   "objective": "Defeat the Cinder Phoenix boss: break its feather shield through the embers and firecrackers, then hit its breast 22 times",
+   "elements": [
+    "standard-brick",
+    "armored-brick",
+    "steel-brick",
+    "explosive-brick",
+    "falling-ember",
+    "laser",
+    "multi-ball",
+    "wide-paddle"
+   ],
+   "mechanics": [
+    "paddle-drag",
+    "ball-rebound",
+    "brick-clear",
+    "ball-supply",
+    "star-rating",
+    "power-up-catch",
+    "boss-fight"
+   ],
+   "difficulty": {
+    "speed": 0.56,
+    "density": 0.74,
+    "variety": 0.8,
+    "precision": 0.46
+   },
+   "parameters": {
+    "layout": "cinder-phoenix",
+    "boss_pips": 22,
+    "shield_bricks": 20,
+    "explosive": 4,
+    "steel": 6,
+    "ember_every_s": 2,
+    "capsules": 3,
+    "balls": 3,
+    "par_s": 74
+   }
+  }
+ ],
+ "shipped_content": {
+  "schema": "wgf-content/1",
+  "units": [
+   {
+    "id": "w1-l1",
+    "index": 1,
+    "tier": "mvp",
+    "objective": "Break all 16 bricks - catch the capsule that drops",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "power-ups",
+     "star-rating"
+    ],
+    "introduces": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "power-ups",
+     "star-rating",
+     "multi-ball"
+    ],
+    "difficulty": {
+     "speed": 0.05,
+     "density": 0.08,
+     "variety": 0.09,
+     "precision": 0.17
+    },
+    "expected_duration_s": 16,
+    "success": "All 16 bricks are broken with at least one ball left; the clear card stamps one to three stars.",
+    "failure": "The third ball falls past the paddle with bricks standing; the fail card counts the bricks left and Retry rebuilds the same board within 1 s.",
+    "layout": {
+     "rows": [
+      ".#######.",
+      "####M####"
+     ],
+     "par_time_s": 22
+    }
+   },
+   {
+    "id": "w1-l2",
+    "index": 2,
+    "tier": "mvp",
+    "objective": "Break all 20 bricks - catch the wide capsule to reach the far corners",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "power-ups"
+    ],
+    "introduces": [
+     "wide-paddle"
+    ],
+    "difficulty": {
+     "speed": 0.05,
+     "density": 0.15,
+     "variety": 0.18,
+     "precision": 0.17
+    },
+    "expected_duration_s": 18,
+    "success": "All 20 bricks are broken with a ball still in play, in any state of the paddle's width.",
+    "failure": "The third ball passes the paddle with bricks left; the fail card shows how many and Retry restarts level 2.",
+    "layout": {
+     "rows": [
+      "#########",
+      "##.#W#.##",
+      "..##.##.."
+     ],
+     "par_time_s": 24
+    }
+   },
+   {
+    "id": "w1-l3",
+    "index": 3,
+    "tier": "mvp",
+    "objective": "Break all 20 bricks - catch the laser capsule and shoot the rows",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "power-ups",
+     "star-rating"
+    ],
+    "introduces": [
+     "laser"
+    ],
+    "difficulty": {
+     "speed": 0.08,
+     "density": 0.15,
+     "variety": 0.27,
+     "precision": 0.17
+    },
+    "expected_duration_s": 20,
+    "success": "All 20 bricks are broken before the third ball is lost, with the laser's bolts counting toward the total.",
+    "failure": "The last ball is lost with bricks standing, and the fail card keeps the bricks left lit behind it.",
+    "layout": {
+     "rows": [
+      "#########",
+      "##.#L#.##",
+      "..##.##.."
+     ],
+     "par_time_s": 27
+    }
+   },
+   {
+    "id": "w1-l4",
+    "index": 4,
+    "tier": "mvp",
+    "objective": "Break all 21 bricks - the framed ones take two hits",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "armored-bricks",
+     "power-ups"
+    ],
+    "introduces": [
+     "armored-bricks"
+    ],
+    "difficulty": {
+     "speed": 0.08,
+     "density": 0.21,
+     "variety": 0.36,
+     "precision": 0.17
+    },
+    "expected_duration_s": 22,
+    "success": "All 21 bricks are broken, the three armored ones on their second hit, with a ball left.",
+    "failure": "The third ball is lost with armored or plain bricks left; the fail card shows the cracked ones still lit.",
+    "layout": {
+     "rows": [
+      "#########",
+      "##A#A#A##",
+      "...#W#..."
+     ],
+     "par_time_s": 30
+    }
+   },
+   {
+    "id": "w1-l5",
+    "index": 5,
+    "tier": "mvp",
+    "objective": "Clear 20 bricks without losing a ball for three stars",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "armored-bricks",
+     "power-ups",
+     "star-rating"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.06,
+     "density": 0.17,
+     "variety": 0.36,
+     "precision": 0.17
+    },
+    "expected_duration_s": 18,
+    "success": "All 20 bricks are broken with no ball lost inside the 24 s par time, which earns the third star.",
+    "failure": "The third ball is lost; a clear that misses the par time or loses a ball still ends the level but earns fewer stars.",
+    "layout": {
+     "rows": [
+      "#M#####W#",
+      "####L####",
+      ".#.....M."
+     ],
+     "par_time_s": 24
+    }
+   },
+   {
+    "id": "w1-l6",
+    "index": 6,
+    "tier": "mvp",
+    "objective": "Break all 23 bricks around the armored posts",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "armored-bricks",
+     "power-ups"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.1,
+     "density": 0.23,
+     "variety": 0.36,
+     "precision": 0.17
+    },
+    "expected_duration_s": 24,
+    "success": "All 23 bricks are broken, the two armored posts on their second hit, with a ball in play.",
+    "failure": "The third ball falls with a post or bricks left; Retry rebuilds all 23 bricks and both posts uncracked.",
+    "layout": {
+     "rows": [
+      "#########",
+      "A#######A",
+      "..#M#W#.."
+     ],
+     "par_time_s": 32
+    }
+   },
+   {
+    "id": "w1-l7",
+    "index": 7,
+    "tier": "mvp",
+    "objective": "Break all 23 bricks - the armored fence hides the middle",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "armored-bricks",
+     "power-ups",
+     "star-rating"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.12,
+     "density": 0.23,
+     "variety": 0.36,
+     "precision": 0.25
+    },
+    "expected_duration_s": 26,
+    "success": "All 23 bricks are broken, the five fence bricks on their second hit, with at least one ball left.",
+    "failure": "The third ball is lost while rows behind the fence still stand; the fail card shows them lit behind the cracked fence.",
+    "layout": {
+     "rows": [
+      "#W#####L#",
+      "####M####",
+      "A.A.A.A.A"
+     ],
+     "par_time_s": 35
+    }
+   },
+   {
+    "id": "w1-l8",
+    "index": 8,
+    "tier": "mvp",
+    "objective": "Wear down the boss: break the shell and hit the glowing core 8 times",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "armored-bricks",
+     "power-ups",
+     "boss-fight"
+    ],
+    "introduces": [
+     "boss-fight"
+    ],
+    "difficulty": {
+     "speed": 0.14,
+     "density": 0.31,
+     "variety": 0.45,
+     "precision": 0.25
+    },
+    "expected_duration_s": 38,
+    "success": "The boss's health bar reaches zero from 8 core hits and the rest of the shell falls away.",
+    "failure": "The third ball is lost with the boss still alive; the fail card shows the health bar where it stopped and Retry restores it to 8.",
+    "layout": {
+     "rows": [
+      "..AAAAA..",
+      "AAABBBAAA",
+      "AAABBBAAA",
+      "AmAAAAAwA"
+     ],
+     "boss": {
+      "kind": "sentinel",
+      "health": 8
+     },
+     "par_time_s": 51
+    }
+   },
+   {
+    "id": "w2-l1",
+    "index": 9,
+    "tier": "mvp",
+    "objective": "Break all 27 bricks - steel bars never break, bounce off them",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "steel-bricks",
+     "power-ups"
+    ],
+    "introduces": [
+     "steel-bricks"
+    ],
+    "difficulty": {
+     "speed": 0.12,
+     "density": 0.31,
+     "variety": 0.36,
+     "precision": 0.25
+    },
+    "expected_duration_s": 20,
+    "success": "All 27 breakable bricks are broken with a ball in play, even though both steel bars still stand.",
+    "failure": "The third ball passes the paddle with breakable bricks left; the fail card counts only breakable bricks.",
+    "layout": {
+     "rows": [
+      ".###M###.",
+      "S#######S",
+      "#W#######",
+      "..##.##.."
+     ],
+     "par_time_s": 27
+    }
+   },
+   {
+    "id": "w2-l2",
+    "index": 10,
+    "tier": "mvp",
+    "objective": "Break all 27 bricks while a row slides across the board",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "steel-bricks",
+     "sliding-rows",
+     "power-ups"
+    ],
+    "introduces": [
+     "sliding-rows"
+    ],
+    "difficulty": {
+     "speed": 0.14,
+     "density": 0.31,
+     "variety": 0.45,
+     "precision": 0.25
+    },
+    "expected_duration_s": 22,
+    "success": "All 27 bricks are broken, the sliding row's six bricks included, with at least one ball left.",
+    "failure": "The third ball is lost with bricks standing; the sliding row restarts from its start position on Retry.",
+    "layout": {
+     "rows": [
+      "####M####",
+      ".######..",
+      "##W######",
+      "...###..."
+     ],
+     "slides": [
+      {
+       "row": 2,
+       "dir": 1
+      }
+     ],
+     "par_time_s": 30
+    }
+   },
+   {
+    "id": "w2-l3",
+    "index": 11,
+    "tier": "mvp",
+    "objective": "Break all 29 bricks - time the shot through the sliding steel row",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "steel-bricks",
+     "sliding-rows",
+     "armored-bricks"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.16,
+     "density": 0.35,
+     "variety": 0.45,
+     "precision": 0.25
+    },
+    "expected_duration_s": 24,
+    "success": "All 29 breakable bricks are broken, the three in the sliding steel row included, with a ball left.",
+    "failure": "The third ball is lost with bricks behind the sliding row still standing; the fail card shows them lit.",
+    "layout": {
+     "rows": [
+      "A#######A",
+      "####L####",
+      "..S#M#S..",
+      "..#####..",
+      "...###..."
+     ],
+     "slides": [
+      {
+       "row": 3,
+       "dir": 1
+      }
+     ],
+     "par_time_s": 32
+    }
+   },
+   {
+    "id": "w2-l4",
+    "index": 12,
+    "tier": "mvp",
+    "objective": "Break all 29 bricks between two sliding rows",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "steel-bricks",
+     "sliding-rows",
+     "power-ups",
+     "star-rating"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.16,
+     "density": 0.35,
+     "variety": 0.55,
+     "precision": 0.33
+    },
+    "expected_duration_s": 26,
+    "success": "All 29 breakable bricks are broken, the laser capsule's brick included, with a ball still in play.",
+    "failure": "The third ball is lost with bricks left; the fail card shows which sliding row they sit behind.",
+    "layout": {
+     "rows": [
+      "####L####",
+      ".S####S..",
+      "#########",
+      "..S####S.",
+      "...###..."
+     ],
+     "slides": [
+      {
+       "row": 2,
+       "dir": 1
+      },
+      {
+       "row": 4,
+       "dir": -1
+      }
+     ],
+     "par_time_s": 35
+    }
+   },
+   {
+    "id": "w2-l5",
+    "index": 13,
+    "tier": "mvp",
+    "objective": "Clear 27 bricks without losing a ball - one slow row slides",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "sliding-rows",
+     "power-ups",
+     "star-rating"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.14,
+     "density": 0.31,
+     "variety": 0.55,
+     "precision": 0.33
+    },
+    "expected_duration_s": 20,
+    "success": "All 27 bricks are broken with no ball lost inside the 27 s par time, which earns the third star.",
+    "failure": "The third ball is lost; a clear that loses a ball or runs past 27 s still ends the level with fewer stars.",
+    "layout": {
+     "rows": [
+      "#M#####W#",
+      "#########",
+      "..####...",
+      "..#L#M#.."
+     ],
+     "slides": [
+      {
+       "row": 3,
+       "dir": 1
+      }
+     ],
+     "par_time_s": 27
+    }
+   },
+   {
+    "id": "w2-l6",
+    "index": 14,
+    "tier": "mvp",
+    "objective": "Break all 30 bricks - armored corners and a sliding steel row",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "steel-bricks",
+     "armored-bricks",
+     "sliding-rows"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.18,
+     "density": 0.38,
+     "variety": 0.55,
+     "precision": 0.33
+    },
+    "expected_duration_s": 26,
+    "success": "All 30 breakable bricks are broken, both armored corners on their second hit, with a ball left.",
+    "failure": "The third ball is lost with an armored corner or bricks left; the fail card shows the cracked corners.",
+    "layout": {
+     "rows": [
+      "A#######A",
+      "S#######S",
+      "#########",
+      "..S###S..",
+      "...#.#..."
+     ],
+     "slides": [
+      {
+       "row": 4,
+       "dir": -1
+      }
+     ],
+     "par_time_s": 35
+    }
+   },
+   {
+    "id": "w2-l7",
+    "index": 15,
+    "tier": "mvp",
+    "objective": "Break all 32 bricks through two sliding steel rows",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "steel-bricks",
+     "sliding-rows",
+     "power-ups"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.2,
+     "density": 0.42,
+     "variety": 0.55,
+     "precision": 0.33
+    },
+    "expected_duration_s": 28,
+    "success": "All 32 breakable bricks are broken with at least one ball left, the lower six included.",
+    "failure": "The third ball is lost with bricks standing; a ball trapped above the steel rows counts as in play until it leaves.",
+    "layout": {
+     "rows": [
+      "####M####",
+      ".S#####S.",
+      "#W#######",
+      "..S###S..",
+      ".######.."
+     ],
+     "slides": [
+      {
+       "row": 2,
+       "dir": 1
+      },
+      {
+       "row": 4,
+       "dir": -1
+      }
+     ],
+     "par_time_s": 38
+    }
+   },
+   {
+    "id": "w2-l8",
+    "index": 16,
+    "tier": "mvp",
+    "objective": "Wear down the boss: its sliding shell hides the core, hit it 10 times",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "armored-bricks",
+     "steel-bricks",
+     "sliding-rows",
+     "boss-fight",
+     "power-ups"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.22,
+     "density": 0.45,
+     "variety": 0.64,
+     "precision": 0.33
+    },
+    "expected_duration_s": 42,
+    "success": "The boss's health bar reaches zero from 10 core hits and the sliding shell falls away.",
+    "failure": "The third ball is lost with the boss alive; the fail card shows the bar where it stopped and Retry restores it to 10.",
+    "layout": {
+     "rows": [
+      "..AAAAAA.",
+      "AAABBBAAA",
+      "AAABBBAAA",
+      "AAAA.AAAA",
+      ".AwAAAmA."
+     ],
+     "slides": [
+      {
+       "row": 4,
+       "dir": 1
+      },
+      {
+       "row": 5,
+       "dir": -1
+      }
+     ],
+     "boss": {
+      "kind": "prism",
+      "health": 10
+     },
+     "par_time_s": 56
+    }
+   },
+   {
+    "id": "w3-l1",
+    "index": 17,
+    "tier": "mvp",
+    "objective": "Break all 30 bricks before the field drops to the red line",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "descending-field",
+     "power-ups"
+    ],
+    "introduces": [
+     "descending-field"
+    ],
+    "difficulty": {
+     "speed": 0.18,
+     "density": 0.38,
+     "variety": 0.55,
+     "precision": 0.33
+    },
+    "expected_duration_s": 20,
+    "success": "All 30 bricks are broken before any brick's lower edge touches the danger line, with a ball still in play.",
+    "failure": "A brick touches the red danger line, or the third ball is lost; the fail card says which and shows the field where it stopped.",
+    "layout": {
+     "rows": [
+      "#.#.#.#.#",
+      "#.#.#.#.#",
+      "#.#.#.#.#",
+      "#.#.#.#.#",
+      "#.W.#.#.#",
+      "#.#.M.#.#"
+     ],
+     "descend": {
+      "interval_s": 4.5,
+      "lowest_edge_y": 704
+     },
+     "par_time_s": 27
+    }
+   },
+   {
+    "id": "w3-l2",
+    "index": 18,
+    "tier": "mvp",
+    "objective": "Clear 32 bricks and keep the lowest row off the red line",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "descending-field",
+     "power-ups"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.22,
+     "density": 0.42,
+     "variety": 0.55,
+     "precision": 0.33
+    },
+    "expected_duration_s": 24,
+    "success": "All 32 bricks are broken before the lowest brick's lower edge touches the danger line.",
+    "failure": "The danger line is touched, or the third ball is lost; the fail card shows how many rows the field dropped.",
+    "layout": {
+     "rows": [
+      "##.###.##",
+      "#.#.#.#.#",
+      "#.#.M.#.#",
+      "#.W.#.#.#",
+      "#.#.#.#.#",
+      "#.#.#.#.#"
+     ],
+     "descend": {
+      "interval_s": 4.2,
+      "lowest_edge_y": 684
+     },
+     "par_time_s": 32
+    }
+   },
+   {
+    "id": "w3-l3",
+    "index": 19,
+    "tier": "mvp",
+    "objective": "Break all 34 bricks - armored corners drop with the field",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "descending-field",
+     "armored-bricks",
+     "power-ups"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.22,
+     "density": 0.45,
+     "variety": 0.64,
+     "precision": 0.33
+    },
+    "expected_duration_s": 26,
+    "success": "All 34 bricks are broken, both armored corners on their second hit, before the danger line is touched.",
+    "failure": "A brick - cracked armored ones included - touches the danger line, or the third ball is lost.",
+    "layout": {
+     "rows": [
+      "A.#.#.#.A",
+      ".#.#.#.#.",
+      "#.#.M.#.#",
+      "#.W.#.#.#",
+      "#.#.#.#.#",
+      "#.#.#.#.#",
+      "#.#.#.#.#"
+     ],
+     "descend": {
+      "interval_s": 4.2,
+      "lowest_edge_y": 700
+     },
+     "par_time_s": 35
+    }
+   },
+   {
+    "id": "w3-l4",
+    "index": 20,
+    "tier": "mvp",
+    "objective": "Break all 34 bricks while a steel row slides under the falling field",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "descending-field",
+     "steel-bricks",
+     "sliding-rows",
+     "power-ups"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.24,
+     "density": 0.45,
+     "variety": 0.64,
+     "precision": 0.42
+    },
+    "expected_duration_s": 28,
+    "success": "All 34 breakable bricks are broken before the sliding steel row, which cannot be broken, reaches the danger line.",
+    "failure": "The steel row or any brick touches the danger line, or the third ball is lost.",
+    "layout": {
+     "rows": [
+      ".#.#.#.#.",
+      "#.#.#.#.#",
+      "#.#.#.#.#",
+      "#.#.#.#.#",
+      "#.#.#.#.#",
+      "#.W.#.#.#",
+      "#.#.M.#.#",
+      "..SSSS..."
+     ],
+     "slides": [
+      {
+       "row": 8,
+       "dir": 1
+      }
+     ],
+     "descend": {
+      "interval_s": 4.2,
+      "lowest_edge_y": 700
+     },
+     "par_time_s": 38
+    }
+   },
+   {
+    "id": "w3-l5",
+    "index": 21,
+    "tier": "mvp",
+    "objective": "Clear 31 bricks without losing a ball as the field creeps down",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "descending-field",
+     "power-ups",
+     "star-rating"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.2,
+     "density": 0.4,
+     "variety": 0.64,
+     "precision": 0.42
+    },
+    "expected_duration_s": 22,
+    "success": "All 31 bricks are broken with no ball lost inside the 30 s par time, which earns the third star.",
+    "failure": "The third ball is lost or the danger line is touched; a clear that loses a ball or passes 30 s earns fewer stars.",
+    "layout": {
+     "rows": [
+      "#M.##.##.",
+      "#.#.W.#.#",
+      "#.#.#.L.#",
+      "M.#.#.#.#",
+      "#.#.#.#.#",
+      "#.#.#.#.#"
+     ],
+     "descend": {
+      "interval_s": 4.5,
+      "lowest_edge_y": 684
+     },
+     "par_time_s": 30
+    }
+   },
+   {
+    "id": "w3-l6",
+    "index": 22,
+    "tier": "mvp",
+    "objective": "Break all 35 bricks - armored tops slow the clear as the field drops",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "descending-field",
+     "armored-bricks",
+     "power-ups"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.24,
+     "density": 0.47,
+     "variety": 0.64,
+     "precision": 0.42
+    },
+    "expected_duration_s": 28,
+    "success": "All 35 bricks are broken, the five armored tops on their second hit, before the danger line is touched.",
+    "failure": "The danger line is touched with the armored row or others standing, or the third ball is lost.",
+    "layout": {
+     "rows": [
+      "..AAAAA..",
+      "#.#.#.#.#",
+      "#.#.#.#.#",
+      "#.#.#.#.#",
+      "#.W.#.#.#",
+      "#.#.#.#.#",
+      "#.M.#.#.#"
+     ],
+     "descend": {
+      "interval_s": 4.0,
+      "lowest_edge_y": 680
+     },
+     "par_time_s": 38
+    }
+   },
+   {
+    "id": "w3-l7",
+    "index": 23,
+    "tier": "mvp",
+    "objective": "Break all 35 bricks - steel bars block the lanes as the field falls",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "descending-field",
+     "steel-bricks",
+     "power-ups"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.26,
+     "density": 0.47,
+     "variety": 0.64,
+     "precision": 0.5
+    },
+    "expected_duration_s": 30,
+    "success": "All 35 breakable bricks are broken with a ball in play before the danger line is touched.",
+    "failure": "A brick or steel bar touches the danger line, or the third ball is lost; the fail card shows the field's last row count.",
+    "layout": {
+     "rows": [
+      "#.#.#.#.#",
+      "S.S.S.S.S",
+      "#.#.M.#.#",
+      "S.S.S.S.S",
+      "#.W.#.#.#",
+      "#.#.#.#.#",
+      "#.#.#.#.#",
+      "#.#.#.#.#",
+      "#.#.#.#.#"
+     ],
+     "descend": {
+      "interval_s": 3.8,
+      "lowest_edge_y": 680
+     },
+     "par_time_s": 40
+    }
+   },
+   {
+    "id": "w3-l8",
+    "index": 24,
+    "tier": "mvp",
+    "objective": "Wear down the boss before its shell reaches the line: 12 core hits",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "descending-field",
+     "armored-bricks",
+     "boss-fight",
+     "power-ups"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.28,
+     "density": 0.5,
+     "variety": 0.73,
+     "precision": 0.5
+    },
+    "expected_duration_s": 44,
+    "success": "The boss's health bar reaches zero from 12 core hits before any shell brick touches the danger line.",
+    "failure": "A shell brick touches the danger line, or the third ball is lost; Retry restores the shell and the 12 health.",
+    "layout": {
+     "rows": [
+      ".AAAAAAA.",
+      "AAABBBAAA",
+      "AAABBBAAA",
+      "AAAAAAAAA",
+      "AmAAAAAw."
+     ],
+     "descend": {
+      "interval_s": 6.0,
+      "lowest_edge_y": 596
+     },
+     "boss": {
+      "kind": "crusher",
+      "health": 12
+     },
+     "par_time_s": 59
+    }
+   },
+   {
+    "id": "w4-l1",
+    "index": 25,
+    "tier": "mvp",
+    "objective": "Break all 34 bricks - the burst brick clears its neighbours",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "explosive-bricks",
+     "power-ups"
+    ],
+    "introduces": [
+     "explosive-bricks"
+    ],
+    "difficulty": {
+     "speed": 0.24,
+     "density": 0.45,
+     "variety": 0.64,
+     "precision": 0.5
+    },
+    "expected_duration_s": 22,
+    "success": "All 34 bricks are broken, the blast's eight neighbours included, with a ball still in play.",
+    "failure": "The third ball is lost with bricks left; the fail card counts the bricks the blast did not reach.",
+    "layout": {
+     "rows": [
+      "#M#####W#",
+      "####X####",
+      "####L####",
+      ".#######."
+     ],
+     "par_time_s": 30
+    }
+   },
+   {
+    "id": "w4-l2",
+    "index": 26,
+    "tier": "mvp",
+    "objective": "Break all 36 bricks - chain the two burst bricks",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "explosive-bricks",
+     "power-ups"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.28,
+     "density": 0.5,
+     "variety": 0.64,
+     "precision": 0.5
+    },
+    "expected_duration_s": 26,
+    "success": "All 36 bricks are broken, with the chained blasts' bricks counted as broken, and a ball left.",
+    "failure": "The third ball is lost with bricks standing; Retry rebuilds both burst bricks.",
+    "layout": {
+     "rows": [
+      "#M#####W#",
+      "###XX####",
+      "#########",
+      "####L####"
+     ],
+     "par_time_s": 35
+    }
+   },
+   {
+    "id": "w4-l3",
+    "index": 27,
+    "tier": "mvp",
+    "objective": "Break all 36 bricks - dodge or knock out the falling embers",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "explosive-bricks",
+     "falling-embers",
+     "power-ups"
+    ],
+    "introduces": [
+     "falling-embers"
+    ],
+    "difficulty": {
+     "speed": 0.28,
+     "density": 0.5,
+     "variety": 0.73,
+     "precision": 0.5
+    },
+    "expected_duration_s": 28,
+    "success": "All 36 bricks are broken with a ball in play, whether embers were dodged, knocked out or taken on the paddle.",
+    "failure": "The third ball is lost with bricks left; an ember on the paddle never fails a level by itself.",
+    "layout": {
+     "rows": [
+      "#M#####W#",
+      "####X####",
+      "#########",
+      "####L####"
+     ],
+     "embers": {
+      "interval_s": 6
+     },
+     "par_time_s": 38
+    }
+   },
+   {
+    "id": "w4-l4",
+    "index": 28,
+    "tier": "mvp",
+    "objective": "Break all 36 bricks - bursts chain through armor while embers fall",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "explosive-bricks",
+     "armored-bricks",
+     "falling-embers"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.32,
+     "density": 0.5,
+     "variety": 0.82,
+     "precision": 0.5
+    },
+    "expected_duration_s": 30,
+    "success": "All 36 bricks are broken, the five armored tops included, with at least one ball left.",
+    "failure": "The third ball is lost with bricks left; the fail card shows which armored bricks the blasts only cracked.",
+    "layout": {
+     "rows": [
+      "..AAAAA..",
+      "##X###X##",
+      "#########",
+      "#########",
+      "..##.##.."
+     ],
+     "embers": {
+      "interval_s": 4.5
+     },
+     "par_time_s": 40
+    }
+   },
+   {
+    "id": "w4-l5",
+    "index": 29,
+    "tier": "mvp",
+    "objective": "Clear 34 bricks without losing a ball - embers fall slowly",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "explosive-bricks",
+     "falling-embers",
+     "star-rating"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.28,
+     "density": 0.46,
+     "variety": 0.82,
+     "precision": 0.5
+    },
+    "expected_duration_s": 24,
+    "success": "All 34 bricks are broken with no ball lost inside the 32 s par time, which earns the third star.",
+    "failure": "The third ball is lost; a clear that loses a ball or passes 32 s still ends the level with fewer stars.",
+    "layout": {
+     "rows": [
+      "#########",
+      "###XX####",
+      "#########",
+      ".#######."
+     ],
+     "embers": {
+      "interval_s": 7
+     },
+     "par_time_s": 32
+    }
+   },
+   {
+    "id": "w4-l6",
+    "index": 30,
+    "tier": "mvp",
+    "objective": "Break all 38 bricks - bursts, armor and steel under falling embers",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "explosive-bricks",
+     "armored-bricks",
+     "falling-embers",
+     "steel-bricks"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.34,
+     "density": 0.55,
+     "variety": 0.82,
+     "precision": 0.5
+    },
+    "expected_duration_s": 30,
+    "success": "All 38 breakable bricks are broken, with the two armored corners on their second hit, and a ball left.",
+    "failure": "The third ball is lost with bricks left; embers on the paddle never fail the level by themselves.",
+    "layout": {
+     "rows": [
+      "A#######A",
+      "##X###X##",
+      "#########",
+      "#########",
+      "SS.....SS",
+      "...#.#..."
+     ],
+     "embers": {
+      "interval_s": 4.5
+     },
+     "par_time_s": 40
+    }
+   },
+   {
+    "id": "w4-l7",
+    "index": 31,
+    "tier": "mvp",
+    "objective": "Break all 38 bricks - steel walls the lanes, embers drop every 4 s",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "explosive-bricks",
+     "steel-bricks",
+     "falling-embers",
+     "power-ups"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.34,
+     "density": 0.55,
+     "variety": 0.91,
+     "precision": 0.58
+    },
+    "expected_duration_s": 32,
+    "success": "All 38 breakable bricks are broken with a ball in play, the blast-cleared ones included.",
+    "failure": "The third ball is lost with bricks left; the fail card shows which steel-walled rows still hold bricks.",
+    "layout": {
+     "rows": [
+      "#M#####W#",
+      "XSS.S.SSX",
+      "####L####",
+      "SS.S.S.SS",
+      "#########",
+      "#########"
+     ],
+     "embers": {
+      "interval_s": 4
+     },
+     "par_time_s": 43
+    }
+   },
+   {
+    "id": "w4-l8",
+    "index": 32,
+    "tier": "mvp",
+    "objective": "Wear down the furnace boss: 14 core hits through its burst shell",
+    "mechanics": [
+     "paddle-drag",
+     "ball-rebound",
+     "bricks",
+     "explosive-bricks",
+     "armored-bricks",
+     "falling-embers",
+     "boss-fight",
+     "power-ups"
+    ],
+    "introduces": [],
+    "difficulty": {
+     "speed": 0.4,
+     "density": 0.6,
+     "variety": 0.91,
+     "precision": 0.7
+    },
+    "expected_duration_s": 50,
+    "success": "The boss's health bar reaches zero from 14 core hits and the shell falls away; the clear card shows the total stars out of 96.",
+    "failure": "The third ball is lost with the boss alive; Retry restores the shell and the 14 health.",
+    "layout": {
+     "rows": [
+      "..AAAAAA.",
+      ".XAAAAAX.",
+      "AAABBBAAA",
+      "AAABBBAAA",
+      "AAAAAAAAA",
+      ".AAwAmAA."
+     ],
+     "embers": {
+      "interval_s": 5
+     },
+     "boss": {
+      "kind": "forge",
+      "health": 14
+     },
+     "par_time_s": 67
+    }
+   }
+  ]
+ }
+}

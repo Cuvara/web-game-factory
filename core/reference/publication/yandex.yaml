@@ -10,7 +10,10 @@
 # otherwise.
 
 id: yandex
-version: 2.2.0  # 2.2.0: the Yandex adapter's flow - Create draft at upload, the language tabs,
+version: 2.3.0  # 2.3.0: re-read 2026-10-07 - the horizontal video required, the vertical one optional,
+                #        media sizes pointed at the platform profile, content moderation and
+                #        update rules, REQ 1.24
+                # 2.2.0: the Yandex adapter's flow - Create draft at upload, the language tabs,
                 #        media and save as hypotheses (docs/publish-module.md, Yandex)
 status: unverified
 docs: https://yandex.com/dev/games/doc/en/
@@ -23,14 +26,18 @@ sources:
   - {url: "https://yandex.com/dev/games/doc/en/concepts/requirements", read: "2026-10-04"}
   - {url: "https://yandex.com/dev/games/doc/en/concepts/quick-start", read: "2026-10-04"}
   - {url: "https://yandex.com/legal/yandexgames/en/", read: "2026-10-04"}
+  - {url: "https://yandex.com/dev/games/doc/en/console/add-new-game/draft", read: "2026-10-07"}
+  - {url: "https://yandex.ru/dev/games/doc/ru/console/add-new-game/draft", read: "2026-10-07"}
+  - {url: "https://yandex.com/dev/games/doc/en/console/update-game", read: "2026-10-07"}
+  - {url: "https://yandex.com/dev/games/doc/en/concepts/moderation", read: "2026-10-07"}
+  - {url: "https://yandex.com/dev/games/doc/en/concepts/requirements", read: "2026-10-07"}
 
 unknowns:
   - Console labels beyond those the documentation quotes, and their Russian forms (the Russian names below are translations, not read on the console).
   - The age-rating and category lists.
   - The archive upload widget.
-  - Whether the horizontal video is required (a summarised page suggests it may be).
   - The text limits of every per-language field except those the documentation states.
-  - Icon, cover, hero image and screenshot sizes.
+  - Whether the console itself enforces the media sizes the documentation states (they are stated in platforms/yandex.yaml store_listing and checked there).
   - The contract screens (licensing model or YAN with payout details).
   - Whether a CAPTCHA, a second factor or an anti-bot check protects Yandex ID for the console.
   - The session markers (logged in, login form, challenges) on the console page.
@@ -237,13 +244,16 @@ submission:
     description: {required: true, max: null, locales: per-locale, listing: listing.text.<locale>.description, basis: documented}
     short_description: {required: null, max: null, locales: per-locale, basis: documented}
     how_to_play: {required: null, max: null, locales: per-locale, listing: listing.text.<locale>.how_to_play, basis: documented}
-    icon: {required: true, locales: per-locale, size: null, basis: documented}
-    maskable_icon: {required: null, locales: per-locale, size: null, basis: documented}
-    cover: {required: true, locales: per-locale, size: null, basis: documented}
-    hero_image: {required: null, locales: per-locale, size: null, basis: documented}
-    vertical_video: {required: null, locales: per-locale, size: null, basis: documented}
-    horizontal_video: {required: null, locales: per-locale, formats: [mp4], size: "16:9, up to 28 s, 100 MB", basis: documented, note: May be required; unconfirmed.}
-    screenshots: {required: true, locales: per-locale, size: null, basis: documented}
+    # Media sizes are stated (DRAFT, read 2026-10-07) and checked mechanically in the
+    # platform profile's store_listing block (platforms/yandex.yaml); `size` stays null here
+    # so the same bound is not reported twice as an unchecked string.
+    icon: {required: true, locales: per-locale, size: null, basis: documented, note: "512x512 PNG (platforms/yandex.yaml store_listing.icon)."}
+    maskable_icon: {required: false, locales: per-locale, size: null, basis: documented, note: Optional; the centre is the safe zone.}
+    cover: {required: true, locales: per-locale, size: null, basis: documented, note: "800x470 PNG (store_listing.covers cover)."}
+    hero_image: {required: false, locales: per-locale, size: null, basis: documented, note: "Optional; 1560x520 PNG or JPG (store_listing.covers hero)."}
+    vertical_video: {required: false, locales: per-locale, formats: [mp4], size: null, basis: documented, note: "Optional; 9:16 MP4, height at least 400 px, at most 28 s and 100 MB."}
+    horizontal_video: {required: true, locales: per-locale, formats: [mp4], size: null, basis: documented, note: "Required (red asterisk on the ru page, \"Horizontal Video (required)\" on the en page, read 2026-10-07); 16:9 MP4, height at least 400 px, at most 28 s and 100 MB (store_listing.video)."}
+    screenshots: {required: true, locales: per-locale, size: null, basis: documented, note: "At least 2 per selected platform; mobile at least 2 per orientation; desktop 16:9 landscape only; long side 1280-2560 px, JPEG or 24-bit PNG."}
     categories: {required: true, max_count: 2, locales: shared, human: true, basis: documented}
     tags: {required: null, max_count: 20, locales: shared, human: true, basis: documented}
     keywords: {required: null, max: 100, locales: shared, basis: documented}
@@ -252,6 +262,14 @@ submission:
   restrictions:
     - rule: Moderation takes 3-5 business days, one per game at a time, at most 2 new-game requests per account.
       source: https://yandex.com/dev/games/doc/en/concepts/moderation
+    - rule: Full moderation (a new game, or an update that changes game files) takes 3-5 working days and stops at the first violation; content moderation (icon and cover A/B tests, promo-only updates) takes 1-2 working days (read 2026-10-07).
+      source: https://yandex.com/dev/games/doc/en/concepts/moderation
+    - rule: An update is Create draft, edit, Submit for moderation; the previous version stays in the catalogue during review. No field is documented as changeable without moderation (read 2026-10-07).
+      source: https://yandex.com/dev/games/doc/en/console/update-game
+    - rule: An update must keep the game's core concept; swapping in an entirely different game is prohibited (REQ 1.24, read 2026-10-07).
+      source: https://yandex.com/dev/games/doc/en/concepts/requirements
+    - rule: The "Cloud saves" option is switched on in the draft when the game uses setData or setStats (REQ 1.11) - a person's switch; the template's Yandex storage calls setData.
+      source: https://yandex.com/dev/games/doc/en/concepts/requirements
     - rule: Interactive AI in games is prohibited; pre-generated AI material is allowed (REQ 1.23).
       source: https://yandex.com/dev/games/doc/en/concepts/requirements
     - rule: Content must match the declared age rating (REQ 2.7); copyright on all materials (REQ 3.5).

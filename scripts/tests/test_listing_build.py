@@ -312,7 +312,7 @@ class ThroughTheSteps(base.ListingCase):
             handle.write(COPYWRITER)
 
     def evidence(self, design=None, report=True):
-        artifacts = self.game.evidence(platforms=[{"id": "yandex", "profile": "yandex@1.2.0", "role": "required"}],
+        artifacts = self.game.evidence(platforms=[{"id": "yandex", "profile": "yandex@1.3.0", "role": "required"}],
                                        design=design or course_design())
         if report:
             artifacts["content-sufficiency-report"] = sufficiency(self.game.head)

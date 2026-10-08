@@ -10,18 +10,25 @@
 
 id: y8
 name: Y8
-version: 1.2.0  # 1.2.0: no external links or foreign ads (developer.y8.com, read 2026-10-04),
+version: 1.3.0  # 1.3.0: re-read 2026-10-07 - banners exist on Y8's approval (still off here),
+                #        auto-save throttling, the per-game SDK checklist (UNKNOWN), the
+                #        published rejection grounds
+                # 1.2.0: no external links or foreign ads (developer.y8.com, read 2026-10-04),
                 #        the published review rules as common rejections
                 # 1.1.0: the store_listing block (listing requirements, null = unknown)
 status: unverified
 docs: https://docs.y8.com/
 
 capabilities:
-  # https://docs.y8.com/sdk/advertising/ — interstitials and rewarded ads. No banner is documented.
+  # https://docs.y8.com/sdk/advertising/ — interstitials and rewarded ads. Banners (728x90,
+  # 300x250 and others) exist but need Y8's per-game approval (re-read 2026-10-07); they stay
+  # out of this list until a person records that approval - the template makes no banner call.
   ads: [interstitial, rewarded]
   iap: false
   # https://docs.y8.com/sdk/cloud-storage/ — signed-in players only; at most 30 KB a value,
-  # one write per key every 5 s.
+  # one write per key every 5 s. https://docs.y8.com/best-practices/ (re-read 2026-10-07):
+  # send data on player actions, throttle auto-saves to at most once a minute, show save
+  # failures and retry quietly.
   cloud_saves: true
   # The platform offers both; the template's Platform contract does not expose them yet.
   leaderboards: true
@@ -41,12 +48,18 @@ requirements:
   # pop-ups, redirects" are not allowed; "You cannot use your own ads or ads from another
   # company inside your game" (https://developer.y8.com/).
   no_external_links: true
+  # https://developer.y8.com/ (re-read 2026-10-07): "complete the SDK requirements shown for
+  # your game in the Developer Portal" for ads, cloud saves, leaderboards and achievements.
+  # That per-game checklist is shown only behind a login: UNKNOWN, a person reads it. Every
+  # game must be connected to a Studio (https://docs.y8.com/studio/create-game/).
 
 ads:
   # "By default Y8 allows one roughly every 180 seconds, configurable per game." The SDK
   # enforces it and reports frequencyCapped; the adapter does not count locally.
   interstitial_min_interval_s: 180
   rewarded_available: true
+  # Banners exist with Y8's per-game approval (https://docs.y8.com/sdk/advertising/, read
+  # 2026-10-07); false until a person records the approval.
   banner_available: false
   notes: >
     Pause and mute inside beforeAd, resume inside afterAd — a skipped or capped break fires
@@ -64,10 +77,16 @@ review:
     - Ads other than Y8's own, or rewarded or encouraged ad clicks.
     - Broken gameplay on the devices chosen at submission.
     - Guests unable to play (https://docs.y8.com/best-practices/).
+    - Technical problems, low quality, broken gameplay, missing instructions, a broken SDK
+      integration, harmful, copyrighted or stolen content, malware, fake traffic or
+      unauthorised ads (https://developer.y8.com/, read 2026-10-07).
+    - Copied, low-quality, repeatedly reskinned or mass-generated games
+      (https://developer.y8.com/).
 
 # What the portal's listing takes. docs.y8.com documents no listing requirement (as read on
-# 2026-09-24), so everything here is null - UNKNOWN to validation, never passed - until read
-# from the portal's submission flow.
+# 2026-09-24, and again on 2026-10-07: /studio/overview/ calls the game's tabs
+# "self-explanatory" and lists no field), so everything here is null - UNKNOWN to
+# validation, never passed - until read from the portal's submission flow.
 store_listing:
   status: unverified
   source: null

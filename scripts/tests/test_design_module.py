@@ -820,7 +820,7 @@ class ConsistencyRules(unittest.TestCase):
     def test_a_designed_placement_a_required_platform_lacks_is_a_breach(self):
         self.design["monetization"]["placements"].append({"kind": "iap", "trigger": "Shop"})
         crazygames = load_platforms({"platform_set": [
-            {"id": "crazygames", "profile_version": "1.2.0", "role": "required"}]})
+            {"id": "crazygames", "profile_version": "1.3.0", "role": "required"}]})
         results, blocking = self.results(platforms=crazygames)
         self.assertTrue(results["monetization_supported_by_platform"]["breached"])
         self.assertIn("monetization_supported_by_platform", blocking)

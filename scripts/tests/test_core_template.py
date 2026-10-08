@@ -195,6 +195,10 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # game and run there against its build (scripts/wgf_playability/step.py). It
         # records what a player's device would see; it contains no game.
         "scripts/wgf_playability/bot.spec.ts",
+        # The verify step's browser-QA spec: copied into the game checkout's ignored build/
+        # and run there against its build at every viewport of core/reference/browser-qa.yaml
+        # (scripts/wgf_verification/browser_qa.py). It records; it contains no game.
+        "scripts/wgf_verification/browser_qa.spec.ts",
         # The store-listing step's capture script: run by Node in the game checkout against
         # its built bundle, resolving the game's own Playwright, writing only under the run
         # directory (scripts/wgf_listing/capture.py). It records frames, a recording and the

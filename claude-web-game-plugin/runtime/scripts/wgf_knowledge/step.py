@@ -384,6 +384,13 @@ class KnowledgeStep(WorkflowStep):
             "versions": found_versions,
         }
         contract.update(body)
+        # The design's decision trace, as the design step judged it (K5): whether the run's
+        # design recorded one, the rules it claims applied, and the claims its own checks
+        # contradicted. A claim never satisfies a rule; the quality gate shows it beside
+        # what the checks measured.
+        from wgf_design import knowledge as design_knowledge
+        contract["trace"] = design_knowledge.trace_summary(design, (design or {})
+                                                           .get("consistency"))
         if advisory:
             contract["advisory"] = {
                 "reason": "a run started before the knowledge model (no "

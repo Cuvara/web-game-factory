@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/knowledge-contract.schema.json",
   "title": "Knowledge contract",
-  "description": "The Applicable Knowledge Contract of one run: which rules of the Factory's knowledge (core/reference/lessons.yaml, with the check tiers of core/reference/check-tiers.yaml) apply to this title, at which enforcement level, held by which checks of which validating steps, and proven by which tests - resolved from the run's pinned knowledge and its facets (genre family, rendering dimension, targeted platforms, quality tier; complexity profile and archetype once they exist) by scripts/wgf_knowledge/resolve.py. Levels are derived from the checks' tiers, never chosen. A facet the run has not determined never excludes a rule. Every rule that does not apply is listed with why; an agent never decides scope. A run's contract is made after design and before implementation; a run that cannot make it stops. Blocking and required rules must be satisfied by the build's current evidence at the quality gate, or excepted by a person (`exceptions`). The contract is the versioned Factory context the run is held to: `versions` records every file it was resolved from. See docs/knowledge-enforcement.md. Added in Factory 2.8.0.",
+  "description": "The Applicable Knowledge Contract of one run: which rules of the Factory's knowledge (core/reference/lessons.yaml, with the check tiers of core/reference/check-tiers.yaml) apply to this title, at which enforcement level, held by which checks of which validating steps, and proven by which tests - resolved from the run's pinned knowledge and its facets (genre family, rendering dimension, targeted platforms, quality tier; complexity profile and archetype once they exist) by scripts/wgf_knowledge/resolve.py. Levels are derived from the checks' tiers, never chosen. A facet the run has not determined never excludes a rule. Every rule that does not apply is listed with why; an agent never decides scope. A run's contract is made after design and before implementation; a run that cannot make it stops. Blocking and required rules must be satisfied by the build's current evidence at the quality gate, or excepted by a person (`exceptions`). The contract is the versioned Factory context the run is held to: `versions` records every file it was resolved from. See docs/knowledge-enforcement.md. Added in Factory 2.8.0. 1.2.0 (K5): each rule, applicable or not, pins its `revision` and the `digest` of its lessons.yaml entry, and the contract records the design's decision trace (`trace`).",
   "x-wgf": {
     "id": "knowledge-contract",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "producer": "title:design",
     "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "release:draft"],
     "required_for_gates": ["G3"],
@@ -81,7 +81,10 @@
         "required": ["id", "why_not"],
         "properties": {
           "id": { "$ref": "#/$defs/ruleId" },
-          "why_not": { "type": "string", "minLength": 1 }
+          "why_not": { "type": "string", "minLength": 1 },
+          "revision": { "$ref": "#/$defs/revision" },
+          "version": { "$ref": "#/$defs/ruleVersion" },
+          "digest": { "$ref": "#/$defs/digest" }
         },
         "additionalProperties": false
       }
@@ -129,6 +132,17 @@
         "additionalProperties": false
       }
     },
+    "trace": {
+      "type": "object",
+      "description": "1.2.0 (K5): the design's decision trace (game-design `knowledge_applied`) as the design step judged it - whether the run's design recorded one, the rules it claims applied, and the claims the design's own checks contradicted (design-consistency knowledge.trace_matches_design). A claim never satisfies a rule.",
+      "required": ["present", "applied", "contradicted"],
+      "properties": {
+        "present": { "type": "boolean" },
+        "applied": { "type": "array", "items": { "$ref": "#/$defs/ruleId" } },
+        "contradicted": { "type": "array", "items": { "$ref": "#/$defs/ruleId" } }
+      },
+      "additionalProperties": false
+    },
     "advisory": {
       "type": "object",
       "description": "1.1.0: present only on the contract of a run started before the knowledge model (no params.quality.knowledge): it is reported, never enforced, and lists every problem that would have stopped a run held to its knowledge.",
@@ -155,6 +169,9 @@
   "additionalProperties": false,
   "$defs": {
     "ruleId": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9-]*$" },
+    "revision": { "type": "integer", "minimum": 1, "description": "1.2.0: the rule's revision (lessons.yaml 2.1.0 `revision`)." },
+    "ruleVersion": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9-]*@r[1-9][0-9]*$", "description": "1.2.0: `<id>@r<revision>`." },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$", "description": "1.2.0: sha256 of the rule's lessons.yaml entry as canonical JSON (wgf_knowledge.model.lesson_digest): the exact text of the rule the run was held to." },
     "version": { "type": ["string", "null"], "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
     "versionedFile": {
       "type": "object",
@@ -205,7 +222,12 @@
           },
           "additionalProperties": false
         },
-        "why_applicable": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+        "why_applicable": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "revision": { "$ref": "#/$defs/revision" },
+        "version": { "$ref": "#/$defs/ruleVersion" },
+        "digest": { "$ref": "#/$defs/digest" },
+        "domain": { "type": "string", "description": "1.2.0: the rule's domain (lessons.yaml 2.1.0)." },
+        "classification": { "enum": ["OBSERVATION", "HEURISTIC", "RECOMMENDATION", "VALIDATED_PRINCIPLE", "REQUIRED", "BLOCKING"], "description": "1.2.0: the rule's classification (lessons.yaml 2.1.0)." }
       },
       "additionalProperties": false
     }

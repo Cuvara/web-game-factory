@@ -15,7 +15,9 @@ it stops - and writes what it did to --out:
              rate for unit k falls against the accepted build's, `naive.clear_rate` FAILs on
              that build (a real gate check), triage routes it to the encounter designer, whose
              visit splits the introductions and reports the lesson candidate; the next build
-             passes. THE CLEAR RATE IS A FIXTURE MEASUREMENT: it proves the pipeline -
+             passes. THE CLEAR RATE IS A FIXTURE MEASUREMENT, and a tautological one: the fixture
+             bot fails exactly the units content.unit_debuts flags, the count the new checks
+             make. It proves the pipeline -
              measured finding, candidate, ingest, promote - not the principle, which rests on
              the observed real games and the craft (workspace/lessons/evidence.yaml L29).
   Session B  a fresh game of another family and render (a 3D racer by default) designed by

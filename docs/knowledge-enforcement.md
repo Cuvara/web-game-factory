@@ -571,13 +571,21 @@ one element the player has not met (`core/craft/content-and-level-design.md`). H
 `design-consistency:content.introductions_one_at_a_time` (the design's units: their
 `elements`, `mechanics` and `introduces`, in index order) and
 `content-sufficiency:content.introductions_one_at_a_time` (the BUILT units.json, the same
-count; a design that claims compliance and a build that breaks it FAILs; a data file naming
-no unit's elements is UNMEASURED, never a pass). Both are hard, so L29 derives **blocking**
-and is classified BLOCKING. Its grounding is observed, never measured: both human-accepted
-validation games satisfy it (their content data, read in `test_lesson_l29`), recorded in
-`workspace/lessons/evidence.yaml` as a `research-principle` source. The genre seed author
-debuted two mechanics in its second teaching unit for four families; it now debuts one per
-teaching unit after the opening one.
+count; a design that claims compliance and a build that breaks it FAILs). A unit that names
+no element, mechanic or introduction is never skipped - skipped, the next unit would falsely
+debut what it met there - so any such unit leaves the count UNMEASURED: a breach on the
+design (a rule that cannot be checked is never passed), SKIPPED on the build (never a
+pass). Both checks are hard, so L29 derives **blocking** and is classified BLOCKING. Its
+grounding is observed, never measured: both human-accepted validation games satisfy it,
+recorded in `workspace/lessons/evidence.yaml` as a `research-principle` source - with a
+caveat stated there too: their content data files do not list elements, so they pass only
+through `test_lesson_l29`'s reading of them (the 2D game's layout symbols and layout keys
+named by its own tuning sections, the 3D game's counted course features). The genre seed
+author debuted two mechanics in its second teaching unit for five families (puzzle,
+platformer, shooter, strategy, simulation); it now introduces one mechanic per MVP unit -
+the opener the first, then teach, breather, twist, then test units, never the climax or the
+last MVP unit - and the opener takes only what the family's MVP has no unit for (two, for
+racing, survival and simulation).
 
 **The transfer test** (`scripts/tests/test_knowledge_transfer.py`, KNOWLEDGE category). Each
 session is a separate process (`scripts/tests/fixtures/transfer/session.py`) with its own
@@ -595,8 +603,12 @@ engine and gates in the quality fixture world:
 knowledge step, ingest and promote are real. The developer, the bot (its naive clear rates
 included), the assets and the verify step are the quality suite's fixtures, and the
 designer is a deterministic stand-in for an agent host. Session A's clear-rate failure is a
-fixture measurement: it proves the learning pipeline, not the principle - the principle rests
-on the real games' content and the craft.
+fixture measurement, and a tautological one: the fixture bot fails exactly the units
+`unit_debuts` flags as debuting two elements - the same count the new checks make. It proves
+the learning pipeline (a real gate's measured failure, triage, a measured candidate, ingest,
+promote), not the principle - the principle rests on the real games' content and the craft.
+The trace is held against the knowledge the author's request carried (`given_knowledge`),
+never against knowledge resolved again from the finished design.
 
 ## What is not here yet
 
@@ -606,6 +618,8 @@ learning loop and the plugin surfaces: the `knowledge` skill and `/wgf-knowledge
 binding 1.13.0) and K5 (cross-session transfer, above) of the learning-enforcement design.
 K5 does not yet give the trace to authors other than the agent author (the built-in
 archetype and seed authors record none), nor resolve the request's knowledge over render
-and tier (undetermined before the design, which never excludes a rule). Not yet: the review brief asking the
+and tier (undetermined before the design, which never excludes a rule). A draft composed
+again without an author session (a resumed execution of an accepted draft) has its trace
+held against knowledge resolved over the design's own family. Not yet: the review brief asking the
 reviewer for `lesson_candidates`, a QA-report source, and `wgf decide <run> --lesson` for the
 person at G4.

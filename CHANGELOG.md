@@ -26,7 +26,9 @@ design that debuts two never-seen elements in one unit after the first now fails
 step** (an agent author is asked to repair it), and a build whose units.json does so fails
 content-sufficiency; a units.json that names no unit's elements leaves the check
 unmeasured, which a release-tier quality gate holds. The genre seed author's second teaching
-unit debuted two mechanics for four families; it now debuts one. Existing artifacts stay
+unit debuted two mechanics for five families; it now introduces one mechanic per MVP unit
+(the opener takes only what the MVP has no unit for). A unit naming no element, mechanic or
+introduction leaves the count unmeasured on the design and the build, never a pass. Existing artifacts stay
 valid (every schema change is additive). A run is held to the rule files it pinned when it
 started: the design step reads the run's pinned design-consistency-rules.yaml and
 content-sufficiency its pinned content-sufficiency.yaml (the live file only for a run that

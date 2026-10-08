@@ -53,7 +53,7 @@
 #                  that is not blocking or required, OBSERVATION or HEURISTIC an experimental
 #                  rule (candidate or gap) or a process lesson
 #   revision       an integer from 1, raised whenever the entry changes; a rule version is
-#                  `<id>@r<revision>` (L29@r1). A run's knowledge-contract records each
+#                  `<id>@r<revision>` (L29@r2). A run's knowledge-contract records each
 #                  rule's revision and the digest of its entry, and check-integrity fails an
 #                  entry that changed against the base commit without its revision rising
 #                  (scripts/wgf_knowledge/model.py lesson_digest).

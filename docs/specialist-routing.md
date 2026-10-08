@@ -33,12 +33,24 @@ translation data.
 | progression | `systems-designer` | develop |
 | difficulty | `encounter-designer` | develop |
 | gameplay, feel | `gameplay` (the generalist; also the default owner) | develop |
+| art-direction | `art-director` | develop |
 | environment-3d, lighting-material | `environment-artist` | develop |
 | art-2d | `artist-2d` | develop |
 | ui | `ui` | develop |
 | audio | `audio-designer` | develop |
+| performance | `performance-engineer` | develop |
+| browser | `browser-qa` | develop |
 | platform | `sdk` | develop |
+| compliance | `publishing-compliance` | listing |
 | store-copy | `copywriter` | listing |
+
+WS-9 added the art director (visual-qa's `consistency` finding and score, the quality gate's
+`consistency` dimension), the performance engineer (the quality gate's `floor.performance`,
+by criterion: `producers.quality-report.criteria`), browser QA (playability's `page.` checks,
+the quality gate's `floor.stable_runtime`) and publishing compliance (listing-validation's
+`platforms` section, on the listing route after G4). The art director comes before the
+artists who work inside its direction; performance and the browser after the look and the
+sound exist.
 
 The rows are in visit order: structure, then systems, then the loop's code, then its look
 and sound, then platform wiring. Polish applied to a structure that is about to change is
@@ -301,6 +313,59 @@ become blocking design gaps at their `task.design_field`, or at `build_spec.cont
 content and level design, and the agent author repairs them like a developer's gaps
 (`wgf_design.step.triage_gaps`). As with `design-gap`, tech-plan, G3 and the greybox run
 again on the repaired design.
+
+## Independent review
+
+The implementer of a change is never its only judge. `core/reference/quality-policy.yaml`
+`independent_review` (rule 6) lists, per implementing step type, the judge step types every
+path from it to G4 or release must pass: after `develop`, playability, production-quality,
+visual-qa, content-sufficiency, review, verify and the quality gate; after `sdk`, review
+(sdk-review), verify and the quality gate. check-integrity walks the workflow's graph (every
+`next` and `on:` target) and fails if a path skips one
+(`wgf_quality/registry.py independent_review_problems`). The judges do not share the
+implementer's brief, the reviewer cannot write the checkout it reviews (docs/review-module.md),
+the bot plays from outside, and a finding closes only on the raising gate's re-measurement of
+a newer build - then a person decides G4. Tests: `scripts/tests/test_no_bypass.py`
+(`IndependentReview`).
+
+## Regression knowledge
+
+Every check the Factory declares has a tier (`core/reference/check-tiers.yaml`):
+
+| Tier | Meaning |
+|---|---|
+| Hard Gate (`hard`) | a pass/fail condition; any failure holds the build; nothing averages past it |
+| Quality Gate (`quality`) | a score or count held to a calibrated bar; below it holds the build; the bar moves only by a new version |
+| Advisory (`advisory`) | reported and routed as a finding at most; never holds a build |
+
+Sources are read where they are declared - the quality floor's criteria (by rule: a release
+blocker reading a calibrated bar is quality, a pass/fail one hard, a warning advisory), its
+dimensions, content-sufficiency's checks, the visual judge's blockers and scores, the
+gate-gaming patterns, the design rules (by severity) - or listed per producer whose checks
+are defined in code (playability, production-quality, the model checks; each id must appear
+in the producer's code). check-integrity fails on a check with no tier, a tier outside the
+three, a check the floor reads that no producer table lists, and a check a release blocker
+reads that is advisory.
+
+The lessons the validation runs taught are `core/reference/lessons.yaml` (L1-L22), each
+stated generically - core names no game; which game showed it and where the evidence is
+lives in `workspace/lessons/evidence.yaml` - with its status (`enforced`, `partial`, `gap`,
+`process`), the check ids that hold it and the tests that prove the check catches it.
+check-integrity fails on an enforced or partial lesson whose check is not classified or
+whose test does not exist, a partial or gap lesson that does not say what is missing, and a
+lesson whose text names a game the evidence lists.
+
+A finding triage normalizes whose check a lesson names carries the lesson as `guarded_by`
+(the quality-finding schema): the specialist's brief says "Known lesson Ln: held by ...".
+
+**Knowledge write-back.** A specialist visit that finds a systemic issue - a class of defect
+the Factory's gates or brief let through - records it in report.json `lesson_candidates`
+(the lesson, its root cause in the Factory, the check that would hold it). Develop copies
+them into the prototype-report's `specialist` block, triage carries them forward in the
+triage-report, and the quality gate puts them in front of the person at G4, who promotes one
+to `lessons.yaml` (with its check and test) or rejects it. Nothing applies a candidate by
+itself. Tests: `scripts/tests/test_regression_registry.py`,
+`scripts/tests/test_specialist_knowledge.py`.
 
 ## What is not done
 

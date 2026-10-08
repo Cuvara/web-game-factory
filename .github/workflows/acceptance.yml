@@ -111,6 +111,12 @@ jobs:
           echo "pinned template: $template"
           cd "$template" && pnpm exec playwright install --with-deps chromium
 
+      - name: An MP4 encoder for the store-listing trailer
+        # Yandex requires the horizontal video as MP4 (platforms/yandex.yaml 1.3.0); Playwright's
+        # bundled ffmpeg writes VP8/WebM only, so capture.mjs converts with an ffmpeg that lists
+        # libx264 (WGF_FFMPEG, else PATH). Without one a Yandex listing correctly stops for a person.
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg && ffmpeg -hide_banner -encoders | grep -w libx264
+
       - name: Core Acceptance Suite, with both golden runs
         # WGF_GOLDEN_KEEP keeps each run's working directory, which is where the develop
         # checks, the review verdict and the browser evidence are written. Without it a

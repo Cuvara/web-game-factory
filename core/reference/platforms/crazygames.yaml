@@ -5,7 +5,11 @@
 
 id: crazygames
 name: CrazyGames
-version: 1.2.0  # 1.2.0: loading API optional, no screenshots (covers + preview video instead),
+version: 1.3.0  # 1.3.0: re-read 2026-10-07 - IAP exists invite-only (iap stays false, commented),
+                #        account-linked progress for Full Launch, settings.muteAudio, banner and
+                #        rewarded-button rules,
+                #        technical rules without a field (notes), the 15-20 s video reading
+                # 1.2.0: loading API optional, no screenshots (covers + preview video instead),
                 #        the cover sizes and video bounds read 2026-10-04, PEGI 12, file limits
                 # 1.1.0: the store_listing block (listing requirements, null = unknown)
 status: unverified
@@ -17,7 +21,17 @@ audience:
 
 capabilities:
   ads: [interstitial, rewarded, banner]
+  # In-game purchases exist: invite-only, through CrazyGames' Xsolla account, for signed-in
+  # users only; Automatic Progress Save is then not allowed
+  # (https://docs.crazygames.com/sdk/in-game-purchases/, read 2026-10-07). The template
+  # exposes no purchases for CrazyGames, and an invitation is not something a design can
+  # assume: false is a Factory choice (like yandex's ru), not a statement that none exist.
   iap: false
+  # Full Launch REQUIRES progress tied to the account unless progress does not apply: the
+  # Data module (preferred; guest data migrates on login), one's own backend through the
+  # User module, or Automatic Progress Save (backs up localStorage, no code; not with IAP)
+  # (https://docs.crazygames.com/requirements/account-integration/, /other/aps/, read
+  # 2026-10-07). The template's adapter uses the Data module.
   cloud_saves: true
   leaderboards: false
   achievements: false
@@ -40,6 +54,17 @@ requirements:
   quality_guidelines: enforced
   # External links are restricted: privacy/terms allowed, community links only in menus, app
   # store links never (https://docs.crazygames.com/requirements/gameplay/).
+  #
+  # Read 2026-10-07, no field in this schema (docs/platform-targets-2026-10.md, Part 1c):
+  # /requirements/technical/ - external files must let the game reach play within 20 s;
+  # it must run smoothly on a 4 GB RAM Chromebook; Chrome and Edge required, Safari judged
+  # per game; on mobile `user-select: none` and safe-area padding for the CrazyGames App;
+  # a privacy policy and terms only when the game collects personal data beyond SDK events.
+  # /sdk/intro/ - sitelock: the SDK limits the game to CrazyGames domains plus a whitelist.
+  # /requirements/gameplay/ - text and images legible at DPR 1 from 800x450 to 1920x1080;
+  # physics consistent at 144 and 165 Hz; new users land in gameplay immediately or within
+  # one click; no custom fullscreen button; no cross-promotion.
+  # /sdk/game/ - settings.muteAudio is required for HTML5: game audio off while it is true.
 
 ads:
   interstitial_min_interval_s: 180
@@ -52,7 +77,12 @@ ads:
     toward it. Mute and pause on adStarted, resume on adFinished or adError; reward only on
     adFinished. During Basic Launch every ad fails with adsDisabledBasicLaunch - expected, and
     the game must run normally without them; the same for an ad blocker
-    (https://docs.crazygames.com/requirements/ads/, /sdk/video-ads/).
+    (https://docs.crazygames.com/requirements/ads/, /sdk/video-ads/). Re-read 2026-10-07:
+    the portal's settings.muteAudio is required for HTML5 and switches game audio off while
+    true (/sdk/game/). Rewarded buttons make clear an ad will be watched (e.g. a video icon), skip and close buttons are styled
+    like the continue button, a non-ad alternative exists, and rewards are never offered on
+    every death. Banners only on useful screens open at least 5 s on average, at most 2 per
+    screen, never during gameplay, never covering UI (/requirements/ads/).
 
 metadata_requirements:
   descriptions_locales: [en]
@@ -77,6 +107,12 @@ review:
       Launch, ad blocker).
     - Missing English localization, or content beyond PEGI 12.
     - Absolute paths in the bundle, or an initial download over 50 MB.
+    - Game audio playing while the portal's settings.muteAudio is true (/sdk/game/).
+    - Banners during gameplay, on short-lived screens, more than 2 per screen, or covering
+      UI; rewarded buttons that do not make clear an ad will be watched (/requirements/ads/).
+    - Full Launch without account-linked progress where progress applies
+      (/requirements/account-integration/).
+    - Unoriginal content or inappropriate themes (/requirements/intro/).
 
 # What the portal's listing takes, read from https://docs.crazygames.com/requirements/game-covers/
 # on 2026-10-04: three covers - landscape 16:9 1920x1080, portrait 2:3 800x1200, square 1:1
@@ -90,8 +126,10 @@ store_listing:
     Covers carry the title only - no borders, icons or store logos. The preview video opens
     on the static cover, has no black bars, cursor, "Play Now" text or sound, and is cut at
     20 s. The portal asks for a landscape AND a portrait video; this block can state one, so
-    it states the landscape one and the portrait one is a manual item. Submission also asks
-    for a description and instructions (https://docs.crazygames.com/faq/).
+    it states the landscape one and the portrait one (1080p, 2:3) is a manual item. Both
+    without audio. "15-20 seconds maximum" (re-read 2026-10-07) reads as 15 s recommended;
+    ambiguous, so min_seconds stays null. Submission also asks for a description and
+    instructions (https://docs.crazygames.com/faq/).
   title: {required: true, max_chars: null}
   short_description: {required: true, max_chars: null}
   long_description: {required: true, max_chars: null}
@@ -124,5 +162,5 @@ scoring_hints:
     - Polished, immediately readable action and puzzle titles.
     - Desktop-and-mobile playability from one build.
   platform_fit_penalizes:
-    - IAP-dependent economies — there is no IAP here.
+    - IAP-dependent economies - purchases are invite-only (Xsolla, signed-in users).
     - Slow-starting games; the portal's traffic bounces fast.

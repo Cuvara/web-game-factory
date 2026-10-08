@@ -14,12 +14,16 @@ that proves it - or says it is a gap. These tests hold:
   * an enforced lesson whose check or test does not exist fails, a gap that says nothing
     fails, a lesson naming a game fails, and evidence for an unknown lesson fails;
   * a finding of a lesson's check carries the lesson as `guarded_by`;
+  * every source says where its results are read (`status_at`, 1.1.0), a real report of
+    its producer resolves a failing and a passing result through it, a report without the
+    check is UNMEASURED, and a locator the producer's schema does not have fails integrity;
   * check-integrity reports registry problems as errors.
 
     python -m unittest scripts.tests.test_regression_registry
 """
 
 import copy
+import json
 import os
 import shutil
 import sys
@@ -86,9 +90,14 @@ class Sandbox(unittest.TestCase):
              "core/reference/visual-qa-rubric.yaml", "core/reference/gate-gaming.yaml",
              "core/reference/design-consistency-rules.yaml", "core/reference/browser-qa.yaml",
              "core/reference/quality-policy.yaml", "core/workflows/new-game.workflow.yaml",
-             "workspace/lessons/evidence.yaml")
+             "workspace/lessons/evidence.yaml",
+             # The knowledge model's scope vocabularies (wgf_knowledge.model.vocabulary).
+             "core/reference/genre-models.yaml", "core/reference/quality-benchmark.yaml")
     TREES = ("scripts/wgf_playability", "scripts/wgf_production", "scripts/wgf_assets",
              "scripts/wgf_verification", "scripts/tests")
+    # Copied whole (every file, not only .py): the platform profiles a scope names, and the
+    # artifact schemas a check's `status_at` is held against.
+    DATA_TREES = ("core/reference/platforms", "core/artifacts")
 
     def setUp(self):
         self.root = tempfile.mkdtemp(prefix="wgf-registry-")
@@ -107,6 +116,9 @@ class Sandbox(unittest.TestCase):
                     target = os.path.join(self.root, rel)
                     os.makedirs(os.path.dirname(target), exist_ok=True)
                     shutil.copyfile(os.path.join(current, name), target)
+        for relative in self.DATA_TREES:
+            shutil.copytree(os.path.join(ROOT, *relative.split("/")),
+                            os.path.join(self.root, *relative.split("/")))
 
     def read(self, relative):
         with open(os.path.join(self.root, *relative.split("/")), encoding="utf-8") as handle:
@@ -321,6 +333,157 @@ class GuardedBy(unittest.TestCase):
         found = normalize("playability-report", report, Routing.load())
         _guard(found)
         self.assertEqual(found[0]["guarded_by"][0]["lesson"], "L5")
+
+
+# ------------------------------------------------- where each source's results are read
+
+def _fixture(producer):
+    from wgflib import paths
+    path = os.path.join(paths.WGFLIB, "workflow", "fixtures", f"{producer}.json")
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _validator(producer):
+    from wgflib import jsonschema_lite as js
+    from wgflib import paths
+    from wgflib.workflow.contracts import load_registry
+    with open(os.path.join(paths.ARTIFACTS, f"{producer}.schema.json"),
+              encoding="utf-8") as handle:
+        return js.Validator(json.load(handle), load_registry())
+
+
+def _with_result(source, check, failing):
+    """The producer's mock fixture report, carrying one result for `check` of `source` in the
+    shape the producer's schema gives it: failing, or passing."""
+    producer = DATA["tiers"]["sources"][source]["producer"]
+    report = copy.deepcopy(_fixture(producer))
+    status = "FAIL" if failing else "PASS"
+    # The fixture's own result for the check, if it has one, is replaced.
+    if isinstance(report.get("checks"), list):
+        report["checks"] = [c for c in report["checks"]
+                            if str(c.get("id")).split(":", 1)[0] != check]
+    if isinstance(report.get("consistency"), dict):
+        report["consistency"]["rule_results"] = [
+            r for r in report["consistency"]["rule_results"] if r.get("criterion_id") != check]
+    if source == "quality-floor":
+        report["criteria"].append({
+            "id": check, "layer": "universal", "dimension": "gameplay", "severity": "blocker",
+            "status": status, "score": 0 if failing else 100, "owner": "gameplay",
+            "route": "develop", "summary": "measured"})
+    elif source == "quality-dimension":
+        for dimension in report["dimensions"]:
+            if dimension["id"] == check:
+                dimension["status"] = "BELOW_FLOOR" if failing else "PASS"
+    elif source == "visual-qa-blocker":
+        report["findings"] = [{"id": check, "severity": "blocker", "category": "assets",
+                               "summary": "seen", "route": "assets"}] if failing else []
+        report["verdict"] = status
+    elif source == "visual-qa-score":
+        report["scores"][check] = 1 if failing else 4
+    elif source == "gate-gaming":
+        report["blockers"] = [{"id": f"gate-gaming-{check}-1", "file": None,
+                               "summary": "flagged", "severity": "blocker"}] if failing else []
+        report["verdict"] = "request-changes" if failing else "approve"
+    elif source == "design-consistency":
+        report["consistency"]["rule_results"].append(
+            {"criterion_id": check, "breached": failing})
+    elif source in ("browser-qa", "browser-qa-run"):
+        report["checks"].append({
+            "id": check + (":mobile" if source == "browser-qa" else ""), "category": "gameplay",
+            "title": check, "status": status, "required": True, "message": "measured",
+            "evidence": [{"kind": "observation", "summary": "measured"}]})
+    elif source == "content-sufficiency":
+        report["checks"].append({"id": check, "status": status, "required": True,
+                                 "summary": "measured"})
+    elif source in ("playability", "play-realism"):
+        report["checks"].append({"id": check, "project": "desktop", "status": status,
+                                 "required": True, "summary": "measured"})
+    elif source == "production-quality":
+        report["checks"].append({"id": check, "status": status, "required": True,
+                                 "summary": "measured", "route": "develop"})
+    elif source == "model-review":
+        report["items"][0]["quality"] = {
+            "verdict": "fail" if failing else "pass",
+            "checks": [{"id": check, "status": "fail" if failing else "pass",
+                        "summary": "measured"}]}
+    else:
+        raise AssertionError(f"no report shape for source {source}")
+    return producer, report
+
+
+class StatusAt(unittest.TestCase):
+    """check-tiers.yaml 1.1.0 `status_at`: for every source, a report of its producer - the
+    engine's fixture of it, schema-valid, carrying a result for one of the source's checks -
+    resolves that check's result, failing and passing; and a report without it is
+    UNMEASURED, never a pass."""
+
+    def test_every_source_has_a_locator(self):
+        for name in DATA["tiers"]["sources"]:
+            self.assertIsInstance(registry.status_at(DATA["tiers"], name), dict, name)
+
+    def test_every_source_resolves_a_real_report_of_its_producer(self):
+        for name in DATA["tiers"]["sources"]:
+            check = next(e["id"] for e in CHECKS.values() if e["source"] == name)
+            for failing in (True, False):
+                with self.subTest(source=name, check=check, failing=failing):
+                    producer, report = _with_result(name, check, failing)
+                    errors = [e for e in _validator(producer).iter_errors(report)
+                              if "provenance" not in str(e)]  # the engine seals it
+                    self.assertEqual(errors, [], f"{producer} fixture is not schema-valid")
+                    found = registry.check_status(DATA["tiers"], f"{name}:{check}", report)
+                    statuses = {r["status"] for r in found}
+                    if name == "visual-qa-score":
+                        self.assertEqual(statuses, {"MEASURED"})
+                        self.assertEqual(found[0]["value"], 1 if failing else 4)
+                    else:
+                        self.assertEqual(statuses, {"FAIL" if failing else "PASS"})
+
+    def test_a_check_the_report_does_not_carry_is_unmeasured(self):
+        report = _fixture("playability-report")
+        found = registry.check_status(DATA["tiers"], "play-realism:naive.clear_rate", report)
+        self.assertEqual([r["status"] for r in found], ["UNMEASURED"])
+        failed_review = dict(_fixture("review-report"), verdict="request-changes", blockers=[])
+        found = registry.check_status(DATA["tiers"], "gate-gaming:play-area-change",
+                                      failed_review)
+        self.assertEqual([r["status"] for r in found], ["UNMEASURED"])
+
+    def test_a_per_viewport_browser_result_reads_as_its_check(self):
+        _, report = _with_result("browser-qa", "browser.context-menu", True)
+        report["checks"].append(dict(report["checks"][-1], id="browser.context-menu:desktop",
+                                     status="PASS"))
+        found = registry.check_status(DATA["tiers"], "browser-qa:browser.context-menu", report)
+        self.assertEqual(sorted(r["status"] for r in found), ["FAIL", "PASS"])
+
+
+class StatusAtIntegrity(Sandbox):
+    def test_a_locator_path_the_producer_schema_lacks_fails(self):
+        tiers = self.read("core/reference/check-tiers.yaml")
+        tiers["sources"]["playability"]["status_at"] = {"list": "results", "id": "id"}
+        self.write("core/reference/check-tiers.yaml", tiers)
+        problems = self.problems()
+        self.assertTrue(any("sources.playability: status_at 'results' is not a property of "
+                            "playability-report.schema.json" in p for p in problems), problems)
+
+    def test_a_nested_locator_path_is_followed_into_the_schema(self):
+        tiers = self.read("core/reference/check-tiers.yaml")
+        tiers["sources"]["model-review"]["status_at"]["list"] = "items[].quality.verdicts"
+        self.write("core/reference/check-tiers.yaml", tiers)
+        self.assertTrue(any("'items[].quality.verdicts' is not a property" in p
+                            for p in self.problems()))
+
+    def test_a_locator_key_outside_the_vocabulary_fails(self):
+        tiers = self.read("core/reference/check-tiers.yaml")
+        tiers["sources"]["gate-gaming"]["status_at"]["guess"] = True
+        self.write("core/reference/check-tiers.yaml", tiers)
+        self.assertTrue(any("status_at has unknown key(s) guess" in p for p in self.problems()))
+
+    def test_a_source_without_a_locator_fails_when_there_is_no_default(self):
+        tiers = self.read("core/reference/check-tiers.yaml")
+        del tiers["status_at"]
+        self.write("core/reference/check-tiers.yaml", tiers)
+        self.assertTrue(any("sources.playability: no `status_at`" in p
+                            for p in self.problems()))
 
 
 class Integrity(unittest.TestCase):

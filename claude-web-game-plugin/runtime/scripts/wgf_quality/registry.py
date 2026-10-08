@@ -4,10 +4,22 @@
     classify(tiers, root=None)            ({"<source>:<id>": entry}, problems): every check
                                           the reference files and producer tables declare,
                                           with its tier (core/reference/check-tiers.yaml)
-    lesson_problems(lessons, checks, root=None, evidence=None)
+    lesson_problems(lessons, checks, root=None, evidence=None, runtime=False)
                                           what is wrong with core/reference/lessons.yaml:
                                           an enforced lesson whose check or test does not
-                                          exist, a gap that says nothing, a game named
+                                          exist, a gap that says nothing, a game named, and
+                                          the knowledge model's own rules (category, scope,
+                                          derived level, lifecycle, exceptions:
+                                          wgf_knowledge.model). `runtime` skips test
+                                          existence: an installed runtime ships no tests
+    status_at(tiers, source)              where a source's check results are read in its
+                                          producer's report (check-tiers `status_at`)
+    check_results(locator, report)        [{"check", "status", "raw", "value"}] read from a
+                                          report through a locator
+    check_status(tiers, check_id, report) [result] for one `<source>:<id>` check, UNMEASURED
+                                          when the report holds no entry for it
+    status_at_problems(tiers, root=None)  a locator whose path the producer's schema does
+                                          not have
     guards(lessons, tiers, producer, check)
                                           [{"lesson", "check", "tests", "status"}] - the
                                           lessons whose check a finding of `producer`'s
@@ -16,7 +28,7 @@
                                           the paths a workflow lets an implementer's change
                                           take to G4 or release without every judge
                                           (core/reference/quality-policy.yaml rule 6)
-    problems(root=None)                   every problem above, for check-integrity
+    problems(root=None, runtime=False)    every problem above, for check-integrity
 
 Pure reads of data files under the Factory root: no process, no network, no clock. Nothing
 here names a game, a step or a family; the sources and their rules are the data's.
@@ -29,7 +41,8 @@ from wgflib.yamllite import load as load_yaml
 
 __all__ = ["TIERS_FILE", "LESSONS_FILE", "EVIDENCE_FILE", "TIERS", "load", "classify",
            "lesson_problems", "guards", "problems", "floor_criteria",
-           "independent_review_problems", "successors"]
+           "independent_review_problems", "successors", "status_at", "check_results",
+           "check_status", "status_at_problems", "RESULT_STATUSES"]
 
 TIERS_FILE = "core/reference/check-tiers.yaml"
 LESSONS_FILE = "core/reference/lessons.yaml"
@@ -301,12 +314,16 @@ def _game_names(evidence):
     return [n for n in names if len(n) >= 4]
 
 
-def lesson_problems(lessons, checks, root=None, evidence=None):
-    """[problem] for core/reference/lessons.yaml against the classified `checks`."""
+def lesson_problems(lessons, checks, root=None, evidence=None, runtime=False):
+    """[problem] for core/reference/lessons.yaml against the classified `checks`. `runtime`:
+    the tests are not shipped, so their existence is not checked (CI holds it)."""
+    from wgf_knowledge import model
+
     root = _root(root)
     problems = []
     if not isinstance(lessons, dict):
         return [f"{LESSONS_FILE}: not a mapping"]
+    problems += model.file_problems(lessons)
     statuses = list(lessons.get("statuses") or [])
     seen = set()
     names = _game_names(evidence)
@@ -333,11 +350,11 @@ def lesson_problems(lessons, checks, root=None, evidence=None):
                 if check_id not in checks:
                     problems.append(f"{at}: check {check_id!r} is not classified in "
                                     f"{TIERS_FILE}")
-            tests = list(lesson.get("tests") or [])
+            tests = model.all_tests(lesson)
             if not tests:
                 problems.append(f"{at}: an {status} lesson names the test that proves its "
                                 "check catches it")
-            for ref in tests:
+            for ref in tests if not runtime else ():
                 why = _test_exists(root, ref)
                 if why:
                     problems.append(f"{at}: test {why}")
@@ -350,7 +367,8 @@ def lesson_problems(lessons, checks, root=None, evidence=None):
             problems.append(f"{at}: a process lesson says where it is written down "
                             "(`held_by`)")
         text = " ".join(str(lesson.get(k) or "") for k in
-                        ("title", "lesson", "gap", "held_by")).lower()
+                        ("title", "lesson", "gap", "held_by", "problem", "root_cause",
+                         "reason")).lower()
         for name in names:
             if name.lower() in text:
                 problems.append(f"{at}: names the game {name!r} - core names no specific "
@@ -360,7 +378,11 @@ def lesson_problems(lessons, checks, root=None, evidence=None):
             if lesson_id not in seen:
                 problems.append(f"{EVIDENCE_FILE}: evidence for {lesson_id!r}, which "
                                 f"{LESSONS_FILE} does not define")
-    return problems
+    try:
+        vocabulary = model.vocabulary(root)
+    except model.KnowledgeError as exc:
+        return problems + [str(exc)]
+    return problems + model.lesson_problems(lessons, checks, vocabulary, evidence)
 
 
 def guards(lessons, tiers, producer, check):
@@ -385,9 +407,221 @@ def guards(lessons, tiers, producer, check):
             if check_id in wanted:
                 out.append({"lesson": lesson["id"], "check": check_id,
                             "status": lesson["status"],
-                            "tests": list(lesson.get("tests") or [])})
+                            "tests": _all_tests(lesson)})
                 break
     return out
+
+
+def _all_tests(lesson):
+    from wgf_knowledge import model
+    return model.all_tests(lesson)
+
+
+# ------------------------------------------------------- where a check's result is read
+
+# What a locator reads a result as. MEASURED: a value held to a bar the source file states
+# (a rubric score); the bar is judged by whoever holds the rule, not here.
+RESULT_STATUSES = ("PASS", "FAIL", "WARNING", "BLOCKED", "SKIPPED", "UNMEASURED", "DEFERRED",
+                   "MEASURED")
+LOCATOR_KEYS = ("list", "keys", "id", "id_pattern", "id_split", "where", "status", "map",
+                "presence", "absent")
+
+
+def status_at(tiers, source):
+    """The locator of `source` (a source name of check-tiers.yaml): its own `status_at`, else
+    the file's top-level one. None when neither exists."""
+    entry = ((tiers or {}).get("sources") or {}).get(source)
+    if not isinstance(entry, dict):
+        return None
+    own = entry.get("status_at")
+    if isinstance(own, dict):
+        return own
+    default = (tiers or {}).get("status_at")
+    return default if isinstance(default, dict) else None
+
+
+def _walk(node, path):
+    """Every value at `path` (dotted; `name[]` flattens a list) under `node`."""
+    found = [node]
+    for part in str(path).split("."):
+        flatten = part.endswith("[]")
+        key = part[:-2] if flatten else part
+        nxt = []
+        for value in found:
+            value = value.get(key) if isinstance(value, dict) else None
+            if flatten:
+                nxt += list(value) if isinstance(value, list) else []
+            elif value is not None:
+                nxt.append(value)
+        found = nxt
+    return found
+
+
+def _normal(raw, mapping):
+    key = str(raw).lower() if isinstance(raw, bool) else str(raw)
+    for candidate, target in (mapping or {}).items():
+        if str(candidate) == key:
+            return str(target)
+    upper = key.upper()
+    return upper if upper in RESULT_STATUSES else "UNMEASURED"
+
+
+def check_results(locator, report):
+    """[{"check", "status", "raw", "value"}] every result `locator` finds in `report`."""
+    out = []
+    if not isinstance(locator, dict) or not isinstance(report, dict):
+        return out
+    if locator.get("keys"):
+        for block in _walk(report, locator["keys"]):
+            for check_id, value in (block.items() if isinstance(block, dict) else ()):
+                out.append({"check": str(check_id), "status": "MEASURED", "raw": value,
+                            "value": value})
+        return out
+    pattern = re.compile(locator["id_pattern"]) if locator.get("id_pattern") else None
+    for entries in _walk(report, locator.get("list") or "checks"):
+        for entry in entries if isinstance(entries, list) else ():
+            if not isinstance(entry, dict):
+                continue
+            if any(entry.get(k) != v for k, v in (locator.get("where") or {}).items()):
+                continue
+            check_id = entry.get(locator.get("id") or "id")
+            if check_id is None:
+                continue
+            check_id = str(check_id)
+            if pattern:
+                match = pattern.match(check_id)
+                if not match:
+                    continue
+                check_id = match.group("id")
+            if locator.get("id_split"):
+                check_id = check_id.split(locator["id_split"], 1)[0]
+            if locator.get("presence"):
+                status, raw = str(locator["presence"]), None
+            else:
+                raw = entry.get(locator.get("status") or "status")
+                status = _normal(raw, locator.get("map"))
+            out.append({"check": check_id, "status": status, "raw": raw, "value": None})
+    return out
+
+
+def check_status(tiers, check_id, report):
+    """[result] for the check `<source>:<id>` in its producer's `report`: every entry for it,
+    or one result read through the locator's `absent` rule - UNMEASURED when it has none,
+    never a pass."""
+    source, _, wanted = str(check_id).partition(":")
+    locator = status_at(tiers, source)
+    if locator is None:
+        return [{"check": wanted, "status": "UNMEASURED", "raw": None, "value": None}]
+    found = [r for r in check_results(locator, report) if r["check"] == wanted]
+    if found:
+        return found
+    absent = locator.get("absent") or {}
+    raw = (report or {}).get(absent.get("field")) if absent.get("field") else None
+    status = "UNMEASURED"
+    if raw is not None:
+        for candidate, target in (absent.get("map") or {}).items():
+            if str(candidate) == str(raw):
+                status = str(target)
+    return [{"check": wanted, "status": status, "raw": raw, "value": None}]
+
+
+def _schema_has(document, path):
+    """True when the dotted `path` (`name[]` for a list's items) names a property the schema
+    `document` declares, following local `#/` references and allOf/anyOf/oneOf; a reference
+    to another file is taken on trust."""
+    def deref(node):
+        hops = 0
+        while isinstance(node, dict) and str(node.get("$ref") or "").startswith("#/") \
+                and hops < 20:
+            target = document
+            for part in node["$ref"][2:].split("/"):
+                target = target.get(part) if isinstance(target, dict) else None
+            node, hops = target, hops + 1
+        return node
+
+    def options(node):
+        node = deref(node)
+        if not isinstance(node, dict):
+            return []
+        if node.get("$ref"):
+            return [None]                     # another file: trusted
+        out = [node]
+        for key in ("allOf", "anyOf", "oneOf"):
+            for sub in node.get(key) or ():
+                out += options(sub)
+        return out
+
+    nodes = [document]
+    for part in str(path).split("."):
+        flatten = part.endswith("[]")
+        key = part[:-2] if flatten else part
+        nxt = []
+        for node in nodes:
+            for option in options(node):
+                if option is None:
+                    return True
+                prop = (option.get("properties") or {}).get(key)
+                if prop is None:
+                    continue
+                if not flatten:
+                    nxt.append(prop)
+                    continue
+                for item in options(prop):
+                    if item is None:
+                        return True
+                    if item.get("items") is not None:
+                        nxt.append(item["items"])
+        if not nxt:
+            return False
+        nodes = nxt
+    return True
+
+
+def status_at_problems(tiers, root=None):
+    """[problem]: a source with no locator, a locator with an unknown key, or one whose path
+    the producer's schema (core/artifacts/<producer>.schema.json) does not declare."""
+    import json
+
+    root = _root(root)
+    problems = []
+    for name, source in ((tiers or {}).get("sources") or {}).items():
+        if not isinstance(source, dict):
+            continue
+        where = f"{TIERS_FILE} sources.{name}"
+        locator = status_at(tiers, name)
+        if not isinstance(locator, dict):
+            problems.append(f"{where}: no `status_at` - where its results are read is unknown")
+            continue
+        unknown = sorted(set(locator) - set(LOCATOR_KEYS))
+        if unknown:
+            problems.append(f"{where}: status_at has unknown key(s) {', '.join(unknown)}")
+        path = locator.get("keys") or locator.get("list")
+        if not path:
+            problems.append(f"{where}: status_at names a `list` or `keys` path")
+            continue
+        if locator.get("id_pattern"):
+            try:
+                if "id" not in re.compile(locator["id_pattern"]).groupindex:
+                    problems.append(f"{where}: status_at id_pattern has no group `id`")
+            except re.error as exc:
+                problems.append(f"{where}: status_at id_pattern does not compile ({exc})")
+        schema_file = os.path.join(root, "core", "artifacts",
+                                   f"{source.get('producer')}.schema.json")
+        try:
+            with open(schema_file, encoding="utf-8") as handle:
+                schema = json.load(handle)
+        except (OSError, ValueError):
+            problems.append(f"{where}: producer {source.get('producer')!r} has no artifact "
+                            "schema to read its results from")
+            continue
+        if not _schema_has(schema, path):
+            problems.append(f"{where}: status_at {path!r} is not a property of "
+                            f"{source.get('producer')}.schema.json")
+        field = (locator.get("absent") or {}).get("field")
+        if field and not _schema_has(schema, field):
+            problems.append(f"{where}: status_at absent.field {field!r} is not a property of "
+                            f"{source.get('producer')}.schema.json")
+    return problems
 
 
 def successors(steps):
@@ -445,15 +679,17 @@ def independent_review_problems(workflow, policy):
     return problems
 
 
-def problems(root=None):
-    """Every problem of the registry: unclassified checks, broken lessons."""
+def problems(root=None, runtime=False):
+    """Every problem of the registry: unclassified checks, results that cannot be located,
+    broken lessons. `runtime`: an installed runtime, whose tests are not shipped."""
     root = _root(root)
     try:
         data = load(root)
     except (OSError, ValueError) as exc:
         return [f"the regression registry cannot be read ({exc})"]
     checks, found = classify(data["tiers"], root)
-    found += lesson_problems(data["lessons"], checks, root, data["evidence"])
+    found += status_at_problems(data["tiers"], root)
+    found += lesson_problems(data["lessons"], checks, root, data["evidence"], runtime=runtime)
     try:
         policy = _read(root, "core/reference/quality-policy.yaml")
         workflow = (_read(root, "core/workflows/new-game.workflow.yaml") or {}).get("workflow")

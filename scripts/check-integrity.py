@@ -537,18 +537,60 @@ def check_template_pin():
     return lock
 
 
+# The ref whose core/reference/lessons.yaml a lesson's level and scope are compared with
+# (WGF_KNOWLEDGE_BASE overrides it); absent - a shallow checkout - the comparison is noted
+# as skipped, and CI on a full checkout holds it.
+KNOWLEDGE_BASE = "origin/main"
+
+
+def previous_lessons(ref=None):
+    """core/reference/lessons.yaml at `ref` (default WGF_KNOWLEDGE_BASE, else
+    KNOWLEDGE_BASE), parsed; None when git or the ref cannot give it."""
+    import subprocess
+    from wgflib.yamllite import load as load_yaml
+
+    ref = ref or os.environ.get("WGF_KNOWLEDGE_BASE") or KNOWLEDGE_BASE
+    try:
+        shown = subprocess.run(["git", "show", f"{ref}:core/reference/lessons.yaml"],
+                               capture_output=True, timeout=30, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if shown.returncode != 0:
+        return None
+    try:
+        return load_yaml(shown.stdout.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
 def check_regression_registry():
     """WS-9: every check the reference files and producer tables declare has a tier
-    (core/reference/check-tiers.yaml), and every lesson (core/reference/lessons.yaml) marked
-    enforced or partial points at a classified check and a test that exists, a gap says what
-    is missing, and no lesson names a game. A new check without a tier fails here."""
+    (core/reference/check-tiers.yaml) and a place its result is read (`status_at`), and every
+    lesson (core/reference/lessons.yaml) marked enforced or partial points at a classified
+    check and a test that exists, a gap says what is missing, and no lesson names a game. A
+    new check without a tier fails here.
+
+    The knowledge model (lessons.yaml 2.0.0, docs/knowledge-enforcement.md): every lesson has
+    a category, a scope in its vocabularies, a problem, a root cause and a derivable level;
+    a declared level is only ever stronger than the derived one; the lifecycle's
+    requirements and the exception policy hold; and against the previous version of the file
+    (KNOWLEDGE_BASE) no lesson was deleted, or weakened in level or narrowed in scope in
+    place."""
     sys.path.insert(0, "scripts")
     from wgf_quality import registry
+    from wgf_knowledge import model
 
     problems = registry.problems(os.getcwd())
     ERRORS.extend(problems)
     data = registry.load(os.getcwd())
     checks, _ = registry.classify(data["tiers"], os.getcwd())
+    previous = previous_lessons()
+    if previous is None:
+        NOTES.append("lessons: not compared with a previous version (no "
+                     "core/reference/lessons.yaml at "
+                     f"{os.environ.get('WGF_KNOWLEDGE_BASE') or KNOWLEDGE_BASE} here)")
+    else:
+        ERRORS.extend(model.weakening_problems(previous, data["lessons"], checks))
     lessons = (data["lessons"] or {}).get("lessons") or []
     return checks, lessons
 

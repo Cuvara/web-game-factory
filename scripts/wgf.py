@@ -31,6 +31,11 @@ Every command that does work is a slice of one workflow definition, executed by 
     wgf runs [--waiting] [--json]        every run in the store; or only those waiting for
                                          a decision, with the step, gate and choices
     wgf pause <run-id> | cancel <run-id> neither imports a step module
+    wgf knowledge validate | show [ID] | resolve [--family F --render R --platform P --tier T]
+                  | contract <run-id> | table
+                                         the Factory's knowledge: rules, derived levels,
+                                         scope, and what applies to a run
+                                         (scripts/wgf_knowledge/cli.py)
     wgf where [--json]                   the Factory runtime and the project this command
                                          resolves: where core/ is read, where runs are kept
     wgf test-core [--only CATEGORY] [--json] [--strict]
@@ -548,6 +553,14 @@ def build_parser(commands):
     where.add_argument("--config", metavar="PATH", help="factory config file")
     where.add_argument("--json", action="store_true")
     where.set_defaults(handler=cmd_where)
+
+    # Listed for help; its arguments are its own parser's (scripts/wgf_knowledge/cli.py), and
+    # main() hands them over before this parser sees them.
+    knowledge = sub.add_parser(
+        "knowledge", help="the Factory's knowledge: validate, show, resolve, contract, table",
+        add_help=False)
+    knowledge.add_argument("rest", nargs=argparse.REMAINDER)
+    knowledge.set_defaults(handler=cmd_knowledge)
 
     for name, handler in (("pause", cmd_pause), ("cancel", cmd_cancel)):
         control = sub.add_parser(name, help=f"{name} a run")
@@ -1084,6 +1097,11 @@ def cmd_where(args):
     return EXIT_OK
 
 
+def cmd_knowledge(args):
+    from wgf_knowledge import cli as knowledge_cli
+    return knowledge_cli.main(list(getattr(args, "rest", None) or []))
+
+
 def cmd_pause(args):
     state = _api(args).pause(args.run)
     print(f"{args.run}: {'PAUSED' if state.status == 'PAUSED' else 'pause requested; it stops at its next step boundary'}")
@@ -1129,6 +1147,10 @@ def tolerate_unencodable_output():
 def main(argv=None, cli=False):
     tolerate_unencodable_output()
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["knowledge"]:
+        # Its own parser and exit codes (0 clean, 1 problems, 2 unusable); no workflow load.
+        from wgf_knowledge import cli as knowledge_cli
+        return knowledge_cli.main(argv[1:])
     try:
         commands = _commands(argv)
     except (DefinitionError, FileNotFoundError, YamlError) as exc:

@@ -42,13 +42,41 @@
 # and that a producer check a release-tier blocker reads is `hard` or `quality`, never
 # advisory. core/reference/lessons.yaml names checks by these ids.
 #
+# `status_at` (1.1.0) says where a check's result is read in its producer's report, so a
+# rule of core/reference/lessons.yaml can be shown to have run and passed on a build
+# (docs/knowledge-enforcement.md). A source without one reads the top-level `status_at`. A
+# locator:
+#
+#   list        dotted path to the entries in the report; `name[]` flattens a list on the way
+#               (`items[].quality.checks`: every item's quality checks)
+#   keys        instead of `list`: a mapping of check id -> measured value (a score). Its
+#               result is MEASURED with the value; the bar is the source file's
+#   id          the entry field holding the check id (default `id`)
+#   id_pattern  a regular expression with a group `id` that extracts the check id from it
+#               (a review blocker `gate-gaming-<pattern>-<n>`)
+#   id_split    a separator: the check id is what precedes it (`browser.<id>:<viewport>`)
+#   where       {field: value}: only entries carrying these values are read
+#   status      the entry field holding its status (default `status`)
+#   map         raw status -> PASS | FAIL | WARNING | BLOCKED | SKIPPED | UNMEASURED |
+#               DEFERRED; an unmapped raw status is upper-cased
+#   presence    instead of `status`: an entry present means this status (a blocker is FAIL)
+#   absent      {field, map}: a check with no entry reads the report's `field` through `map`
+#               (a review that approved has no gate-gaming blocker: PASS); otherwise, and
+#               when a report has no entry for a check, it is UNMEASURED - never a pass
+#
+# check-integrity holds that every locator's path exists in the producer's schema
+# (core/artifacts/<producer>.schema.json).
+#
 # Read by: scripts/check-integrity.py, scripts/wgf_quality/registry.py (the lessons registry
-# and triage's `guarded_by`). Add a check to a source file and it is classified here, or the
-# integrity check fails.
+# and triage's `guarded_by`), scripts/wgf_knowledge/ (levels, the applicability resolver).
+# Add a check to a source file and it is classified here, or the integrity check fails.
 
-version: 1.0.0
+version: 1.1.0
 
 applies_at: release
+
+# Where a source's results are read when it states no `status_at` of its own.
+status_at: {list: checks, id: id, status: status}
 
 tiers:
   hard:
@@ -70,6 +98,7 @@ sources:
     file: core/reference/quality-floor.yaml
     producer: quality-report
     enumerate: floor-criteria        # universal + genres.*.criteria + dimensions_contracts.*.criteria
+    status_at: {list: criteria, id: id, status: status}
     # A release blocker is hard when it is pass/fail (a check share, a verdict, a count of
     # zero) and quality when it reads a calibrated bar (a `quality-benchmark:` or
     # `visual-qa-rubric:` reference, or a rubric score); a release warning is advisory; a
@@ -80,27 +109,34 @@ sources:
     producer: quality-report
     enumerate: {keys: dimensions}
     tier: {all: quality}
+    status_at: {list: dimensions, id: id, status: status, map: {BELOW_FLOOR: FAIL}}
   visual-qa-blocker:
     file: core/reference/visual-qa-rubric.yaml
     producer: visual-qa-report
     enumerate: {list: blockers}
     tier: {all: hard}
+    # A blocker finding under the rubric blocker's id is that check failing; a report that
+    # passed has no blocker finding, so the check passed. Any other report: UNMEASURED.
+    status_at: {list: findings, where: {severity: blocker}, presence: FAIL, absent: {field: verdict, map: {PASS: PASS}}}
   visual-qa-score:
     file: core/reference/visual-qa-rubric.yaml
     producer: visual-qa-report
     enumerate: {keys: dimensions}
     tier: {all: quality}
+    status_at: {keys: scores}
   gate-gaming:
     file: core/reference/gate-gaming.yaml
     producer: review-report
     enumerate: {keys: patterns}
     # A flag is a review blocker routed back to the visit's owner (docs/review-module.md).
     tier: {all: hard}
+    status_at: {list: blockers, id_pattern: "^gate-gaming-(?P<id>.+)-[0-9]+$", presence: FAIL, absent: {field: verdict, map: {approve: PASS}}}
   design-consistency:
     file: core/reference/design-consistency-rules.yaml
     producer: game-design
     enumerate: {list: rules}
     tier: {by: severity, map: {blocking: hard, warning: advisory}}
+    status_at: {list: consistency.rule_results, id: criterion_id, status: breached, map: {"true": FAIL, "false": PASS}}
   browser-qa:
     file: core/reference/browser-qa.yaml
     producer: verification-report
@@ -110,6 +146,7 @@ sources:
     # Each check states its own tier in the file; per viewport it is reported as
     # `browser.<id>:<viewport>`, and a finding's `:<viewport>` is not part of the check.
     tier: {by: tier, map: {hard: hard, quality: quality, advisory: advisory}}
+    status_at: {list: checks, id: id, id_split: ":", status: status}
 
   # ---------------------------------------------------------------- explicit tables
   content-sufficiency:
@@ -202,6 +239,7 @@ sources:
     findings_via: [qa-report]
     defined_in: scripts/wgf_verification
     # Whether the browser-QA spec ran at all: BLOCKED at release when it did not.
+    status_at: {list: checks, id: id, id_split: ":", status: status}
     checks:
       browser.run: hard
   model-review:
@@ -209,6 +247,7 @@ sources:
     defined_in: scripts/wgf_assets
     # The deterministic model checks (core/reference/asset-quality.yaml `models`): a spec
     # that fails one is not shipped as the model.
+    status_at: {list: "items[].quality.checks", id: id, status: status, map: {pass: PASS, fail: FAIL, skipped: SKIPPED}}
     checks:
       model.valid: hard
       model.parts: hard

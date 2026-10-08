@@ -336,11 +336,12 @@ class Lifecycle(Lessons):
                  "catch it")
 
     def test_a_validated_lesson_needs_all_three_tests_and_the_rerun_leg(self):
-        self.set_lesson("L23", lifecycle="validated")
+        # L24 names no passes or generalizes test (L23 generalizes since K4).
+        self.set_lesson("L24", lifecycle="validated")
         problems = self.problems()
-        for text in ("L23: a validated lesson names `tests.generalizes`",
-                     "L23: needs `validated: {version, date}`",
-                     "L23: a validated lesson has the instance evidence's `verified` leg"):
+        for text in ("L24: a validated lesson names `tests.generalizes`",
+                     "L24: needs `validated: {version, date}`",
+                     "L24: a validated lesson has the instance evidence's `verified` leg"):
             self.assertTrue(any(text in p for p in problems), (text, problems))
 
     def test_a_validated_lesson_with_its_evidence_passes(self):

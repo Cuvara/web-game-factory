@@ -380,7 +380,11 @@ def _table_candidates(args, vocabulary):
         from wgflib.yamllite import load as load_yaml
         try:
             with open(args.facets, encoding="utf-8") as handle:
-                data = load_yaml(handle.read())
+                text = handle.read()
+            try:
+                data = json.loads(text)
+            except ValueError:
+                data = load_yaml(text)
         except (OSError, ValueError) as exc:
             raise Unusable(f"{args.facets} cannot be read ({exc})")
         data = data.get("candidates") if isinstance(data, dict) else data

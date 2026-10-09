@@ -502,7 +502,13 @@ def cmd_ingest(args):
         print(f"{state.run_id}: {len(observations)} candidate observation(s); added "
               f"{', '.join(summary['added']) or '-'}; merged "
               f"{', '.join(summary['merged']) or '-'}; regression observations "
-              f"{', '.join(summary['regressions']) or '-'}; unchanged {summary['unchanged']}")
+              f"{', '.join(summary['regressions']) or '-'}; unchanged {summary['unchanged']}"
+              + (f" (refreshed {', '.join(summary['refreshed'])})"
+                 if summary.get("refreshed") else ""))
+        by_id = {c.get("id"): c for c in updated["candidates"]}
+        for cid in summary["added"] + summary["merged"] + summary.get("refreshed", []):
+            record = by_id.get(cid) or {}
+            print(f"  {cid} strength {record.get('strength')}: {record.get('strength_why')}")
         tail = (" (invalid candidates: fix the producer's report, or ingest nothing)"
                 if problems else " (dry run)" if args.dry_run else "")
         print(f"{'wrote' if written else 'nothing written to'} {path}{tail}")
@@ -531,7 +537,8 @@ def cmd_candidates(args):
     print(f"{path}: {len(store['candidates'])} candidate(s), "
           f"{len(store['regressions'])} regression observation(s)")
     for r in rows:
-        print(f"  {r['id']:<6} {r['state']:<9} {r['basis']:<10} {len(r['sources'])} source(s)  "
+        print(f"  {r['id']:<6} {r['state']:<9} {r['basis']:<10} "
+              f"{r.get('strength') or '-':<11} {len(r['sources'])} source(s)  "
               f"{r.get('proposed_check') or '-'}  {r['summary'][:80]}")
     for r in store["regressions"]:
         print(f"  regression of {r['lesson']} ({r['check']}) in {r['source']['run']} "
@@ -563,6 +570,21 @@ def _scope_arg(values):
             raise Unusable(f"--scope {value!r} is KEY=V[,V..]")
         scope.setdefault(key.strip(), []).extend(v.strip() for v in rest.split(",") if v.strip())
     return scope
+
+
+def _classifier(checks):
+    """The measurement-class reader (wgf_knowledge.strength.class_reader) over these checks
+    and the Factory's quality-assessment mapping (wgf_quality.assessment.load); one that
+    knows no class when the mapping cannot be read - every pair is then capped."""
+    from wgf_knowledge import strength
+    from wgf_quality import assessment
+    try:
+        mapping, _ = assessment.load()
+    except (OSError, ValueError) as exc:
+        print(f"note: {assessment.MAPPING_FILE} cannot be read ({exc}): no measurement class "
+              "is known, so no pair is counted above single-run", file=sys.stderr)
+        mapping = {}
+    return strength.class_reader(checks, mapping)
 
 
 def cmd_promote(args):
@@ -606,7 +628,8 @@ def cmd_promote(args):
             level=args.level, check=args.check, category=args.category, title=args.title,
             scope=_scope_arg(args.scope) if args.scope else None, domain=args.domain,
             promoted=ingest.promoted(data.get("evidence")),
-            verify=ingest.verifier(run_store))
+            verify=ingest.verifier(run_store), classification=args.classification,
+            remeasure=ingest.remeasurer(run_store, _classifier(checks)))
     except promote.PromoteRefused as exc:
         if args.json:
             _print_json({"refused": str(exc)})
@@ -765,6 +788,9 @@ def build_parser():
     prom.add_argument("--category")
     prom.add_argument("--domain", help="the lesson's domain (knowledge model 2.1.0)")
     prom.add_argument("--title")
+    prom.add_argument("--classification", choices=list(model.CLASSIFICATIONS),
+                      help="ask for a classification; refused beyond what the evidence "
+                           "strength supports (core/reference/evidence-strength.yaml)")
     prom.add_argument("--scope", action="append", metavar="KEY=V,..")
     prom.add_argument("--out", metavar="FILE", help="write the patch here (else stdout)")
     prom.add_argument("--candidates", metavar="FILE")

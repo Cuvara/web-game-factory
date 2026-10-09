@@ -31,6 +31,14 @@ Rules:
   becomes a blocking or required rule by itself (promote.py).
 * Append-only. Nothing here edits `core/`; a person promotes a candidate in a pull request
   (`wgf knowledge promote`), or rejects it (`state: rejected`).
+* `strength` (K6.4, strength.py, core/reference/evidence-strength.yaml): each source keeps
+  its finding's re-measurement from the run's newest finding ledger (`remeasurement`: the
+  before and after measurements, samples, history outcomes, the check's measurement class),
+  and the candidate records the strength derived from all its sources - hypothesis,
+  single-run, reproduced, validated - with why (`strength_why`), every measurement refused
+  and why (`refused_evidence`) and the checks whose verdicts alternate (`unstable`). A
+  source already stored is refreshed from the newer ledger when its run is ingested again
+  (more samples); it never counts twice.
 
 The store is YAML, written as one JSON flow mapping per entry (JSON is YAML; the Factory's
 YAML reader loads it, and a diff shows one line per candidate). Standard library only.
@@ -42,7 +50,7 @@ import os
 import re
 
 CANDIDATES_FILE = "workspace/lessons/candidates.yaml"
-STORE_VERSION = "1.0.0"
+STORE_VERSION = "1.1.0"
 
 # Where each producer reports its lesson candidates: artifact type -> path into the report.
 SOURCES = {
@@ -74,6 +82,12 @@ HEADER = """\
 #
 # `regressions` are candidates whose proposed check already holds an active lesson: a
 # regression observation of that lesson, not a new one.
+#
+# `strength` (store 1.1.0): how far the measurements behind a candidate were repeated -
+# hypothesis, single-run, reproduced, validated (core/reference/evidence-strength.yaml) -
+# derived from each source's `remeasurement` (the run's finding ledger), with
+# `strength_why`, `refused_evidence` (every measurement that may not count, and why) and
+# `unstable` (checks whose verdicts alternate). Promote derives it again from the run store.
 #
 # Nothing here is a rule. A person promotes a candidate - `wgf knowledge promote C-<n>` drafts
 # the lessons.yaml entry, the evidence.yaml entry and the test stubs as a patch for a pull
@@ -258,7 +272,46 @@ def _measured_findings(docs):
     return out
 
 
-def extract(state, read_artifact):
+def _ledger(docs):
+    """(ref, {finding id: record}) of the run's newest finding ledger: the triage-report
+    that carries a `lifecycle`, newest by run-local order; (None, {}) when there is none."""
+    newest = None
+    for ref, doc in docs:
+        if ref.type == "triage-report" and isinstance(doc.get("lifecycle"), list) and (
+                newest is None or ref.order() > newest[0].order()):
+            newest = (ref, doc)
+    if newest is None:
+        return None, {}
+    return newest[0], {str(r["id"]): r for r in newest[1]["lifecycle"]
+                       if isinstance(r, dict) and r.get("id")}
+
+
+def _ledger_ref(ref):
+    return None if ref is None else {"artifact_id": ref.id, "version": ref.version,
+                                     "report_hash": ref.checksum}
+
+
+_CLASSIFY = {}
+
+
+def default_classifier():
+    """The live Factory's (producer, check id) -> (check, class) reader (strength.py
+    class_reader over check-tiers and quality-assessment.yaml); one that knows no class
+    when they cannot be read - every pair it reads is then capped, never raised."""
+    if "live" not in _CLASSIFY:
+        from . import strength
+        try:
+            from wgf_quality import assessment, registry
+            data = registry.load()
+            checks, _ = registry.classify(data["tiers"])
+            mapping, _ = assessment.load()
+            _CLASSIFY["live"] = strength.class_reader(checks, mapping)
+        except (OSError, ValueError, KeyError, TypeError):
+            _CLASSIFY["live"] = lambda producer, check: (None, None)
+    return _CLASSIFY["live"]
+
+
+def extract(state, read_artifact, classify=None):
     """([observation], [problem]) of every lesson candidate the run's reports hold.
 
     `read_artifact(ref)` returns the report (it raises for a missing or changed file, which
@@ -270,7 +323,13 @@ def extract(state, read_artifact):
     A source is `measured` only when the candidate's `finding` resolves to a finding a
     measuring producer of this run (quality-report, triage-report) recorded on the same build
     commit as the report the candidate came from; a finding id nothing recorded, or one on
-    another build, leaves it `subjective`. A reviewer's candidate is always subjective."""
+    another build, leaves it `subjective`. A reviewer's candidate is always subjective.
+
+    A source whose finding the run's newest finding ledger holds keeps its `remeasurement`
+    (strength.snapshot, with `classify(producer, check id) -> (check, class)`, by default
+    the live Factory's reader)."""
+    from . import strength
+    classify = classify or default_classifier()
     docs = []
     for ref in _refs(state):
         try:
@@ -282,6 +341,7 @@ def extract(state, read_artifact):
                               f"{ref.type}")
         docs.append((ref, doc))
     measured = _measured_findings([(ref, ref.type, doc) for ref, doc in docs])
+    ledger_ref, ledger = _ledger(docs)
     observations, problems = [], []
     for ref, doc in docs:
         reported = _get(doc, SOURCES[ref.type])
@@ -317,6 +377,10 @@ def extract(state, read_artifact):
                 "evidence_refs": list(candidate.get("evidence_refs") or []),
                 "date": provenance.get("produced_at") or ref.created_at},
                 "guarded_by": sorted(resolved["guarded_by"]) if is_measured else []})
+            record = ledger.get(str(finding)) if finding else None
+            if record is not None:
+                observations[-1]["source"]["remeasurement"] = strength.snapshot(
+                    record, _ledger_ref(ledger_ref), classify)
     return observations, problems
 
 
@@ -375,6 +439,79 @@ def verify_source(source, state, read_artifact, record):
     entry = _measured_findings([(measuring, measuring.type, findings_doc)]).get(
         str(source.get("finding")))
     return entry is not None and commit in entry["commits"]
+
+
+def remeasure_source(source, state, read_artifact, classify=None):
+    """The source's re-measurement read again from its run store's newest finding ledger
+    (never the one stored with it), or None."""
+    from . import strength
+    if state.run_id != source.get("run") or not source.get("finding"):
+        return None
+    docs = []
+    for versions in (state.artifacts or {}).values():
+        for ref in versions or ():
+            if getattr(ref, "type", None) != "triage-report":
+                continue
+            try:
+                doc = read_artifact(ref)
+            except Exception:  # noqa: BLE001 - a report that cannot be read proves nothing
+                continue
+            if isinstance(doc, dict):
+                docs.append((ref, doc))
+    ledger_ref, ledger = _ledger(docs)
+    record = ledger.get(str(source["finding"]))
+    if record is None:
+        return None
+    return strength.snapshot(record, _ledger_ref(ledger_ref), classify or default_classifier())
+
+
+def remeasurer(store, classify=None):
+    """remeasure(source) over a RunStore, for promote: the re-measurement read again from the
+    run store; a run that is gone, or any store error, re-measures nothing."""
+    cache = {}
+
+    def remeasure(source):
+        run = source.get("run")
+        if run not in cache:
+            try:
+                cache[run] = store.load(run)
+            except Exception:  # noqa: BLE001 - a run store that is gone proves nothing
+                cache[run] = None
+        state = cache[run]
+        if state is None:
+            return None
+        return remeasure_source(source, state,
+                                lambda ref: store.read_artifact(state.run_id, ref), classify)
+    return remeasure
+
+
+def strength_of(record, verify=None, remeasure=None):
+    """strength.derive over a stored candidate's sources. With `verify` (promote), a measured
+    source that does not re-verify against its run store is a claim, and its re-measurement
+    is read again by `remeasure` - never the one stored with it; without `remeasure` there is
+    none."""
+    from . import strength
+    sources = []
+    for source in (record or {}).get("sources") or ():
+        if not isinstance(source, dict):
+            continue
+        source = dict(source)
+        if verify is not None:
+            if source.get("basis") == "measured" and not verify(source, record):
+                source["basis"] = "subjective"
+            source["remeasurement"] = remeasure(source) if (
+                remeasure is not None and source.get("basis") == "measured") else None
+        sources.append(source)
+    return strength.derive(sources, strength.proposed_checks(record or {}))
+
+
+def _restrength(record):
+    """The record's strength fields, derived from its stored sources."""
+    found = strength_of(record)
+    record["strength"] = found["strength"]
+    record["strength_why"] = found["why"]
+    record["refused_evidence"] = found["refused"]
+    record["unstable"] = found["unstable"]
 
 
 def verifier(store):
@@ -469,11 +606,13 @@ def ingest(doc, observations, lessons, now=None):
     """(store, summary): the observations merged into a copy of the store `doc`.
 
     summary: {"added": [C ids], "merged": [C ids], "regressions": [lesson ids],
-    "unchanged": n}."""
+    "unchanged": n, "refreshed": [C ids]} - refreshed: an unchanged source whose run's
+    ledger now holds a newer re-measurement of its finding (more samples), and the strength
+    derived again."""
     doc = json.loads(json.dumps(doc))
     stamp = now_iso(now)
     active, pending = _lesson_index(lessons)
-    summary = {"added": [], "merged": [], "regressions": [], "unchanged": 0}
+    summary = {"added": [], "merged": [], "regressions": [], "unchanged": 0, "refreshed": []}
     by_key = {c.get("key"): c for c in doc["candidates"] if isinstance(c, dict)}
     for observation in observations:
         candidate, source = observation["candidate"], dict(observation["source"])
@@ -483,9 +622,16 @@ def ingest(doc, observations, lessons, now=None):
         stored = by_key.get(key)
         # A report already stored as this candidate's source is the same observation - also
         # once the candidate was promoted and an active lesson now holds its check.
-        if stored is not None and any(_same_source(s, source)
-                                      for s in stored.get("sources") or ()):
+        same = next((s for s in stored.get("sources") or () if _same_source(s, source)),
+                    None) if stored is not None else None
+        if same is not None:
             summary["unchanged"] += 1
+            fresh = source.get("remeasurement")
+            if fresh is not None and fresh != same.get("remeasurement"):
+                same["remeasurement"] = fresh
+                _restrength(stored)
+                if stored["id"] not in summary["refreshed"]:
+                    summary["refreshed"].append(stored["id"])
             continue
         lesson = _regression_of(candidate, active.get(check) or (),
                                 observation.get("guarded_by")) if check else None
@@ -511,6 +657,7 @@ def ingest(doc, observations, lessons, now=None):
             for field in ("symptom", "systemic", "proposed_level", "proposed_scope") + MODEL_2_1:
                 if stored.get(field) is None and candidate.get(field) is not None:
                     stored[field] = candidate[field]
+            _restrength(stored)
             summary["merged"].append(stored["id"])
             continue
         related = [l["id"] for l in active.get(check) or ()] if check else []
@@ -527,6 +674,7 @@ def ingest(doc, observations, lessons, now=None):
         record.update({field: candidate[field] for field in MODEL_2_1
                        if candidate.get(field) is not None})
         record["basis"] = basis_of(record)
+        _restrength(record)
         doc["candidates"].append(record)
         by_key[key] = record
         summary["added"].append(record["id"])

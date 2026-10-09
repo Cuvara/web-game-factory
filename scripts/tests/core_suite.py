@@ -48,7 +48,10 @@ SUITE = {
                   "test_knowledge_exceptions", "test_knowledge_compliance",
                   # K5: the decision trace, L29's own tests.
                   "test_knowledge_trace", "test_lesson_l29", "test_knowledge_transfer",
-                  "test_knowledge_pins"],
+                  "test_knowledge_pins",
+                  # K6.4: evidence strength derived from the ledger, nothing self-confirming
+                  # raises it, and a promoted draft never claims more than it supports.
+                  "test_knowledge_strength", "test_knowledge_learning_transfer"],
     "PROCESS CLEANUP": ["test_core_process"],
     "SECURITY": ["test_core_security"],
 }

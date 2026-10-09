@@ -9,6 +9,32 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Validated learning: a lesson's evidence strength, derived from the ledger** (K6.4,
+`core/reference/evidence-strength.yaml` 1.0.0, candidate store 1.1.0, `evidence.yaml` 2.1.0,
+[docs/knowledge-enforcement.md](docs/knowledge-enforcement.md) "Evidence strength"). `wgf
+knowledge ingest` now records, for every lesson candidate, how far the measurements behind it
+were repeated - `hypothesis` (no measured repair), `single-run` (one FAIL->PASS pair),
+`reproduced` (the pass repeated in a later independent report, on a check that does not
+alternate verdicts, by a class that is not only the game's probe), `validated` (reproduced on
+two scenarios or runs) - derived from each source's re-measurement in its run's finding ledger
+(K6.2 before/after/samples, content hashes, history) and the check's measurement class (K6.3),
+with why (`strength_why`), the checks marked `unstable`, and every measurement refused with its
+rule and reason (`refused_evidence`): the detecting report counted again, the lesson's own
+proposed check on a build that motivated it, a pass on the failing commit, a judge re-reading
+what it judged, a person's or specialist's claim; hash-identical duplicates count once. A pair
+measured only by the game's own probe, one AI judgment, or a check of no known class is capped
+at single-run. `wgf knowledge promote` derives the strength again from the run store and never
+drafts a classification beyond it: a measured candidate held only by an advisory check is
+drafted an experimental candidate lesson on hypothesis or single-run evidence, a
+RECOMMENDATION on reproduced, and may be drafted a VALIDATED_PRINCIPLE (`--classification`;
+an enforced, validated lesson with its three test stubs and the evidence's `verified` leg) on
+validated evidence; a classification asked for beyond the evidence is refused. **BLOCKING and
+REQUIRED are unchanged**: still derived only from the check tiers (K4). Strength is about a
+measurement repeating, not about player value. Bringing an existing artifact forward: none -
+stored candidates without the fields stay valid, and get them when a new source merges
+into them or their run's ledger re-measures a source's finding on its next ingest; promote
+derives them regardless.
+
 **Repairs verified on the same scenario** (playability-report 1.4.0, triage-report 1.3.0,
 [docs/specialist-routing.md](docs/specialist-routing.md) "What counts as a re-measurement",
 [docs/playability-module.md](docs/playability-module.md) "The scenario each check was

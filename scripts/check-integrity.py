@@ -641,6 +641,13 @@ def check_regression_registry():
 
     problems = registry.problems(os.getcwd())
     ERRORS.extend(problems)
+    # K6.4: the evidence-strength vocabulary and the module that derives it say the same.
+    from wgf_knowledge import strength
+    try:
+        from wgflib.yamllite import load as load_yaml
+        ERRORS.extend(strength.problems(load_yaml(read(strength.VOCABULARY_FILE))))
+    except (OSError, ValueError) as exc:
+        ERRORS.append(f"{strength.VOCABULARY_FILE} cannot be read ({exc})")
     data = registry.load(os.getcwd())
     checks, _ = registry.classify(data["tiers"], os.getcwd())
     strict = os.environ.get("WGF_KNOWLEDGE_STRICT") == "1"

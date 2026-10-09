@@ -2,7 +2,7 @@
 """The golden-run REPLAY developer: a deterministic stand-in for an agent developer.
 
     replay_developer.py --game 2d|3d --brief <brief.md> --repo <checkout> --ports <dir>
-                        [--key <key>] [--defect NAME [--no-repair]]
+                        [--key <key>] [--defect NAME [--defect-stage STAGE] [--no-repair]]
 
 It is what `factory.develop.developer: {kind: command}` runs in a golden run, through the
 real develop step and wgflib.procs, exactly where an agent host would run. It is NOT an AI
@@ -74,6 +74,17 @@ is a scripted rewrite left out, decided by reading the brief: it is a replay, ne
 agent's fix, and the report says so (report.json `replay.defect`). `--no-repair` keeps
 planting it whatever the brief says: the loop's negative control, which must never end in a
 pass.
+
+`--defect-stage` says which develop step the defect is planted in (STAGES): `greybox` (the
+default, the defect's own `phase`) or `develop` - the production visits of the develop step.
+A production failure goes through triage, not straight back: playability FAILs, triage turns
+the failed check into findings and routes them to the specialist that owns them, and the
+develop visit it routes is briefed as that specialist with the findings (brief.json
+`specialist.findings`, each naming its check and project). That visit leaves the defect out.
+The develop stage plants it on every production visit until one is repaired; a later visit
+(another specialist, a review's request) keeps it out (`kept-repaired`), read from the
+replay's own record in the checkout the visit starts from - the run's finding ledger is what
+must then verify the repair, never the replay.
 """
 
 import argparse
@@ -138,6 +149,9 @@ DEFECTS = {
                    "restart the run",
     },
 }
+# Where a defect can be planted (`--defect-stage`): the develop step, and the phase its brief
+# says it is (brief.json `phase`). `greybox` is every defect's own phase today.
+STAGES = {"greybox": "greybox", "develop": "production"}
 DEFECT_LABEL = ("GOLDEN-LOOP DEFECT: a scripted rewrite by the golden-run replay developer, "
                 "planted or left out by reading the brief - a replay, not an agent's fix")
 # The template's contract 2: the game's entry, and the GameContext type its main.ts builds.
@@ -363,36 +377,93 @@ def apply_defect(spec, text):
     return text
 
 
-def defect_decision(name, spec, brief, repair=True):
-    """What this visit does with the defect, read from the brief alone: a record for
-    report.json `replay.defect`, whose `status` is `planted`, `repaired` or `not-applied`.
+def stage_phase(spec, stage=None):
+    """The brief phase a defect is planted in: STAGES[stage], or the defect's own phase."""
+    if stage is None:
+        return spec["phase"]
+    if stage not in STAGES:
+        raise ReplayError(f"unknown defect stage {stage!r}; known: {', '.join(sorted(STAGES))}")
+    return STAGES[stage]
 
-    planted      the brief's phase is the defect's and no playability failure in the brief
-                 names its check (or `repair` is False: the negative control)
-    repaired     the brief names a playability failure of its check: left out
-    not-applied  another phase's visit: the port is laid as it is
+
+def named_failures(spec, brief):
+    """(projects, finding ids): where the brief names the defect's check failed - a
+    playability failure the visit was handed directly (greybox), or a finding triage routed
+    to this visit's specialist (`specialist.findings`, whose `source` names the check and
+    project)."""
+    projects, ids = set(), []
+    for failure in brief.get("playability_failures") or []:
+        if failure.get("check") == spec["check"]:
+            projects.add(failure.get("project") or "?")
+    for finding in (brief.get("specialist") or {}).get("findings") or []:
+        source = finding.get("source") or {}
+        if source.get("producer") == "playability-report" and \
+                source.get("check") == spec["check"]:
+            projects.add(source.get("project") or "?")
+            ids.append(finding.get("id"))
+    return sorted(projects), sorted(i for i in ids if i)
+
+
+def defect_decision(name, spec, brief, repair=True, stage=None, prior=None):
+    """What this visit does with the defect, read from the brief alone (and, for the develop
+    stage, the replay's own record `prior` in the checkout the visit starts from): a record
+    for report.json `replay.defect`, whose `status` is `planted`, `repaired`,
+    `kept-repaired` or `not-applied`.
+
+    planted        the brief's phase is the stage's and no failure in the brief names its
+                   check (or `repair` is False: the negative control)
+    repaired       the brief names a failure of its check: left out
+    kept-repaired  (develop stage) the brief names none, and an earlier visit repaired it
+    not-applied    another phase's visit: the port is laid as it is
     """
-    named = sorted({f.get("project") or "?" for f in brief.get("playability_failures") or []
-                    if f.get("check") == spec["check"]})
+    phase = stage_phase(spec, stage)
+    named, finding_ids = named_failures(spec, brief)
+    specialist = brief.get("specialist") or {}
     record = {"name": name, "check": spec["check"], "file": spec["file"],
               "summary": spec["summary"], "phase": brief.get("phase"),
               "iteration": brief.get("iteration"), "failures_named": named,
               "played_commit": brief.get("played_commit"), "repair": bool(repair),
               "label": DEFECT_LABEL}
-    if brief.get("phase") != spec["phase"]:
+    if stage is not None:
+        record.update(stage=stage, specialist=specialist.get("role"),
+                      findings_named=finding_ids,
+                      triage_report=specialist.get("triage_report"))
+    if brief.get("phase") != phase:
         return {**record, "status": "not-applied",
                 "reason": f"a {brief.get('phase')} visit; the defect is planted in "
-                          f"{spec['phase']} only"}
+                          f"{phase} only"}
     if named and repair:
+        via = (f" (findings {', '.join(finding_ids)} routed to the "
+               f"{specialist.get('role')} specialist)" if finding_ids else "")
         return {**record, "status": "repaired",
                 "reason": f"the brief names {spec['check']} failed on "
-                          f"{', '.join(named)}: the rewrite is left out"}
+                          f"{', '.join(named)}{via}: the rewrite is left out"}
     if named:
         return {**record, "status": "planted",
                 "reason": f"the brief names {spec['check']} failed on {', '.join(named)}, "
                           f"and --no-repair keeps the defect (the negative control)"}
+    earlier = prior.get("status") if isinstance(prior, dict) else None
+    if stage == "develop" and repair and earlier in ("repaired", "kept-repaired") \
+            and prior.get("name") == name:
+        return {**record, "status": "kept-repaired",
+                "reason": f"the brief names no {spec['check']} failure, and an earlier visit "
+                          f"left the defect out ({earlier}): it stays out"}
     return {**record, "status": "planted",
             "reason": f"the brief names no {spec['check']} failure: the rewrite is applied"}
+
+
+def prior_defect(repo):
+    """The replay's own `replay.defect` record in the checkout as the visit starts (the
+    commit it builds on), or None."""
+    path = os.path.join(repo, *REPORT_PATH.split("/"))
+    try:
+        report = json.loads(read(path))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(report, dict):
+        return None
+    found = (report.get("replay") or {}).get("defect")
+    return found if isinstance(found, dict) else None
 
 
 def build_report(brief, port, written, bridge=None, defect=None):
@@ -448,7 +519,7 @@ def build_report(brief, port, written, bridge=None, defect=None):
     }
 
 
-def replay(game_key, brief_md_path, repo, ports, defect=None, repair=True):
+def replay(game_key, brief_md_path, repo, ports, defect=None, repair=True, stage=None):
     repo = os.path.abspath(repo)
     ports = os.path.abspath(ports)
     port = load_port(game_key)
@@ -481,7 +552,8 @@ def replay(game_key, brief_md_path, repo, ports, defect=None, repair=True):
             raise ReplayError(f"defect {defect!r} rewrites {spec['file']}, which the port "
                               f"overlays do not lay")
         planted = apply_defect(spec, read(sources[spec["file"]]))
-        decision = defect_decision(defect, spec, brief, repair)
+        decision = defect_decision(defect, spec, brief, repair, stage=stage,
+                                   prior=prior_defect(repo))
         if decision["status"] == "planted":
             rewritten[spec["file"]] = planted
         log(f"defect {defect}: {decision['status']} - {decision['reason']}")
@@ -541,16 +613,21 @@ def main(argv=None):
     parser.add_argument("--defect", default=None, metavar="NAME",
                         help="the golden loop: plant DEFECTS[NAME] unless the brief names its "
                              "check failed (then leave it out: the repair)")
+    parser.add_argument("--defect-stage", default=None, choices=sorted(STAGES),
+                        help="with --defect: the develop step it is planted in (default: the "
+                             "defect's own phase, greybox)")
     parser.add_argument("--no-repair", action="store_true",
                         help="with --defect: plant it whatever the brief says (the loop's "
                              "negative control)")
     args = parser.parse_args(argv)
     if args.no_repair and not args.defect:
         parser.error("--no-repair needs --defect")
+    if args.defect_stage and not args.defect:
+        parser.error("--defect-stage needs --defect")
     procs.install_signal_cleanup()
     try:
         replay(args.game, args.brief, args.repo, args.ports, defect=args.defect,
-               repair=not args.no_repair)
+               repair=not args.no_repair, stage=args.defect_stage)
     except ReplayError as exc:
         log(f"refused: {exc}")
         return 3

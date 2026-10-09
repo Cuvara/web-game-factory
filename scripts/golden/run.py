@@ -3,7 +3,7 @@
 
     python3 scripts/golden/run.py --game 2d|3d [--workdir DIR] [--keep] [--json]
                                   [--resume RUN --from STEP] [--no-browser]
-                                  [--defect NAME [--no-repair]]
+                                  [--defect NAME [--defect-stage STAGE] [--no-repair]]
 
 Exit status: 0 when the run passed (every step at its expected outcome, a drafted release
 manifest, the engine consistent, and the independent browser evidence passed), 1 otherwise.
@@ -61,12 +61,19 @@ def main(argv=None):
     parser.add_argument("--defect", metavar="NAME",
                         help="the golden loop: the replay developer plants this defect "
                              "(replay_developer.DEFECTS) until a brief names its check failed")
+    parser.add_argument("--defect-stage", choices=["greybox", "develop"],
+                        help="with --defect: the develop step it is planted in - greybox (the "
+                             "default; its failure goes straight back) or develop (its failure "
+                             "goes through triage to a specialist, and the run's finding "
+                             "ledger must verify the repair)")
     parser.add_argument("--no-repair", action="store_true",
                         help="with --defect: never leave it out - the loop's negative control, "
                              "which must not pass")
     args = parser.parse_args(argv)
     if args.no_repair and not args.defect:
         parser.error("--no-repair needs --defect")
+    if args.defect_stage and not args.defect:
+        parser.error("--defect-stage needs --defect")
     if args.resume and not args.workdir:
         parser.error("--resume needs the --workdir of the run")
     procs.install_signal_cleanup()
@@ -75,7 +82,7 @@ def main(argv=None):
     run = harness.GoldenRun(args.game, workdir=args.workdir, keep=args.keep,
                             progress=Progress(stream), browser=not args.no_browser,
                             library=not args.no_library, defect=args.defect,
-                            repair=not args.no_repair)
+                            repair=not args.no_repair, defect_stage=args.defect_stage)
     print(f"golden {args.game}: {run.game.title_id} ({run.game.engine}) in {run.workdir}",
           file=stream, flush=True)
     try:
@@ -101,10 +108,18 @@ def main(argv=None):
               f"{summary['browser_passed']}", file=stream)
         print(f"summary: {summary.get('summary_path')}", file=stream)
         if loop_record is not None:
-            print(f"golden loop ({args.defect}{', no repair' if args.no_repair else ''}): "
+            print(f"golden loop ({args.defect}"
+                  f"{'@' + args.defect_stage if args.defect_stage else ''}"
+                  f"{', no repair' if args.no_repair else ''}): "
                   f"closed={loop_record['closed']} versions="
                   f"{[((v['commit'] or '')[:12], v['verdict'], v['check_status']) for v in loop_record['versions']]}"
                   f" evidence: {loop_record.get('path')}", file=stream)
+            ledger = loop_record.get("ledger")
+            if ledger:
+                statuses = {fid: (r or {}).get("status")
+                            for fid, r in (ledger.get("final") or {}).items()}
+                print(f"finding ledger: verified={ledger.get('verified')} {statuses}",
+                      file=stream)
         print("PASS" if ok else "FAIL", file=stream)
     run.cleanup()
     return 0 if ok else 1

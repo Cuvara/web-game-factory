@@ -9,6 +9,8 @@ never told why not.
     follow    paces its introductions, and records a decision trace (`knowledge_applied`),
               only when the request's `knowledge` carries the rule held by
               content.introductions_one_at_a_time; otherwise it ships the naive plan
+    declare   follow, and also states each later unit's one debut in its `introduces` - a
+              design whose units say what they introduce (the transfer test's held build)
     violate   ships the naive plan whatever the request says; on a repair round whose
               problems name that rule, paces (the module's check made it)
     claim     ships the naive plan and claims the rule applied when the request carries it:
@@ -91,6 +93,16 @@ def pace(draft):
         changed.append(unit["id"])
 
 
+def declare(draft):
+    """Every unit after the opening one that debuts exactly one of its own elements states it
+    in `introduces` (a unit that states introductions already is left as it is)."""
+    units = ordered(draft)
+    for position, (unit, new) in enumerate(zip(units, debuts(units))):
+        if position and len(new) == 1 and not unit.get("introduces") \
+                and new[0] in (unit.get("elements") or []):
+            unit["introduces"] = list(new)
+
+
 def main():
     mode, request_path, draft_path = sys.argv[1:4]
     with open(request_path, encoding="utf-8") as handle:
@@ -102,7 +114,8 @@ def main():
     problems = " ".join((request.get("repair") or {}).get("problems") or [])
     moved_unit, moved = naive(draft)
     trace = None
-    if rule is not None and (mode == "follow" or (mode == "violate" and CHECK in problems)):
+    if rule is not None and (mode in ("follow", "declare")
+                             or (mode == "violate" and CHECK in problems)):
         paced = pace(draft)
         trace = {"rule": rule["id"], "revision": rule.get("revision"), "applied": True,
                  "where": paced, "how": "each unit after the opening debuts one element: "
@@ -113,6 +126,8 @@ def main():
         trace = {"rule": rule["id"], "revision": rule.get("revision"), "applied": True,
                  "where": [moved_unit], "how": "claimed: introductions are paced",
                  "verified_by": list(rule["checks"])}
+    if mode == "declare" and trace is not None:
+        declare(draft)
     if trace is not None:
         draft["knowledge_applied"] = [{k: v for k, v in trace.items() if v is not None}]
     stem = os.path.basename(draft_path)[:-len(".draft.json")]

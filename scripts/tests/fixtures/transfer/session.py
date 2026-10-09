@@ -122,6 +122,23 @@ def _world_class():
             return None
 
         listed = False
+        held = False
+
+        def held_target(self):
+            """(unit k, [one element]) for the held build: a unit after the opening one whose
+            DESIGN states a non-empty `introduces`, and the next element a later unit debuts -
+            shown at k with k's `introduces` copied from the design, only the build's
+            comparison with its design unit can tell it is a debut there."""
+            news = content_rules.unit_debuts(self.units)
+            for n, unit in enumerate(self.units):
+                if not n or not unit.get("introduces"):
+                    continue
+                later = [e for u, new in news[n + 1:] for e in (new or [])
+                         if e in (u.get("elements") or [])
+                         and e not in (unit.get("elements") or [])]
+                if later:
+                    return unit["id"], later[:1]
+            return None
 
         def built_units(self, build):
             out = super().built_units(build)
@@ -130,6 +147,8 @@ def _world_class():
             for unit in out:
                 if designed.get(unit["id"], {}).get("introduces"):
                     unit["introduces"] = list(designed[unit["id"]]["introduces"])
+            if self.held:
+                self.target = self.held_target()
             if DOUBLE in build["defects"] and self.target:
                 unit_id, early = self.target
                 for unit in out:
@@ -366,11 +385,12 @@ def run(args):
     scenario = {"defects": [], "fixes": {}}
     if args.session == "a":
         scenario = {"defects": [DOUBLE], "fixes": {}}
-    elif args.developer in ("violating", "violating-unlisted"):
+    elif args.developer in ("violating", "violating-unlisted", "violating-held"):
         scenario = {"defects": [DOUBLE], "fixes": {"level-designer": {"fixes": [DOUBLE]}}}
     world = _world_class()(scenario, design, checkout)
     # Session A's defect adds the elements only; Session B's violating build also lists them.
     world.listed = args.session == "b" and args.developer == "violating"
+    world.held = args.session == "b" and args.developer == "violating-held"
     accepted = None
     if args.session == "a":
         accepted = os.path.join(args.store, "accepted-play.json")
@@ -453,8 +473,10 @@ def main(argv=None):
                    default="with")
     r.add_argument("--hold-g2", action="store_true", help="stop at G2 (a person's gate)")
     r.add_argument("--resume", metavar="RUN_ID", help="approve G2 of this run and go on")
-    r.add_argument("--designer", choices=("follow", "violate", "claim"), default="follow")
-    r.add_argument("--developer", choices=("faithful", "violating", "violating-unlisted"),
+    r.add_argument("--designer", choices=("follow", "declare", "violate", "claim"),
+                   default="follow")
+    r.add_argument("--developer", choices=("faithful", "violating", "violating-unlisted",
+                                           "violating-held"),
                    default="faithful")
     r.add_argument("--family")
     k = sub.add_parser("knowledge")

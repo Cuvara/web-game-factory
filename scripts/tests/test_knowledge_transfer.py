@@ -474,6 +474,53 @@ class Held(unittest.TestCase):
                               if r["id"] == "L29")["status"], "SATISFIED")
         self.assertTrue(run.summary["waiting_at_g4"], run.summary["message"])
 
+    def test_a_build_held_to_its_design_where_the_design_states_its_introductions(self):
+        """GAP A: the design states each unit's one introduction; the build shows a later
+        unit's element at such a unit with `introduces` copied from the design. Only the
+        production comparison of each built unit with its design unit
+        (wgf_sufficiency.audit, held to the design) can tell it is a second debut there."""
+        run = Run(session(self.tmp, "held", "--session", "b", "--designer", "declare",
+                          "--developer", "violating-held"))
+        unit_id, early = run.summary["target"]
+        design = run.newest("game-design")
+        designed = next(u for u in design["build_spec"]["content"]["units"]
+                        if u["id"] == unit_id)
+        self.assertTrue(designed.get("introduces"), designed)
+        self.assertFalse(rule_result(design, CHECK)["breached"])
+        # the build: the early element shown at that unit, `introduces` the design's
+        shipped = []
+        for path in glob.glob(os.path.join(run.dir, "playability", "*", "out", "content",
+                                           "units.json")):
+            with open(path, encoding="utf-8") as handle:
+                shipped.append({u["id"]: u for u in json.load(handle)["units"]}[unit_id])
+        moved = [u for u in shipped if set(early) <= set(u.get("elements") or [])]
+        self.assertTrue(moved, shipped)
+        for built in moved:
+            self.assertEqual(built.get("introduces"), designed["introduces"])
+        reports = run.versions("content-sufficiency-report")
+        check = check_of(reports[0], CHECK)
+        self.assertEqual(check["status"], "FAIL", check)
+        self.assertTrue(check["measured"]["held_to_design"])
+        self.assertIn(f"units.json {unit_id} debuts 2 elements at once", check["summary"])
+        self.assertIn(early[0], check["summary"])
+        self.assertEqual(check.get("route"), "develop")
+        contract = run.newest("knowledge-contract")
+        with open(os.path.join(run.dir, references.DIRECTORY, "core", "reference",
+                               "check-tiers.yaml"), encoding="utf-8") as handle:
+            tiers = load_yaml(handle.read())
+        section = compliance.evaluate(contract, tiers, {
+            "content-sufficiency-report": reports[0], "game-design": design},
+            tier="release", lessons=registry.load(ROOT)["lessons"])
+        held = next(r for r in section["rules"] if r["id"] == "L29")
+        self.assertEqual((held["status"], section["verdict"]), ("FAILED", "RELEASE_BLOCKED"))
+        # repaired: the level designer's visit, then PASS, SATISFIED at the gate
+        self.assertIn(("triage", "level-designer"), run.steps())
+        self.assertEqual(check_of(reports[-1], CHECK)["status"], "PASS")
+        quality = run.newest("quality-report")
+        self.assertEqual(next(r for r in quality["compliance"]["rules"]
+                              if r["id"] == "L29")["status"], "SATISFIED")
+        self.assertTrue(run.summary["waiting_at_g4"], run.summary["message"])
+
     def test_a_claim_the_design_contradicts_is_a_trace_breach(self):
         run = Run(session(self.tmp, "claim", "--session", "b", "--designer", "claim"))
         self.assertEqual(run.summary["status"], "FAILED")

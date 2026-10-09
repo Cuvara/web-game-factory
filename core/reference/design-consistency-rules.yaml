@@ -12,7 +12,7 @@
 # artifact plus the resolved platform profiles. Keep them few and obvious — a rule nobody
 # understands gets waived, and a waived rule is worse than no rule.
 
-version: 2.3.0  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms; 2.0.0: mechanics, not words (below); 2.1.0: brief commitments and the existing-content floor (below); 2.1.1: brief-commitments 1.1.0 (the probe floor); 2.2.0: content.introductions_one_at_a_time and knowledge.trace_matches_design (below); 2.3.0: a unit debuts its non-empty `introduces`, else every element and mechanic it shows for the first time (an empty `introduces` states nothing)
+version: 2.4.0  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms; 2.0.0: mechanics, not words (below); 2.1.0: brief commitments and the existing-content floor (below); 2.1.1: brief-commitments 1.1.0 (the probe floor); 2.2.0: content.introductions_one_at_a_time and knowledge.trace_matches_design (below); 2.3.0: a unit debuts its non-empty `introduces`, else every element and mechanic it shows for the first time (an empty `introduces` states nothing); 2.4.0: an introduction must be true of its unit - contained in it, and not named by an earlier unit
 
 # 2.0.0. The concept rules compared words: "tap hops" in a design read as a foreign `jump`
 # for a brief that asked for hops, a goal gate read as a checkpoint `gate`, and an author
@@ -186,7 +186,11 @@ rules:
     # a unit whose `introduces` is empty or absent, every element and mechanic no earlier unit
     # named (wgf_design/content.py unit_debuts, introductions_view). Accepted limitation: a
     # non-empty `introduces` is trusted here - new elements beside it are not counted on the
-    # design; content-sufficiency holds the build to its design unit. The opening unit is exempt: it
+    # design; content-sufficiency holds the build to its design unit. 2.4.0: what it is
+    # trusted with must be structurally true - an introduced item the unit does not itself
+    # contain (among its elements or mechanics), or one an earlier unit already named, is a
+    # breach (ids matched as unit kinds are: a trailing plural `s` dropped). An unknown id is
+    # content.mechanics_resolve's. Whether an introduction is taught well is not checked. The opening unit is exempt: it
     # is where play begins. A design with no units holds the rule and says so.
     when: { left: introductions.over_one, op: neq, right: [] }
     rationale: >

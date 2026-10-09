@@ -72,7 +72,8 @@ __all__ = ["MODELS_PATH", "VOCABULARY_PATH", "BENCHMARK_PATH", "RULES", "TIER_RU
            "MASTERY_MODELS", "load_models", "load_vocabulary", "load_benchmark",
            "family_of_node", "resolve_family", "profile_of", "units_of", "quality_tier",
            "tier_bars", "check", "content_model_record", "unit_debuts",
-           "introduction_breaches", "introductions_view", "undeclared_units"]
+           "introduction_breaches", "introductions_view", "undeclared_units",
+           "introduction_problems"]
 
 MODELS_PATH = os.path.join(paths.REFERENCE, "genre-models.yaml")
 BENCHMARK_PATH = os.path.join(paths.REFERENCE, "quality-benchmark.yaml")
@@ -1546,17 +1547,55 @@ def undeclared_units(units):
     return [str(u.get("id")) for u, new in unit_debuts(units) if new is None]
 
 
+def introduction_problems(units, at=lambda unit: str(unit.get("id"))):
+    """["<where> ..."] for what a unit's `introduces` gets objectively wrong, in play order:
+
+      * an item the unit does not itself contain - not among its own elements or mechanics:
+        a unit cannot introduce what it does not put in front of the player;
+      * an item an earlier unit already named (in its elements, mechanics or introduces): it
+        is not new there, so introducing it again is a re-introduction.
+
+    Ids are matched leniently, the way unit kinds are (`_kind`: lowercase, words joined by
+    hyphens, a trailing plural `s` dropped), so `armored-bricks` introduced in a unit whose
+    elements name `armored-brick` is contained, and is the same thing an earlier unit named.
+    An id that is no known mechanic, element or scheduled content at all is
+    content.mechanics_resolve's to refuse. Whether a mechanic is taught WELL - legibly, at
+    the right moment, fun to learn - is not structural, and nothing here judges it."""
+    out, seen = [], set()
+    for unit in units:
+        if not isinstance(unit, dict):
+            continue
+        own = {_kind(x) for key in ("elements", "mechanics")
+               for x in (unit.get(key) or []) if isinstance(unit.get(key), list)}
+        listed = unit.get("introduces") if isinstance(unit.get("introduces"), list) else []
+        stray = [str(x) for x in listed if _kind(x) not in own]
+        again = [str(x) for x in listed if _kind(x) in seen]
+        if stray:
+            out.append(f"{at(unit)} introduces {', '.join(stray)}, which it does not contain: "
+                       "name it among the unit's own elements or mechanics, or introduce it "
+                       "where it first appears")
+        if again:
+            out.append(f"{at(unit)} introduces {', '.join(again)} again: an earlier unit "
+                       "already named it - introduce each element once, where it first "
+                       "appears")
+        seen |= own | {_kind(x) for x in listed}
+    return out
+
+
 def introductions_view(design):
     """consistency.projection `introductions`: {"units": n, "over_one": [breach],
     "debuts": {unit id: [new]}, "undeclared": [unit id]} over the design's units not tiered
-    optional, in index order. A design with no units holds the rule and says so (`units` 0).
+    optional, in index order. `over_one` also carries introduction_problems (an introduction
+    the unit does not contain, or one an earlier unit already named). A design with no units holds the rule and says so (`units` 0).
     A unit that names nothing makes the count unmeasured, which the rule - like every rule
     that cannot be checked - records as a breach naming the units to complete."""
     units = [u for u in units_of(design) if u.get("tier") != "optional"]
     debuts = unit_debuts(units)
     undeclared = undeclared_units(units)
-    over_one = [] if undeclared else introduction_breaches(
-        units, at=lambda u: f"build_spec.content.units[{u.get('id')}]")
+    where = lambda u: f"build_spec.content.units[{u.get('id')}]"  # noqa: E731
+    over_one = [] if undeclared else introduction_breaches(units, at=where)
+    # What a non-empty `introduces` is trusted with must at least be true of the unit.
+    over_one += introduction_problems(units, at=where)
     if undeclared:
         over_one = [f"build_spec.content.units[{', '.join(undeclared[:8])}"
                     + (f" and {len(undeclared) - 8} more" if len(undeclared) > 8 else "")

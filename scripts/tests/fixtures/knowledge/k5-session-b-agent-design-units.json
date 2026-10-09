@@ -1,0 +1,432 @@
+{
+ "_source": "the K5 fresh-session experiment (2026-10-08): Session B's game-design v2, written by a real headless design-agent session on this branch for a 2D platformer brief; build_spec.content.units trimmed to id, index, tier, elements, mechanics, introduces, and its genre",
+ "genre": {
+  "family": "platformer",
+  "node": "platformer",
+  "ending": "finite",
+  "session_profile": "casual"
+ },
+ "knowledge_applied": [
+  {
+   "rule": "L2",
+   "revision": 1,
+   "applied": true,
+   "where": [
+    "l-03",
+    "l-05",
+    "l-09"
+   ],
+   "how": "Difficulty is authored per level on named axes with three breathers that dip one axis by under a third and recover within two levels, so the ramp is a steady climb whose verdict does not sit on a bar's edge; the ramp is meant to be re-measured when a result lands near a threshold.",
+   "verified_by": [
+    "playability:depth.ramp",
+    "playability:depth.stall"
+   ]
+  },
+  {
+   "rule": "L4",
+   "revision": 1,
+   "applied": true,
+   "where": [
+    "l-01",
+    "l-04",
+    "l-08",
+    "l-12"
+   ],
+   "how": "Structure kinds (open-run, ledge-hops, rising-terraces, collapsing-bridge, river-crossing, vertical-shaft, ridge-run, canopy-climb, gauntlet), elements and per-level layout are declared in the design itself, so a structure defect shows on the design before any production step.",
+   "verified_by": [
+    "content-sufficiency:content.structure"
+   ]
+  },
+  {
+   "rule": "L8",
+   "revision": 1,
+   "applied": true,
+   "where": [],
+   "how": "The design keeps every number the accepted draft checked (240 px/s run, 96 px jump, 60 Hz step) and names them as the baseline a candidate build is compared against, so a build cannot pass while being flatter or smaller than the accepted one.",
+   "verified_by": []
+  },
+  {
+   "rule": "L9",
+   "revision": 1,
+   "applied": true,
+   "where": [
+    "l-04",
+    "l-08",
+    "l-12"
+   ],
+   "how": "Each world closes on a climax with its own set piece (oak arch, mill, nest) and every level asks for a different skill; art is a layered cut-paper language with a distinct drawing per climax, aimed past the bare floor.",
+   "verified_by": []
+  },
+  {
+   "rule": "L12",
+   "revision": 1,
+   "applied": true,
+   "where": [],
+   "how": "The run adopts no existing repository (existing_content is null), so there is no shipped content to replace; the design plans 12 levels, 3 worlds and 8 elements and states ids l-01 to l-12 so a later adoption extends them rather than rewriting them.",
+   "verified_by": [
+    "content-sufficiency:content.regression",
+    "quality-floor:floor.existing_content"
+   ]
+  },
+  {
+   "rule": "L13",
+   "revision": 1,
+   "applied": true,
+   "where": [
+    "l-01",
+    "l-02",
+    "l-03",
+    "l-04",
+    "l-05"
+   ],
+   "how": "Par times are 1.5 times the competent time, the first berries sit on the route, hazards are visible 480 px ahead and a fall returns the fox to a solid ledge within a second, so an imperfect first-time player falls, drifts and paces within the designed numbers.",
+   "verified_by": [
+    "play-realism:naive.setbacks",
+    "play-realism:naive.drift",
+    "play-realism:naive.alignment",
+    "play-realism:naive.pace",
+    "play-realism:naive.unit_duration"
+   ]
+  },
+  {
+   "rule": "L14",
+   "revision": 1,
+   "applied": true,
+   "where": [
+    "l-01",
+    "l-02",
+    "l-03",
+    "l-04",
+    "l-05",
+    "l-06",
+    "l-07",
+    "l-08",
+    "l-09",
+    "l-10",
+    "l-11",
+    "l-12"
+   ],
+   "how": "Every level has stated length in tiles, ledges at least 3 tiles wide until the canopy, gaps no wider than the jump allows, and a duration of 22 to 55 s that matches its length at the 240 px/s run speed; none is cleared in a fraction of its par.",
+   "verified_by": [
+    "play-realism:level.geometry",
+    "play-realism:level.unit_length",
+    "play-realism:naive.unit_duration"
+   ]
+  },
+  {
+   "rule": "L17",
+   "revision": 1,
+   "applied": true,
+   "where": [
+    "l-02",
+    "l-03",
+    "l-05",
+    "l-06",
+    "l-07",
+    "l-09",
+    "l-10",
+    "l-11"
+   ],
+   "how": "Each level introduces one new element and asks something the last did not (hop spikes, bounce, outrun a collapse, ride a log, climb a lift, lean on wind, ride an updraft, pass on a beat), and each world ends on a climax that combines them.",
+   "verified_by": []
+  },
+  {
+   "rule": "L18",
+   "revision": 1,
+   "applied": true,
+   "where": [
+    "l-01",
+    "l-02",
+    "l-04",
+    "l-08",
+    "l-12"
+   ],
+   "how": "Each level has a motif and an opening camera pan that reveals the exit; the first berry is on the safe route and the other two sit over spikes, springs or collapsing tiles, so the risky line pays in stars.",
+   "verified_by": []
+  },
+  {
+   "rule": "L20",
+   "revision": 1,
+   "applied": true,
+   "where": [
+    "l-01",
+    "l-02",
+    "l-03",
+    "l-04",
+    "l-05",
+    "l-06",
+    "l-07",
+    "l-08",
+    "l-09",
+    "l-10",
+    "l-11",
+    "l-12"
+   ],
+   "how": "Every unit's geometry is declared in its own parameters.layout (ground segments, things, berries, flags, exit) in the units list, the one place a judge is told to read, and no two units share a layout.",
+   "verified_by": [
+    "content-sufficiency:content.structure"
+   ]
+  },
+  {
+   "rule": "L22",
+   "revision": 1,
+   "applied": true,
+   "where": [],
+   "how": "No accepted repository content exists to take a floor from; the unit ids and counts are stated once in this design and a re-entry measures its floor on the accepted content, never on this intermediate draft.",
+   "verified_by": [
+    "design-consistency:existing_content_floor_kept",
+    "content-sufficiency:content.regression"
+   ]
+  },
+  {
+   "rule": "L23",
+   "revision": 1,
+   "applied": true,
+   "where": [
+    "l-04",
+    "l-08",
+    "l-11",
+    "l-12"
+   ],
+   "how": "The fox's collider is fixed at 40 x 56 px and equals what is drawn; no passage between a spike row and a ceiling or between two ledges is narrower than 88 px, so the narrowest gauntlet passages stay threadable.",
+   "verified_by": [
+    "play-realism:level.clearance",
+    "play-realism:naive.clear_rate"
+   ]
+  },
+  {
+   "rule": "L29",
+   "revision": 2,
+   "applied": true,
+   "where": [
+    "l-02",
+    "l-03",
+    "l-05",
+    "l-06",
+    "l-07",
+    "l-09",
+    "l-10",
+    "l-11"
+   ],
+   "how": "After level 1, every level debuts exactly one element (spikes, spring, crumbling platform, ferry log, lift log, crosswind, updraft, pulse spikes) and each climax debuts none, so every element is met on its own before it is combined.",
+   "verified_by": [
+    "design-consistency:content.introductions_one_at_a_time",
+    "content-sufficiency:content.introductions_one_at_a_time"
+   ]
+  }
+ ],
+ "units": [
+  {
+   "id": "l-01",
+   "index": 1,
+   "tier": "mvp",
+   "mechanics": [
+    "run",
+    "jump",
+    "hazards",
+    "exit-and-berries"
+   ],
+   "introduces": [
+    "run",
+    "jump",
+    "hazards",
+    "exit-and-berries"
+   ]
+  },
+  {
+   "id": "l-02",
+   "index": 2,
+   "tier": "mvp",
+   "elements": [
+    "spikes"
+   ],
+   "mechanics": [
+    "run",
+    "jump",
+    "hazards",
+    "exit-and-berries"
+   ],
+   "introduces": [
+    "spikes"
+   ]
+  },
+  {
+   "id": "l-03",
+   "index": 3,
+   "tier": "mvp",
+   "elements": [
+    "spring"
+   ],
+   "mechanics": [
+    "run",
+    "jump",
+    "hazards",
+    "exit-and-berries"
+   ],
+   "introduces": [
+    "spring"
+   ]
+  },
+  {
+   "id": "l-04",
+   "index": 4,
+   "tier": "mvp",
+   "elements": [
+    "spikes",
+    "spring"
+   ],
+   "mechanics": [
+    "run",
+    "jump",
+    "hazards",
+    "exit-and-berries"
+   ]
+  },
+  {
+   "id": "l-05",
+   "index": 5,
+   "tier": "mvp",
+   "elements": [
+    "crumbling-platform"
+   ],
+   "mechanics": [
+    "run",
+    "jump",
+    "hazards",
+    "exit-and-berries"
+   ],
+   "introduces": [
+    "crumbling-platform"
+   ]
+  },
+  {
+   "id": "l-06",
+   "index": 6,
+   "tier": "post-mvp",
+   "elements": [
+    "log-ferry",
+    "spikes"
+   ],
+   "mechanics": [
+    "run",
+    "jump",
+    "hazards",
+    "exit-and-berries"
+   ],
+   "introduces": [
+    "log-ferry"
+   ]
+  },
+  {
+   "id": "l-07",
+   "index": 7,
+   "tier": "post-mvp",
+   "elements": [
+    "log-lift",
+    "crumbling-platform",
+    "spring"
+   ],
+   "mechanics": [
+    "run",
+    "jump",
+    "hazards",
+    "exit-and-berries"
+   ],
+   "introduces": [
+    "log-lift"
+   ]
+  },
+  {
+   "id": "l-08",
+   "index": 8,
+   "tier": "post-mvp",
+   "elements": [
+    "log-ferry",
+    "log-lift",
+    "crumbling-platform",
+    "spikes"
+   ],
+   "mechanics": [
+    "run",
+    "jump",
+    "hazards",
+    "exit-and-berries"
+   ]
+  },
+  {
+   "id": "l-09",
+   "index": 9,
+   "tier": "post-mvp",
+   "elements": [
+    "gust-cross",
+    "spring"
+   ],
+   "mechanics": [
+    "run",
+    "jump",
+    "hazards",
+    "exit-and-berries"
+   ],
+   "introduces": [
+    "gust-cross"
+   ]
+  },
+  {
+   "id": "l-10",
+   "index": 10,
+   "tier": "post-mvp",
+   "elements": [
+    "gust-up",
+    "gust-cross",
+    "log-lift"
+   ],
+   "mechanics": [
+    "run",
+    "jump",
+    "hazards",
+    "exit-and-berries"
+   ],
+   "introduces": [
+    "gust-up"
+   ]
+  },
+  {
+   "id": "l-11",
+   "index": 11,
+   "tier": "post-mvp",
+   "elements": [
+    "pulse-spikes",
+    "gust-cross",
+    "crumbling-platform"
+   ],
+   "mechanics": [
+    "run",
+    "jump",
+    "hazards",
+    "exit-and-berries"
+   ],
+   "introduces": [
+    "pulse-spikes"
+   ]
+  },
+  {
+   "id": "l-12",
+   "index": 12,
+   "tier": "post-mvp",
+   "elements": [
+    "spikes",
+    "spring",
+    "pulse-spikes",
+    "gust-cross",
+    "gust-up",
+    "log-ferry"
+   ],
+   "mechanics": [
+    "run",
+    "jump",
+    "hazards",
+    "exit-and-berries"
+   ]
+  }
+ ]
+}

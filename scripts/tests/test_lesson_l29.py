@@ -121,6 +121,13 @@ def build_result(design_units, built_units):
     return check, status
 
 
+def l29_units_with_unknown():
+    units = paced(3)
+    units[1]["elements"] = units[1]["elements"] + ["ghost"]
+    units[1]["introduces"] = ["ghost"]
+    return units
+
+
 def paced(n=6):
     """Units that each debut one element: a starter, then one new element per unit."""
     return [{"id": f"u-{i:02d}", "index": i, "tier": "mvp",
@@ -272,12 +279,64 @@ class LessonL29(unittest.TestCase):
         what holds a build to it - a build that adds a further new element FAILs."""
         units = paced(3)
         units[2]["elements"] = list(units[1]["elements"]) + ["boss-shield", "boss-weak-point"]
+        # the boss fight is the unit's own mechanic, as in the real design (2.4.0: an
+        # introduction is something the unit contains)
+        units[2]["mechanics"] = list(units[2]["mechanics"]) + ["boss-fight"]
         units[2]["introduces"] = ["boss-fight"]
         self.assertFalse(design_result(design_with(units))[0]["breached"])
         built = copy.deepcopy(units)
         built[2]["elements"].append("boss-minion")
         check, _status = build_result(units, built)
         self.assertEqual(check["status"], "FAIL", check)
+
+    # -- an introduction must be true of its unit (design-consistency 2.4.0) ----------------
+
+    def test_L29_an_introduction_the_unit_does_not_contain_breaches(self):
+        units = paced(3)
+        units[1]["introduces"] = ["dash"]          # not among u-02's elements or mechanics
+        result, status, _ = design_result(design_with(units))
+        self.assertEqual((result["breached"], status), (True, "FAIL"), result)
+        self.assertIn("units[u-02] introduces dash, which it does not contain",
+                      str(result["measured"]))
+
+    def test_L29_a_re_introduction_breaches(self):
+        units = paced(3)
+        units[2]["introduces"] = ["e1"]             # u-02 already showed e1
+        result, status, _ = design_result(design_with(units))
+        self.assertEqual((result["breached"], status), (True, "FAIL"), result)
+        self.assertIn("units[u-03] introduces e1 again", str(result["measured"]))
+
+    def test_L29_introductions_match_singular_and_plural_as_unit_kinds_do(self):
+        units = paced(3)
+        units[1]["elements"] = units[1]["elements"] + ["armored-brick"]
+        units[1]["introduces"] = ["armored-bricks"]
+        self.assertEqual(content.introduction_problems(units), [])
+        self.assertFalse(design_result(design_with(units))[0]["breached"])
+        # and the plural is the same thing an earlier unit named
+        units[2]["elements"] = units[1]["elements"]
+        units[2]["introduces"] = ["armored-brick"]
+        self.assertIn("introduces armored-brick again", " ".join(
+            content.introduction_problems(units)))
+
+    def test_L29_an_unknown_introduction_is_content_mechanics_resolves(self):
+        """An id that is no mechanic, element or scheduled content at all: refused by the
+        existing content rule, not restated here."""
+        design = design_with(l29_units_with_unknown())
+        problems, _results = content.check(design, {})
+        self.assertTrue(any(p.startswith("[content.mechanics_resolve]") and "ghost" in p
+                            for p in problems), problems)
+
+    def test_L29_real_designs_introduce_only_what_they_contain(self):
+        """The 2D validation design v4 (w1-l8 introduces the boss fight beside its shield and
+        weak point) and the design a real agent session wrote in the K5 experiment."""
+        for path in (os.path.join(REAL, "design-2d-v4-units.json"),
+                     os.path.join(HERE, "fixtures", "knowledge",
+                                  "k5-session-b-agent-design-units.json")):
+            with self.subTest(path=os.path.basename(path)):
+                units = _read(path)["units"]
+                self.assertEqual(content.introduction_problems(units), [])
+                result, status, _ = design_result(design_with(units))
+                self.assertEqual((result["breached"], status), (False, "PASS"), result)
 
     def test_L29_the_accepted_3d_validation_game_passes(self):
         """c340631 (r1-forward of the build accepted at G4): 12 courses, every course after

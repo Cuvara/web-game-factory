@@ -21,8 +21,10 @@ SUITE = {
                 "test_publish_adaptive", "test_publish_campaign", "test_publish_portals"],
     # An intentionally bad game cannot pass new-game: six genres held to one floor, eleven
     # degradations each detected, blocking and routed, recovery, anti-gaming (WS-13,
-    # docs/quality-consistency-tests.md).
-    "QUALITY": ["test_quality_consistency"],
+    # docs/quality-consistency-tests.md). K6.3: the assessment - design validity, runtime
+    # correctness and player-facing quality, each with its checks' measurement class
+    # (docs/quality-assessment.md).
+    "QUALITY": ["test_quality_consistency", "test_quality_assessment"],
     "2D GOLDEN": ["test_golden_2d"],
     "3D GOLDEN": ["test_golden_3d"],
     # The knowledge the Factory learned holds: every lesson's catches, passes and generalizes

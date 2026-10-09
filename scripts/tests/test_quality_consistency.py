@@ -295,6 +295,21 @@ class MultiGenreConsistency(_Case):
         self.assertEqual(report["release_decision"]["decision"], "release")
         for dimension in report["dimensions"]:
             self.assertIn(dimension["status"], ("PASS", "DEFERRED"), dimension)
+        # K6.3: the same evidence as three separate questions - a view that decides nothing.
+        # Every gate passed this build, and still no person has played it: player-facing
+        # quality is never PASS from automation alone.
+        view = {d["id"]: d for d in report["assessment"]["dimensions"]}
+        self.assertEqual(list(view), ["design_validity", "runtime_correctness",
+                                      "player_facing"])
+        self.assertFalse(report["assessment"]["decides"])
+        self.assertEqual(view["player_facing"]["status"], "INCONCLUSIVE")
+        self.assertIsNone(view["player_facing"]["basis"]["strength"])
+        # Design and runtime hold here, but in part on the game's own probe and on one AI
+        # judgment each: a qualified PASS, never shown as a measured one.
+        for dim_id in ("design_validity", "runtime_correctness"):
+            self.assertEqual(view[dim_id]["status"], "PASS", view[dim_id]["reason"])
+            self.assertEqual(view[dim_id]["basis"]["strength"], "qualified")
+            self.assertGreater(view[dim_id]["basis"]["by_class"].get("self-reported", 0), 0)
 
         # The content budget the build was counted against: the larger of the benchmark's
         # bar and the family's own.

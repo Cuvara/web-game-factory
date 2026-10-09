@@ -35,6 +35,24 @@ regression rule for its records (no baseline). An open finding of a run in progr
 old rule would have verified on an unmeasured, missing or same-commit pass stays open on
 resume until its check is measured passing.
 
+**The quality assessment: three separate questions, and how each was measured** (K6.3,
+quality-report 1.5.0, `core/reference/quality-assessment.yaml` 1.0.0,
+[docs/quality-assessment.md](docs/quality-assessment.md)). The quality-report gains an
+additive `assessment` section that reads the evidence the gate already read as design
+validity, runtime correctness and player-facing quality - each PASS, FAIL, INCONCLUSIVE or
+NOT_SUPPORTED with the checks it rests on (read through check-tiers `status_at`, the reader
+knowledge compliance uses), each check's measurement class (deterministic, heuristic,
+self-reported by the game's probe, AI-judged; human for a person's G4 decision), the judges'
+recorded runs, every blocker or major visual-judge finding listed unresolved whatever its
+report's verdict, a PASS that rests on the game's own report or one AI judgment marked
+`qualified` or `weak`, and what the evidence cannot justify. A held check that failed fails a
+dimension; one that measured nothing leaves it INCONCLUSIVE, never PASS; player-facing quality
+is never PASS without a person's G4 decision that pins this build's reports. **It decides
+nothing**: the floor, the verdict and the release decision are computed without it (tested
+identical with and without it). G4 shows the three lines. check-integrity holds that every
+check-tiers source and check is placed in the mapping or excluded with why. Bringing an
+existing artifact forward: none - a 1.4.0 quality-report without the section stays valid.
+
 **Cross-session quality transfer, and the first transferred principle (L29)** (lessons
 2.1.0, check-tiers 1.3.0, design-consistency-rules 2.4.1, content-sufficiency 1.6.0,
 game-design 1.16.0, knowledge-contract 1.2.0, quality-report 1.4.0,

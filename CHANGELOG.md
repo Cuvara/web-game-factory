@@ -9,6 +9,32 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Repairs verified on the same scenario** (playability-report 1.4.0, triage-report 1.3.0,
+[docs/specialist-routing.md](docs/specialist-routing.md) "What counts as a re-measurement",
+[docs/playability-module.md](docs/playability-module.md) "The scenario each check was
+measured on"). Every playability check names a stable scenario, `<check>@<project>`, and the
+report lists what the bot played for it, read from the records it already writes: the bot
+version (sha256 of bot.spec.ts) and settings, the viewport, the policy and seed, the records
+with their sha256, the inputs and probe states those records list, the frames with their
+sha256. The finding ledger now verifies a finding of a producer that lists its checks
+(playability, production-quality, listing-validation) only when the same check on the same
+project was measured and passed: a newer report that leaves the check unmeasured (BLOCKED,
+SKIPPED, WARNING, `measured.unmeasured`), no longer lists it, lists it only on another
+viewport, or - for playability - passes it on the commit it failed on, **no longer verifies
+the finding**; it stays open with the verdict `unmeasured`, `missing` or `same-build`, said
+in its history. A FAIL check in a BLOCKED report still fails. Each verification keeps the
+failing and passing measurements (`before`, `after`) and a `comparison` naming every
+difference (a newer bot, other settings: a weaker comparison, said so), and `samples` of the
+passes after it. **A regression now needs a prior pass**: a failure after a fix is its
+regression only when its check passed in the record's `baseline` (what the gates had
+measured when it was assigned) or it was verified before - a gate measuring for the first
+time raises a new finding, not a regression (the real 2D/3D runs: nine fixes never verified
+for this). History entries name the artifact's content hash and seq beside its id. Existing
+artifacts stay valid (every change is additive); a ledger written before this keeps the old
+regression rule for its records (no baseline). An open finding of a run in progress that the
+old rule would have verified on an unmeasured, missing or same-commit pass stays open on
+resume until its check is measured passing.
+
 **Cross-session quality transfer, and the first transferred principle (L29)** (lessons
 2.1.0, check-tiers 1.3.0, design-consistency-rules 2.4.1, content-sufficiency 1.6.0,
 game-design 1.16.0, knowledge-contract 1.2.0, quality-report 1.4.0,

@@ -578,13 +578,16 @@ class FindingLifecycle(unittest.TestCase):
     def records(self, result):
         return {r["id"]: r for r in result.artifacts[0].content["lifecycle"]}
 
-    def chain(self):
+    def chain(self, measured=None):
         """Triage #1 (fresh), the environment artist's visit, triage #2 (continued), the UI
-        visit: returns the docs and seqs as the gates are about to measure build C."""
+        visit: returns the docs and seqs as the gates are about to measure build C.
+        `measured` ({type: (report, seq)}) are further gates' reports of build A."""
         a, b, c = "a" * 40, "b" * 40, "c" * 40
         docs = {"game-design": DESIGN_3D, "prototype-report": self.proto(a, 1),
                 "visual-qa-report": self.vqa(a)}
         seqs = {"prototype-report": 5, "visual-qa-report": 8}
+        for kind, (report, seq) in (measured or {}).items():
+            docs[kind], seqs[kind] = report, seq
         first = run_triage(docs, seqs=seqs)
         records = self.records(first)
         self.assertEqual(records[self.DARK]["status"], "assigned")
@@ -634,7 +637,11 @@ class FindingLifecycle(unittest.TestCase):
                           "closed"])
 
     def test_a_fix_that_regresses_another_gate_is_not_verified(self):
-        docs, seqs, c = self.chain()
+        # verification measured build A and passed it: the defect on C is a regression.
+        passed = {"verdict": "pass", "build_ref": {"commit_sha": "a" * 40}, "suites": [],
+                  "blocking_defects": [],
+                  "provenance": {"artifact_id": "qa-report-demo-1"}}
+        docs, seqs, c = self.chain(measured={"qa-report": (passed, 7)})
         docs["visual-qa-report"] = self.vqa(c, dark=False, ui=True)
         docs["qa-report"] = {"verdict": "fail", "build_ref": {"commit_sha": c}, "suites": [],
                              "blocking_defects": [{"id": "D9", "severity": "critical",
@@ -661,6 +668,26 @@ class FindingLifecycle(unittest.TestCase):
         new = records["qa-report:d9"]
         self.assertEqual(new["build"], {"commit": c, "digest": "sha256:" + "d" * 64})
         self.assertEqual(new["status"], "assigned")  # the generalist visits it now
+
+    def test_a_gate_measuring_for_the_first_time_after_a_fix_is_not_its_regression(self):
+        """The real 2D/3D runs (K6 retro): production-quality ran for the first time after a
+        fix, failed something, and the fix - passed by its own gate six times - was never
+        verified. A producer that had not measured before the fix raises a new finding."""
+        docs, seqs, c = self.chain()
+        docs["visual-qa-report"] = self.vqa(c, dark=False, ui=False)
+        docs["qa-report"] = {"verdict": "fail", "build_ref": {"commit_sha": c}, "suites": [],
+                             "blocking_defects": [{"id": "D9", "severity": "critical",
+                                                   "summary": "crash on restart",
+                                                   "repro": "lose, retry"}]}
+        seqs.update({"visual-qa-report": 16, "qa-report": 20})
+        result = run_triage(docs, seqs=seqs, entered="verify.fail")
+        records = self.records(result)
+        dark = records[self.DARK]
+        self.assertIn(dark["status"], ("verified", "closed"))
+        self.assertEqual(dark["verification"]["regressions"], [])
+        self.assertNotIn("qa-report", dark["baseline"])
+        self.assertIn("visual-qa-report", dark["baseline"])
+        self.assertEqual(records["qa-report:d9"]["status"], "assigned")  # a new finding
 
     def production(self, commit, verdict="FAIL"):
         return {"title_id": "demo", "commit": commit, "verdict": verdict,
@@ -1045,6 +1072,484 @@ class SplitByRoute(unittest.TestCase):
         records = {r["id"]: r for r in third.artifacts[0].content["lifecycle"]}
         self.assertIn(records[self.DEVELOP]["status"], ("verified", "closed"))
         self.assertEqual(records[self.DEVELOP]["verification"]["verdict"], "passed")
+
+
+
+def _proto(commit, iteration, specialist=None):
+    body = {"title_id": "demo", "iteration": iteration,
+            "provenance": {"artifact_id": f"prototype-report-demo-{iteration}"},
+            "build_ref": {"commit_sha": commit}}
+    if specialist:
+        body["specialist"] = specialist
+    return body
+
+
+class ScenarioVerification(unittest.TestCase):
+    """K6.2: a repair is verified only when the SAME check on the SAME project was measured
+    FAIL on one commit and PASS on a newer one by the same producer - with both measurements
+    and the scenario each was played in kept in the ledger. Nothing that hides the check
+    verifies it: left unmeasured, removed from the report, made not applicable, passed only
+    on another viewport, or passed by playing the same commit again.
+
+    The playability reports here are made by the step's own path (analysis.judge, the
+    scenarios, _finish; test_playability.played_report) from FIXTURE bot records, except
+    test_real_recorded_naive_play, which judges REAL bot records."""
+
+    DESKTOP = "playability-report:restart.works@desktop"
+    MOBILE = "playability-report:restart.works@mobile"
+
+    def setUp(self):
+        import test_playability as tp
+        self.tp = tp
+        self.run = tempfile.mkdtemp(prefix="wgf-k6-scenario-")
+        self.addCleanup(shutil.rmtree, self.run, ignore_errors=True)
+        self.visit = 0
+
+    # -- reports ---------------------------------------------------------------------------
+
+    def report(self, commit, records=None, **kw):
+        self.visit += 1
+        return self.tp.played_report(self.run, commit, records=records, visit=self.visit, **kw)
+
+    def dead(self, project=None):
+        """The restart is pressed and play never comes back (the K6.1 `restart-dead`)."""
+        records = self.tp.well_played()
+        records["lose"]["restart"] = {"clicked": "input:retry", "playingMs": None,
+                                      "metrics": None}
+        return records
+
+    def fixed(self, project=None):
+        return self.tp.well_played()
+
+    # -- the ledger, through the triage step -----------------------------------------------
+
+    def loop(self, before, after, commits=("a" * 40, "b" * 40), extra=None):
+        """Triage #1 on `before` (built from commits[0]); the owner's visit builds commits[1]
+        for every finding it was assigned; triage #2 on `after`. Returns triage #2's ledger."""
+        a, b = commits
+        docs = {"game-design": DESIGN_2D, "prototype-report": _proto(a, 1),
+                "playability-report": before}
+        seqs = {"prototype-report": 5, "playability-report": 8}
+        first = run_triage(docs, seqs=seqs, entered="playability.fail")
+        ledger = {r["id"]: r for r in first.artifacts[0].content["lifecycle"]}
+        assigned = sorted(i for i, r in ledger.items() if r["status"] == "assigned")
+        self.assertIn(self.DESKTOP, assigned)
+        owner = ledger[self.DESKTOP]["owner"]
+        docs.update({"triage-report": first.artifacts[0].content,
+                     "prototype-report": _proto(b, 2, {"role": owner, "findings": assigned}),
+                     "playability-report": after})
+        docs.update(extra or {})
+        seqs.update({"triage-report": 9, "prototype-report": 11, "playability-report": 13})
+        seqs.update({k: 14 for k in (extra or {})})
+        second = run_triage(docs, seqs=seqs, entered="playability.success")
+        return {r["id"]: r for r in second.artifacts[0].content["lifecycle"]}
+
+    def test_the_restart_dead_fixture_fails_only_restart_works(self):
+        report = self.report("a" * 40, self.dead())
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertEqual(report["failed_checks"], ["desktop:restart.works",
+                                                   "mobile:restart.works"])
+        self.assertEqual(self.report("b" * 40, self.fixed())["verdict"], "PASS")
+
+    def test_fail_then_pass_of_the_same_scenario_is_verified_with_both_measurements(self):
+        a, b = "a" * 40, "b" * 40
+        ledger = self.loop(self.report(a, self.dead()), self.report(b, self.fixed()))
+        record = ledger[self.DESKTOP]
+        self.assertIn(record["status"], ("verified", "closed"))
+        self.assertIn("verified", [h["status"] for h in record["history"]])
+        ver = record["verification"]
+        self.assertEqual(ver["verdict"], "passed")
+        before, after = ver["before"], ver["after"]
+        self.assertEqual((before["commit"], before["status"]), (a, "FAIL"))
+        self.assertEqual((after["commit"], after["status"]), (b, "PASS"))
+        for measured in (before, after):
+            self.assertEqual(measured["check"], "restart.works")
+            self.assertEqual(measured["project"], "desktop")
+            self.assertEqual(measured["scenario"]["id"], "restart.works@desktop")
+            self.assertEqual(measured["scenario"]["bot_version"], self.tp.BOT_A)
+            self.assertEqual(measured["scenario"]["viewport"], {"width": 1280, "height": 720})
+            self.assertEqual(measured["scenario"]["policy"], {"lose": "anti-oracle"})
+            self.assertEqual([f["id"] for f in measured["frames"]], ["end-lost"])
+            self.assertTrue(measured["frames"][0]["sha256"].startswith("sha256:"))
+        # Two visits, two frames: the before and after are each the frame of their own play.
+        self.assertNotEqual(before["frames"][0]["path"], after["frames"][0]["path"])
+        self.assertEqual(ver["comparison"], {
+            "same_scenario": True, "differences": [],
+            "note": "the same scenario, bot and settings measured the failure and the pass"})
+        self.assertEqual(ledger[self.MOBILE]["verification"]["verdict"], "passed")
+
+    def test_a_newer_bot_still_verifies_and_says_the_comparison_is_weaker(self):
+        newer = "sha256:" + "b2" * 32
+        ledger = self.loop(self.report("a" * 40, self.dead()),
+                           self.report("b" * 40, self.fixed(), bot=newer))
+        ver = ledger[self.DESKTOP]["verification"]
+        self.assertEqual(ver["verdict"], "passed")
+        self.assertEqual((ver["before"]["scenario"]["bot_version"],
+                          ver["after"]["scenario"]["bot_version"]), (self.tp.BOT_A, newer))
+        self.assertFalse(ver["comparison"]["same_scenario"])
+        self.assertIn("bot version differs", ver["comparison"]["differences"])
+        self.assertIn("a weaker comparison", ver["comparison"]["note"])
+        self.assertIn("weaker comparison", ledger[self.DESKTOP]["history"][-2]["note"]
+                      + ledger[self.DESKTOP]["history"][-1]["note"])
+
+    def held(self, record, verdict):
+        self.assertEqual(record["status"], "implemented", record["history"][-1])
+        self.assertEqual(record["verification"]["verdict"], verdict)
+        self.assertNotIn("verified", [h["status"] for h in record["history"]])
+        self.assertIn("not verified", record["history"][-1]["note"])
+
+    def test_a_repair_that_leaves_the_check_unmeasured_is_not_verified(self):
+        """(a) The re-play's host was degraded: restart.works was not measured."""
+        def degraded(project):
+            records = self.fixed()
+            records["lose"].update(self.tp.attempts(self.tp.DEGRADED))
+            return records
+        after = self.report("b" * 40, degraded)
+        check = next(c for c in after["checks"]
+                     if c["id"] == "restart.works" and c["project"] == "desktop")
+        # A required check read on a degraded host is BLOCKED, and so is the report - whose
+        # findings are never normalized, so its silence used to verify the finding.
+        self.assertEqual((after["verdict"], check["status"]), ("BLOCKED", "BLOCKED"))
+        self.assertEqual(check["measured"]["unmeasured"], "environment-degraded")
+        ledger = self.loop(self.report("a" * 40, self.dead()), after)
+        self.held(ledger[self.DESKTOP], "unmeasured")
+        self.assertEqual(ledger[self.DESKTOP]["verification"]["after"]["status"], "BLOCKED")
+
+    def test_a_repair_that_removes_the_check_from_the_report_is_not_verified(self):
+        """(b) The next report does not list restart.works at all (a stand-in for a bot or
+        analysis that stopped measuring it): reported as missing, never as fixed."""
+        after = self.report("b" * 40, self.dead(),
+                            change=lambda checks: [c for c in checks
+                                                   if c["id"] != "restart.works"])
+        self.assertEqual(after["verdict"], "PASS")
+        ledger = self.loop(self.report("a" * 40, self.dead()), after)
+        record = ledger[self.DESKTOP]
+        self.held(record, "missing")
+        self.assertIn("no longer reports restart.works@desktop", record["history"][-1]["note"])
+        self.assertIsNone(record["verification"]["after"]["status"])
+
+    def test_a_repair_that_makes_the_check_not_applicable_is_not_verified(self):
+        """(c) The game stops offering a loss (the genre family's failure_state is false):
+        lose.reachable is SKIPPED and restart.works is BLOCKED with no loss to retry from."""
+        def lossless(project):
+            records = self.fixed()
+            records["lose"].update(reached=None, restart=None)
+            return records
+        qa = {"genre": {"failure_state": False}}
+        after = self.report("b" * 40, lossless, qa=qa)
+        statuses = {c["id"]: c["status"] for c in after["checks"] if c["project"] == "desktop"}
+        self.assertEqual((statuses["lose.reachable"], statuses["restart.works"]),
+                         ("SKIPPED", "BLOCKED"))
+        ledger = self.loop(self.report("a" * 40, self.dead()), after)
+        self.held(ledger[self.DESKTOP], "unmeasured")
+
+    def test_a_not_applicable_lose_check_does_not_verify_its_finding(self):
+        """(c) for the check that becomes SKIPPED itself: lose.reachable failed, and the
+        repair declares there is no loss."""
+        def unlosable(project):
+            records = self.fixed()
+            records["lose"].update(reached=None, restart=None)
+            return records
+        before = self.report("a" * 40, unlosable)
+        after = self.report("b" * 40, unlosable, qa={"genre": {"failure_state": False}})
+        fid = "playability-report:lose.reachable@desktop"
+        a, b = "a" * 40, "b" * 40
+        docs = {"game-design": DESIGN_2D, "prototype-report": _proto(a, 1),
+                "playability-report": before}
+        seqs = {"prototype-report": 5, "playability-report": 8}
+        first = run_triage(docs, seqs=seqs, entered="playability.fail")
+        ledger = {r["id"]: r for r in first.artifacts[0].content["lifecycle"]}
+        docs.update({"triage-report": first.artifacts[0].content,
+                     "prototype-report": _proto(b, 2, {"role": ledger[fid]["owner"],
+                                                       "findings": [fid]}),
+                     "playability-report": after})
+        seqs.update({"triage-report": 9, "prototype-report": 11, "playability-report": 13})
+        second = run_triage(docs, seqs=seqs, entered="playability.success")
+        record = {r["id"]: r for r in second.artifacts[0].content["lifecycle"]}[fid]
+        self.held(record, "unmeasured")
+        self.assertEqual(record["verification"]["after"]["status"], "SKIPPED")
+
+    def test_a_pass_on_another_viewport_only_is_not_verified(self):
+        """(d) The re-play ran on desktop only: desktop is verified, mobile's finding is
+        missing from the report and stays open."""
+        after = self.report("b" * 40, self.fixed(), played=("desktop",))
+        ledger = self.loop(self.report("a" * 40, self.dead()), after)
+        self.assertEqual(ledger[self.DESKTOP]["verification"]["verdict"], "passed")
+        self.held(ledger[self.MOBILE], "missing")
+        self.assertIn("restart.works@mobile", ledger[self.MOBILE]["history"][-1]["note"])
+
+    def test_a_pass_measured_on_the_commit_that_failed_is_not_a_repair(self):
+        a = "a" * 40
+        ledger = self.loop(self.report(a, self.dead()), self.report(a, self.fixed()),
+                           commits=(a, a))
+        self.held(ledger[self.DESKTOP], "same-build")
+
+    def test_a_repair_that_breaks_a_passing_check_is_regressed(self):
+        """Existing behaviour, held with scenarios: the restart is fixed, but play is now
+        lost with no input (idle.grace passed before) - not verified, the regression named,
+        and both measurements kept."""
+        def broke(project):
+            records = self.fixed()
+            records["first-session"]["lostAtMs"] = 2700
+            return records
+        ledger = self.loop(self.report("a" * 40, self.dead()), self.report("b" * 40, broke))
+        record = ledger[self.DESKTOP]
+        self.assertEqual(record["status"], "implemented")
+        self.assertEqual(record["verification"]["verdict"], "regressed")
+        self.assertIn("playability-report:idle.grace@desktop",
+                      record["verification"]["regressions"])
+        self.assertEqual(record["verification"]["after"]["status"], "PASS")
+        self.assertEqual(record["verification"]["before"]["status"], "FAIL")
+
+    def test_a_check_failing_in_a_blocked_report_still_fails(self):
+        """A BLOCKED report's findings are never normalized: its FAIL check used to read as
+        'not failing' and verify the finding."""
+        from wgf_triage import lifecycle
+        before = self.report("a" * 40, self.dead())
+        after = self.report("b" * 40, self.dead())
+        after["verdict"] = "BLOCKED"  # (a host problem elsewhere in the same play)
+        finding = next(f for f in normalize("playability-report", before, ROUTING)
+                       if f["id"] == self.DESKTOP)
+        finding["build"] = {"commit": "a" * 40, "digest": None}
+        records = lifecycle.advance(
+            [], at="t", current=[finding], failing={"playability-report": {self.DESKTOP}},
+            seqs={"playability-report": 8}, reports={"playability-report": before},
+            proto=None, proto_seq=5, decision=None, decision_seq=-1, human_ids=set(),
+            selected=None, triage_id="t1", routing_version="x",
+            build_of=lambda k: {"commit": "a" * 40, "digest": None})
+        out = lifecycle.advance(
+            records, at="t", current=[], failing={"playability-report": set()},
+            seqs={"playability-report": 12}, reports={"playability-report": after},
+            proto=None, proto_seq=5, decision=None, decision_seq=-1, human_ids=set(),
+            selected=None, triage_id="t2", routing_version="x",
+            build_of=lambda k: {"commit": "b" * 40, "digest": None})
+        record = next(r for r in out if r["id"] == self.DESKTOP)
+        self.assertEqual(record["status"], "classified")
+        self.assertIsNone(record["verification"])
+
+    def no_fix(self, after, after_commit="b" * 40):
+        """The no-fix path: detected on a, never routed, re-measured on `after`."""
+        from wgf_triage import lifecycle
+        before = self.report("a" * 40, self.dead())
+        found = [f for f in normalize("playability-report", before, ROUTING)]
+        for f in found:
+            f["build"] = {"commit": "a" * 40, "digest": None}
+        records = lifecycle.advance(
+            [], at="t", current=found, failing={"playability-report": {f["id"] for f in found}},
+            seqs={"playability-report": 8}, reports={"playability-report": before},
+            proto=None, proto_seq=5, decision=None, decision_seq=-1, human_ids=set(),
+            selected=None, triage_id="t1", routing_version="x",
+            build_of=lambda k: {"commit": "a" * 40, "digest": None})
+        failing = {f["id"] for f in normalize("playability-report", after, ROUTING)} \
+            if after["verdict"] == "FAIL" else set()
+        out = lifecycle.advance(
+            records, at="t", current=[], failing={"playability-report": failing},
+            seqs={"playability-report": 12}, reports={"playability-report": after},
+            proto=None, proto_seq=5, decision=None, decision_seq=-1, human_ids=set(),
+            selected=None, triage_id="t2", routing_version="x",
+            build_of=lambda k: {"commit": after_commit, "digest": None})
+        return {r["id"]: r for r in out}
+
+    def test_the_rule_holds_with_no_recorded_fix_too(self):
+        verified = self.no_fix(self.report("b" * 40, self.fixed()))[self.DESKTOP]
+        self.assertEqual(verified["status"], "closed")
+        self.assertEqual(verified["verification"]["before"]["commit"], "a" * 40)
+        self.assertEqual(verified["verification"]["after"]["commit"], "b" * 40)
+        removed = self.no_fix(self.report("b" * 40, self.dead(), change=lambda checks: [
+            c for c in checks if c["id"] != "restart.works"]))[self.DESKTOP]
+        self.assertEqual((removed["status"], removed["verification"]["verdict"]),
+                         ("classified", "missing"))
+        mobile_only = self.no_fix(self.report("b" * 40, self.fixed(), played=("mobile",)))
+        self.assertEqual(mobile_only[self.DESKTOP]["verification"]["verdict"], "missing")
+        self.assertEqual(mobile_only[self.MOBILE]["status"], "closed")
+        replayed = self.no_fix(self.report("a" * 40, self.fixed()),
+                               after_commit="a" * 40)[self.DESKTOP]
+        self.assertEqual(replayed["verification"]["verdict"], "same-build")
+
+    def test_a_held_verdict_is_noted_once_per_report(self):
+        from wgf_triage import lifecycle
+        after = self.report("b" * 40, self.dead(), change=lambda checks: [
+            c for c in checks if c["id"] != "restart.works"])
+        first = self.no_fix(after)
+        again = lifecycle.advance(
+            list(first.values()), at="t", current=[], failing={"playability-report": set()},
+            seqs={"playability-report": 12}, reports={"playability-report": after},
+            proto=None, proto_seq=5, decision=None, decision_seq=-1, human_ids=set(),
+            selected=None, triage_id="t3", routing_version="x",
+            build_of=lambda k: {"commit": "b" * 40, "digest": None})
+        record = next(r for r in again if r["id"] == self.DESKTOP)
+        self.assertEqual(len(record["history"]), len(first[self.DESKTOP]["history"]))
+
+    def test_a_check_measured_passing_before_the_fix_that_fails_after_is_a_regression(self):
+        """The baseline: idle.grace passed on A (when the restart finding was assigned) and
+        fails on B - a regression. page.errors, not listed on A at all, failing on B is a new
+        finding, not a regression."""
+        def broke(project):
+            records = self.fixed()
+            records["first-session"]["lostAtMs"] = 2700
+            return records
+        before = self.report("a" * 40, self.dead(), change=lambda checks: [
+            c for c in checks if c["id"] != "page.errors"])
+        def errors(project):
+            records = self.fixed()
+            records["win"]["errors"] = ["TypeError: x is undefined"]
+            return records
+        ledger = self.loop(before, self.report("b" * 40, errors))
+        record = ledger[self.DESKTOP]
+        self.assertIn("playability-report:idle.grace@desktop",
+                      record["baseline"]["playability-report"]["passing"])
+        self.assertNotIn("playability-report:page.errors@desktop",
+                         record["baseline"]["playability-report"]["passing"])
+        self.assertEqual(record["verification"]["verdict"], "passed")
+        self.assertEqual(ledger["playability-report:page.errors@desktop"]["status"],
+                         "assigned")
+        regressed = self.loop(self.report("a" * 40, self.dead()), self.report("b" * 40, broke))
+        self.assertEqual(regressed[self.DESKTOP]["verification"]["regressions"],
+                         ["playability-report:idle.grace@desktop",
+                          "playability-report:idle.grace@mobile"])
+
+    def test_history_names_each_report_by_hash_and_seq(self):
+        """Two playability reports share one artifact id (greybox and develop): the history
+        says which was which."""
+        before = self.report("a" * 40, self.dead(), execution=1)
+        after = self.report("b" * 40, self.fixed(), execution=1)
+        self.assertEqual(before["provenance"]["artifact_id"], after["provenance"]["artifact_id"])
+        record = self.loop(before, after)[self.DESKTOP]
+        detected = record["history"][0]
+        verified = next(h for h in record["history"] if h["status"] == "verified")
+        self.assertEqual(detected["by"], verified["by"])
+        self.assertEqual(detected["content_hash"], before["provenance"]["content_hash"])
+        self.assertEqual(verified["content_hash"], after["provenance"]["content_hash"])
+        self.assertEqual((detected["seq"], verified["seq"]), (8, 13))
+        ver = record["verification"]
+        self.assertEqual((ver["before"]["content_hash"], ver["after"]["content_hash"]),
+                         (before["provenance"]["content_hash"],
+                          after["provenance"]["content_hash"]))
+        self.assertEqual((ver["before"]["seq"], ver["after"]["seq"]), (8, 13))
+
+    def test_samples_count_the_passes_after_verification(self):
+        """One pass is a single sample; each later report passing the same check adds one;
+        a later report that does not measure it adds none."""
+        from wgf_triage import lifecycle
+        ledger = self.loop(self.report("a" * 40, self.dead()), self.report("b" * 40, self.fixed()))
+        record = ledger[self.DESKTOP]
+        self.assertEqual([x["seq"] for x in record["verification"]["samples"]], [13])
+
+        def again(records, report, seq):
+            return {r["id"]: r for r in lifecycle.advance(
+                list(records.values()), at="t", current=[],
+                failing={"playability-report": set()}, seqs={"playability-report": seq},
+                reports={"playability-report": report}, proto=None, proto_seq=11,
+                decision=None, decision_seq=-1, human_ids=set(), selected=None,
+                triage_id="t", routing_version="x",
+                build_of=lambda k: {"commit": report["commit"], "digest": None})}
+        ledger = again(ledger, self.report("b" * 40, self.fixed()), 15)
+        ledger = again(ledger, self.report("c" * 40, self.dead(), change=lambda checks: [
+            c for c in checks if c["id"] != "restart.works"]), 17)
+        ledger = again(ledger, self.report("c" * 40, self.fixed()), 19)
+        self.assertEqual([x["seq"] for x in ledger[self.DESKTOP]["verification"]["samples"]],
+                         [13, 15, 19])
+        self.assertEqual(ledger[self.DESKTOP]["status"], "closed")
+
+    def test_measurement_states(self):
+        from wgf_triage import measurement
+        fid = "playability-report:restart.works@desktop"
+        src = {"check": "restart.works", "project": "desktop"}
+
+        def report(**check):
+            return {"checks": [dict({"id": "restart.works", "project": "desktop",
+                                     "required": True, "summary": "x"}, **check)]}
+        for status, expected in (("PASS", "pass"), ("FAIL", "fail"), ("BLOCKED", "unmeasured"),
+                                 ("SKIPPED", "unmeasured"), ("WARNING", "unmeasured")):
+            self.assertEqual(measurement.state("playability-report", report(status=status),
+                                               fid, src, set()), expected, status)
+        # A pass with nothing measured is not a pass; a held FAIL with nothing measured fails.
+        self.assertEqual(measurement.state(
+            "playability-report", report(status="PASS", measured={"unmeasured": "x"}), fid, src,
+            set()), "unmeasured")
+        self.assertEqual(measurement.state(
+            "playability-report", report(status="FAIL", measured={"unmeasured": "x"}), fid, src,
+            {fid}), "fail")
+        self.assertEqual(measurement.state(
+            "playability-report", report(status="PASS", project="mobile"), fid, src, set()),
+            "missing")
+
+    def test_other_producers_keep_their_rule(self):
+        """visual-qa lists no checks with a status: its rule is unchanged - the newest report
+        not failing the id (FindingLifecycle holds it in full)."""
+        from wgf_triage import measurement
+        self.assertIsNone(measurement.state("visual-qa-report", {}, "x", {}, set()))
+        self.assertEqual(measurement.CHECKED, ("playability-report",
+                                               "production-quality-report",
+                                               "listing-validation-report"))
+
+    def test_real_recorded_naive_play(self):
+        """REAL bot records (scripts/tests/fixtures/real/play-realism, this bot's naive test
+        on the 3D game's builds, 2026-10-07): 1c6b099, the regressed head, FAILs naive.pace;
+        c340631, the r1-forward repair of it, PASSes. Through the scenarios and the ledger the
+        repair is verified on the same scenario, with the real runs' policies listed."""
+        import test_play_realism as tpr
+        from wgf_playability import analysis, realism
+        from wgf_playability import scenario as scenarios
+        from wgf_playability.step import PlayabilityStep
+        reports = {}
+        for visit, commit in enumerate(("1c6b099", "c340631"), 1):
+            record = tpr.real(f"naive-bot-3d-{commit}.json")["record"]
+            units = [{"id": u["id"], "parameters": u.get("parameters") or {}}
+                     for u in tpr.real(f"content-3d-{commit}.json")["units"]]
+            out = os.path.join(self.run, "playability", f"{visit}-1", "out")
+            os.makedirs(os.path.join(out, "desktop"))
+            with open(os.path.join(out, "desktop", "naive.json"), "w", encoding="utf-8") as h:
+                json.dump(record, h)
+            with open(os.path.join(out, "settings.json"), "w", encoding="utf-8") as h:
+                json.dump({}, h)  # the real settings were not kept: nothing is claimed of them
+            rules = load_file(os.path.join(paths.REFERENCE, "visual-quality.yaml"))
+            checks = analysis._environment(
+                realism.judge({"naive": record}, tpr.D3, tpr.RULES, "desktop", tpr.RELEASE,
+                              units),
+                {"naive": record}, rules.get("environment") or {}, {})
+            projects = [{"id": "desktop", "viewport": {"width": 1280, "height": 720},
+                         "ran": True}]
+            handed, sha = scenarios.settings_of(out)
+            bot = {"version": self.tp.BOT_A, "settings_sha256": sha}
+            checks, found = scenarios.build(checks, projects, [], {"desktop": {"naive": record}},
+                                            out, self.run, bot=bot, settings=handed)
+            full = commit.ljust(40, "0")
+            report = PlayabilityStep(types.SimpleNamespace(params={}))._finish(
+                types.SimpleNamespace(logger=Log(), execution=visit),
+                types.SimpleNamespace(refs={}), "demo", full, checks, [], {}, None, projects,
+                os.path.relpath(out, self.run).replace(os.sep, "/"), bot=bot,
+                scenarios=found).artifacts[0].content
+            self.assertEqual(ArtifactContracts()("playability-report", report), [])
+            reports[commit] = report
+        fid = "playability-report:naive.pace@desktop"
+        self.assertIn("desktop:naive.pace", reports["1c6b099"]["failed_checks"])
+        pace = next(s for s in reports["1c6b099"]["scenarios"] if s["id"] == "naive.pace@desktop")
+        # The runs as the real record lists them: each policy, unit, inputs and time.
+        self.assertEqual(pace["policy"]["recordings"], {"naive": "naive"})
+        self.assertEqual({a["action"] for a in pace["actions"]}, {"steady", "jitter"})
+        first = pace["actions"][0]
+        self.assertEqual((first["action"], first["phase"], first["count"], first["at_ms"]),
+                         ("steady", "meadow-roll", 17, 6829))
+        self.assertFalse(pace["actions_complete"])
+        a, b = "1c6b099".ljust(40, "0"), "c340631".ljust(40, "0")
+        docs = {"game-design": DESIGN_3D, "prototype-report": _proto(a, 1),
+                "playability-report": reports["1c6b099"]}
+        seqs = {"prototype-report": 5, "playability-report": 8}
+        first = run_triage(docs, seqs=seqs, entered="playability.fail")
+        ledger = {r["id"]: r for r in first.artifacts[0].content["lifecycle"]}
+        docs.update({"triage-report": first.artifacts[0].content,
+                     "prototype-report": _proto(b, 2, {"role": ledger[fid]["owner"],
+                                                       "findings": [fid]}),
+                     "playability-report": reports["c340631"]})
+        seqs.update({"triage-report": 9, "prototype-report": 11, "playability-report": 13})
+        second = run_triage(docs, seqs=seqs, entered="playability.success")
+        record = {r["id"]: r for r in second.artifacts[0].content["lifecycle"]}[fid]
+        ver = record["verification"]
+        self.assertEqual(ver["verdict"], "passed")
+        self.assertEqual((ver["before"]["commit"], ver["after"]["commit"]), (a, b))
+        self.assertEqual((ver["before"]["status"], ver["after"]["status"]), ("FAIL", "PASS"))
+        self.assertTrue(ver["comparison"]["same_scenario"], ver["comparison"])
 
 
 if __name__ == "__main__":

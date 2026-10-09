@@ -610,28 +610,56 @@ class Recovery(_Case):
         self.assertTrue(api.quality(state)["release_ready"])
 
     def test_a_fix_that_regresses_another_gate_is_not_verified(self):
+        """The level designer's fix for a repeated level flattens the progression, which
+        content-sufficiency measured passing before the fix: a regression of that fix."""
+        structure = "content-sufficiency-report:content-sufficiency:content.structure"
+        progression = "content-sufficiency-report:content-sufficiency:content.progression"
+        case, world, api, state = self.recover(
+            "duplicate-level",
+            {"level-designer": {"fixes": ["duplicate-level"], "breaks": ["flat-progression"]},
+             "systems-designer": {"fixes": ["flat-progression"]}})
+        self.assertEqual(world.visits, ["level-designer", "systems-designer"])
+        # The triage after the level designer's visit: content-sufficiency no longer fails the
+        # repeated level, but the same build fails the progression it passed before.
+        after = [t for t in self.every(api, state, "triage-report")
+                 if any(r["id"] == structure and r["status"] == "implemented"
+                        for r in t["lifecycle"])][-1]
+        ledger = {r["id"]: r for r in after["lifecycle"]}
+        self.assertEqual(ledger[structure]["verification"]["verdict"], "regressed")
+        self.assertIn(progression, ledger[structure]["verification"]["regressions"])
+        self.assertEqual(after["selected"]["label"], "systems-designer")
+        # Once the regression is fixed too, the first finding is verified on that build - in
+        # the run, by the quality gate before G4.
+        quality_report = self.newest(api, state, "quality-report")
+        in_run = {r["id"]: r for r in quality_report["ledger"]["lifecycle"]}
+        self.assertIn(in_run[structure]["status"], ("verified", "closed"))
+        self.assertEqual(quality_report["ledger"]["open"], [])
+        state = self.decide(api, state)
+        self.assertEqual(state.status, RunStatus.COMPLETED, self.story(api, state))
+        self.assertTrue(api.quality(state)["release_ready"])
+
+    def test_a_gate_measuring_for_the_first_time_after_a_fix_is_not_its_regression(self):
+        """The ui fix makes the production gate pass but drops content. content-sufficiency
+        never measured before the fix (production-quality failed first), so the content
+        failure is a new finding routed to its owner, not a regression of the ui fix - which
+        is verified by its own gate (the real 2D/3D runs: nine fixes never verified this
+        way, K6 retro)."""
         case, world, api, state = self.recover(
             "broken-mobile-layout",
             {"ui": {"fixes": ["broken-mobile-layout"], "breaks": ["remove-content"]},
              "level-designer": {"fixes": ["remove-content"]}})
         self.assertEqual(world.visits, ["ui", "level-designer"])
-        # The triage after the ui visit: the production gate passes the ui fix, but the
-        # same build fails content-sufficiency, which passed before - a regression.
         after_ui = [t for t in self.every(api, state, "triage-report")
                     if t.get("source") == "content-sufficiency.develop"][0]
         ledger = {r["id"]: r for r in after_ui["lifecycle"]}
         targets = ledger["production-quality-report:ui.targets@mobile"]
-        self.assertEqual(targets["status"], "implemented")
-        self.assertEqual(targets["verification"]["verdict"], "regressed")
-        self.assertIn("content-sufficiency-report:content-sufficiency:content.units_shipped",
-                      targets["verification"]["regressions"])
+        self.assertIn(targets["status"], ("verified", "closed"))
+        self.assertEqual(targets["verification"]["regressions"], [])
+        self.assertNotIn("content-sufficiency-report", targets["baseline"])
+        content = ledger["content-sufficiency-report:content-sufficiency:content.units_shipped"]
+        self.assertEqual(content["status"], "assigned")
         self.assertEqual(after_ui["selected"]["label"], "level-designer")
-        # Once the regression is fixed too, the ui finding is verified on that build - in the
-        # run, by the quality gate before G4.
         quality_report = self.newest(api, state, "quality-report")
-        in_run = {r["id"]: r for r in quality_report["ledger"]["lifecycle"]}
-        self.assertIn(in_run["production-quality-report:ui.targets@mobile"]["status"],
-                      ("verified", "closed"))
         self.assertEqual(quality_report["ledger"]["open"], [])
         state = self.decide(api, state)
         self.assertEqual(state.status, RunStatus.COMPLETED, self.story(api, state))

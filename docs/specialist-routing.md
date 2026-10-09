@@ -233,7 +233,7 @@ where that fix is verified. The run's ledger is the newest of the two. Each reco
 | classified | its dimension, owner and route are decided from the routing data |
 | assigned | a triage routes its group to the owner |
 | implemented | the owner's develop visit lists it (the prototype-report's `specialist` block): the fix's commit and run-local seq. A finding a gate routed straight to the assets step (production-quality's and visual-qa's `assets`) is recorded by the triage after that step, assigned to it and implemented by its asset-manifest (`fix.artifact_id`) |
-| verified | the producer that raised it has a report newer than the fix, that report no longer fails its id, and **nothing that passed before fails on a build at or after the fix**. A regression keeps the finding `implemented`, with `verification.verdict: regressed` and the regressions named. |
+| verified | the producer that raised it has a report newer than the fix, that report no longer fails its id - for a producer that lists its checks, **the same check on the same project was measured and passed** (below) - and **nothing that passed before fails on a build at or after the fix**. A regression keeps the finding `implemented`, with `verification.verdict: regressed` and the regressions named. |
 | closed | verified, and every gate the run holds a report of has measured a build at or after the fix |
 
 A finding with no recorded fix - its group still pending, or fixed by another visit's
@@ -245,6 +245,57 @@ moves it past `implemented`. If the raising gate still fails it, the finding is 
 `classified`, with `verification.verdict: still-failing`. A verified or closed finding that a
 gate fails again is reopened the same way. A person's G4 finding is re-measured by the next
 G4 decision: it is verified unless that decision is `iterate` and names it again.
+
+### What counts as a re-measurement (triage-report 1.3.0)
+
+A producer that lists its checks one by one with a status - playability, production-quality,
+listing-validation (`wgf_triage/measurement.py` `CHECKED`) - re-measures a finding only by
+measuring **the same check on the same project** again. "The newest report does not fail its
+id" is not enough there. Each of these verifies nothing and leaves the finding open, with its
+verdict and a history note:
+
+| `verification.verdict` | The newest report of the raising producer... |
+|---|---|
+| `unmeasured` | lists the check but measured nothing: `BLOCKED` (a degraded host, no loss to retry from), `SKIPPED` (not applicable), `WARNING`, or a value marked `measured.unmeasured` |
+| `missing` | does not list the check for that project: removed, renamed, or played on another viewport only. A check that disappears is reported, never counted as fixed |
+| `same-build` | (playability) passed it on the commit it failed on: a re-play of the same build, not a repair |
+
+A check that FAILs in a report whose verdict is `BLOCKED` (whose findings are never
+normalized) still fails. Before 1.3.0 every one of these verified the finding: the old rule
+read only the newest report's failing ids. Every other producer keeps that rule.
+
+A verified finding of such a producer carries both measurements in `verification`: `before`
+(the last report that failed it - kept on the record as `failed_measurement` - with its
+commit, status, `seq`, content hash and, for playability, the scenario: id, bot version and
+settings, viewport, policy and seed, frames with sha256), `after` (the report that passed
+it) and `comparison`, which names every way the two differ - another bot version, other
+settings, viewport, policy or seed. A difference does not stop the verification; it makes
+the comparison weaker and the record says so (`same_scenario: false`, and the history's
+note). `verification.samples` counts every later report of the producer that measured the
+same check passing again: one sample is a single run, more are the pass reproduced.
+
+**Regressions need a prior pass.** A record keeps a `baseline` when it is assigned (or, if no
+triage assigned it, implemented): per producer, the report then newest, its commit, the
+findings it failed and the checks it passed. A failure on a build at or after the fix is a
+regression of the fix only when its check passed in that baseline (for a producer that does
+not list its checks: the producer had measured and did not fail it), or the finding was
+verified before. A producer or check that had never measured before the fix - a gate
+running for the first time - raises a new finding, not a regression: in the real 2D and 3D
+runs that rule kept nine fixes from ever being verified although their own gate passed them
+again and again. A ledger with no baseline keeps the old rule.
+
+Every history entry an artifact caused names it by `by` (the artifact id) and, where known,
+its `content_hash` and run-local `seq`: greybox and develop playability reports can share an
+artifact id, and only the hash and seq say which one detected or verified a finding.
+
+Tests: `scripts/tests/test_triage.py` `ScenarioVerification` - the repair verified with both
+measurements, a newer bot still verifying with the comparison called weaker, each way of
+hiding the check (unmeasured, removed, not applicable, another viewport only, the same
+commit replayed) never verifying, a regression still detected and a first-time gate not
+one, the history's hashes, the samples - over fixture bot records taken through the step's
+own judging and scenario path, and one over REAL bot records (the 3D game's naive play,
+`fixtures/real/play-realism`: 1c6b099 fails `naive.pace`, its r1-forward repair c340631
+passes it).
 
 ### An open finding holds the build
 

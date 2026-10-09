@@ -90,6 +90,7 @@
         "route": { "$ref": "#/$defs/route" },
         "assets": { "type": "array", "items": { "type": "string" }, "description": "Asset ids it concerns, when the producer names them." },
         "build": { "$ref": "#/$defs/build" },
+        "measurement": { "$ref": "#/$defs/measurement", "description": "Since triage-report 1.3.0. For a producer that lists its checks (playability, production-quality, listing-validation): the measurement the finding was read from." },
         "guarded_by": { "type": "array", "items": { "$ref": "#/$defs/guard" }, "description": "Since quality-report 1.2.0 / triage-report 1.2.0. The regression guards this failure already has: the lessons of core/reference/lessons.yaml whose check this finding's check is, with the tests that prove the check catches it. Empty or absent: no lesson names it, and a systemic cause is a lesson candidate." },
         "excepted": {
           "type": "object",
@@ -241,9 +242,49 @@
       "additionalProperties": false
     },
 
+    "measurement": {
+      "type": "object",
+      "description": "Since triage-report 1.3.0. One report's measurement of one check, as the ledger keeps it: the report, the commit it measured, the check and project, the status, and - for playability (playability-report 1.4.0) - the scenario the bot played for it and its frames. The `before` and `after` a repair is verified on.",
+      "required": ["producer", "check", "status"],
+      "properties": {
+        "producer": { "type": "string" },
+        "artifact_id": { "type": ["string", "null"] },
+        "content_hash": { "type": ["string", "null"] },
+        "seq": { "type": ["integer", "null"], "description": "The report's run-local production order: with the content hash, which of two reports sharing an artifact id it was." },
+        "commit": { "type": ["string", "null"] },
+        "check": { "type": ["string", "null"] },
+        "project": { "type": ["string", "null"] },
+        "status": { "type": ["string", "null"], "description": "The check's status in that report (PASS, FAIL, BLOCKED, SKIPPED, WARNING); null when the report does not list it." },
+        "scenario": {
+          "type": ["object", "null"],
+          "description": "The playability scenario: its id (`<check>@<project>`), the bot version and the settings it was handed, the viewport, the policy per recording and the seed. Null for a report that records none.",
+          "properties": {
+            "id": { "type": "string" },
+            "bot_version": { "type": ["string", "null"] },
+            "settings_sha256": { "type": ["string", "null"] },
+            "viewport": { "type": ["object", "null"] },
+            "policy": { "type": "object" },
+            "seed": { "type": ["integer", "null"] },
+            "actions_complete": { "type": ["boolean", "null"] }
+          },
+          "additionalProperties": false
+        },
+        "frames": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path"],
+            "properties": { "id": { "type": ["string", "null"] }, "path": { "type": ["string", "null"] }, "sha256": { "type": ["string", "null"] } },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
     "status": {
       "enum": ["detected", "classified", "assigned", "implemented", "verified", "closed"],
-      "description": "A finding's lifecycle. detected: a producer reported it. classified: its dimension, owner and route were decided from the routing data. assigned: a triage routed it to its owner. implemented: the owner's visit built a change for it. verified: the producer that raised it re-measured a newer build and it no longer fails, and nothing that was passing failed on that build (a fix that regresses another gate is not verified). closed: verified, and every gate the run holds a report of has measured the build carrying the fix. Never closed on the specialist's word: only on the raising gate's re-measurement. A verified or closed finding the gate raises again is classified again (reopened)."
+      "description": "A finding's lifecycle. detected: a producer reported it. classified: its dimension, owner and route were decided from the routing data. assigned: a triage routed it to its owner. implemented: the owner's visit built a change for it. verified: the producer that raised it re-measured a newer build and it no longer fails, and nothing that was passing failed on that build (a fix that regresses another gate is not verified). closed: verified, and every gate the run holds a report of has measured the build carrying the fix. Never closed on the specialist's word: only on the raising gate's re-measurement - and, for a producer that lists its checks, only on a measurement of the same check on the same project (a check the report no longer lists, or lists as BLOCKED, SKIPPED or WARNING, verifies nothing; playability also needs another commit than the one it failed on). A verified or closed finding the gate raises again is classified again (reopened)."
     },
 
     "record": {
@@ -264,6 +305,23 @@
         "observed": { "description": "The value last measured (the finding's measured)." },
         "evidence_refs": { "type": "array", "items": { "type": "string" } },
         "task": { "$ref": "#/$defs/task" },
+        "failed_measurement": { "$ref": "#/$defs/measurement", "description": "Since triage-report 1.3.0. The last measurement that failed the finding: the `before` its verification is compared with." },
+        "baseline": {
+          "type": "object",
+          "description": "Since triage-report 1.3.0. What the gates had measured when the finding was assigned (or, assigned by none, implemented): per producer, its newest report then, the commit, the findings it failed and - for a producer that lists its checks - the checks it passed (`<producer>:<check>[@<project>]`). A failure after the fix is a regression of it only when its check passed here, or it was verified before: a producer or check that had never measured raises a new finding, not a regression.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "artifact_id": { "type": ["string", "null"] },
+              "content_hash": { "type": ["string", "null"] },
+              "seq": { "type": ["integer", "null"] },
+              "commit": { "type": ["string", "null"] },
+              "failing": { "type": "array", "items": { "type": "string" } },
+              "passing": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": false
+          }
+        },
         "fix": {
           "type": ["object", "null"],
           "description": "The specialist visit that implemented it.",
@@ -280,14 +338,43 @@
           "type": ["object", "null"],
           "description": "The raising producer's re-measurement of a newer build than the fix: its report, the build, what it measured, and any regressions that keep the finding from being verified.",
           "properties": {
-            "verdict": { "enum": ["passed", "still-failing", "regressed"] },
+            "verdict": { "enum": ["passed", "still-failing", "regressed", "unmeasured", "missing", "same-build"], "description": "passed: re-measured, no longer failing. still-failing: the producer still fails it (reopened). regressed: no longer failing, but the build fails what passed before. Since triage-report 1.3.0, for a producer that lists its checks, three that verify nothing and leave the finding open: unmeasured (the check is listed but measured nothing: BLOCKED, SKIPPED, WARNING or `measured.unmeasured`), missing (the report no longer lists the check for that project), same-build (playability passed it on the commit it failed on)." },
             "producer": { "type": "string" },
             "artifact_id": { "type": ["string", "null"] },
             "content_hash": { "type": ["string", "null"] },
             "build": { "$ref": "#/$defs/build" },
             "observed": {},
             "regressions": { "type": "array", "items": { "type": "string" }, "description": "Findings first detected on a build at or after the fix: something that was passing fails now." },
-            "gates_measured": { "type": "array", "items": { "type": "string" }, "description": "The producers whose reports measured a build at or after the fix." }
+            "gates_measured": { "type": "array", "items": { "type": "string" }, "description": "The producers whose reports measured a build at or after the fix." },
+            "before": { "$ref": "#/$defs/measurement", "description": "Since triage-report 1.3.0. The measurement that failed it." },
+            "after": { "$ref": "#/$defs/measurement", "description": "Since triage-report 1.3.0. The newer measurement the verdict was read from." },
+            "seq": { "type": ["integer", "null"], "description": "Since triage-report 1.3.0. The run-local seq of the report the verdict was read from." },
+            "samples": {
+              "type": "array",
+              "description": "Since triage-report 1.3.0. Every report of the raising producer that measured it passing, from the one that verified it on (the newest 20): one sample is a single run; more are the pass reproduced. Never a status of its own.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "artifact_id": { "type": ["string", "null"] },
+                  "content_hash": { "type": ["string", "null"] },
+                  "seq": { "type": ["integer", "null"] },
+                  "commit": { "type": ["string", "null"] },
+                  "status": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "comparison": {
+              "type": "object",
+              "description": "Since triage-report 1.3.0. Whether `before` and `after` are the same scenario played by the same bot under the same settings on the same viewport, every difference named. A comparison with differences is weaker, and says so.",
+              "required": ["same_scenario", "differences", "note"],
+              "properties": {
+                "same_scenario": { "type": "boolean" },
+                "differences": { "type": "array", "items": { "type": "string" } },
+                "note": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
           },
           "required": ["verdict", "producer"],
           "additionalProperties": false
@@ -304,6 +391,8 @@
               "at": { "type": "string" },
               "by": { "type": ["string", "null"], "description": "The artifact or step the transition came from." },
               "build": { "type": ["string", "null"] },
+              "content_hash": { "type": ["string", "null"], "description": "Since triage-report 1.3.0. The content hash of the artifact `by` names, when known: two reports can share an artifact id." },
+              "seq": { "type": ["integer", "null"], "description": "Since triage-report 1.3.0. That artifact's run-local seq, when known." },
               "note": { "type": ["string", "null"] }
             },
             "additionalProperties": false

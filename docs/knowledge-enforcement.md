@@ -537,7 +537,7 @@ level is derived over all of them.
 
 **The snapshot.** knowledge-contract 1.2.0 records, for every rule applicable or not, its
 `revision`, `version` and `digest` (sha256 of the canonical lessons.yaml entry,
-`model.lesson_digest`): a run pinned under `L29@r4` keeps exactly that text when its
+`model.lesson_digest`): a run pinned under `L29@r5` keeps exactly that text when its
 contract is made again after the Factory moves on, and a run started after the move gets
 the new one (`test_knowledge_transfer` Versioning). It also records the design's `trace`.
 The checks are pinned like the rules: the design step judges a design by the run's pinned
@@ -545,7 +545,13 @@ The checks are pinned like the rules: the design step judges a design by the run
 `content-sufficiency.yaml` (the live files only for a run that pinned none - every run
 started before K2 on 2026-10-08 pinned nothing, and is judged by the live files), so a run
 that pinned its files before a rule or check existed never meets it - not on resume, not when design is
-entered again (`test_knowledge_transfer` PinnedBefore).
+entered again (`test_knowledge_transfer` PinnedBefore). Pins fail closed
+(`test_knowledge_pins`, through the real design and content-sufficiency steps): a pinned file
+that is gone, or a pinned copy edited or substituted (the live newer file copied over it),
+BLOCKS the step naming the file and both digests; the recorded digest cannot be swapped to
+match a substituted copy - the engine refuses a run whose params differ from the ones
+WORKFLOW_STARTED recorded; and a blocked step never satisfies a rule - compliance reads its
+check UNMEASURED and holds the release.
 
 **The design request.** The `agent` design author's request carries `knowledge`: the
 resolver's output over the facets known before the design (family, platforms), read from
@@ -582,7 +588,13 @@ names that its design unit does not, and no earlier built unit named, is a debut
 accepted limitation: on the DESIGN a non-empty `introduces` is trusted, and new elements
 listed beside it are not counted there (the 2D validation design's boss level introduces
 the boss fight, whose shield and weak point are new elements); the build's comparison with
-its design is what holds a build to the design. A unit that names
+its design is what holds a build to the design. What a non-empty `introduces` is trusted
+with must still be structurally true (design-consistency 2.4.0, the same rule): an item the
+unit does not itself contain among its elements or mechanics, or one an earlier unit already
+named (a re-introduction), breaches - ids matched as unit kinds are (`content._kind`: a
+trailing plural `s` dropped, so `armored-bricks` is contained beside `armored-brick`); an
+unknown id is `content.mechanics_resolve`'s. Whether an introduction is taught well stays
+unverified. A unit that names
 no element, mechanic or introduction is never skipped - skipped, the next unit would falsely
 debut what it met there - so any such unit leaves the count UNMEASURED: a breach on the
 design (a rule that cannot be checked is never passed), SKIPPED on the build (never a
@@ -615,7 +627,13 @@ engine and gates in the quality fixture world:
 | A (the Factory before L29, `prelesson.py`) | a 2D puzzle-like build debuts two elements in one unit; the fixture bot's naive clear rate for it falls against the accepted build's and `naive.clear_rate` FAILs on that build; triage routes it; the encounter designer reports the systemic candidate on a build the gate fails again; splitting the introductions passes. `wgf knowledge ingest` stores it MEASURED; `wgf knowledge promote` (once the check is implemented) drafts the lesson, which is the shipped L29 but for a person's completion - the title and problem stated generally, the tests, the date, the revision its later edits raised - and its patch applies. |
 | B (fresh) | a 3D racer designed by the real design step through the agent author; its designer reads only its request, debuts two elements at once in its own plan, and paces and records its trace only when the request carries the principle. L29 is in its contract at its revision with why it applies, in its request, in its design's trace; both design rules hold; content-sufficiency passes; compliance is SATISFIED with the trace beside it. It opened no file of Session A's, and nothing of A's is in its environment, argv or project. |
 | Control | B on the Factory before L29: the request lacks it, the naive plan ships, nothing holds it. |
-| Held | a violating designer breaches the rule and is repaired in the design step's repair round; a violating build fails content-sufficiency (compliance RELEASE_BLOCKED on L29) and the level designer's visit repairs it; a designer that claims the rule applied while breaking it breaches the trace rule. |
+| Held | a violating designer breaches the rule and is repaired in the design step's repair round; a violating build fails content-sufficiency (compliance RELEASE_BLOCKED on L29) and the level designer's visit repairs it - listing the early elements in `introduces`, or showing them with `introduces` left as the design's; a designer that claims the rule applied while breaking it breaches the trace rule. |
+| Held to its design | the designer states each unit's one introduction; the build shows a later element at such a unit with `introduces` copied from the design - only the comparison of each built unit with its design unit catches it (with the comparison disabled the test fails): content-sufficiency FAIL naming the unit, compliance RELEASE_BLOCKED on L29, repaired PASS. |
+| C (cumulative) | a fresh session held to L29 and to an earlier, independently validated lesson, L20 (its check content.structure): both in the contract at their revisions and in the design request; a duplicated level fails L20's check while L29 still passes; repaired, both are SATISFIED. L20's own defect - the judge reading the wrong place - is a Factory bug no game can re-enact; what is exercised is its check holding a build beside L29's. |
+
+Removing retrieval (the request's knowledge resolved to nothing) or injection (the request
+without `knowledge`) makes Session B's test fail: the designer then ships its naive plan, the
+design rule breaches it, and the run never reaches G4.
 
 **What is fixture and what is real.** The engine, every gate, the design step, the
 knowledge step, ingest and promote are real. The developer, the bot (its naive clear rates

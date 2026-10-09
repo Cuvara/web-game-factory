@@ -10,7 +10,7 @@ and `core/` is still the contract.
 ## [Unreleased]
 
 **Cross-session quality transfer, and the first transferred principle (L29)** (lessons
-2.1.0, check-tiers 1.3.0, design-consistency-rules 2.2.0, content-sufficiency 1.5.0,
+2.1.0, check-tiers 1.3.0, design-consistency-rules 2.4.0, content-sufficiency 1.6.0,
 game-design 1.16.0, knowledge-contract 1.2.0, quality-report 1.4.0,
 [docs/knowledge-enforcement.md](docs/knowledge-enforcement.md) "Cross-session transfer").
 Every lesson now carries a domain, a principle, an anti-pattern, a classification consistent
@@ -41,7 +41,10 @@ is empty or absent is counted by every element and mechanic it shows for the fir
 on the build (content-sufficiency 1.6.0, design-consistency-rules 2.3.0) every built unit is
 also held to its design unit - an element the build shows a unit early is a debut there,
 whatever `introduces` it copied. On the design a non-empty `introduces` is trusted; new
-elements beside it are not counted there (documented, accepted).
+elements beside it are not counted there (documented, accepted) - but what it lists must be
+true of its unit (design-consistency-rules 2.4.0): an introduced item the unit does not
+contain, or one an earlier unit already named, breaches. A pinned rule file that is gone,
+edited or substituted blocks the design and content-sufficiency steps.
 
 **A run is held to its knowledge, and a person's exception is the run's own record**
 (quality-policy 1.4.0 rule 8, new-game 17, gates 1.7.0, knowledge-contract 1.1.0,

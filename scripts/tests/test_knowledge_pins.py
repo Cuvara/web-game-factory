@@ -49,6 +49,7 @@ from wgflib.workflow.model import StepOutcome  # noqa: E402
 
 DESIGN_RULES = "core/reference/design-consistency-rules.yaml"
 CONTENT_RULES = "core/reference/content-sufficiency.yaml"
+BENCHMARK = "core/reference/quality-benchmark.yaml"
 CHECK = "content.introductions_one_at_a_time"
 
 
@@ -205,6 +206,23 @@ class ContentSufficiencyPins(_Run, unittest.TestCase):
                 self.assertIn(f"the run's pinned copy of {CONTENT_RULES} is sha256:", reason)
                 self.assertIn("edited after the start", reason)
 
+    def test_the_pinned_benchmark_fails_closed_too(self):
+        """content-sufficiency's other pinned file, quality-benchmark.yaml: gone or edited,
+        the step BLOCKS naming it."""
+        docs = self.build()
+        environment = self.pin({BENCHMARK: live(BENCHMARK)})
+        os.remove(self.pinned_path(BENCHMARK))
+        result = self.run_step(docs, environment)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn(f"the run's pinned copy of {BENCHMARK} cannot be read",
+                      result.artifacts[0].content["blocked_reason"])
+        environment = self.pin({BENCHMARK: live(BENCHMARK)})
+        with open(self.pinned_path(BENCHMARK), "a", encoding="utf-8", newline="\n") as handle:
+            handle.write("\n# lowered in the run\n")
+        result = self.run_step(docs, environment)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("edited after the start", result.artifacts[0].content["blocked_reason"])
+
     def test_a_blocked_step_never_satisfies_a_rule(self):
         """Compliance on the blocked report: L29's build check UNMEASURED, its rule blocking,
         the release held - never SATISFIED."""
@@ -252,6 +270,20 @@ class RecordedDigest(runs._Case):
             json.dump(data, handle)
         with self.assertRaisesRegex(EngineError, r"params\.pinned_references"):
             api.run(RunRequest(resume=state.run_id, decision="approve", decided_by="human"))
+
+    def test_pins_claimed_by_a_run_with_no_recorded_params_are_refused(self):
+        """The legacy path: a run whose event log records no params at all can claim no pins
+        - `pinned_references` is a guarded param, so pins nothing corroborates are refused
+        rather than trusted (wgflib.workflow.integrity GUARDED_PARAMS)."""
+        from wgflib.workflow import integrity
+        self.assertIn(references.PARAM, integrity.GUARDED_PARAMS)
+        state = types.SimpleNamespace(params={references.PARAM: {
+            DESIGN_RULES: "sha256:" + "0" * 64}})
+        problems = integrity.params_problems(state, [])
+        self.assertTrue(problems)
+        self.assertIn(references.PARAM, problems[0])
+        # without the claim, the legacy run is accepted as it is
+        self.assertEqual(integrity.params_problems(types.SimpleNamespace(params={}), []), [])
 
 
 if __name__ == "__main__":

@@ -432,6 +432,18 @@ python3 scripts/golden/run.py --game 2d --defect restart-dead --no-repair   # ex
 WGF_GOLDEN_LOOP=1 bin/wgf test-core --only "GOLDEN LOOP" --strict           # both, asserted
 ```
 
+Measured 2026-10-09 on Windows 11 (k6/golden-loop): the repaired run planted the defect at
+commit A `700ec25`; greybox-playability failed exactly `restart.works`, on desktop (1280x720)
+and mobile (393x851) - "retry (input:restart) returned to play in None ms; score did not
+reset", `retry-dead` showing the game-over screen 15 s after the press; greybox's second visit
+(source diff: the one restored line) built B `38244e9`, re-played `restart.works` PASS (568 /
+604 ms) and the run completed every step to the drafted release (61.6 min). The negative
+control failed `restart.works` on all three greybox builds and stopped BLOCKED at the loop
+limit after 39 min. Eleven of the twelve GOLDEN LOOP tests passed; the twelfth is the
+template's own `makes no insecure requests` smoke in the independent browser evidence, the
+known Windows environment failure every Windows golden shows (Chromium on win32 ignores the
+refusing proxy), not the loop.
+
 `scripts/tests/test_golden_loop.py` is the **GOLDEN LOOP** category, gated by
 `WGF_GOLDEN_LOOP=1` (SKIP otherwise; a skip is never a pass). It is **opt-in**
 (`core_suite.OPT_IN`): a plain `wgf test-core` - the release gate included - leaves it out and

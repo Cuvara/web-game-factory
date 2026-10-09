@@ -589,8 +589,13 @@ design (a rule that cannot be checked is never passed), SKIPPED on the build (ne
 pass). Both checks are hard, so L29 derives **blocking** and is classified BLOCKING. Its
 grounding is observed, never measured: both human-accepted validation games satisfy it,
 recorded in `workspace/lessons/evidence.yaml` as a `research-principle` source. As written,
-with no mapping, the 2D validation run's game-design v4 and the content data both games ship
-later (2D 0db72b6, 3D 43c08e2) pass both checks; the builds accepted at G4 (96f5cea,
+with no mapping, the 2D validation run's game-design v4 passes the design rule, and the
+content data both games ship later (2D 0db72b6, 3D 43c08e2) pass the build check judged
+against themselves (each its own design). The 2D content data judged against that design v4
+does NOT pass: the build renames the design's elements (`wide-capsule` for `wide-paddle`,
+`brick` for `standard-brick`, ...), so the build check reads new debuts at w1-l2, w1-l3,
+w1-l8 and w4-l3 - and `content.drift`, a hard check already, fails the same pair on all 32
+units; L29 adds a second report there, not a new block. The builds accepted at G4 (96f5cea,
 c340631) predate those lists and pass only through `test_lesson_l29`'s reading of them (the
 2D game's layout symbols and layout keys named by its own tuning sections, the 3D game's
 counted course features). The genre seed

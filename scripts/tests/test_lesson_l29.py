@@ -195,7 +195,8 @@ class LessonL29(unittest.TestCase):
 
     def test_L29_the_2d_and_3d_content_data_pass_as_written(self):
         """public/content/units.json of the 2D game at 0db72b6 and the 3D game at 43c08e2,
-        unchanged: the build check passes on what they state."""
+        unchanged, each judged against itself as its design: the build check passes on what
+        they state. (Against the 2D run's design v4 the 2D data fails - the next test.)"""
         for name, count in (("content-2d-0db72b6-units.json", 32),
                             ("content-3d-43c08e2-units.json", 16)):
             with self.subTest(name=name):
@@ -204,6 +205,19 @@ class LessonL29(unittest.TestCase):
                 self.assertEqual(len(units), count)
                 check, status = build_result(units, units)
                 self.assertEqual((check["status"], status), ("PASS", "PASS"), check)
+
+    def test_L29_the_2d_build_against_its_real_design_fails_where_it_renames(self):
+        """The 2D content data at 0db72b6 judged against the 2D run's design v4: the build
+        renames the design's elements, so held to its design it debuts what the design never
+        named - the claimed-vs-actual reading (content.drift already fails the pair)."""
+        design = _read(os.path.join(REAL, "design-2d-v4-units.json"))["units"]
+        built = sorted(_read(os.path.join(REAL, "content-2d-0db72b6-units.json"))["units"],
+                       key=lambda u: u["index"])
+        check, status = build_result(design, built)
+        self.assertEqual((check["status"], status), ("FAIL", "FAIL"), check)
+        text = json.dumps(check)
+        for unit in ("w1-l2", "w1-l3", "w1-l8", "w4-l3"):
+            self.assertIn(unit, text)
 
     def test_L29_an_element_and_its_mechanic_are_one_debut(self):
         """A unit that states `introduces` debuts what it lists; one that states none is

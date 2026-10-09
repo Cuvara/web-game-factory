@@ -192,7 +192,28 @@
           "properties": { "by": { "type": "string" }, "at": { "type": "string" }, "reason": { "type": "string" } },
           "additionalProperties": false
         },
-        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/candidate_source" } }
+        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/candidate_source" } },
+        "strength": { "enum": ["hypothesis", "single-run", "reproduced", "validated"], "description": "Added for K6.4 (core/reference/evidence-strength.yaml, scripts/wgf_knowledge/strength.py). How far the measurements behind the candidate were repeated, derived from its sources' re-measurements in their runs' finding ledgers - never written by a reporter: hypothesis (no measured repair), single-run (one measured FAIL->PASS pair), reproduced (the pass repeated in a later independent measurement, on a stable check, by a class that is not only the game's own report), validated (reproduced in two or more distinct scenarios or runs). Promote derives it again from the run store; it caps the classification a draft may propose below REQUIRED." },
+        "strength_why": { "type": "string", "description": "Added for K6.4. Why the strength is what it is: the pair, its repeats, the caps (unstable, self-reported, single-judge, unknown-class) and the refusals." },
+        "refused_evidence": {
+          "type": "array",
+          "description": "Added for K6.4. Every measurement offered that may not count toward strength, with its rule and reason - never dropped silently: same-report (a), own-check (b), same-build (c), self-agreement (d), claim (e), duplicate, no-repair.",
+          "items": {
+            "type": "object",
+            "required": ["rule", "reason"],
+            "properties": {
+              "rule": { "enum": ["same-report", "own-check", "same-build", "self-agreement", "claim", "duplicate", "no-repair"] },
+              "reason": { "type": "string", "minLength": 1 },
+              "run": { "type": ["string", "null"] },
+              "artifact_id": { "type": ["string", "null"] },
+              "report_hash": { "type": ["string", "null"] },
+              "finding": { "type": ["string", "null"] },
+              "measurement": { "type": "object" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "unstable": { "type": "array", "items": { "type": "string" }, "description": "Added for K6.4. Findings whose check the ledger shows alternating verdicts (a pass, then a failure again; or a failure and a pass on one commit): a pair on them is capped at single-run." }
       },
       "additionalProperties": false
     },
@@ -226,7 +247,30 @@
         },
         "evidence_refs": { "type": "array", "items": { "type": "string" } },
         "date": { "type": ["string", "null"] },
-        "ingested_at": { "type": "string" }
+        "ingested_at": { "type": "string" },
+        "remeasurement": {
+          "type": ["object", "null"],
+          "description": "Added for K6.4. What the run's newest finding ledger (triage-report `lifecycle`) held of the source's finding when it was ingested (scripts/wgf_knowledge/strength.py snapshot): the ledger report, the finding, its producer, check and measurement class (core/reference/quality-assessment.yaml), the verification verdict, the before and after measurements (commit, content hash, seq, status, scenario, frame digests), the comparison, the samples, the detection and the outcomes history. Refreshed when the run is ingested again; promote reads it again from the run store and never trusts this copy.",
+          "properties": {
+            "ledger": { "type": ["object", "null"] },
+            "finding": { "type": ["string", "null"] },
+            "producer": { "type": ["string", "null"] },
+            "check": { "type": ["string", "null"] },
+            "check_id": { "type": ["string", "null"] },
+            "project": { "type": ["string", "null"] },
+            "class": { "enum": ["deterministic", "heuristic", "self-reported", "ai-judged", "human", null] },
+            "status": { "type": ["string", "null"] },
+            "verdict": { "type": ["string", "null"] },
+            "before": { "type": ["object", "null"] },
+            "after": { "type": ["object", "null"] },
+            "same_scenario": { "type": ["boolean", "null"] },
+            "differences": { "type": "array", "items": { "type": "string" } },
+            "samples": { "type": "array", "items": { "type": ["object", "null"] } },
+            "detected": { "type": ["object", "null"] },
+            "outcomes": { "type": "array", "items": { "type": "object" } }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },

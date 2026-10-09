@@ -1,0 +1,63 @@
+# Evidence strength: how far the measurements behind a lesson candidate have been repeated.
+#
+# A lesson the Factory learns from a run (docs/knowledge-enforcement.md, "The learning loop")
+# rests on measurements: a gate's check FAILED on a build, a specialist changed the build, and
+# the same gate measured it again. This file is the one vocabulary for how strongly those
+# measurements support the lesson. It is derived mechanically from the finding ledger
+# (triage-report `lifecycle`: each record's `verification` - `before`, `after`, `comparison`,
+# `samples` - its `history` with content hashes, and the scenario each was measured on;
+# docs/specialist-routing.md "What counts as a re-measurement") and from the measurement
+# class of the check (core/reference/quality-assessment.yaml, read through
+# wgf_quality.assessment). Nothing a reporter writes sets it.
+#
+# Read by: scripts/wgf_knowledge/strength.py (held equal to this file by
+# scripts/check-integrity.py), `wgf knowledge ingest` (each candidate's `strength`,
+# `strength_why`, `refused_evidence`, `unstable`) and `wgf knowledge promote` (the ceiling on
+# the classification a draft may propose).
+#
+# What it cannot justify: strength is about whether a MEASUREMENT repeats - the same check
+# failing a defect and passing its repair, again, elsewhere. It says nothing about whether
+# the lesson makes a game more fun, fairer or better for a player: a check can be repeatably
+# wrong about what a player feels.
+
+version: 1.0.0
+
+# In order, weakest first. `ceiling` is the strongest classification (lessons.yaml
+# `classifications`) a promoted draft may propose on this evidence, on the scale
+# OBSERVATION = HEURISTIC < RECOMMENDATION < VALIDATED_PRINCIPLE.
+levels:
+  - id: hypothesis
+    ceiling: HEURISTIC
+    meaning: No measured repair - a specialist's claim, a judge's prose, a person's note without a pinned measurement, or a measured failure that nothing has re-measured passing.
+  - id: single-run
+    ceiling: HEURISTIC
+    meaning: One measured FAIL->PASS pair - the raising gate failed the check on one build and passed the same check on the same scenario on a later build - in one run.
+  - id: reproduced
+    ceiling: RECOMMENDATION
+    meaning: The repair held in two or more independent measurements - the passing measurement repeated (a later passing report of the same check, on a later commit or a repeat run, that is not the same report) - on a check whose ledger does not alternate verdicts, measured by a class that is not only the game's own report.
+  - id: validated
+    ceiling: VALIDATED_PRINCIPLE
+    meaning: Reproduced in two or more distinct contexts - scenarios (desktop and mobile), runs, projects or titles - with a measurement class that is not only self-reported or one AI judgment.
+
+# BLOCKING and REQUIRED are the check tiers' (K4): a lesson held by hard or quality checks is
+# drafted at the level those checks derive, whatever its strength, and strength never raises a
+# lesson to them. Strength caps the classifications below them only.
+enforcement: [REQUIRED, BLOCKING]
+
+# A measurement that may not count toward strength. Each one offered is recorded on the
+# candidate with its rule and reason (`refused_evidence`) - never dropped silently.
+refusals:
+  same-report: (a) The report or artifact (content hash) that detected the finding, counted again as its re-measurement.
+  own-check: (b) The lesson's own proposed check measured on the build that motivated it - a check written from a build is not independent evidence about that build.
+  same-build: (c) A pass on the commit the failure was measured on (the ledger's same-build) - a re-play, not a repair.
+  self-agreement: (d) A judge re-reading what it already judged - an AI judgment of a build or frames it had already judged, counted as a second judgment.
+  claim: (e) A person's or a specialist's claim restating the lesson - a reviewer's comment, a candidate whose finding no gate measured on its build, a source that cannot be re-verified against its run store, a person's G4 decision.
+  duplicate: A hash-identical copy of a measurement or report already counted (the same report digest, the same pair of content hashes) - counted once.
+  no-repair: A measured failure the ledger never re-measured passing (no record, still failing, regressed, unmeasured, missing).
+
+# What caps a strength at single-run, with why.
+caps:
+  unstable: The ledger shows the check alternating verdicts - a pass followed by a failure again, or a failure and a pass on the same commit. A noisy check's repair is not reproduced by passing once more.
+  self-reported: The check is measured from the game's own probe (window.__wgf__) - the game's word that the repair holds.
+  single-judge: The check is AI-judged, and one judge run passed it - a single judgment.
+  unknown-class: No measurement class is known for the check (quality-assessment.yaml maps none) - nothing says how independent it is.

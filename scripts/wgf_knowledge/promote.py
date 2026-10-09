@@ -32,6 +32,18 @@ RECOMMENDATION, or OBSERVATION for an experimental draft - never stronger than t
 and `revision: 1`. A candidate may propose several checks (`proposed_checks`, e.g. the same
 rule held on the design and on the build); the level is derived over all of them.
 
+**Evidence strength (K6.4, strength.py).** The draft's classification below REQUIRED never
+exceeds what the candidate's evidence strength supports - derived again here from the run
+store (`ingest.strength_of` with the verifier and `remeasure`), never read from the stored
+record: hypothesis and single-run at most OBSERVATION/HEURISTIC (a measured candidate whose
+check is advisory is then drafted experimental, a candidate lesson, never a
+RECOMMENDATION), reproduced at most RECOMMENDATION, validated may propose
+VALIDATED_PRINCIPLE (`classification=`; an enforced, validated lesson with all three test
+stubs and the evidence's `verified` leg from the reproduced pass). BLOCKING and REQUIRED
+stay derived from the check tiers exactly as before: strength never raises nor lowers them.
+The evidence entry records the strength and why (`strength`). A classification asked for
+beyond the evidence is refused.
+
 Refused (PromoteRefused, exit 1): a rejected or already promoted candidate; one its reporter
 said is not systemic; a blocking or required proposal on subjective evidence - a review
 comment never becomes a rule that holds a build by itself; a blocking or required proposal
@@ -47,7 +59,7 @@ import json
 import re
 import textwrap
 
-from . import model
+from . import model, strength
 
 LESSONS_PATH = "core/reference/lessons.yaml"
 EVIDENCE_PATH = "workspace/lessons/evidence.yaml"
@@ -144,6 +156,8 @@ def _entry_text(entry):
     if entry.get("level"):
         out.append(f"    level: {entry['level']}")
     out.append(f"    introduced: {_flow(entry['introduced'])}")
+    if entry.get("validated"):
+        out.append(f"    validated: {_flow(entry['validated'])}")
     if entry.get("checks"):
         out.append(f"    checks: {_flow(entry['checks'])}")
     if entry.get("tests"):
@@ -165,7 +179,15 @@ def _stub(entry, candidate, test_path, names):
         f"    - run {s.get('run')}: {s.get('artifact_type')} {s.get('artifact_id')} "
         f"v{s.get('version')} ({s.get('report_hash')}), commit {s.get('commit')}"
         for s in candidate.get("sources") or ())
-    catches, passes = names
+    catches, passes = names[:2]
+    generalizes = ""
+    if len(names) > 2:
+        generalizes = f'''
+
+    def {names[2]}(self):
+        """Generalization: the check catches the defect in a game other than the one it was
+        learned from (another family or render), and passes it fixed."""
+        self.fail("write me: replay another game's regressed and fixed builds through the check")'''
     return f'''"""{entry['id']}: {entry['title']}
 
 Drafted by `wgf knowledge promote {candidate['id']}` from the lesson candidate it names; the
@@ -195,7 +217,7 @@ class Lesson{entry['id']}(unittest.TestCase):
 
     def {passes}(self):
         """The positive case: on the fixed or accepted build, the same check PASSES."""
-        self.fail("write me: replay the fixed build through the check and assert it passes")
+        self.fail("write me: replay the fixed build through the check and assert it passes"){generalizes}
 
 
 if __name__ == "__main__":
@@ -226,7 +248,7 @@ def _evidence_after(text, line):
     return text.rstrip("\n") + "\n" + line + "\n"
 
 
-def _evidence_entry(entry_id, candidate):
+def _evidence_entry(entry_id, candidate, found=None, verified=None):
     sources = candidate.get("sources") or []
     kind = "review" if all(s.get("artifact_type") == "review-report" for s in sources) \
         else "run"
@@ -239,6 +261,10 @@ def _evidence_entry(entry_id, candidate):
     first = next((s for s in sources if s.get("commit")), None)
     if first:
         leg["discovered"] = {"run": first.get("run"), "commit": first.get("commit")}
+    if verified:
+        leg["verified"] = verified
+    if found is not None:
+        leg["strength"] = {"level": found["strength"], "why": found["why"]}
     return leg
 
 
@@ -256,8 +282,14 @@ def _yaml_value(value):
 
 def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, evidence=None,
           lesson_id=None, level=None, check=None, category=None, title=None, scope=None,
-          version=None, today=None, promoted=None, verify=None, domain=None):
-    """The Draft of one stored candidate (a candidate_record), or PromoteRefused."""
+          version=None, today=None, promoted=None, verify=None, domain=None,
+          classification=None, remeasure=None):
+    """The Draft of one stored candidate (a candidate_record), or PromoteRefused.
+
+    `classification` asks for one (lessons.yaml `classifications`); it is refused beyond
+    what the evidence strength supports (strength.allows) or the drafted level allows.
+    `remeasure(source)` reads a source's re-measurement again from its run store
+    (ingest.remeasurer); without it no repair is re-read, so the strength is hypothesis."""
     from . import ingest
     cid = candidate.get("id")
     # The record is read as stored, so it is checked as stored: a hand edit that breaks the
@@ -303,6 +335,18 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
             f"{cid}: a {wanted} rule needs a check that holds it, and "
             f"{', '.join(unclassified) or 'no check'} is not classified in "
             "core/reference/check-tiers.yaml - add the check to its source first")
+    # K6.4: the evidence strength, derived again from the run store - never the stored one.
+    found = ingest.strength_of(candidate, verify=verify or (lambda source, record: False),
+                               remeasure=remeasure)
+    evidence_level = found["strength"]
+    if classification is not None and classification not in model.CLASSIFICATIONS:
+        raise PromoteRefused(f"classification {classification!r} is not one of "
+                             f"{', '.join(model.CLASSIFICATIONS)}")
+    if classification is not None and not strength.allows(evidence_level, classification):
+        raise PromoteRefused(
+            f"{cid}: {classification} claims more than its evidence shows - the evidence is "
+            f"{evidence_level} ({found['why']}). On {evidence_level} evidence a draft proposes "
+            f"at most {strength.ceiling(evidence_level)} (core/reference/evidence-strength.yaml)")
     entry_id = lesson_id or next_id(lessons)
     if any(isinstance(l, dict) and l.get("id") == entry_id
            for l in (lessons or {}).get("lessons") or ()):
@@ -326,6 +370,29 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
              "introduced": {"version": introduced_version, "date": today}}
     notes, files = [], {}
     held = classified and basis == "measured"
+    capped = None
+    if held:
+        # Below REQUIRED, a recommendation needs the repair reproduced (strength.CEILING); a
+        # rule the check tiers make blocking or required is theirs, whatever the strength.
+        derived = model.derive_level(dict(entry, status="enforced", lifecycle="active",
+                                          checks=all_checks), checks)
+        final = wanted if wanted and model.level_rank(wanted) > model.level_rank(derived) \
+            else derived
+        if final == "recommended" and not strength.allows(evidence_level, "RECOMMENDATION"):
+            if wanted == "recommended":
+                raise PromoteRefused(
+                    f"{cid}: a recommended rule needs its repair reproduced, and the evidence "
+                    f"is {evidence_level} ({found['why']}). Draft it experimental "
+                    "(--level experimental), or ingest the runs that repeated the measurement")
+            held = False
+            capped = (f"its evidence is {evidence_level}, and a recommendation needs the repair "
+                      f"reproduced ({found['why']})")
+    if classification in ("RECOMMENDATION", "VALIDATED_PRINCIPLE") and not held:
+        raise PromoteRefused(
+            f"{cid}: {classification} is a lesson a check holds; this draft is experimental "
+            f"({capped or 'its evidence is subjective, or its check is not classified'}) - "
+            "OBSERVATION or HEURISTIC")
+    validated_draft = classification == "VALIDATED_PRINCIPLE"
     if held:
         derived = model.derive_level(dict(entry, status="enforced", lifecycle="active",
                                           checks=all_checks), checks)
@@ -337,21 +404,40 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
                 f"derives {derived}; "
                 f"a lesson cannot declare it weaker ({wanted}) - a level is weakened only by "
                 "moving the check's tier, in a new version of its source file")
+        final = wanted if wanted and model.level_rank(wanted) > model.level_rank(derived) \
+            else derived
+        if classification is not None and final in STRONG and \
+                classification != CLASSIFICATION_OF_LEVEL[final]:
+            raise PromoteRefused(
+                f"{cid}: its checks derive a {final} rule, classified "
+                f"{CLASSIFICATION_OF_LEVEL[final]} by their tiers - evidence strength neither "
+                f"raises nor lowers it ({classification} asked)")
+        if validated_draft and final != "recommended":
+            raise PromoteRefused(
+                f"{cid}: a VALIDATED_PRINCIPLE is a validated lesson that is not blocking or "
+                f"required; its checks derive {final}")
         test_path = f"scripts/tests/test_lesson_{entry_id.lower()}.py"
         names = (f"test_{entry_id}_the_check_fails_the_defect",
                  f"test_{entry_id}_the_check_passes_the_fixed_build")
-        entry.update(status="enforced", lifecycle="active", checks=all_checks,
+        if validated_draft:
+            names += (f"test_{entry_id}_the_check_generalizes",)
+        entry.update(status="enforced", lifecycle="validated" if validated_draft else "active",
+                     checks=all_checks,
                      tests={"catches": [f"{test_path}::{names[0]}"],
-                            "passes": [f"{test_path}::{names[1]}"], "generalizes": []})
+                            "passes": [f"{test_path}::{names[1]}"],
+                            "generalizes": [f"{test_path}::{names[2]}"] if validated_draft
+                            else []})
+        if validated_draft:
+            entry["validated"] = {"version": introduced_version, "date": today}
         if wanted and model.level_rank(wanted) > model.level_rank(derived):
             entry["level"] = wanted
         files[test_path] = _stub(entry, candidate, test_path, names)
-        notes.append(f"{entry_id} is drafted enforced and active at "
+        notes.append(f"{entry_id} is drafted enforced and {entry['lifecycle']} at "
                      f"{entry.get('level') or derived} (its checks "
                      + ", ".join(f"{c} {checks[c].get('tier')}" for c in all_checks)
-                     + "); its two test stubs fail until written")
+                     + f"); its {len(names)} test stubs fail until written")
     else:
-        why = ("its evidence is only subjective" if basis != "measured"
+        why = (capped if capped else "its evidence is only subjective" if basis != "measured"
                else f"{', '.join(unclassified)} is not classified in check-tiers.yaml"
                if all_checks else "it proposes no check")
         held_text = (f"the proposed check {', '.join(all_checks)}" if all_checks
@@ -361,6 +447,9 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
                          "a measured failure and names the check and the test that catches it "
                          "before it holds any build.")
         notes.append(f"{entry_id} is drafted as a candidate (experimental, never blocks): {why}")
+    notes.append(f"{entry_id}: evidence strength {found['why']}"
+                 + (f"; {len(found['refused'])} measurement(s) refused" if found["refused"]
+                    else ""))
     if candidate.get("duplicate_of"):
         notes.append(f"{cid} proposes the check {candidate['duplicate_of']} already names: "
                      "consider strengthening that lesson instead of adding one")
@@ -373,8 +462,8 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
         principle = _one_line(candidate.get("principle") or candidate["summary"])
         anti = _one_line(candidate.get("anti_pattern") or candidate.get("symptom")
                          or candidate["summary"])
-        fields = {"domain": domain,
-                  "classification": CLASSIFICATION_OF_LEVEL.get(level_drafted, "OBSERVATION"),
+        chosen = classification or CLASSIFICATION_OF_LEVEL.get(level_drafted, "OBSERVATION")
+        fields = {"domain": domain, "classification": chosen,
                   "revision": 1, "principle": principle, "anti_pattern": anti}
         # In the order the file writes them: after the category.
         ordered = {}
@@ -386,14 +475,29 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
         if not candidate.get("principle"):
             notes.append(f"{entry_id}: its principle and anti_pattern are drafted from the "
                          "candidate's summary and symptom - sharpen them in review")
+    # The evidence leg: the strength, and - for a validated draft - the verified leg, the
+    # reproduced pass the ledger recorded on the game that raised it.
+    verified = None
+    if entry.get("lifecycle") == "validated":
+        leg_of = next((c for c in found["counted"] if c["level"] == "reproduced"), None)
+        if leg_of is None:
+            raise PromoteRefused(f"{cid}: no reproduced pass to record as its verified leg")
+        verified = {"run": leg_of["run"], "artifact_id": leg_of.get("after_artifact"),
+                    "commit": leg_of["after"], "date": today}
+    leg = _evidence_entry(entry_id, candidate, found, verified)
+    evidence_after = None
+    if evidence is not None:
+        evidence_after = json.loads(json.dumps(evidence))
+        evidence_after.setdefault("lessons", {})
+        evidence_after["lessons"] = dict(evidence_after["lessons"] or {}, **{entry_id: leg})
     # The draft holds the model's own rules, or it is not offered.
     after = json.loads(json.dumps(lessons))
     after["lessons"] = list(after.get("lessons") or []) + [entry]
-    entry_problems = [p for p in model.lesson_problems(after, checks, vocab)
+    entry_problems = [p for p in model.lesson_problems(after, checks, vocab, evidence_after)
                       if f" {entry_id}:" in p]
     from wgf_quality import registry
     entry_problems += [p for p in registry.lesson_problems(after, checks, runtime=True,
-                                                            evidence=evidence)
+                                                            evidence=evidence_after)
                        if f" {entry_id}:" in p]
     if entry_problems:
         raise PromoteRefused(f"the draft of {cid} would fail the knowledge model: "
@@ -404,7 +508,6 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
     if read_back != entry:
         raise PromoteRefused(f"the draft of {cid} does not read back as written")
     new_lessons = _lessons_after(lessons_text, entry_text, model.version_of(lessons))
-    leg = _evidence_entry(entry_id, candidate)
     new_evidence = _evidence_after(evidence_text, f"  {entry_id}: {_yaml_value(leg)}")
     patch = _diff(LESSONS_PATH, lessons_text, new_lessons) \
         + _diff(EVIDENCE_PATH, evidence_text, new_evidence) \

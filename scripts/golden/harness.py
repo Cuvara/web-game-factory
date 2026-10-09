@@ -421,8 +421,13 @@ class GoldenRun:
                 # The golden loop's before/after: read from the run store and the game's
                 # history, the failing and the passing frames copied beside it.
                 from golden import loop
-                loop_record = loop.record(api.store, state, self.repo, self.defect,
-                                          self.repair)
+                try:
+                    loop_record = loop.record(api.store, state, self.repo, self.defect,
+                                              self.repair)
+                except Exception as exc:  # the summary is still written; the loop is not closed
+                    loop_record = {"kind": "golden-loop", "defect": self.defect,
+                                   "repair": self.repair, "closed": False, "versions": [],
+                                   "reasons": [f"the loop record could not be read: {exc!r}"]}
                 loop.write(loop_record, api.store.run_dir(state.run_id), self.evidence_dir,
                            self.game.key)
             browser = None

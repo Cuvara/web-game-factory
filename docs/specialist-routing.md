@@ -243,7 +243,10 @@ detected on and no longer fails it; its history says no fix was recorded.
 A finding never closes on the specialist's word. Only the raising gate's re-measurement
 moves it past `implemented`. If the raising gate still fails it, the finding is reopened:
 `classified`, with `verification.verdict: still-failing`. A verified or closed finding that a
-gate fails again is reopened the same way. A person's G4 finding is re-measured by the next
+gate fails again is reopened the same way - also when the quality gate or release advances
+the ledger with no triage of its own: a done finding whose raising producer's newest report,
+newer than every measurement the record holds, fails it is reopened there, never left closed
+beside the report failing it. A person's G4 finding is re-measured by the next
 G4 decision: it is verified unless that decision is `iterate` and names it again.
 
 ### What counts as a re-measurement (triage-report 1.3.0)

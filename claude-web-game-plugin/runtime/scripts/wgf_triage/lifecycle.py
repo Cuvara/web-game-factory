@@ -477,6 +477,31 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
                                 "build": build_of(producer)}))
         del samples[:-MAX_SAMPLES]
 
+    # reopened: a done finding whose raising producer's newest report - newer than every
+    # measurement the record holds - fails it again. Triage reopens it from `current` as
+    # well; the quality gate and release advance the ledger with no findings of their own
+    # (current=[]), so without this a closed record would sit beside the report failing it.
+    for record in records.values():
+        producer = (record.get("source") or {}).get("producer")
+        if record["status"] not in DONE or producer == "decision-record"                 or producer not in failing or record["id"] not in failing[producer]:
+            continue
+        verification = record.get("verification") or {}
+        held = [verification.get("seq")] + [x.get("seq") for x in
+                                            verification.get("samples") or []
+                                            if isinstance(x, dict)]
+        held += [h.get("seq") for h in record.get("history") or [] if isinstance(h, dict)]
+        last = max((x for x in held if isinstance(x, int)), default=-1)
+        seq = seqs.get(producer)
+        if seq is None or seq <= last:
+            continue
+        report = reports.get(producer) or {}
+        provenance = report.get("provenance") or {}
+        record["fix"] = None
+        _event(record, "classified", at, by=provenance.get("artifact_id"),
+               build=build_of(producer).get("commit"),
+               note="reopened: failing again after it was " + record["status"],
+               content_hash=provenance.get("content_hash"), seq=seq)
+
     # handed: a gate sent these straight to another step, which has run since: recorded,
     # and implemented by that step's artifact, so the gates' re-measurement verifies them.
     for finding, made in handed or []:

@@ -29,7 +29,10 @@ passes after it. **A regression now needs a prior pass**: a failure after a fix 
 regression only when its check passed in the record's `baseline` (what the gates had
 measured when it was assigned) or it was verified before - a gate measuring for the first
 time raises a new finding, not a regression (the real 2D/3D runs: nine fixes never verified
-for this). History entries name the artifact's content hash and seq beside its id. Existing
+for this). History entries name the artifact's content hash and seq beside its id. A done finding whose raising producer's newest report fails it again is reopened also when
+the quality gate or release advances the ledger (`ledger.remeasure`, no triage findings of its
+own) - replaying the real 2D run's ledger left two findings closed beside the report failing
+them. Existing
 artifacts stay valid (every change is additive); a ledger written before this keeps the old
 regression rule for its records (no baseline). An open finding of a run in progress that the
 old rule would have verified on an unmeasured, missing or same-commit pass stays open on

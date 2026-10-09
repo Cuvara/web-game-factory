@@ -1142,6 +1142,7 @@ class ScenarioVerification(unittest.TestCase):
         seqs.update({"triage-report": 9, "prototype-report": 11, "playability-report": 13})
         seqs.update({k: 14 for k in (extra or {})})
         second = run_triage(docs, seqs=seqs, entered="playability.success")
+        self.docs, self.seqs, self.second = docs, seqs, second.artifacts[0].content
         return {r["id"]: r for r in second.artifacts[0].content["lifecycle"]}
 
     def test_the_restart_dead_fixture_fails_only_restart_works(self):
@@ -1191,6 +1192,46 @@ class ScenarioVerification(unittest.TestCase):
         self.assertIn("a weaker comparison", ver["comparison"]["note"])
         self.assertIn("weaker comparison", ledger[self.DESKTOP]["history"][-2]["note"]
                       + ledger[self.DESKTOP]["history"][-1]["note"])
+
+    def test_the_run_ledger_reopens_a_done_finding_its_newest_report_fails_again(self):
+        """The quality gate and release advance the ledger with no triage of their own
+        (ledger.remeasure). A finding closed earlier whose raising producer's newest report
+        fails it again is reopened there too, never left closed beside the failing report
+        (found by replaying the real 2D run's ledger: two content findings stayed closed while
+        its last playability report failed them, K6 counterfactual)."""
+        from types import SimpleNamespace
+        from wgf_triage import ledger as ledgers
+        a, b, c = "a" * 40, "b" * 40, "c" * 40
+        ledger = self.loop(self.report(a, self.dead()), self.report(b, self.fixed()))
+        self.assertIn(ledger[self.DESKTOP]["status"], ("verified", "closed"))
+        docs = dict(self.docs, **{"triage-report": self.second,
+                                  "playability-report": self.report(c, self.dead())})
+        seqs = dict(self.seqs, **{"triage-report": 15, "playability-report": 20})
+        refs = {k: SimpleNamespace(seq=seqs.get(k, 1)) for k in docs}
+        records = {r["id"]: r for r in ledgers.remeasure(
+            refs, docs.get, at="2026-10-09T00:00:00Z", by="quality-gate")}
+        record = records[self.DESKTOP]
+        self.assertEqual(record["status"], "classified", record["history"][-1])
+        self.assertIn("reopened", record["history"][-1]["note"])
+        self.assertEqual(record["history"][-1]["build"], c)
+        self.assertIsNone(record.get("fix"))
+        # Reopened once: a later triage of the same report observes it, no second event.
+        events = [h for h in record["history"] if h["status"] == "classified"]
+        self.assertEqual(len(events), 1 + sum(1 for h in ledger[self.DESKTOP]["history"]
+                                              if h["status"] == "classified"))
+
+    def test_the_run_ledger_keeps_a_done_finding_its_newest_report_still_passes(self):
+        from types import SimpleNamespace
+        from wgf_triage import ledger as ledgers
+        a, b, c = "a" * 40, "b" * 40, "c" * 40
+        self.loop(self.report(a, self.dead()), self.report(b, self.fixed()))
+        docs = dict(self.docs, **{"triage-report": self.second,
+                                  "playability-report": self.report(c, self.fixed())})
+        seqs = dict(self.seqs, **{"triage-report": 15, "playability-report": 20})
+        refs = {k: SimpleNamespace(seq=seqs.get(k, 1)) for k in docs}
+        records = {r["id"]: r for r in ledgers.remeasure(
+            refs, docs.get, at="2026-10-09T00:00:00Z", by="quality-gate")}
+        self.assertIn(records[self.DESKTOP]["status"], ("verified", "closed"))
 
     def held(self, record, verdict):
         self.assertEqual(record["status"], "implemented", record["history"][-1])

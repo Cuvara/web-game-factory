@@ -338,6 +338,50 @@ class LessonL29(unittest.TestCase):
                 result, status, _ = design_result(design_with(units))
                 self.assertEqual((result["breached"], status), (False, "PASS"), result)
 
+    def test_L29_a_real_design_without_unit_element_lists_passes(self):
+        """The agent-written 2D validation design (fixtures/design/follows-strategy-2d,
+        game-design v2) states no `elements` list on any unit - the field is optional - and
+        declares its elements (multi-ball, wide-paddle, laser) in build_spec.content.elements:
+        a unit introducing a declared element it does not list is UNVERIFIED, never a breach.
+        The same units shipped in the readopt-2d run store, with that design's declared
+        elements, likewise."""
+        path = os.path.join(HERE, "fixtures", "design", "follows-strategy-2d",
+                            "game-design-v2.json")
+        design = _read(path)
+        units = design["build_spec"]["content"]["units"]
+        self.assertTrue(all(not isinstance(u.get("elements"), list) for u in units))
+        declared = [e["id"] for e in design["build_spec"]["content"]["elements"]]
+        self.assertIn("wide-paddle", declared)
+        self.assertEqual(content.introductions_view(design)["over_one"], [])
+        design.pop("consistency", None)
+        result, status, _ = design_result(design)
+        self.assertEqual((result["breached"], status), (False, "PASS"), result)
+        shipped = _read(os.path.join(HERE, "fixtures", "design", "readopt-2d",
+                                     "run-store.json"))["shipped_content"]["units"]
+        self.assertEqual(content.introduction_problems(
+            sorted(shipped, key=lambda u: u["index"]), declared=declared), [])
+
+    def test_L29_containment_is_held_where_it_can_be_known(self):
+        """A unit WITH an elements list is held to it; an id that is neither in the unit nor
+        a declared element is a stray whether or not the unit lists elements."""
+        units = paced(3)
+        units[1]["introduces"] = ["wide-paddle"]            # u-02 lists elements, not this
+        self.assertIn("u-02 introduces wide-paddle, which it does not contain",
+                      " ".join(content.introduction_problems(units, declared=["wide-paddle"])))
+        bare = paced(3)
+        del bare[1]["elements"]
+        bare[1]["introduces"] = ["wide-paddle"]
+        self.assertEqual(content.introduction_problems(bare, declared=["wide-paddle"]), [])
+        bare[1]["introduces"] = ["ghost-paddle"]            # neither listed nor declared
+        self.assertIn("u-02 introduces ghost-paddle, which it does not contain",
+                      " ".join(content.introduction_problems(bare, declared=["wide-paddle"])))
+        # unverified containment never hides a re-introduction
+        bare[1]["introduces"] = ["wide-paddle"]
+        bare[2]["introduces"] = ["wide-paddle"]
+        del bare[2]["elements"]
+        self.assertIn("u-03 introduces wide-paddle again", " ".join(
+            content.introduction_problems(bare, declared=["wide-paddle"])))
+
     def test_L29_the_accepted_3d_validation_game_passes(self):
         """c340631 (r1-forward of the build accepted at G4): 12 courses, every course after
         the first adds at most one feature (moving platforms, walls, drops, hairpins)."""

@@ -1547,7 +1547,7 @@ def undeclared_units(units):
     return [str(u.get("id")) for u, new in unit_debuts(units) if new is None]
 
 
-def introduction_problems(units, at=lambda unit: str(unit.get("id"))):
+def introduction_problems(units, at=lambda unit: str(unit.get("id")), declared=()):
     """["<where> ..."] for what a unit's `introduces` gets objectively wrong, in play order:
 
       * an item the unit does not itself contain - not among its own elements or mechanics:
@@ -1555,20 +1555,32 @@ def introduction_problems(units, at=lambda unit: str(unit.get("id"))):
       * an item an earlier unit already named (in its elements, mechanics or introduces): it
         is not new there, so introducing it again is a re-introduction.
 
+    `declared`: the design's declared element ids (build_spec.content.elements). A unit
+    that states no `elements` list (the field is optional) does not say which elements it
+    shows, so an introduced id that is a declared element is not known to be absent there:
+    its containment is UNVERIFIED and not a breach (the re-introduction check still holds).
+    A unit that does state `elements` is held to them.
+
     Ids are matched leniently, the way unit kinds are (`_kind`: lowercase, words joined by
     hyphens, a trailing plural `s` dropped), so `armored-bricks` introduced in a unit whose
     elements name `armored-brick` is contained, and is the same thing an earlier unit named.
-    An id that is no known mechanic, element or scheduled content at all is
-    content.mechanics_resolve's to refuse. Whether a mechanic is taught WELL - legibly, at
-    the right moment, fun to learn - is not structural, and nothing here judges it."""
+    The normalisation's limits, known: an `-es` plural is not undone (`boss`/`bosses`,
+    `box`/`boxes` read as two ids, so such a pair would be a false stray), and two ids one
+    trailing `s` apart read as one. An id that is no known mechanic, element or scheduled
+    content at all is content.mechanics_resolve's to refuse. Whether a mechanic is taught
+    WELL - legibly, at the right moment, fun to learn - is not structural, and nothing here
+    judges it."""
     out, seen = [], set()
+    declared = {_kind(x) for x in declared or ()}
     for unit in units:
         if not isinstance(unit, dict):
             continue
         own = {_kind(x) for key in ("elements", "mechanics")
                for x in (unit.get(key) or []) if isinstance(unit.get(key), list)}
         listed = unit.get("introduces") if isinstance(unit.get("introduces"), list) else []
-        stray = [str(x) for x in listed if _kind(x) not in own]
+        unstated = not isinstance(unit.get("elements"), list)
+        stray = [str(x) for x in listed if _kind(x) not in own
+                 and not (unstated and _kind(x) in declared)]
         again = [str(x) for x in listed if _kind(x) in seen]
         if stray:
             out.append(f"{at(unit)} introduces {', '.join(stray)}, which it does not contain: "
@@ -1595,7 +1607,10 @@ def introductions_view(design):
     where = lambda u: f"build_spec.content.units[{u.get('id')}]"  # noqa: E731
     over_one = [] if undeclared else introduction_breaches(units, at=where)
     # What a non-empty `introduces` is trusted with must at least be true of the unit.
-    over_one += introduction_problems(units, at=where)
+    catalogue = ((design or {}).get("build_spec") or {}).get("content") or {}
+    declared = [e.get("id") for e in (catalogue.get("elements") or [])
+                if isinstance(e, dict) and e.get("id")] if isinstance(catalogue, dict) else []
+    over_one += introduction_problems(units, at=where, declared=declared)
     if undeclared:
         over_one = [f"build_spec.content.units[{', '.join(undeclared[:8])}"
                     + (f" and {len(undeclared) - 8} more" if len(undeclared) > 8 else "")

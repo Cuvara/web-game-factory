@@ -537,7 +537,7 @@ level is derived over all of them.
 
 **The snapshot.** knowledge-contract 1.2.0 records, for every rule applicable or not, its
 `revision`, `version` and `digest` (sha256 of the canonical lessons.yaml entry,
-`model.lesson_digest`): a run pinned under `L29@r5` keeps exactly that text when its
+`model.lesson_digest`): a run pinned under `L29@r6` keeps exactly that text when its
 contract is made again after the Factory moves on, and a run started after the move gets
 the new one (`test_knowledge_transfer` Versioning). It also records the design's `trace`.
 The checks are pinned like the rules: the design step judges a design by the run's pinned
@@ -546,11 +546,12 @@ The checks are pinned like the rules: the design step judges a design by the run
 started before K2 on 2026-10-08 pinned nothing, and is judged by the live files), so a run
 that pinned its files before a rule or check existed never meets it - not on resume, not when design is
 entered again (`test_knowledge_transfer` PinnedBefore). Pins fail closed
-(`test_knowledge_pins`, through the real design and content-sufficiency steps): a pinned file
-that is gone, or a pinned copy edited or substituted (the live newer file copied over it),
+(`test_knowledge_pins`, through the real design and content-sufficiency steps, for the
+rules and the quality benchmark): a pinned file that is gone, or a pinned copy edited or substituted (the live newer file copied over it),
 BLOCKS the step naming the file and both digests; the recorded digest cannot be swapped to
 match a substituted copy - the engine refuses a run whose params differ from the ones
-WORKFLOW_STARTED recorded; and a blocked step never satisfies a rule - compliance reads its
+WORKFLOW_STARTED recorded, and a run whose log records no params can claim no pins
+(`pinned_references` is a guarded param); and a blocked step never satisfies a rule - compliance reads its
 check UNMEASURED and holds the release.
 
 **The design request.** The `agent` design author's request carries `knowledge`: the
@@ -593,7 +594,13 @@ with must still be structurally true (design-consistency 2.4.0, the same rule): 
 unit does not itself contain among its elements or mechanics, or one an earlier unit already
 named (a re-introduction), breaches - ids matched as unit kinds are (`content._kind`: a
 trailing plural `s` dropped, so `armored-bricks` is contained beside `armored-brick`); an
-unknown id is `content.mechanics_resolve`'s. Whether an introduction is taught well stays
+unknown id is `content.mechanics_resolve`'s. Unverified, and never a breach (2.4.1): a unit
+that states no `elements` list - the field is optional, and the agent-written 2D validation
+design states none - introducing a declared element (build_spec.content.elements); whether it
+shows it there is not known. A unit that lists its elements is held to them, and an id
+neither listed nor declared is a stray either way. The normalisation's limits: an `-es`
+plural is not undone (`boss`/`bosses`, `box`/`boxes` read as two ids, a false stray), and two
+ids one trailing `s` apart read as one. Whether an introduction is taught well stays
 unverified. A unit that names
 no element, mechanic or introduction is never skipped - skipped, the next unit would falsely
 debut what it met there - so any such unit leaves the count UNMEASURED: a breach on the

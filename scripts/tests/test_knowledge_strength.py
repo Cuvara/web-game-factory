@@ -392,6 +392,9 @@ class Circularity(Base):
                          record["sources"][1]["report_hash"])
         self.assertEqual(record["strength"], "reproduced", record["strength_why"])
         self.assertEqual(self.rules(record), ["duplicate"])
+        refused = record["refused_evidence"][0]
+        self.assertEqual(refused["run"], "run-copy")
+        self.assertIn("the same report (digest)", refused["reason"])
 
     def test_the_same_pair_reported_twice_counts_once(self):
         """Two reports of the same candidate on the same finding of one ledger: the pair is
@@ -532,9 +535,15 @@ class PromoteCeiling(Base):
         self.assertEqual(record["strength"], "single-run")
         lesson = self.draft(record).lesson
         self.assertEqual((lesson["status"], lesson["classification"]), ("enforced", "BLOCKING"))
-        for asked in ("VALIDATED_PRINCIPLE", "RECOMMENDATION", "OBSERVATION"):
+        for asked in ("VALIDATED_PRINCIPLE", "RECOMMENDATION"):
             with self.subTest(asked=asked):
-                with self.assertRaises(promote.PromoteRefused):
+                with self.assertRaisesRegex(promote.PromoteRefused, "single-run"):
+                    self.draft(record, classification=asked)
+        # What the evidence would allow is still not the rule's: its tier classifies it.
+        for asked in ("OBSERVATION", "HEURISTIC"):
+            with self.subTest(asked=asked):
+                with self.assertRaisesRegex(promote.PromoteRefused,
+                                            "neither raises nor lowers it"):
                     self.draft(record, classification=asked)
 
     def test_promote_derives_strength_again_and_never_trusts_the_record(self):

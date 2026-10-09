@@ -185,6 +185,17 @@ class Judge(unittest.TestCase):
         self.records["lose"]["restart"]["metrics"]["saves"] = 5
         self.assertIn("restart.works", self.failed())
 
+    def test_a_dead_retry_cites_the_screen_it_left(self):
+        # The bot's frame after a retry that never returned to play (bot.spec.ts `retry-dead`)
+        # and the result screen it was pressed on are restart.works' evidence; the lose
+        # recording's other frames are not.
+        lose = self.records["lose"]
+        lose["restart"].update({"playingMs": None})
+        lose["frames"] = ["state-lost", "end-lost", "retry-dead"]
+        check = self.judge()["restart.works"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertEqual(check["frames"], ["end-lost", "retry-dead"])
+
     def test_a_threat_too_small_to_read(self):
         self.records["win"]["sampled"] = entity_frames(attacker_size=3)
         checks = self.judge()

@@ -3,6 +3,7 @@
 
     python3 scripts/golden/run.py --game 2d|3d [--workdir DIR] [--keep] [--json]
                                   [--resume RUN --from STEP] [--no-browser]
+                                  [--defect NAME [--no-repair]]
 
 Exit status: 0 when the run passed (every step at its expected outcome, a drafted release
 manifest, the engine consistent, and the independent browser evidence passed), 1 otherwise.
@@ -57,7 +58,15 @@ def main(argv=None):
     parser.add_argument("--no-library", action="store_true",
                         help="calibration: no art library, so the assets step makes "
                              "placeholders (the production gates must fail the run)")
+    parser.add_argument("--defect", metavar="NAME",
+                        help="the golden loop: the replay developer plants this defect "
+                             "(replay_developer.DEFECTS) until a brief names its check failed")
+    parser.add_argument("--no-repair", action="store_true",
+                        help="with --defect: never leave it out - the loop's negative control, "
+                             "which must not pass")
     args = parser.parse_args(argv)
+    if args.no_repair and not args.defect:
+        parser.error("--no-repair needs --defect")
     if args.resume and not args.workdir:
         parser.error("--resume needs the --workdir of the run")
     procs.install_signal_cleanup()
@@ -65,7 +74,8 @@ def main(argv=None):
     stream = sys.stderr if args.json else sys.stdout
     run = harness.GoldenRun(args.game, workdir=args.workdir, keep=args.keep,
                             progress=Progress(stream), browser=not args.no_browser,
-                            library=not args.no_library)
+                            library=not args.no_library, defect=args.defect,
+                            repair=not args.no_repair)
     print(f"golden {args.game}: {run.game.title_id} ({run.game.engine}) in {run.workdir}",
           file=stream, flush=True)
     try:
@@ -73,6 +83,10 @@ def main(argv=None):
     finally:
         procs.terminate_all()
     ok = summary["passed"] and summary["browser_passed"]
+    loop_record = summary.get("golden_loop")
+    if loop_record is not None:
+        # A loop run passes when its loop closed; the negative control when it did not.
+        ok = ok and loop_record["closed"] if not args.no_repair else not loop_record["closed"]
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True, default=str))
     else:
@@ -86,6 +100,11 @@ def main(argv=None):
               f"{bool(summary['release'] and summary['release']['manifest_path'])}; browser: "
               f"{summary['browser_passed']}", file=stream)
         print(f"summary: {summary.get('summary_path')}", file=stream)
+        if loop_record is not None:
+            print(f"golden loop ({args.defect}{', no repair' if args.no_repair else ''}): "
+                  f"closed={loop_record['closed']} versions="
+                  f"{[((v['commit'] or '')[:12], v['verdict'], v['check_status']) for v in loop_record['versions']]}"
+                  f" evidence: {loop_record.get('path')}", file=stream)
         print("PASS" if ok else "FAIL", file=stream)
     run.cleanup()
     return 0 if ok else 1

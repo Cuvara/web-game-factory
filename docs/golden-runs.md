@@ -93,6 +93,8 @@ conformance, the reviewer) always runs, in about 20 s, and needs no node.
     playability/reports/                    every playability-report version, as the store holds it
     playability/<step>/<visit>-<attempt>/   the bot's settings.json and <project>/first-session.json,
                                             act.json, ... (no frames, no logs), pass or fail
+    golden-loop-2d.json                     with --defect: the loop's before/after record (below)
+    golden-loop/v<n>-<commit>/<project>/    with --defect: the frames the first and last report cite
 ```
 
 The summary holds: `run_id`; every step's status, expected outcome, route, duration,
@@ -367,6 +369,81 @@ They do **not** prove:
 - **that the art is good.** The baseline judge proves the run's frames look like frames a
   person approved, not that the approved look is good; an agent judge (`kind: command`) is
   what reads a new game's frames against the rubric.
+
+## The golden loop
+
+A golden run proves the pipeline carries a known-good game to a release. It does not prove
+the Factory's loop: that a real build failing a real check is routed back, rebuilt, and the
+**same check re-played and passed on a newer commit** - through the production workflow, not
+a fixture world. The golden loop does, with no LLM: the 2D golden with a defect planted by
+the replay developer.
+
+```
+greybox (visit 1)       replay plants `restart-dead`             -> commit A
+greybox-playability     clones A, builds, plays in Chromium:     FAIL  restart.works
+                        the bot clicks the result screen's          (desktop + mobile,
+                        restart, the run stays lost                 frames end-lost, retry-dead)
+  route fail -> greybox (visit 2), brief.json playability_failures names restart.works
+greybox (visit 2)       replay reads the brief, leaves it out    -> commit B (descends from A)
+greybox-playability     clones B, builds, re-plays:              PASS  restart.works (measured)
+assets -> ... -> release                                          the normal golden outcome
+```
+
+**The defect.** `replay_developer.DEFECTS["restart-dead"]` (2D only, greybox phase only):
+in the port's `src/game/index.ts` the result screen's `restart` UI action keeps `click();`
+and drops `void app.restart();`. Typecheck, lint, the unit tests and the port's own browser
+tests (which restart through the `window.__game.restart()` hook) all pass; only a player's
+click on the button - the bot's, at the coordinates the play probe lists - finds it dead.
+`restart.works` is a hard check and a universal-floor blocker. The rewrite is an exact-once
+string replacement in the style of `SEAM_REWRITES`: an anchor not found exactly once refuses
+the replay (exit 3) before anything is written, on a repairing visit too.
+
+**Plant and repair are read from the brief, nothing else.** `defect_decision`: a greybox
+brief whose `playability_failures` name no `restart.works` failure gets the defect
+(`planted`); one that names it - the develop step hands a visit the failed checks of the
+report that played the commit it starts from - lays the port's own line (`repaired`); a
+production visit lays the port as it is (`not-applied`). Each visit records what it did in
+`docs/development/report.json` `replay.defect`, labelled `GOLDEN-LOOP DEFECT: a scripted
+rewrite ... a replay, not an agent's fix`. The repair proves the routing and the re-play,
+not a developer's ability to fix anything - that is the live loop's question.
+
+**Evidence.** The playability bot captures `retry-dead` - the screen a retry that never
+returned to play leaves - and `restart.works` cites the lose recording's `end-<reached>`,
+`retry-dead` and `state-retry` frames. `scripts/golden/loop.py` reads the run store and the
+game's history and writes `evidence/golden-loop-2d.json`: every greybox-playability report
+(commit, verdict, `restart.works` per project with its viewport, summary, measurement and
+frames - path, existence, sha256), the developer record at each commit, the visits, how the
+run ended, a `before` / `after` pair, and `closed` with the `reasons` it is not. The first and
+the last report's frames are copied to `evidence/golden-loop/v<n>-<commit>/<project>/`.
+`closed` requires: v1 FAIL with `restart.works` FAIL on desktop and mobile, citing frames that
+exist, on a commit recorded `planted`; the last report PASS with `restart.works` PASS on both
+(UNMEASURED, SKIPPED, BLOCKED or absent never count) on a commit recorded `repaired`; that
+commit different from and descending from A; greybox visited at least twice.
+
+**The negative control.** `--defect restart-dead --no-repair` plants it on every greybox
+visit whatever the brief says. The loop must not close: greybox is entered once and then
+`max_visits_by_route: {greybox-playability.fail: 2}` more times, every report FAILs
+`restart.works`, and the engine stops the run `BLOCKED` (`blocked_reason.kind: loop-limit`,
+step greybox) - nothing after greybox runs, nothing is released, and `closed` is false.
+
+```bash
+python3 scripts/golden/run.py --game 2d --defect restart-dead --keep        # exit 0: closed
+python3 scripts/golden/run.py --game 2d --defect restart-dead --no-repair   # exit 0: not closed
+WGF_GOLDEN_LOOP=1 bin/wgf test-core --only "GOLDEN LOOP" --strict           # both, asserted
+```
+
+`scripts/tests/test_golden_loop.py` is the **GOLDEN LOOP** category, gated by
+`WGF_GOLDEN_LOOP=1` (SKIP otherwise; a skip is never a pass). It is **opt-in**
+(`core_suite.OPT_IN`): a plain `wgf test-core` - the release gate included - leaves it out and
+says so under the table, unless the variable is `1` or the category is named with `--only`.
+It asserts everything above from the run store, `git show <commit>:` and the files on disk,
+plus the run's normal golden outcome for the repaired run. CI runs it in its own job
+(`golden-loop` in `.github/workflows/acceptance.yml`, 180 min), never in the acceptance job:
+on a manual run with `golden_loop` ticked, or on a pull request labelled `golden-loop` (the
+label takes effect on the next push or re-run), and uploads `golden-loop-evidence`. The
+always-on part - the anchors against the pinned port, the decision, the refusals, the argv,
+`loop.record` over a synthetic store and a real git history - is `GoldenLoopFast` in
+`test_golden_fast.py`.
 
 ## The live loop
 

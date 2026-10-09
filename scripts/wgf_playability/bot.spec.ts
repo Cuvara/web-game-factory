@@ -1318,6 +1318,9 @@ test("lose and restart: the anti-oracle plays badly, then retries", async ({ pag
       }
       restart = { clicked, playingMs, metrics: after?.metrics ?? null, endMetrics: at?.metrics ?? null,
                   content: after?.content ?? null, endContent: at?.content ?? null };
+      // A retry pressed that never returned to play: the screen the player is left on, as
+      // restart.works' evidence beside the result screen it was pressed on (end-<reached>).
+      if (clicked && playingMs === null) await frame(page, project, "retry-dead", frames);
       // The screen after the retry, once play is back: measured after the restart's timing.
       if (playingMs !== null) {
         await page.waitForTimeout(500);

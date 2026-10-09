@@ -247,9 +247,29 @@ def port_fixtures(game, ports=None):
     return tuple(path if os.path.isdir(path) else None for path in found)
 
 
-def build_config(game, workdir, template_dir=None, python=None, with_library=True):
+def developer_argv(game, python=None, defect=None, repair=True):
+    """The replay developer's argv. `defect` (a replay_developer.DEFECTS name) makes it the
+    golden loop's: the defect planted until a brief names its check failed, then left out;
+    `repair=False` plants it on every visit (the loop's negative control)."""
+    argv = [python or sys.executable, os.path.join(HERE, "replay_developer.py"),
+            "--game", game.key, "--brief", "{brief}", "--repo", "{repo}",
+            "--ports", template.golden_ports_checkout(), "--key", "{key}"]
+    if defect:
+        from golden import replay_developer
+        replay_developer.defect_spec(defect, game.key)  # unknown, or another game's: refused
+        argv += ["--defect", defect]
+        if not repair:
+            argv.append("--no-repair")
+    elif not repair:
+        raise ValueError("repair=False is the golden loop's negative control: it needs a defect")
+    return argv
+
+
+def build_config(game, workdir, template_dir=None, python=None, with_library=True,
+                 defect=None, repair=True):
     """The golden run's factory configuration, as the `factory:` mapping. `with_library=False`
-    leaves the port's art library out - a calibration run, whose assets are placeholders."""
+    leaves the port's art library out - a calibration run, whose assets are placeholders.
+    `defect` / `repair`: the golden loop (developer_argv)."""
     template_dir = os.path.abspath(template_dir or globals()["template_dir"]())
     python = python or sys.executable
     games_dir = os.path.join(workdir, "games")
@@ -286,9 +306,7 @@ def build_config(game, workdir, template_dir=None, python=None, with_library=Tru
             "author": dict(GOLDEN_AUTHOR),
             "developer": {
                 "kind": "command",
-                "argv": [python, os.path.join(HERE, "replay_developer.py"),
-                         "--game", game.key, "--brief", "{brief}", "--repo", "{repo}",
-                         "--ports", template.golden_ports_checkout(), "--key", "{key}"],
+                "argv": developer_argv(game, python, defect, repair),
                 "timeout_seconds": 1800,
             },
             # A command developer is never started without a run budget (wgf_develop).
@@ -329,7 +347,7 @@ class GoldenRun:
     """One golden run of one game. `execute()` returns a Summary."""
 
     def __init__(self, game_key, workdir=None, keep=False, template_dir=None, progress=None,
-                 browser=True, library=True):
+                 browser=True, library=True, defect=None, repair=True):
         self.game = games.game(game_key)
         self.created_workdir = workdir is None
         self.workdir = os.path.abspath(workdir or make_workdir())
@@ -338,8 +356,12 @@ class GoldenRun:
         self.template_dir = os.path.abspath(template_dir or globals()["template_dir"]())
         self.progress = progress
         self.browser = browser
+        # The golden loop (docs/golden-runs.md): a replay_developer.DEFECTS name, planted
+        # until a brief names its check failed; repair=False is the negative control.
+        self.defect = defect
+        self.repair = repair
         self.config_data = build_config(self.game, self.workdir, self.template_dir,
-                                        with_library=library)
+                                        with_library=library, defect=defect, repair=repair)
         self.repo = os.path.join(self.workdir, "games", self.game.title_id)
         self.evidence_dir = os.path.join(self.workdir, "evidence")
 
@@ -394,6 +416,15 @@ class GoldenRun:
             # Pass or fail, the playability reports and the bot's records reach the evidence:
             # the run store is deleted at teardown, and a budget miss needs its numbers.
             summaries.collect_playability(api.store, state, self.evidence_dir)
+            loop_record = None
+            if self.defect:
+                # The golden loop's before/after: read from the run store and the game's
+                # history, the failing and the passing frames copied beside it.
+                from golden import loop
+                loop_record = loop.record(api.store, state, self.repo, self.defect,
+                                          self.repair)
+                loop.write(loop_record, api.store.run_dir(state.run_id), self.evidence_dir,
+                           self.game.key)
             browser = None
             developed = (state.steps.get("develop") and
                          state.steps["develop"].status == "SUCCESS")
@@ -409,6 +440,8 @@ class GoldenRun:
         result = summaries.build(self, api, state, seconds, browser)
         # What the run tried to reach outside localhost, every attempt refused.
         result["network_refused"] = network
+        if self.defect:
+            result["golden_loop"] = loop_record
         summaries.write(result, self.evidence_dir, self.game.key)
         return result
 

@@ -9,6 +9,28 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**The golden loop: a real closed loop on a real build, no LLM** (K6.1,
+[docs/golden-runs.md](docs/golden-runs.md) "The golden loop"). The golden replay developer
+takes `--defect NAME` (`replay_developer.DEFECTS`, exact-once rewrites; an anchor not found
+exactly once refuses the replay): `restart-dead` makes the 2D port's restart button click
+without restarting. It is planted on a greybox visit whose brief names no `restart.works`
+failure and left out on one that does, and each visit records which in its report
+(`replay.defect`, labelled a replay, never an agent's fix); `--no-repair` is the negative
+control. `GoldenRun(defect=, repair=)` / `scripts/golden/run.py --defect NAME [--no-repair]`;
+`scripts/golden/loop.py` writes the before/after record (`evidence/golden-loop-2d.json`,
+frames under `evidence/golden-loop/`). New Core Acceptance category **GOLDEN LOOP**
+(`test_golden_loop`, `WGF_GOLDEN_LOOP=1`): greybox-playability FAILs `restart.works` on both
+viewports on commit A with frames, greybox is re-entered, the same check PASSes measured on a
+newer commit B, and the run ends in its normal golden outcome; the negative control exhausts
+greybox's route budget and blocks with the check still failing. The category is **opt-in**
+(`core_suite.OPT_IN`): `wgf test-core` without `--only` leaves it out and lists it as not run
+(`opt_in_not_run` in `--json`), so `WGF_GOLDEN=1 bin/wgf test-core --strict` is unchanged; it
+runs in its own CI job (`golden-loop`: a manual run with `golden_loop`, or a pull request
+labelled `golden-loop`). The playability bot now captures `retry-dead` when a retry never
+returns to play, and `restart.works` cites the lose recording's result and retry frames
+(before, it cited none). Nothing to bring forward: an existing playability-report stays
+valid; a new one's `restart.works` may carry `frames`.
+
 **Cross-session quality transfer, and the first transferred principle (L29)** (lessons
 2.1.0, check-tiers 1.3.0, design-consistency-rules 2.4.1, content-sufficiency 1.6.0,
 game-design 1.16.0, knowledge-contract 1.2.0, quality-report 1.4.0,

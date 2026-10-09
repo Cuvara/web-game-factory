@@ -2,7 +2,7 @@
 """The golden-run REPLAY developer: a deterministic stand-in for an agent developer.
 
     replay_developer.py --game 2d|3d --brief <brief.md> --repo <checkout> --ports <dir>
-                        [--key <key>]
+                        [--key <key>] [--defect NAME [--no-repair]]
 
 It is what `factory.develop.developer: {kind: command}` runs in a golden run, through the
 real develop step and wgflib.procs, exactly where an agent host would run. It is NOT an AI
@@ -60,6 +60,20 @@ What it does, in order:
 
 Every child process goes through wgflib.procs. Nothing is committed: the develop step runs
 its checks and commits.
+
+THE GOLDEN LOOP (`--defect NAME`, opt-in; docs/golden-runs.md "The golden loop"). A run that
+must prove the Factory's closed loop - a real build fails a real check, the failure is routed
+back, the next build passes the same check on a newer commit - needs a build that fails for
+a known reason. DEFECTS names each one: the game it applies to, the develop phase it is
+planted in, the playability check it must fail, and exact-once string rewrites of one port
+file (the style of SEAM_REWRITES; an anchor not found exactly once refuses the replay, exit
+3). The defect is PLANTED on a visit whose brief names no playability failure of that check,
+and left out - REPAIRED - on a visit whose brief does (the develop step hands a visit the
+failed checks of the playability report that played the commit it starts from). The repair
+is a scripted rewrite left out, decided by reading the brief: it is a replay, never an
+agent's fix, and the report says so (report.json `replay.defect`). `--no-repair` keeps
+planting it whatever the brief says: the loop's negative control, which must never end in a
+pass.
 """
 
 import argparse
@@ -99,6 +113,33 @@ SEAM_REWRITES = (
     ("new DefaultGameIntegration(game, platform)", "createGameIntegration(game, platform)"),
 )
 MAIN_PATH = "src/main.ts"
+
+# The golden loop's deliberate defects (`--defect NAME`). Each: the golden game it applies to,
+# the develop phase it is planted in (another phase's visit lays the port as it is), the
+# playability check it must make fail, the port file it rewrites, and (old, new) rewrites of
+# that file, each found exactly once. A defect must survive every check the develop step runs
+# (typecheck, lint, unit tests, the port's own browser tests) and fail only the bot's real
+# play: that is what makes the loop's FAIL the playability step's finding, not a build error.
+DEFECTS = {
+    # The restart button on the result screen plays its click and does nothing else: the run
+    # stays lost. The port's own e2e restarts through the window.__game.restart() hook, which
+    # still works; only a player's click on the button - the bot's, at the coordinates the
+    # play probe lists - finds it dead (restart.works, hard, a floor blocker).
+    "restart-dead": {
+        "game": "2d",
+        "phase": "greybox",
+        "check": "restart.works",
+        "file": "src/game/index.ts",
+        "rewrites": (
+            ("      restart: () => {\n        click();\n        void app.restart();\n      },\n",
+             "      restart: () => {\n        click();\n      },\n"),
+        ),
+        "summary": "the result screen's restart button plays its click sound and does not "
+                   "restart the run",
+    },
+}
+DEFECT_LABEL = ("GOLDEN-LOOP DEFECT: a scripted rewrite by the golden-run replay developer, "
+                "planted or left out by reading the brief - a replay, not an agent's fix")
 # The template's contract 2: the game's entry, and the GameContext type its main.ts builds.
 ENTRY_PATH = "src/game/index.ts"
 CONTEXT_PATH = "src/game/context.ts"
@@ -300,7 +341,61 @@ def point_smoke_at_scene(repo, scene_id):
     return True
 
 
-def build_report(brief, port, written, bridge=None):
+def defect_spec(name, game_key):
+    """The DEFECTS entry `name`, refused (ReplayError) when unknown or for another game."""
+    spec = DEFECTS.get(name)
+    if spec is None:
+        raise ReplayError(f"unknown defect {name!r}; known: {', '.join(sorted(DEFECTS))}")
+    if spec["game"] != game_key:
+        raise ReplayError(f"defect {name!r} applies to the {spec['game']} golden game, not "
+                          f"{game_key}")
+    return spec
+
+
+def apply_defect(spec, text):
+    """`text` with the defect's rewrites applied; each old string must occur exactly once."""
+    for old, new in spec["rewrites"]:
+        if text.count(old) != 1:
+            raise ReplayError(f"defect anchor {old.strip()!r} occurs {text.count(old)} time(s) "
+                              f"in {spec['file']}, not exactly once; update DEFECTS for the "
+                              f"ports")
+        text = text.replace(old, new, 1)
+    return text
+
+
+def defect_decision(name, spec, brief, repair=True):
+    """What this visit does with the defect, read from the brief alone: a record for
+    report.json `replay.defect`, whose `status` is `planted`, `repaired` or `not-applied`.
+
+    planted      the brief's phase is the defect's and no playability failure in the brief
+                 names its check (or `repair` is False: the negative control)
+    repaired     the brief names a playability failure of its check: left out
+    not-applied  another phase's visit: the port is laid as it is
+    """
+    named = sorted({f.get("project") or "?" for f in brief.get("playability_failures") or []
+                    if f.get("check") == spec["check"]})
+    record = {"name": name, "check": spec["check"], "file": spec["file"],
+              "summary": spec["summary"], "phase": brief.get("phase"),
+              "iteration": brief.get("iteration"), "failures_named": named,
+              "played_commit": brief.get("played_commit"), "repair": bool(repair),
+              "label": DEFECT_LABEL}
+    if brief.get("phase") != spec["phase"]:
+        return {**record, "status": "not-applied",
+                "reason": f"a {brief.get('phase')} visit; the defect is planted in "
+                          f"{spec['phase']} only"}
+    if named and repair:
+        return {**record, "status": "repaired",
+                "reason": f"the brief names {spec['check']} failed on "
+                          f"{', '.join(named)}: the rewrite is left out"}
+    if named:
+        return {**record, "status": "planted",
+                "reason": f"the brief names {spec['check']} failed on {', '.join(named)}, "
+                          f"and --no-repair keeps the defect (the negative control)"}
+    return {**record, "status": "planted",
+            "reason": f"the brief names no {spec['check']} failure: the rewrite is applied"}
+
+
+def build_report(brief, port, written, bridge=None, defect=None):
     trigger_by_kind = {}
     for placement in brief.get("placements") or []:
         trigger_by_kind.setdefault(placement.get("kind"), placement.get("trigger"))
@@ -346,11 +441,14 @@ def build_report(brief, port, written, bridge=None):
             "files": sorted(written),
             # The template-owned release-1 boot bridge, when the repository needed it.
             "boot_bridge": bridge,
+            # The golden loop's defect, when one was asked for (`--defect`): what this visit
+            # did with it. A replay's scripted choice, never an agent's fix.
+            **({"defect": defect} if defect else {}),
         },
     }
 
 
-def replay(game_key, brief_md_path, repo, ports):
+def replay(game_key, brief_md_path, repo, ports, defect=None, repair=True):
     repo = os.path.abspath(repo)
     ports = os.path.abspath(ports)
     port = load_port(game_key)
@@ -372,6 +470,21 @@ def replay(game_key, brief_md_path, repo, ports):
         raise ReplayError(f"{INTEGRATION_PATH} is not in the repository: the develop step "
                           "provides the seam before any developer runs")
     boot, bridge = boot_files(port, overlay_files, repo, ports)
+    # The golden loop's defect, planned with the rest: an anchor that is not there refuses the
+    # replay before anything is written - and is checked on a repairing visit too, so a
+    # "repair" always means the port's own line, laid as it is.
+    rewritten, decision = {}, None
+    if defect:
+        spec = defect_spec(defect, game_key)
+        sources = dict(overlay_files)
+        if spec["file"] not in sources or spec["file"] in boot:
+            raise ReplayError(f"defect {defect!r} rewrites {spec['file']}, which the port "
+                              f"overlays do not lay")
+        planted = apply_defect(spec, read(sources[spec["file"]]))
+        decision = defect_decision(defect, spec, brief, repair)
+        if decision["status"] == "planted":
+            rewritten[spec["file"]] = planted
+        log(f"defect {defect}: {decision['status']} - {decision['reason']}")
     if bridge:
         log(f"contract-1 repository (no {CONTEXT_PATH}): applying the boot bridge {bridge}")
     written = []
@@ -381,7 +494,10 @@ def replay(game_key, brief_md_path, repo, ports):
     for relative, source in overlay_files:
         target = os.path.join(repo, *relative.split("/"))
         os.makedirs(os.path.dirname(target), exist_ok=True)
-        if relative not in boot:
+        if relative in rewritten:
+            write(target, rewritten[relative])
+            written.append(relative)
+        elif relative not in boot:
             shutil.copyfile(source, target)
             written.append(relative)
     for relative, text in boot.items():
@@ -407,7 +523,7 @@ def replay(game_key, brief_md_path, repo, ports):
                and not p.startswith("public/")]
     run(["pnpm", "exec", "prettier", "--write", *sorted(set(sources))], repo, timeout=300)
 
-    report = build_report(brief, port, written, bridge)
+    report = build_report(brief, port, written, bridge, decision)
     write(os.path.join(repo, *REPORT_PATH.split("/")),
           json.dumps(report, indent=2, ensure_ascii=False) + "\n")
     log(f"wrote {len(written)} file(s) and {REPORT_PATH}")
@@ -422,10 +538,19 @@ def main(argv=None):
     parser.add_argument("--ports", required=True,
                         help="a checkout of the template commit holding the golden ports")
     parser.add_argument("--key", default=None, help="the develop step's idempotency key")
+    parser.add_argument("--defect", default=None, metavar="NAME",
+                        help="the golden loop: plant DEFECTS[NAME] unless the brief names its "
+                             "check failed (then leave it out: the repair)")
+    parser.add_argument("--no-repair", action="store_true",
+                        help="with --defect: plant it whatever the brief says (the loop's "
+                             "negative control)")
     args = parser.parse_args(argv)
+    if args.no_repair and not args.defect:
+        parser.error("--no-repair needs --defect")
     procs.install_signal_cleanup()
     try:
-        replay(args.game, args.brief, args.repo, args.ports)
+        replay(args.game, args.brief, args.repo, args.ports, defect=args.defect,
+               repair=not args.no_repair)
     except ReplayError as exc:
         log(f"refused: {exc}")
         return 3

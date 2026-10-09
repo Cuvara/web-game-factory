@@ -966,6 +966,23 @@ def load_core_suite(tests_dir=TESTS_DIR):
     return {name: list(modules) for name, modules in module.SUITE.items()}
 
 
+def load_core_opt_in(tests_dir=TESTS_DIR):
+    """{category: variable} of the opt-in categories (tests/core_suite.py OPT_IN)."""
+    if tests_dir not in sys.path:
+        sys.path.insert(0, tests_dir)
+    module = importlib.import_module("core_suite")
+    return dict(getattr(module, "OPT_IN", {}) or {})
+
+
+def core_opt_in_not_run(suite, opt_in, only=None, environ=None):
+    """The opt-in categories a run leaves out: none when --only names categories (only those
+    run), else each whose variable is not exactly "1"."""
+    if only:
+        return []
+    environ = os.environ if environ is None else environ
+    return [c for c, variable in opt_in.items() if c in suite and environ.get(variable) != "1"]
+
+
 def run_core_suite(suite, tests_dir=TESTS_DIR, only=None, stream=None):
     """Run each category's test modules. Returns one row per category:
 
@@ -1106,14 +1123,23 @@ def cmd_test_core(args):
         raise UsageError("test-core runs the Factory's own test suite, which an installed "
                          "runtime does not ship; run it from a web-game-factory checkout")
     suite = load_core_suite()
+    # An opt-in category (core_suite.OPT_IN) runs when named or enabled; otherwise it is
+    # listed as not run - never a row, so never a PASS and never a --strict SKIP.
+    not_run = core_opt_in_not_run(suite, load_core_opt_in(), args.only)
+    suite = {c: m for c, m in suite.items() if c not in not_run}
     rows = run_core_suite(suite, only=args.only)
     strict = bool(getattr(args, "strict", False))
     code = core_exit_code(rows, strict)
     if args.json:
         print(json.dumps({"ok": code == EXIT_OK, "strict": strict, **core_completeness(rows),
-                          "categories": rows}, indent=2, ensure_ascii=False))
+                          "opt_in_not_run": not_run, "categories": rows},
+                         indent=2, ensure_ascii=False))
     else:
         print(render_core_table(rows, strict))
+        if not_run:
+            opt_in = load_core_opt_in()
+            print("Opt-in, not run: " + "; ".join(
+                f"{c} ({opt_in[c]}=1, or --only '{c}')" for c in not_run))
         for row in rows:
             for detail in row["details"]:
                 print(f"\n[{row['category']}] {detail}")

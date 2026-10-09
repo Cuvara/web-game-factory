@@ -23,6 +23,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      golden_loop:
+        description: "Also run the GOLDEN LOOP category (job golden-loop: two more 2D golden runs)"
+        type: boolean
+        default: false
 
 concurrency:
   group: acceptance-${{ github.ref }}
@@ -143,3 +148,70 @@ jobs:
           path: /tmp/wgf-golden-*/evidence
           if-no-files-found: warn
           retention-days: 7
+
+  # The GOLDEN LOOP category (docs/golden-runs.md "The golden loop"): the 2D golden with a
+  # planted defect must fail a real check, be routed back to greybox and pass the same check
+  # on a newer commit; its negative control must not pass. Two more golden runs, so it is kept
+  # out of the job above (its 180 minutes are nearly spent) and runs only when asked: a manual
+  # run with `golden_loop` ticked, or a pull request carrying the label `golden-loop` (adding
+  # the label does not start a run by itself - the next push or a re-run does, so a label
+  # event never cancels the acceptance job above through the shared concurrency group).
+  golden-loop:
+    name: GOLDEN LOOP (2D, planted defect, negative control)
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.golden_loop) ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'golden-loop'))
+    runs-on: ubuntu-24.04
+    # One full 2D golden with one extra greybox build-and-play, and a negative control that
+    # builds and plays the greybox three times and stops: about one and a half goldens.
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: pnpm, at the version the template pins
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          pnpm --version
+
+      - name: Record the toolchain
+        run: |
+          python3 --version
+          node --version
+          pnpm --version
+          git --version
+
+      - name: The pinned template, and a browser that matches its Playwright
+        run: |
+          template=$(python3 -c "
+          import sys; sys.path.insert(0, 'scripts')
+          from wgflib import template
+          directory = template.checkout()
+          template.ensure_dependencies(directory)
+          print(directory)
+          ")
+          echo "pinned template: $template"
+          cd "$template" && pnpm exec playwright install --with-deps chromium
+
+      - name: An MP4 encoder for the store-listing trailer
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg && ffmpeg -hide_banner -encoders | grep -w libx264
+
+      - name: The golden loop and its negative control
+        run: WGF_GOLDEN_LOOP=1 WGF_GOLDEN_KEEP=1 bin/wgf test-core --only "GOLDEN LOOP" --strict
+
+      - name: Golden loop evidence
+        # golden-loop-2d.json (the before/after record) and golden-loop/ (the failing and the
+        # passing frames) beside each run's summary and playability reports.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-loop-evidence
+          path: /tmp/wgf-golden-*/evidence
+          if-no-files-found: warn
+          retention-days: 14

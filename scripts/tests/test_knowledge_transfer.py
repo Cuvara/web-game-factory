@@ -31,6 +31,11 @@ host, no network):
               in the design step's repair round; a build that breaks a compliant design FAILs
               content-sufficiency (compliance RELEASE_BLOCKED on L29) and is repaired; a
               designer that claims the rule applied while breaking it breaches the trace rule.
+  Held to     a design that states each unit's introduction, and a build that shows a later
+  design      element at such a unit with `introduces` copied: only the comparison of each
+              built unit with its design unit catches it.
+  Session C   cumulative: a fresh session held to L29 and to L20 (content.structure); a
+              duplicated level fails L20's check while L29 still passes; repaired, both do.
   Versions    a run pinned under L29 at its shipped revision keeps it after the Factory
               moves to the next.
 
@@ -529,6 +534,71 @@ class Held(unittest.TestCase):
         problems = " ".join(repair["repair"]["problems"])
         self.assertIn("consistency knowledge.trace_matches_design", problems)
         self.assertIn("claims the rule applied, and this design breaks it", problems)
+
+
+# ------------------------------------------------------------------- Session C: cumulative
+
+
+class SessionC(unittest.TestCase):
+    """Knowledge accumulates: a fresh session held to L29 AND an earlier, independently
+    validated lesson. The second is L20 (active since 2.8.0, its check
+    content-sufficiency:content.structure judging each unit's geometry from its declared
+    place, its catches tests replaying the real judge): two units of one group ship the
+    same level - a defect content.structure exists to catch, read from the declared layout
+    L20 made the judge read. L20's own defect (the judge reading the wrong place) is a
+    Factory bug no game can re-enact; what is exercised is its check holding a build in a
+    run where L29 also applies, with no regression of either."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp(prefix="wgf-k5-c-")
+        cls.c = Run(session(cls.tmp, "session-c", "--session", "b", "--developer",
+                            "duplicate"))
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_session_c_holds_both_lessons_without_regression(self):
+        run = self.c
+        contract = run.newest("knowledge-contract")
+        rules = {r["id"]: r for r in contract["rules"]}
+        for rule_id in ("L29", "L20"):
+            with self.subTest(rule=rule_id):
+                self.assertEqual(rules[rule_id]["revision"], SHIPPED[rule_id]["revision"])
+                self.assertEqual(rules[rule_id]["digest"],
+                                 model.lesson_digest(SHIPPED[rule_id]))
+        self.assertEqual((rules["L29"]["level"], rules["L20"]["level"]),
+                         ("blocking", "required"))
+        given = {r["id"]: r for r in run.design_file("1-1.request.json")["knowledge"]["rules"]}
+        self.assertTrue(given["L29"]["trace"] and given["L20"]["trace"])
+        self.assertEqual(given["L20"]["checks"], ["content-sufficiency:content.structure"])
+        # the duplicated level fails the second lesson's check; L29's still passes
+        reports = run.versions("content-sufficiency-report")
+        first = reports[0]
+        self.assertEqual(check_of(first, "content.structure")["status"], "FAIL")
+        self.assertEqual(check_of(first, CHECK)["status"], "PASS")
+        with open(os.path.join(run.dir, references.DIRECTORY, "core", "reference",
+                               "check-tiers.yaml"), encoding="utf-8") as handle:
+            tiers = load_yaml(handle.read())
+        design = run.newest("game-design")
+        section = compliance.evaluate(contract, tiers, {
+            "content-sufficiency-report": first, "game-design": design}, tier="release",
+            lessons=registry.load(ROOT)["lessons"])
+        held = {r["id"]: r for r in section["rules"]}
+        self.assertEqual(held["L20"]["status"], "FAILED")
+        self.assertEqual(held["L29"]["status"], "SATISFIED")
+        self.assertIn("L20", section["blocking"])
+        self.assertNotIn("L29", section["blocking"])
+        # repaired: both pass, both satisfied at the gate
+        self.assertIn(("triage", "level-designer"), run.steps())
+        last = reports[-1]
+        self.assertEqual((check_of(last, "content.structure")["status"],
+                          check_of(last, CHECK)["status"]), ("PASS", "PASS"))
+        quality = run.newest("quality-report")
+        satisfied = {r["id"]: r["status"] for r in quality["compliance"]["rules"]}
+        self.assertEqual((satisfied["L20"], satisfied["L29"]), ("SATISFIED", "SATISFIED"))
+        self.assertTrue(run.summary["waiting_at_g4"], run.summary["message"])
 
 
 # ------------------------------------------------------------------------------- versions

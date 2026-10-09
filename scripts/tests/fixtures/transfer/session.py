@@ -385,6 +385,11 @@ def run(args):
     scenario = {"defects": [], "fixes": {}}
     if args.session == "a":
         scenario = {"defects": [DOUBLE], "fixes": {}}
+    elif args.developer == "duplicate":
+        # Session C: a defect another lesson holds - two units of one group ship the same
+        # level (content.structure) - while every introduction is paced.
+        scenario = {"defects": ["duplicate-level"],
+                    "fixes": {"level-designer": {"fixes": ["duplicate-level"]}}}
     elif args.developer in ("violating", "violating-unlisted", "violating-held"):
         scenario = {"defects": [DOUBLE], "fixes": {"level-designer": {"fixes": [DOUBLE]}}}
     world = _world_class()(scenario, design, checkout)
@@ -476,7 +481,7 @@ def main(argv=None):
     r.add_argument("--designer", choices=("follow", "declare", "violate", "claim"),
                    default="follow")
     r.add_argument("--developer", choices=("faithful", "violating", "violating-unlisted",
-                                           "violating-held"),
+                                           "violating-held", "duplicate"),
                    default="faithful")
     r.add_argument("--family")
     k = sub.add_parser("knowledge")

@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/quality-report.schema.json",
   "title": "Quality report",
-  "description": "The Factory quality gate's scorecard of ONE build: every quality dimension (gameplay, content sufficiency, variety, progression, visual, UI, audio, consistency, polish, technical/performance, platform readiness, store) scored from the reports the producing steps wrote about that same build - playability, production-quality, visual-qa, content-sufficiency, verify, review, sdk, and the store listing's validation once it exists - against the versioned quality contract (core/reference/quality-floor.yaml: the universal floor every game carries, the genre family's contract and the 3D contract) and the release bars of core/reference/quality-benchmark.yaml at the run's quality tier, as the run pinned them when it started. A dimension passes only at or above its floor: no average carries a dimension past a failed blocker criterion, and no dimension's score carries another's. Evidence about another commit than the build's is stale and blocks the report. Each failing criterion is a typed finding with its owner discipline and route, carried open across builds and closed only by a re-measurement on a newer build. The release decision is `release` only at the release tier with every dimension at its floor; a run at tier mvp is `development`, never release. Added in Factory 2.8.0 (WS-7). Since 1.3.0 a `compliance` section holds the build to the run's knowledge-contract: every applicable rule of core/reference/lessons.yaml with its status, cited by its producers' reports.",
+  "description": "The Factory quality gate's scorecard of ONE build: every quality dimension (gameplay, content sufficiency, variety, progression, visual, UI, audio, consistency, polish, technical/performance, platform readiness, store) scored from the reports the producing steps wrote about that same build - playability, production-quality, visual-qa, content-sufficiency, verify, review, sdk, and the store listing's validation once it exists - against the versioned quality contract (core/reference/quality-floor.yaml: the universal floor every game carries, the genre family's contract and the 3D contract) and the release bars of core/reference/quality-benchmark.yaml at the run's quality tier, as the run pinned them when it started. A dimension passes only at or above its floor: no average carries a dimension past a failed blocker criterion, and no dimension's score carries another's. Evidence about another commit than the build's is stale and blocks the report. Each failing criterion is a typed finding with its owner discipline and route, carried open across builds and closed only by a re-measurement on a newer build. The release decision is `release` only at the release tier with every dimension at its floor; a run at tier mvp is `development`, never release. Added in Factory 2.8.0 (WS-7). Since 1.3.0 a `compliance` section holds the build to the run's knowledge-contract: every applicable rule of core/reference/lessons.yaml with its status, cited by its producers' reports. Since 1.5.0 an `assessment` section reads the same evidence as three separate questions - design validity, runtime correctness, player-facing quality - with each check's measurement class; it decides nothing.",
   "x-wgf": {
     "id": "quality-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "producer": "title:prototype",
     "consumers": [
       "title:design",
@@ -1550,6 +1550,475 @@
         "holds_release": {
           "type": "boolean",
           "description": "Enforcing and RELEASE_BLOCKED: the release decision is not-release because of it."
+        }
+      },
+      "additionalProperties": false
+    },
+    "assessment": {
+      "type": "object",
+      "description": "Added in 1.5.0. The assessment (scripts/wgf_quality/assessment.py, docs/quality-assessment.md): the same evidence read as three SEPARATE questions - design validity, runtime correctness, player-facing quality - each PASS, FAIL, INCONCLUSIVE or NOT_SUPPORTED with the checks it rests on, each check's measurement class (deterministic, heuristic, self-reported, ai-judged; human for a person's decision) and what the evidence cannot justify (core/reference/quality-assessment.yaml). A held check that FAILED fails a dimension; one not measured leaves it INCONCLUSIVE, never PASS; a dimension no held check applies to is NOT_SUPPORTED; player-facing quality is never PASS without a person's G4 decision on this build. A view: it decides nothing - the floor, the verdict and the release decision are computed without it.",
+      "required": [
+        "reference",
+        "decides",
+        "dimensions"
+      ],
+      "properties": {
+        "reference": {
+          "type": "object",
+          "required": [
+            "path",
+            "version",
+            "sha256",
+            "pinned"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sha256": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "pinned": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "decides": {
+          "const": false
+        },
+        "note": {
+          "type": "string"
+        },
+        "problem": {
+          "type": "string",
+          "description": "Why the assessment could not be made; every dimension is then INCONCLUSIVE."
+        },
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "label",
+              "status",
+              "reason",
+              "requires",
+              "checks",
+              "not_reported",
+              "human",
+              "classes",
+              "cannot_justify",
+              "basis",
+              "judges",
+              "unresolved"
+            ],
+            "properties": {
+              "id": {
+                "enum": [
+                  "design_validity",
+                  "runtime_correctness",
+                  "player_facing"
+                ]
+              },
+              "label": {
+                "type": "string"
+              },
+              "question": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "PASS",
+                  "FAIL",
+                  "INCONCLUSIVE",
+                  "NOT_SUPPORTED"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "requires": {
+                "enum": [
+                  "automation",
+                  "human"
+                ],
+                "description": "`human`: never PASS from automation alone - only a person's G4 decision on this build passes it."
+              },
+              "checks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "check",
+                    "family",
+                    "class",
+                    "tier",
+                    "producer",
+                    "status",
+                    "holds",
+                    "role",
+                    "evidence"
+                  ],
+                  "properties": {
+                    "check": {
+                      "type": "string",
+                      "description": "`<check-tiers source>:<id>`."
+                    },
+                    "family": {
+                      "type": "string",
+                      "description": "The family of core/reference/quality-assessment.yaml the check is in."
+                    },
+                    "class": {
+                      "enum": [
+                        "deterministic",
+                        "heuristic",
+                        "self-reported",
+                        "ai-judged"
+                      ],
+                      "description": "How the check was measured (the family's class)."
+                    },
+                    "tier": {
+                      "enum": [
+                        "hard",
+                        "quality",
+                        "advisory"
+                      ]
+                    },
+                    "producer": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "status": {
+                      "enum": [
+                        "PASS",
+                        "FAIL",
+                        "UNMEASURED",
+                        "DEFERRED",
+                        "NOT_APPLICABLE"
+                      ],
+                      "description": "The check's result on this build, read through check-tiers.yaml `status_at` (wgf_quality.registry.check_status, as knowledge compliance reads it): UNMEASURED covers no report, no entry, SKIPPED, BLOCKED, a WARNING and a stale report - never a pass."
+                    },
+                    "holds": {
+                      "type": "boolean",
+                      "description": "Its tier (hard or quality) holds a build: a FAIL of it fails the dimension."
+                    },
+                    "role": {
+                      "enum": [
+                        "decides",
+                        "supporting"
+                      ],
+                      "description": "`supporting`: an advisory check, or an automated proxy of a dimension that requires a person."
+                    },
+                    "evidence": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/evidenceRef"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cites": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/evidenceRef"
+                      },
+                      "description": "For a criterion of this report: the producers' reports it read."
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "judge_runs": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "An ai-judged check: how many times its judge ran on this build (fresh attempts and repair rounds, as its report records), null when the report does not say. The Factory never repeats or cross-checks a judgment: one verdict stands behind it."
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "not_reported": {
+                "type": "array",
+                "description": "Checks of a `when: reported` family the producer reports only for a build it concerns, with no entry here: counted for nothing.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "check",
+                    "family"
+                  ],
+                  "properties": {
+                    "check": {
+                      "type": "string"
+                    },
+                    "family": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "human": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "artifact_type",
+                    "artifact_id",
+                    "gate",
+                    "decision",
+                    "decided_by",
+                    "about",
+                    "verdict"
+                  ],
+                  "properties": {
+                    "artifact_type": {
+                      "type": "string"
+                    },
+                    "artifact_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "content_hash": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "gate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "decision": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "decided_by": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "identifier": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "about": {
+                      "enum": [
+                        "this-build",
+                        "earlier-build"
+                      ],
+                      "description": "`this-build`: the decision pins, by content hash, a current report of this build. A decision on an earlier build is listed and decides nothing."
+                    },
+                    "findings": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Typed findings the decision named (wgf decide ... iterate --findings)."
+                    },
+                    "verdict": {
+                      "enum": [
+                        "PASS",
+                        "FAIL",
+                        null
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "classes": {
+                "type": "object",
+                "description": "How many of the dimension's applicable checks (and human records) were measured by each class.",
+                "additionalProperties": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "cannot_justify": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "What the evidence of this dimension cannot justify (core/reference/quality-assessment.yaml)."
+              },
+              "basis": {
+                "type": "object",
+                "description": "How much of a PASS rests on the game's own report (self-reported) or on a single AI judgment (ai-judged): `weak` when all of it does, `qualified` when some does, `measured` when none does; `person` when a person's G4 decision on this build passed it (player-facing quality); null unless PASS.",
+                "required": [
+                  "strength",
+                  "held",
+                  "passed",
+                  "weak",
+                  "by_class",
+                  "why"
+                ],
+                "properties": {
+                  "strength": {
+                    "enum": [
+                      "measured",
+                      "qualified",
+                      "weak",
+                      "person",
+                      null
+                    ]
+                  },
+                  "held": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "passed": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "weak": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "by_class": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "why": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "judges": {
+                "type": "array",
+                "description": "The AI judges the dimension's ai-judged families rest on, as their reports record them.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "family",
+                    "artifact_type",
+                    "artifact_id",
+                    "kind",
+                    "runs",
+                    "repairs"
+                  ],
+                  "properties": {
+                    "family": {
+                      "type": "string"
+                    },
+                    "artifact_type": {
+                      "type": "string"
+                    },
+                    "artifact_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "kind": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "runs": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "repairs": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "unresolved": {
+                "type": "array",
+                "description": "Every finding a family's report raised at the severities its `unresolved` lists (the visual judge's blocker and major findings), whatever the report's verdict - a major finding of a PASS report included. Listed, never deciding.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "family",
+                    "artifact_type",
+                    "artifact_id",
+                    "report_verdict",
+                    "id",
+                    "severity",
+                    "summary"
+                  ],
+                  "properties": {
+                    "family": {
+                      "type": "string"
+                    },
+                    "artifact_type": {
+                      "type": "string"
+                    },
+                    "artifact_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "report_verdict": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "severity": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false

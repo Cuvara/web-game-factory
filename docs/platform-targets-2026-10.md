@@ -272,14 +272,20 @@ recorded below and nowhere else; UNKNOWN stays null.
   checks the counts against the draft's Platforms and Orientation. Smallest fix: a
   `screenshots.per_orientation_min` in `shared/platform-profile.schema.json` `storeListing`,
   counted per capture `viewport` in `wgf_listing/validation.py` and `wgf_publish/campaign.py`.
-- **Y-3 Yandex context menu (1.6.1.8; desktop right-click).** No measured fact says whether the
-  build cancels `contextmenu`: the pinned template's `tests/verify/facts.spec.ts` does not
-  record one, and its static `scripts/verify/yandex-audit.mjs` check (`context_menu_blocked`,
-  a warning) is not run by the Factory. An assertion on a fact nobody measures is "not
-  evaluable" and breaches on every build, so none was added. Smallest fix, in the template: a
+- **Y-3 Yandex context menu (1.6.1.8; desktop right-click).** Both validation games now cancel
+  `contextmenu` over the game: Brick Breaker Worlds since 27c49f0 (2026-10-07,
+  `src/input/input.ts`, `tests/unit/context-menu.test.ts`) and Sky Marble since ff7f451
+  (2026-10-07, `src/input/input.ts`, an e2e smoke case); both commits are in the current
+  candidates (2D 0db72b6, 3D 43c08e2). On those candidates' yandex bundles the template's
+  static `scripts/verify/yandex-audit.mjs` reports `context_menu_blocked` ok ("a contextmenu
+  handler is present"; platform audit, 2026-10-10) - a static finding, not a runtime
+  observation and not Yandex's verdict. What is still missing is in the template and the
+  Factory: no runtime fact measures it (`tests/verify/facts.spec.ts` records none) and the
+  Factory does not run `yandex-audit.mjs`, so the profile still asserts nothing about it (an
+  assertion on an unmeasured fact breaches on every build). Smallest fix, in the template: a
   `package.context_menu_blocked` runtime fact (dispatch a cancelable `contextmenu` on the
   canvas, read `defaultPrevented`; the same for `selectstart`), then a blocking assertion in
-  this profile. The research found no suppression in either validation game.
+  this profile. (Until 2026-10-07 the research had found no suppression in either game.)
 - **Y-4 no upload intent for the Yandex video.** The publication flow uploads icon, cover and
   screenshots; no intent uploads the horizontal video, because its console widget is unknown
   (the label "Horizontal video" is documented only as a field name). The media check refuses a
@@ -377,6 +383,33 @@ Distribution") stays a person's choice at submission.
 | y8 | Without `WGF_Y8_APP_ID` the build only **warns** and runs without the SDK (`game-config-plugin.ts:143-150`); a malformed ID fails the build | A Y8 package built without IDs earns nothing and counts no plays - the Factory must refuse it (Part 2, gap 4) |
 | gamedistribution | Refuses to boot without a 32-hex Game ID, and refuses the placeholder (`adapters/gamedistribution/platform.ts:594-601`) | Needs the account's Game ID before any build |
 | docs | `docs/platform-architecture.md` said CrazyGames had "no adapter on template main" | Stale since template 1.2.0; corrected |
+| all | Every bundle carries every portal adapter's code (`packages/platform-sdk/src/registry.ts` imports them all), whichever one boots - see below | No package is publishable on a portal that refuses another portal's SDK (CrazyGames, Y8) until the pin moves |
+
+### Portal SDKs in each bundle
+
+Measured 2026-10-10 on real per-platform builds (the Factory's per-platform build, `pnpm
+build` with `WGF_GAME_CONFIG`, `WGF_Y8_APP_ID` unset) of both validation candidates on the
+pinned template v1.2.0 (b106261), in scratch worktrees; the evidence is the platform audit
+(`wgf-k7x/platform-audit/`) and the Factory's regression fixture
+`scripts/tests/fixtures/portal-sdks/sky-marble-43c08e2.json` (real data, minimised):
+
+| Build | Portal SDK code in the bundle (`core/reference/portal-sdks.yaml` 1.0.0) | Template `crazygames-audit.mjs` `unexpected_dependencies` (crazygames bundle) | Y8 SDK loaded (y8 bundle) |
+|---|---|---|---|
+| 2D 0db72b6 (targets poki, crazygames, yandex) | every bundle: poki, yandex, crazygames, y8, gamedistribution, gamemonetize | FAIL: poki-sdk, yandex-games-sdk, gamedistribution, gamemonetize | no y8 target (a simulated retarget's y8 bundle: no) |
+| 3D 43c08e2 (targets yandex, crazygames, y8) | every bundle: the same six | FAIL: the same four | no: `index.html` has no Y8 script and the build's config is `{y8:null}` |
+| 3D 43c08e2 + backport patches 0001-0003 (scratch) | each bundle its own portal only | PASS | no (still no `WGF_Y8_APP_ID`); with a placeholder id given to the build: yes |
+
+The backport (template branch `backport/1.2.0-platform-sdk` 50a27cf: c95246f one adapter per
+bundle, f273601 Yandex rewarded onClose, 50a27cf Y8 only-beforeAd) applies cleanly to both
+games and is unreviewed and untagged; nothing here moved the pin. What the Factory does about
+it since 2.8.0 ([verification-module.md](verification-module.md#portal-sdks-in-a-bundle)):
+verify reports `platform.foreign-sdk:<id>` (Factory scan, plus the template's CrazyGames audit
+where the checkout has it) and `platform.sdk-loaded:<id>` per platform - not required, so a
+verification on the pin (a golden run's too) still passes and the platform reads `not-ready`
+- and platform-validate's `portal_sdk_isolated` / `portal_sdk_loaded` guards refuse to publish
+such a package. On the current pin every portal package is therefore BLOCKED at
+platform-validate; moving the pin to a template release whose build carries one adapter (both
+golden runs with `WGF_TEMPLATE_COMMIT`, then the lock) is what clears it.
 
 ### Factory fixes made while auditing
 
@@ -486,13 +519,16 @@ then develop does run: that is a game change.
    about the old build - a trap, not a path (only gates are re-checked). The path is one
    `--run <id> --force` command per step (below). Fix (a core engine change, so proposed):
    let `wgf resume <run> --from STEP` continue a run that ended by leaving its scope.
-4. **A Y8 build without its IDs is silently SDK-less.** The template warns; the Factory passes
-   no `WGF_*` to game builds unless `factory.agents.game_env_passthrough` lists them
-   (`wgflib/agentenv.py`). With per-platform builds the y8 bundle is now its own, so the gap
-   is visible in it alone - but verify still cannot see it: the profiles name no head script,
-   and `y8_sdk_present` reads an echoed fact. Fix (small, proposed): a profile field naming
-   the build environment a target needs (`WGF_Y8_APP_ID`), which verify or tech-plan refuses
-   without.
+4. **A Y8 build without its IDs is silently SDK-less** - now seen (2.8.0). The template warns;
+   the Factory passes no `WGF_*` to game builds unless `factory.agents.game_env_passthrough`
+   lists them (`wgflib/agentenv.py`). Verify measures the y8 bundle: `platform.sdk-loaded:y8`
+   is BLOCKED for a person when `index.html` does not load the Y8 SDK (Y8 issues the ids when
+   a person creates the game), and `y8_sdk_present` - which read an echoed
+   `package.platform_sdk` - is no longer counted on contract 1. platform-validate's
+   `portal_sdk_loaded` refuses the SDK-less package once the registry holds the ids
+   (`platform_ids_present` alone did not: the sdk step writes the ids into game.config.yaml,
+   which the pinned template does not build them from - the build needs them in its
+   environment).
 5. **Neither init nor the sdk retarget removes a dropped platform's vendored profile**
    (`vendor_profiles` starts from the existing `pinned.json`): after a retarget
    `config/platforms/poki.yaml` and its pin stay. Harmless to validation (targets come from
@@ -526,18 +562,26 @@ then develop does run: that is a game change.
 ### Exact commands
 
 From the run's Factory checkout **after it is moved to the commit carrying these changes**
-(never while a step is running in it), in Git Bash:
+(never while a step is running in it), in Git Bash. The runs named here until 2026-10-10
+(`new-game-20261003-081154-4e5e0a`, `new-game-20261003-082542-0de9b5`) are the old
+workflow-v7 runs and are superseded; the current runs are those of 2026-10-05:
 
 ```bash
 # Brick Breaker Worlds (2D)
 cd C:/Users/duycu/wgf-runs/val-2d/factory
 export WGF_PROJECT_DIR=C:/Users/duycu/wgf-runs/val-2d/project
-RUN=new-game-20261003-081154-4e5e0a
+RUN=new-game-20261005-002926-318384
 # Sky Marble (3D)
 # cd C:/Users/duycu/wgf-runs/val-3d/factory
 # export WGF_PROJECT_DIR=C:/Users/duycu/wgf-runs/val-3d/project
-# RUN=new-game-20261003-082542-0de9b5
+# RUN=new-game-20261005-002923-597b5e
 ```
+
+Where they stood at the platform audit (2026-10-10): the 2D run ended COMPLETED "left scope"
+after design, and its candidate 0db72b6 still pins poki@1.1.0 as required - it needs the
+re-plan (step 2) and the sdk retarget; the 3D run is BLOCKED at greybox, and its candidate
+43c08e2 already targets yandex, crazygames, y8 @1.3.0. Neither run has reached sdk or verify,
+so step 3 applies only once each run is there. Read `bin/wgf status $RUN` first.
 
 1. State the decision in the project's config, `$WGF_PROJECT_DIR/workspace/config/factory.yaml`
    (layered over the shipped one):
@@ -595,9 +639,9 @@ dearer: it re-runs develop and every gate after it.
 
 | Platform | Brick Breaker Worlds / Sky Marble: blocked in code | External (account, partnership, portal) |
 |---|---|---|
-| Yandex | Packageable after the retarget above (required). Known risks: PNG screenshots with alpha (24-bit asked); the 70%-gameplay media rule is a person's check; since 1.3.0 the listing needs the MP4 horizontal trailer, screenshots per platform and orientation are a person's count (gap Y-2), and no context-menu suppression was found in either game (gap Y-3) | Developer profile, contract (licensing model or YAN), moderation 3-5 days, cloud-saves switch in the draft, age rating, how-to-play and SEO texts |
-| CrazyGames | Packageable alongside Yandex since 2.8.0 (its own bundle, with the CrazyGames head script, gap 1). The listing now needs a 1080p trailer under 20 s (store-listing 1.1.0) and a portrait video (manual) | Developer Portal account, Progress Save toggle, Basic Launch (ads disabled, expected) and CrazyGames' Full Launch decision |
-| Y8 | Packageable alongside Yandex since 2.8.0 (its own bundle, gap 1); the build needs `WGF_Y8_APP_ID` / `WGF_Y8_GAME_ID` passed through, or it ships SDK-less, and verify cannot tell (gap 4) | Developer account and approved Studio, the App ID and Game ID from the portal, review, the listing fields (undocumented) |
+| Yandex | Packageable after the retarget above (required). Known risks: PNG screenshots with alpha (24-bit asked); the 70%-gameplay media rule is a person's check; since 1.3.0 the listing needs the MP4 horizontal trailer, screenshots per platform and orientation are a person's count (gap Y-2); both games cancel the context menu since 2026-10-07, unmeasured at runtime (gap Y-3); on the pinned template its bundle carries other portals' SDKs, which platform-validate refuses (`portal_sdk_isolated`) until the pin moves | Developer profile, contract (licensing model or YAN), moderation 3-5 days, cloud-saves switch in the draft, age rating, how-to-play and SEO texts |
+| CrazyGames | Its own bundle since 2.8.0, with the CrazyGames head script (gap 1) - but on the pinned template that bundle carries Poki, Yandex, Y8, GameDistribution and GameMonetize code, the template's own audit FAILs it and platform-validate refuses it (`portal_sdk_isolated`) until the pin moves (above). The listing now needs a 1080p trailer under 20 s (store-listing 1.1.0) and a portrait video (manual) | Developer Portal account, Progress Save toggle, Basic Launch (ads disabled, expected) and CrazyGames' Full Launch decision |
+| Y8 | Its own bundle since 2.8.0 (gap 1), but on the pinned template it carries every other portal's SDK (Y8: "no ads from another company") and platform-validate refuses it (`portal_sdk_isolated`) until the pin moves. The build needs `WGF_Y8_APP_ID` / `WGF_Y8_GAME_ID` passed through, or it ships SDK-less: verify reports `platform.sdk-loaded:y8` BLOCKED, platform-validate refuses the upload once the ids exist (gap 4) | Developer account and approved Studio, the App ID and Game ID from the portal, review, the listing fields (undocumented) |
 | GameDistribution | Tech plan blocks without a registered Game ID; with one, packageable alongside the others (its own bundle) | Account (no domain needed; Company required), Game ID from the panel before the build, rewarded flag, pre-roll viewed once from the upload view, publication request button; self-hosting only for real multiplayer with written consent and one's own HTTPS host |
 | GamePix | Profile added; no adapter at the pinned template (template#23 on main), so strategy and tech-plan refuse it: HUMAN_ACTION_REQUIRED, a template release carrying the adapter, then the pin | Account (18+, no domain); exclusivity default ("Allow Distribution"); child-directed and AI declarations on every upload |
 | Poki | Deferred: the current r1 package stays as it is | - |

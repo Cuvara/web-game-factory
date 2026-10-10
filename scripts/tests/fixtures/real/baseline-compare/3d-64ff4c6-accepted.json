@@ -1,0 +1,141 @@
+{
+ "_source": {
+  "bot_sha256": "sha256:1b5caaf835d2d4e46303cf5dd1e199f55a22cb90d40303b1fb422e824da5a26f",
+  "capture": "K7 measurement (2026-10-10, Windows 11, CPU only): the playability step of this branch (scripts/wgf_playability/step.py) built the commit in a detached clone and played it with bot.spec.ts behind the refusing proxy, `pnpm preview` on a port in 4190-4199, desktop viewport only; this profile is baseline.profile() of those records, recomputed by PlayabilityStep._profile. Real, not edited.",
+  "commit": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+  "degraded": {
+   "act": false,
+   "first-session": false,
+   "naive": false,
+   "survey": false,
+   "win": false
+  },
+  "game": "3d",
+  "note": "measurement A of this build (made while a 2D build was played beside it) degraded naive play on every attempt and was set aside; this is the next, healthy one",
+  "records": {
+   "desktop/act.json": "sha256:d1b88e9b521dad786fe9444fcbd9a185e7d463e2ade5d1835790662998dd1844",
+   "desktop/first-session.json": "sha256:0ea2e7f52c1b7b00b490a1de292379868521c5b978baf3c1620440947b2de78a",
+   "desktop/lose.json": "sha256:14cf613172198b939d5c2dde14c1a5da6f5908f3a3a7a6b642d2001c3691eb00",
+   "desktop/naive.json": "sha256:560420d800bf6c0e488c944aee50c5b202e0b4c4d526a2dbe76bb31c1b10305c",
+   "desktop/pause.json": "sha256:4157b118727fdfcf7c16188458810cc84f76aaf41c502c6f14cc1c17728724c8",
+   "desktop/persist.json": "sha256:74a523e1522ab43ce5578bec8a3c665025745b623aa2fc005f858ae16142554e",
+   "desktop/ramp.json": "sha256:7fb3b6822a8f6c558297096fde12e0ce4002b32ad0b04c4a48410019060b25de",
+   "desktop/risk.json": "sha256:ed25a046fb21fe6a02c296690ce9165d32e61e7e44ccb9811fb53fcb842af068",
+   "desktop/session.json": "sha256:819e72a6492a2abbad66617d8884ea64be17e971c8df2f26013ee232479941f5",
+   "desktop/showcase.json": "sha256:d2461bffce0044229b944e4549f730c5daef2742602e8f8468132f53ee6da5e0",
+   "desktop/survey.json": "sha256:2484f6b0d7630bb1c7401e63eab920778fb5abc5387ecc4cf89f908590c74d86",
+   "desktop/traverse.json": "sha256:9d41efa2afff39907f715f3d61f2a1b412ad367c37a6479765b98d7ce70b15e2",
+   "desktop/win.json": "sha256:16e15f4ad7931c194f6bd623f9fdc3c8aff871cb5a83db64241b3f20030c9206"
+  },
+  "role": "accepted r1 (tag baseline-r1), measurement B",
+  "settings_sha256": "sha256:442ba5333cb49d94f76b92e757326eb0d60f895045da380adce76cf44432556c"
+ },
+ "profile": {
+  "content": false,
+  "degraded": {
+   "act": false,
+   "first-session": false,
+   "naive": false,
+   "survey": false,
+   "win": false
+  },
+  "entity_size": {
+   "goal": [
+    64.87,
+    36.45
+   ],
+   "player": [
+    77.13,
+    98.59
+   ],
+   "target": [
+    59.76,
+    61.03
+   ]
+  },
+  "naive_ran": true,
+  "opening": {
+   "policies": {
+    "jitter": {
+     "fastest_s": null,
+     "n": 6,
+     "uncleared_min_s": 25.06,
+     "won": 0
+    },
+    "steady": {
+     "fastest_s": 22.86,
+     "n": 6,
+     "uncleared_min_s": 25.07,
+     "won": 5
+    }
+   },
+   "unit": null
+  },
+  "order": [],
+  "responsiveness": {
+   "acknowledged": {
+    "pause": 0.8432,
+    "steer": 0.293
+   },
+   "fps": 8.5,
+   "frame_gap_max_ms": 2183,
+   "start_ms": 708
+  },
+  "survey_ran": true,
+  "tuning": null,
+  "units": {
+   "bumper-garden": {
+    "declared": false,
+    "reached": false
+   },
+   "cliff-steps": {
+    "declared": false,
+    "reached": false
+   },
+   "crown-descent": {
+    "declared": false,
+    "reached": false
+   },
+   "drifting-isles": {
+    "declared": false,
+    "reached": false
+   },
+   "first-roll": {
+    "declared": false,
+    "reached": false
+   },
+   "hairpin-rise": {
+    "declared": false,
+    "reached": false
+   },
+   "narrow-way": {
+    "declared": false,
+    "reached": false
+   },
+   "stone-chicane": {
+    "declared": false,
+    "reached": false
+   },
+   "sunset-run": {
+    "declared": false,
+    "reached": false
+   },
+   "switchbacks": {
+    "declared": false,
+    "reached": false
+   },
+   "the-gauntlet": {
+    "declared": false,
+    "reached": false
+   },
+   "the-summit": {
+    "declared": false,
+    "reached": false
+   },
+   "twin-bends": {
+    "declared": false,
+    "reached": false
+   }
+  }
+ }
+}

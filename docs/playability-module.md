@@ -475,6 +475,22 @@ performance. `level.clearance` is held by this step only: a proxy whose clear ra
 `alignment`, and `drift` on regressed builds), is stated beside each bar; the replay tests are
 `scripts/tests/test_play_realism.py` over `scripts/tests/fixtures/real/play-realism/`.
 
+### The accepted build (playability-report 1.5.0)
+
+When the run adopted a game, the design names the build a person accepted
+(`existing_content.source.commit`: `factory.init.accepted_baseline`, else the adopted
+checkout's shipped commit). Every visit that plays another commit also plays the accepted one -
+with the same bot and the same settings, the accepted units surveyed and sampled by naive play,
+each naive unit and policy played `clear_rate.runs` times - on desktop, kept under
+`<run>/baseline/` and reused while the bot and settings are the same. The `baseline.*` checks
+then report what got worse, unit by unit and quantity by quantity: units removed or renamed,
+layouts, elements and tuning changed, units cut, difficulty values moved or reordered, drawn
+kinds and role sizes changed, units cleared in a fraction of the accepted time or more often,
+a slower start or frame rate. A measured regression fails at every tier; a person changes
+accepted content only by recording why (`factory.init.accepted_changes`). The accepted play
+also feeds `naive.clear_rate` when the step has no `with: accepted_play`. See
+[baseline-comparison.md](baseline-comparison.md).
+
 ## What it does not claim
 
 The report's `measurement_class` is `automation-bot`. It shows the game can be played

@@ -328,6 +328,11 @@ to the reviewer as notes and never blockers by themselves (a probe change that o
 code), and `truncated`, whether the change held more commits than the pre-check reads.
 Additive; 1.2.0 artifacts remain valid.
 
+**`playability-report` 1.5.0** adds, additively, `baseline_comparison` and the `baseline.*`
+checks: for a run that adopted a game, the candidate against the build a person accepted,
+played by the same bot with the same settings (docs/baseline-comparison.md). 1.4.0 reports
+remain valid; a report of an adopted run without them reads the checks UNMEASURED.
+
 **`review-report` 1.4.0** adds optional `lesson_candidates`
 (`shared/quality-finding.schema.json#/$defs/lesson_candidate`): systemic issues the reviewer
 saw. `wgf knowledge ingest` collects them as subjective evidence - a reviewer's judgment is

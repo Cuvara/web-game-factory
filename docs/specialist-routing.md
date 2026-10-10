@@ -63,6 +63,14 @@ browser QA for boot, runtime, visibility and the context menu, UI for layout, au
 sound, the performance engineer for timings and weight, gameplay for the session's outcomes.
 A defect no table entry names keeps its id and goes to the generalist, as before.
 
+The baseline comparison (specialist-routing 1.7.0, [baseline-comparison.md](baseline-comparison.md))
+routes a candidate made worse than the build a person accepted: `baseline.` to the level
+designer (layouts, extents, pars, clear times), `units_kept` and `unit_kinds` to content,
+`difficulty_order` and `clear_rate` to difficulty, `tuning` and `entity_size` to gameplay and
+`responsiveness` to the performance engineer. A repair restores the accepted content; changing
+it on purpose is a person's recorded decision (`factory.init.accepted_changes`), never a
+specialist's.
+
 The rows are in visit order: structure, then systems, then the loop's code, then its look
 and sound, then platform wiring. Polish applied to a structure that is about to change is
 wasted work. Some producer words depend on the design's `engine.dimension`, which is the

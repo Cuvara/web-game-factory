@@ -9,6 +9,31 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**The baseline comparison: a candidate held to the build a person accepted** (K7,
+[docs/baseline-comparison.md](docs/baseline-comparison.md), lesson L8 now partial). A run
+that adopts a game records the accepted commit in its design's existing-content floor
+(`factory.init.accepted_baseline`, else the shipped commit). Both playability steps now play
+that commit with the same bot and the same settings as the candidate - every accepted unit
+surveyed, naive play on the accepted units, each unit and policy played `clear_rate.runs`
+times - and report ten `baseline.*` checks, per accepted unit and per measured quantity: units
+removed or renamed, layouts, elements and tuning changed, unit extent and par cut (and the
+whole game's), difficulty values moved or reordered, drawn kinds and role sizes changed, units
+cleared in a fraction of the accepted time or more often beyond the accepted band, a slower
+start, acknowledgement or frame rate. Deterministic, no AI judge. A measured regression fails
+at every tier (`QUALITY REGRESSION against the accepted build`); a person changes accepted
+content only by recording why (`factory.init.accepted_changes`); what the accepted build
+cannot report is `accepted-unmeasured` (reported, not held), what the candidate does not report
+is held as skipped checks are, and a degraded host's recording decides nothing (BLOCKED). The
+accepted play also feeds `naive.clear_rate`. New `core/reference/baseline-compare.yaml` 1.0.0
+(pinned by new-game 18), `playability-report` 1.5.0 (`baseline_comparison`), check-tiers 1.4.0
+(source `baseline-compare`), specialist-routing 1.7.0, quality-floor 1.3.0
+(`floor.accepted_baseline`), quality-assessment 1.1.0 (four families), lessons 2.2.0 (L8 r2).
+Replayed on real measurements of both validation games (fixtures
+`scripts/tests/fixtures/real/baseline-compare/`): the regressed heads 2D 68a12b7 and 3D 1c6b099
+fail against r1; each accepted build passes against its own repeat. Bringing an artifact
+forward: none - a playability-report 1.4.0 stays valid; an adopted run's quality gate reads the
+`baseline.*` checks UNMEASURED until its next playability visit.
+
 **K6 review r1 fixes** (docs/specialist-routing.md, docs/knowledge-enforcement.md). The
 ledger no longer verifies a split finding (`.../develop`, `.../assets`) whose check still
 FAILs its part in a BLOCKED report: the check is split again by the same rule, `unmeasured`

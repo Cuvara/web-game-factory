@@ -44,7 +44,7 @@ from wgf_design import commitments, existing, layouts
 from wgf_design.content import quality_tier
 from wgf_design.experience import load_rules as load_experience_rules
 
-from . import analysis, realism, scenario
+from . import analysis, baseline, realism, scenario
 
 __all__ = ["PlayabilityStep", "RULES_PATH", "BOT_SPEC", "FAIL_ROUTE", "RECORDS", "PROJECTS"]
 
@@ -63,6 +63,10 @@ SESSION_MARGIN_S = 45
 # `pinned_references`): a resume on an updated Factory plays and judges the same way.
 RULES_REF = "core/reference/visual-quality.yaml"
 REALISM_REF = "core/reference/play-realism.yaml"
+BASELINE_REF = baseline.RULES_REF
+# The accepted build's play, kept per run and reused by every later visit that plays it with
+# the same bot and settings: <run>/baseline/<commit>-<settings sha256[:12]>/.
+BASELINE_DIR = "baseline"
 
 
 def pinned_yaml(context, relpath):
@@ -244,9 +248,14 @@ class PlayabilityStep(WorkflowStep):
                 realism_rules, tier,
                 held=lambda cid: self._unmeasured_held(context, design, cid))
             accepted, accepted_error = self._accepted_play(self.params)
+            # The build a person accepted, when the run adopted one (design
+            # existing_content): the candidate is compared with it, quantity by quantity.
+            accepted_build = baseline.accepted_of(design)
+            baseline_rules = (pinned_yaml(context, BASELINE_REF) if accepted_build else None)
         except pinned_references.PinError as exc:
             return StepResult.blocked(
-                f"the play-realism bars this run started under cannot be read ({exc}): no "
+                f"the play-realism or baseline-comparison bars this run started under cannot be "
+                f"read ({exc}): no "
                 "build is judged against bars edited after the start")
         except (OSError, YamlError, ValueError) as exc:
             return StepResult.blocked(
@@ -292,14 +301,27 @@ class PlayabilityStep(WorkflowStep):
             if measuring:
                 settings["max_units"] = max(settings["max_units"], self._probe_max_units())
             settings.update(self._survey_settings(design, self.params))
+            comparing = bool(accepted_build) and not baseline.identical(
+                accepted_build["commit"], commit)
             settings.update(self._naive_settings(design, realism_rules, scope_tiers,
-                                                 accepted is not None))
+                                                 accepted is not None or comparing))
             settings.update(self._risk_settings(design, realism_rules, self.params, scope_tiers))
+            if comparing:
+                # Both builds are played with these settings: the accepted units surveyed and
+                # sampled by naive play, each as often as a clear rate is compared.
+                settings = baseline.play_settings(settings, accepted_build["unit_ids"],
+                                                  realism_rules, load_file(SUFFICIENCY_PATH))
             self._keep_content_data(repo, out)
             blocked = self._play(repo, out, logs, settings, context, total_s,
                                  survey_s=settings["survey_ms"] / 1000.0,
                                  extend_s=settings["ramp_extend_ms"] / 1000.0,
                                  realism_s=self._realism_window_s(settings))
+            accepted_play = None
+            if comparing and not blocked:
+                accepted_play = self._play_accepted(located, accepted_build["commit"], settings,
+                                                    baseline_rules, context, total_s)
+                if accepted is None:
+                    accepted = self._accepted_naive(accepted_play, baseline_rules)
             judged = copy.deepcopy(rules)
             judged["_idle_ms"] = settings["idle_ms"]
             judged["_truncated"] = truncated
@@ -330,6 +352,12 @@ class PlayabilityStep(WorkflowStep):
             checks += self._layout_checks(out, design, realism_rules, strength, scope_tiers)
             # Clearance is a proxy: it blocks only a unit whose clear rate was not measured.
             checks = realism.gate_clearance(checks, strength)
+            comparison = None
+            if accepted_build and not blocked:
+                found, comparison = self._baseline_checks(
+                    accepted_build, accepted_play, commit, out, played, design, rules,
+                    realism_rules, baseline_rules, tier, context)
+                checks += found
             if not blocked and not any(p["ran"] for p in projects):
                 blocked = "the bot produced no records on any viewport; see " + os.path.join(logs, "bot.log")
             records_dir = (os.path.relpath(out, context.run_dir).replace(os.sep, "/")
@@ -346,7 +374,7 @@ class PlayabilityStep(WorkflowStep):
             return self._finish(context, inputs, title_id, commit, checks, frames, rules, blocked,
                                 projects, records_dir,
                                 floor=floor if existing.measured(floor) else None,
-                                bot=bot, scenarios=scenarios)
+                                bot=bot, scenarios=scenarios, comparison=comparison)
         finally:
             shutil.rmtree(repo, ignore_errors=True)
 
@@ -652,6 +680,146 @@ class PlayabilityStep(WorkflowStep):
             return None, (f"with: accepted_play names {named}, which cannot be read ({exc}): "
                           "the clear rates cannot be compared with the accepted build")
 
+    # -- the accepted build -------------------------------------------------------------
+
+    @staticmethod
+    def _compared_project(baseline_rules):
+        return str((((baseline_rules or {}).get("play") or {}).get("projects") or
+                    ["desktop"])[0])
+
+    def _play_accepted(self, located, accepted_commit, settings, baseline_rules, context,
+                       total_s):
+        """{records, out, commit, cached, blocked}: the accepted commit built and played with
+        `settings` - the candidate's own - on the comparison's viewports, kept under the run
+        and reused by a later visit that plays it with the same bot and settings."""
+        handed = json.dumps(settings, sort_keys=True).encode("utf-8")
+        key = hashlib.sha256(handed + scenario.bot_version(BOT_SPEC).encode("utf-8")).hexdigest()
+        where = os.path.join(context.run_dir, BASELINE_DIR,
+                             f"{accepted_commit[:12]}-{key[:12]}")
+        out = os.path.join(where, "out")
+        done = os.path.join(where, "played.json")
+        projects = [str(p) for p in ((baseline_rules or {}).get("play") or {}).get("projects")
+                    or []]
+        found = {"commit": accepted_commit, "out": out, "cached": True, "blocked": None}
+        if not os.path.isfile(done):
+            found["cached"] = False
+            shutil.rmtree(where, ignore_errors=True)
+            repo, logs = os.path.join(where, "repo"), os.path.join(where, "logs")
+            os.makedirs(logs)
+            viewports = self._run_viewports()
+            try:
+                blocked = self._prepare(located, accepted_commit, repo, logs, context)
+                if not blocked:
+                    self._viewports = tuple(v for v in viewports if v[0] in projects) or viewports
+                    self._keep_content_data(repo, out)
+                    blocked = self._play(repo, out, logs, settings, context, total_s,
+                                         survey_s=settings["survey_ms"] / 1000.0,
+                                         extend_s=settings["ramp_extend_ms"] / 1000.0,
+                                         realism_s=self._realism_window_s(settings))
+            finally:
+                self._viewports = viewports
+                shutil.rmtree(repo, ignore_errors=True)
+            found["blocked"] = blocked
+            if not blocked:
+                with open(done, "w", encoding="utf-8") as handle:
+                    json.dump({"commit": accepted_commit, "settings_sha256": key,
+                               "played_at": self.clock()}, handle)
+        found["records"] = {p: self._records(os.path.join(out, p)) for p in projects}
+        if not found["blocked"] and not any(found["records"].values()):
+            found["blocked"] = ("the bot produced no records of the accepted build; see "
+                                + os.path.join(where, "logs", "bot.log"))
+        return found
+
+    @classmethod
+    def _accepted_naive(cls, accepted_play, baseline_rules):
+        """The accepted build's naive record for naive.clear_rate, which holds the fall of each
+        clear rate against the same play - or None when its probe names no unit it played: a
+        build like that has no per-unit rate to fall from (baseline.clear_rate compares its
+        opening unit), and naive.clear_rate stays not applicable, as without an accepted
+        build."""
+        record = (((accepted_play or {}).get("records") or {}).get(
+            cls._compared_project(baseline_rules)) or {}).get("naive") or {}
+        runs = [r for r in record.get("runs") or [] if isinstance(r, dict)]
+        return record if realism.clear_rates(runs) else None
+
+    def _baseline_checks(self, accepted_build, accepted_play, commit, out, played, design,
+                         rules, realism_rules, baseline_rules, tier, context):
+        """(checks, the report's baseline_comparison): the candidate's play against the
+        accepted build's, on the comparison's viewport (baseline.compare)."""
+        project = self._compared_project(baseline_rules)
+        strength = baseline.strength_for(
+            baseline_rules, tier,
+            held=lambda cid: self._unmeasured_held(context, design, cid))
+        info = {"accepted_commit": accepted_build["commit"], "by": accepted_build["by"],
+                "commit": commit, "project": project,
+                "rules": {"path": BASELINE_REF, "version": (baseline_rules or {}).get("version")}}
+        if baseline.identical(accepted_build["commit"], commit):
+            # The visit plays the accepted build itself: nothing to compare.
+            info["same_build"] = True
+            return [], info
+        changes, invalid = baseline.accepted_changes(context.config)
+        if changes:
+            info["accepted_changes"] = changes[:40]
+        if invalid:
+            info["invalid_changes"] = invalid[:20]
+        if accepted_play is None or accepted_play.get("blocked"):
+            why = ((accepted_play or {}).get("blocked") or
+                   "the accepted build was not played")
+            info["blocked_reason"] = why
+            return [self._baseline_blocked(cid, project, why) for cid in baseline.IDS], info
+        accepted_dir = accepted_play["out"]
+        info["records_dir"] = os.path.relpath(accepted_dir, context.run_dir).replace(os.sep, "/")
+        info["cached"] = bool(accepted_play.get("cached"))
+        profiles = {}
+        for name, root, records in (("accepted", accepted_dir,
+                                     (accepted_play.get("records") or {}).get(project) or {}),
+                                    ("candidate", out, played.get(project) or {})):
+            profiles[name] = self._profile(root, records, project, rules, baseline_rules)
+            path = os.path.join(root, f"baseline-profile-{name}.json")
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(profiles[name], handle, indent=1, sort_keys=True)
+            info.setdefault("profiles", {})[name] = {
+                "path": os.path.relpath(path, context.run_dir).replace(os.sep, "/"),
+                "sha256": _sha256(path)}
+        tolerance = genre_models.implementation().get("difficulty_tolerance")
+        found = baseline.compare(profiles["accepted"], profiles["candidate"], baseline_rules,
+                                 realism_rules, changes, strength, project,
+                                 difficulty_tolerance=tolerance)
+        info["regressed"] = sorted({c["id"] for c in found if c["status"] == "FAIL"})
+        return found, info
+
+    @staticmethod
+    def _baseline_blocked(cid, project, why):
+        """A comparison the accepted build's play could not support: never a pass."""
+        return analysis._check(cid, project, False,
+                               f"unmeasured: the accepted build could not be played ({why})",
+                               required=True, blocked=True,
+                               measured={"unmeasured": "accepted-not-played",
+                                         "reason": str(why)[:300]})
+
+    @staticmethod
+    def _profile(root, records, project, rules, baseline_rules, path=None):
+        """baseline.profile of one played build: its records on `project`, its frames, and
+        the content data file and layout source kept beside them."""
+        content = None
+        try:
+            with open(os.path.join(root, CONTENT_COPY), encoding="utf-8") as handle:
+                content = json.load(handle)
+        except (OSError, ValueError):
+            content = None
+        contract = load_file(path or SUFFICIENCY_PATH)
+        source = None
+        if isinstance(content, dict):
+            source, _why = layouts.read_source(os.path.join(root, os.path.dirname(CONTENT_COPY)),
+                                               content, contract)
+        probe = contract.get("probe") or {}
+        return baseline.profile(records, content, source,
+                                os.path.join(root, project, "frames"), baseline_rules,
+                                rules.get("environment") or {},
+                                unit_key=layouts.unit_key(contract),
+                                ack=rules.get("acknowledgement") or {},
+                                not_content_roles=probe.get("not_content_roles"))
+
     @staticmethod
     def _layout_checks(out, design, rules, strength, scope_tiers=None, path=None):
         """level.geometry, level.unit_length and level.clearance over the content data file
@@ -827,7 +995,8 @@ class PlayabilityStep(WorkflowStep):
     # -- the report ---------------------------------------------------------------------
 
     def _finish(self, context, inputs, title_id, commit, checks, frames, rules, blocked,
-                projects=None, records_dir=None, floor=None, bot=None, scenarios=None):
+                projects=None, records_dir=None, floor=None, bot=None, scenarios=None,
+                comparison=None):
         failed = sorted({f"{c['project']}:{c['id']}" for c in checks
                          if c["required"] and c["status"] == "FAIL"})
         # A skipped check measured nothing, because the design claims nothing it could measure.
@@ -876,6 +1045,8 @@ class PlayabilityStep(WorkflowStep):
             "blocked_reason": blocked,
             "verdict": verdict,
         }
+        if comparison is not None:
+            report["baseline_comparison"] = comparison
         if existing.measured(floor):
             # The adopted build's floor, counted on this play or carried from the visit that
             # counted it; the source names the report it was counted on.

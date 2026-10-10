@@ -1,0 +1,1769 @@
+{
+ "_source": {
+  "bot_sha256": "sha256:1b5caaf835d2d4e46303cf5dd1e199f55a22cb90d40303b1fb422e824da5a26f",
+  "capture": "K7 measurement (2026-10-10, Windows 11, CPU only): the playability step of this branch (scripts/wgf_playability/step.py) built the commit in a detached clone and played it with bot.spec.ts behind the refusing proxy, `pnpm preview` on a port in 4190-4199, desktop viewport only; this profile is baseline.profile() of those records, recomputed by PlayabilityStep._profile. Real, not edited.",
+  "commit": "68a12b7a237ec41d70fc81c2531f0f1a3cb0ab74",
+  "degraded": {
+   "act": false,
+   "first-session": false,
+   "naive": true,
+   "survey": false,
+   "win": false
+  },
+  "game": "2d",
+  "note": "the naive recording was made on a degraded host on every attempt (two builds were played at once on this machine): this build's clear times and clear rates are unmeasured",
+  "records": {
+   "content/units.json": "sha256:479cb0ad81b7713b67cc9ab974d88c7775b2827bd01c8ead9b0111fb94f58327",
+   "desktop/act.json": "sha256:22c8f21ecd84302540cb250569a50d7d24ce9e28d2c6388cc5acef60786f2144",
+   "desktop/first-session.json": "sha256:9ba515af2fc7e5ec047c5bf687fe885f8efff54880086775c8426afd4c8c0ef3",
+   "desktop/lose.json": "sha256:b2a6d8db6256081a2fb6cd591ff3ff7d3787b974f0798fa8283cae4202798522",
+   "desktop/naive.json": "sha256:e1c04c2586a169f177e30020cc5bcc7f17e53f59127ace96ad76fe847b28567f",
+   "desktop/pause.json": "sha256:1fbe7056eea01cda6321f861286dea70acec17d818817567272e025b0556cd58",
+   "desktop/persist.json": "sha256:2cf2093af8b7c4bd7aa2b9bbaf5badbf296abcebfc711a5e4f386c9794d99e7a",
+   "desktop/ramp.json": "sha256:a74540499621bf8e7aee8d8b395e0a1990326a50c41d7efd12986f84e1ebca14",
+   "desktop/risk.json": "sha256:ed25a046fb21fe6a02c296690ce9165d32e61e7e44ccb9811fb53fcb842af068",
+   "desktop/session.json": "sha256:6a7c1cd1df7ede8b187986c76806e5a265441650eb53f4b81d4345df688eb5d9",
+   "desktop/showcase.json": "sha256:fdebf76f110d9fffd80d80919e6235921f7ce1dfcbc5589d6f944be72293c42a",
+   "desktop/survey.json": "sha256:fbd187b5b753e342dcd475cae48c8b66fec2b340b2f1afdfd3cb7e7c257aebf9",
+   "desktop/traverse.json": "sha256:c7e7c1b26cf4a23fbd4877af0fe9bf364555c881ab76e246a5be1c0ec214a3a5",
+   "desktop/win.json": "sha256:9c0dc8c4d620b914810bd012471025d10710fc6979d8e5320710f7d96ebcc966"
+  },
+  "role": "regressed loop head (tag regressed-head-68a12b7)",
+  "settings_sha256": "sha256:6e81bc95138d1df556fb65c56551c552537b6ed9a0f4e4ee89444674c52dab6a"
+ },
+ "profile": {
+  "content": true,
+  "degraded": {
+   "act": false,
+   "first-session": false,
+   "naive": true,
+   "survey": false,
+   "win": false
+  },
+  "entity_size": {
+   "goal": [
+    173.49,
+    14.1
+   ],
+   "player": [
+    65.06,
+    29.28
+   ],
+   "projectile": [
+    32.53,
+    32.53
+   ],
+   "target": [
+    390.36,
+    17.35
+   ]
+  },
+  "naive_ran": true,
+  "opening": {
+   "policies": {
+    "jitter": {
+     "fastest_s": 17.72,
+     "n": 6,
+     "uncleared_min_s": 24.42,
+     "won": 1
+    },
+    "steady": {
+     "fastest_s": null,
+     "n": 6,
+     "uncleared_min_s": 12.77,
+     "won": 0
+    }
+   },
+   "unit": "w1-l1"
+  },
+  "order": [
+   "w1-l1",
+   "w1-l2",
+   "w1-l3",
+   "w1-l4",
+   "w1-l5",
+   "w1-l6",
+   "w1-l7",
+   "w1-l8",
+   "w2-l1",
+   "w2-l2",
+   "w2-l3",
+   "w2-l4",
+   "w2-l5",
+   "w2-l6",
+   "w2-l7",
+   "w2-l8",
+   "w3-l1",
+   "w3-l2",
+   "w3-l3",
+   "w3-l4",
+   "w3-l5",
+   "w3-l6",
+   "w3-l7",
+   "w3-l8",
+   "w4-l1",
+   "w4-l2",
+   "w4-l3",
+   "w4-l4",
+   "w4-l5",
+   "w4-l6",
+   "w4-l7",
+   "w4-l8"
+  ],
+  "responsiveness": {
+   "acknowledged": {
+    "launch": 0.0028,
+    "pause": 0.1802,
+    "steer": 0.0547
+   },
+   "fps": 8.5,
+   "frame_gap_max_ms": 2717,
+   "start_ms": 1050
+  },
+  "survey_ran": true,
+  "tuning": {
+   "ball-rebound.auto_launch_s": 3,
+   "ball-rebound.ball_radius_px": 11,
+   "ball-rebound.ball_speed_min_px_s": 425,
+   "ball-rebound.base_speed_px_s": 320,
+   "ball-rebound.min_angle_deg": 15,
+   "ball-rebound.speed_gain_px_s": 700,
+   "ball-supply.assist_balls": 4,
+   "ball-supply.balls_per_attempt": 3,
+   "ball-supply.respawn_s": 0.6,
+   "boss-fight.invulnerable_s": 0.5,
+   "boss-fight.moth_pips": 10,
+   "boss-fight.open_s": 3,
+   "boss-fight.phoenix_pips": 22,
+   "boss-fight.points_per_core_hit": 100,
+   "boss-fight.press_pips": 14,
+   "boss-fight.scarecrow_pips": 6,
+   "boss-fight.whale_pips": 18,
+   "brick-clear.armored_hits": 2,
+   "brick-clear.armored_score": 20,
+   "brick-clear.brick_height_px": 32,
+   "brick-clear.brick_width_px": 72,
+   "brick-clear.grid_width_cells": 10,
+   "brick-clear.standard_score": 10,
+   "descending-field.danger_line_y_px": 1010,
+   "descending-field.descent_px": 24,
+   "descending-field.warning_s": 1,
+   "explosive-brick.blast_delay_ms": 300,
+   "explosive-brick.blast_radius_cells": 1,
+   "falling-ember.ember_burn_s": 3,
+   "falling-ember.ember_fall_px_s": 160,
+   "falling-ember.glow_s": 0.8,
+   "falling-ember.max_embers": 3,
+   "falling-ember.narrow_px": 70,
+   "falling-ember.points_per_ember": 25,
+   "paddle-drag.keyboard_speed_px_s": 900,
+   "paddle-drag.max_rebound_angle_deg": 60,
+   "paddle-drag.paddle_height_px": 44,
+   "paddle-drag.paddle_width_px": 120,
+   "paddle-drag.rail_y_px": 1090,
+   "power-up-catch.capsule_fall_px_s": 180,
+   "power-up-catch.laser_interval_s": 0.5,
+   "power-up-catch.laser_s": 8,
+   "power-up-catch.max_balls": 5,
+   "power-up-catch.multi_ball_split": 3,
+   "power-up-catch.multi_spread_deg": 20,
+   "power-up-catch.points_per_capsule": 50,
+   "power-up-catch.wide_paddle_px": 180,
+   "power-up-catch.wide_paddle_s": 12,
+   "sliding-row.slide_px_s": 90,
+   "star-rating.gate_world_2": 12,
+   "star-rating.gate_world_3": 28,
+   "star-rating.gate_world_4": 44,
+   "star-rating.stars_per_level": 3,
+   "steel-brick.steel_counted_in_bricks_left": 0
+  },
+  "units": {
+   "w1-l1": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.2,
+     "precision": 0.25,
+     "speed": 0.15,
+     "variety": 0.1
+    },
+    "elements": [
+     "standard-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 10
+    },
+    "geometry": [
+     [
+      "\"##########\""
+     ]
+    ],
+    "index": 0,
+    "kinds": [
+     "ball",
+     "bricks-left",
+     "standard-brick-row"
+    ],
+    "layout_values": {
+     "ceiling_y": 640,
+     "grid_top": 720
+    },
+    "oracle_lower_s": null,
+    "par_s": 22.0,
+    "reached": true
+   },
+   "w1-l2": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.2,
+     "precision": 0.25,
+     "speed": 0.24,
+     "variety": 0.1
+    },
+    "elements": [
+     "standard-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 16
+    },
+    "geometry": [
+     [
+      "\".########.\"",
+      "\".########.\""
+     ]
+    ],
+    "index": 1,
+    "kinds": [
+     "ball",
+     "bricks-left",
+     "standard-brick-wall"
+    ],
+    "layout_values": {
+     "ceiling_y": 520,
+     "grid_top": 600
+    },
+    "oracle_lower_s": null,
+    "par_s": 28.0,
+    "reached": true
+   },
+   "w1-l3": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.2,
+     "precision": 0.25,
+     "speed": 0.18,
+     "variety": 0.1
+    },
+    "elements": [
+     "multi-ball",
+     "standard-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 18
+    },
+    "geometry": [
+     [
+      "\"..######..\"",
+      "\"..#M##M#..\"",
+      "\"..M####M..\""
+     ]
+    ],
+    "index": 2,
+    "kinds": [
+     "ball",
+     "bricks-left",
+     "multi-ball",
+     "standard-brick-wall"
+    ],
+    "layout_values": {
+     "ceiling_y": 520,
+     "collect.count": 2,
+     "collect.power": "multi",
+     "grid_top": 600
+    },
+    "oracle_s": 11.91,
+    "par_s": 33.0,
+    "reached": true
+   },
+   "w1-l4": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.2,
+     "precision": 0.25,
+     "speed": 0.18,
+     "variety": 0.24
+    },
+    "elements": [
+     "armored-brick",
+     "standard-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 20
+    },
+    "geometry": [
+     [
+      "\"..A#AA#A..\"",
+      "\".A##..##A.\"",
+      "\"..##..##..\"",
+      "\"..A#..#A..\""
+     ]
+    ],
+    "index": 3,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "standard-brick-wall"
+    ],
+    "oracle_lower_s": null,
+    "par_s": 33.0,
+    "reached": true
+   },
+   "w1-l5": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.2,
+     "precision": 0.25,
+     "speed": 0.28,
+     "variety": 0.24
+    },
+    "elements": [
+     "armored-brick",
+     "multi-ball",
+     "standard-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 20
+    },
+    "geometry": [
+     [
+      "\".####.....\"",
+      "\"..A##A....\"",
+      "\"...A##A...\"",
+      "\"....m##m..\"",
+      "\".....####.\""
+     ]
+    ],
+    "index": 4,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "standard-brick-wall"
+    ],
+    "layout_values": {
+     "collect.count": 2,
+     "collect.power": "multi"
+    },
+    "oracle_lower_s": null,
+    "par_s": 33.0,
+    "reached": true
+   },
+   "w1-l6": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.2,
+     "precision": 0.25,
+     "speed": 0.21,
+     "variety": 0.24
+    },
+    "elements": [
+     "standard-brick",
+     "wide-paddle"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 20
+    },
+    "geometry": [
+     [
+      "\"..#BBBB#..\"",
+      "\"..#BBBB#..\"",
+      "\".W######W.\""
+     ]
+    ],
+    "index": 5,
+    "kinds": [
+     "ball",
+     "boss-scarecrow",
+     "bricks-left",
+     "standard-brick-wall"
+    ],
+    "layout_values": {
+     "boss.kind": "sentinel",
+     "boss.name": "scarecrow",
+     "boss.open": "always",
+     "boss.pips": 6
+    },
+    "oracle_lower_s": null,
+    "par_s": 33.0,
+    "reached": true
+   },
+   "w1-l7": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.34,
+     "precision": 0.25,
+     "speed": 0.21,
+     "variety": 0.24
+    },
+    "elements": [
+     "armored-brick",
+     "multi-ball",
+     "wide-paddle"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 34
+    },
+    "geometry": [
+     [
+      "\"...BBBB...\"",
+      "\"..ABBBBA..\"",
+      "\"#A......A#\"",
+      "\"##A....A##\"",
+      "\"###A...A##\"",
+      "\"###A...A##\""
+     ],
+     [
+      "{\"at_pips\": 2, \"power\": \"multi\"}",
+      "{\"at_pips\": 1, \"power\": \"wide\"}",
+      "{\"at_pips\": 0, \"power\": \"multi\"}"
+     ]
+    ],
+    "index": 6,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "boss-gift-scarecrow",
+     "bricks-left",
+     "multi-ball",
+     "standard-brick-wall"
+    ],
+    "layout_values": {
+     "boss.kind": "sentinel",
+     "boss.name": "gift scarecrow",
+     "boss.open": "always",
+     "boss.pips": 3,
+     "collect.count": 3
+    },
+    "oracle_lower_s": null,
+    "par_s": 36.0,
+    "reached": true
+   },
+   "w1-l8": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.34,
+     "precision": 0.25,
+     "speed": 0.32,
+     "variety": 0.24
+    },
+    "elements": [
+     "armored-brick",
+     "multi-ball",
+     "standard-brick",
+     "wide-paddle"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 20
+    },
+    "geometry": [
+     [
+      "\".##BBBB##.\"",
+      "\".AABBBBAA.\"",
+      "\".mA....Aw.\""
+     ],
+     [
+      "{\"at_pips\": 5, \"power\": \"multi\"}"
+     ]
+    ],
+    "index": 7,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "boss-dusk-moth",
+     "bricks-left",
+     "standard-brick-wall"
+    ],
+    "layout_values": {
+     "boss.kind": "sentinel",
+     "boss.name": "Dusk Moth",
+     "boss.open": "shield",
+     "boss.pips": 10,
+     "boss.swing.fast_at_pips": 5,
+     "boss.swing.fast_speed_px_s": 200,
+     "boss.swing.speed_px_s": 120
+    },
+    "oracle_lower_s": null,
+    "par_s": 50.0,
+    "reached": true
+   },
+   "w2-l1": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.26,
+     "precision": 0.25,
+     "speed": 0.32,
+     "variety": 0.34
+    },
+    "elements": [
+     "armored-brick",
+     "standard-brick",
+     "steel-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 34
+    },
+    "geometry": [
+     [
+      "\"A##A##A##A\"",
+      "\"##.SSSS.##\"",
+      "\"##.SSSS.##\"",
+      "\"A#.SSSS.#A\""
+     ]
+    ],
+    "index": 8,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "standard-brick-wall",
+     "steel-brick"
+    ],
+    "oracle_lower_s": null,
+    "par_s": 38.0,
+    "reached": true
+   },
+   "w2-l2": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.26,
+     "precision": 0.25,
+     "speed": 0.32,
+     "variety": 0.44
+    },
+    "elements": [
+     "sliding-row",
+     "standard-brick",
+     "steel-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 30
+    },
+    "geometry": [
+     [
+      "\"..######..\"",
+      "\"###....###\"",
+      "\"..SSSSSS..\"",
+      "\"##..####..\"",
+      "\"..######..\""
+     ],
+     [
+      "{\"dir\": 1, \"rows\": [1], \"speed_px_s\": 90, \"wrap\": true}",
+      "{\"dir\": -1, \"rows\": [3], \"speed_px_s\": 90, \"wrap\": true}"
+     ]
+    ],
+    "index": 9,
+    "kinds": [
+     "ball",
+     "bricks-left",
+     "sliding-row",
+     "standard-brick-wall",
+     "steel-brick"
+    ],
+    "oracle_lower_s": null,
+    "par_s": 40.0,
+    "reached": true
+   },
+   "w2-l3": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.38,
+     "precision": 0.25,
+     "speed": 0.32,
+     "variety": 0.44
+    },
+    "elements": [
+     "armored-brick",
+     "sliding-row",
+     "steel-brick",
+     "wide-paddle"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 32
+    },
+    "geometry": [
+     [
+      "\"..######..\"",
+      "\"w#w..w#w..\"",
+      "\"...SSS....\"",
+      "\"..######..\"",
+      "\"....SSS...\"",
+      "\"...####...\"",
+      "\"...####...\""
+     ],
+     [
+      "{\"dir\": 1, \"rows\": [1], \"speed_px_s\": 90, \"wrap\": true}"
+     ]
+    ],
+    "index": 10,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "sliding-row",
+     "standard-brick-wall",
+     "steel-brick"
+    ],
+    "layout_values": {
+     "collect.count": 3,
+     "collect.power": "wide"
+    },
+    "oracle_lower_s": null,
+    "par_s": 42.0,
+    "reached": true
+   },
+   "w2-l4": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.38,
+     "precision": 0.25,
+     "speed": 0.24,
+     "variety": 0.44
+    },
+    "elements": [
+     "armored-brick",
+     "laser",
+     "multi-ball",
+     "standard-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 28
+    },
+    "geometry": [
+     [
+      "\"##########\"",
+      "\"..AAAAA...\"",
+      "\"..AAAAA...\"",
+      "\"..AAAAA...\"",
+      "\"...#M#....\""
+     ],
+     [
+      "{\"at_s\": 6, \"power\": \"laser\"}",
+      "{\"at_s\": 20, \"power\": \"laser\"}"
+     ]
+    ],
+    "index": 11,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "laser",
+     "standard-brick-wall"
+    ],
+    "oracle_lower_s": null,
+    "par_s": 38.0,
+    "reached": true
+   },
+   "w2-l5": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.38,
+     "precision": 0.34,
+     "speed": 0.24,
+     "variety": 0.44
+    },
+    "elements": [
+     "armored-brick",
+     "laser",
+     "sliding-row",
+     "standard-brick",
+     "steel-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 48
+    },
+    "geometry": [
+     [
+      "\"A########A\"",
+      "\".A######A.\"",
+      "\"SS.SSSS###\"",
+      "\"SSSS.SS###\"",
+      "\"SSSSSS.###\"",
+      "\"...###....\""
+     ],
+     [
+      "{\"at_s\": 8, \"power\": \"laser\"}"
+     ],
+     [
+      "{\"dir\": 1, \"rows\": [5], \"speed_px_s\": 60, \"wrap\": true}"
+     ]
+    ],
+    "index": 12,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "laser",
+     "sliding-row",
+     "standard-brick-wall",
+     "steel-brick"
+    ],
+    "oracle_lower_s": null,
+    "par_s": 44.0,
+    "reached": true
+   },
+   "w2-l6": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.38,
+     "precision": 0.34,
+     "speed": 0.38,
+     "variety": 0.44
+    },
+    "elements": [
+     "armored-brick",
+     "laser",
+     "multi-ball",
+     "sliding-row",
+     "steel-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 32
+    },
+    "geometry": [
+     [
+      "\"..AAAAAA..\"",
+      "\"#M#..#L#..\"",
+      "\".#L#..#M#.\"",
+      "\".###..###.\"",
+      "\"SS.####.SS\""
+     ],
+     [
+      "{\"dir\": 1, \"rows\": [1], \"speed_px_s\": 120, \"wrap\": true}",
+      "{\"dir\": -1, \"rows\": [2], \"speed_px_s\": 120, \"wrap\": true}",
+      "{\"dir\": 1, \"rows\": [3], \"speed_px_s\": 120, \"wrap\": true}"
+     ]
+    ],
+    "index": 13,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "multi-ball",
+     "sliding-row",
+     "standard-brick-wall",
+     "steel-brick"
+    ],
+    "layout_values": {
+     "collect.count": 4
+    },
+    "oracle_lower_s": null,
+    "par_s": 44.0,
+    "reached": true
+   },
+   "w2-l7": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.3,
+     "precision": 0.34,
+     "speed": 0.38,
+     "variety": 0.44
+    },
+    "elements": [
+     "armored-brick",
+     "standard-brick",
+     "steel-brick",
+     "wide-paddle"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 30
+    },
+    "geometry": [
+     [
+      "\".....S####\"",
+      "\"....SA##A.\"",
+      "\"...S####..\"",
+      "\"..SA##A...\"",
+      "\".S####....\"",
+      "\"SA##A.....\""
+     ],
+     [
+      "{\"at_s\": 5, \"power\": \"wide\"}",
+      "{\"at_s\": 18, \"power\": \"wide\"}"
+     ]
+    ],
+    "index": 14,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "standard-brick-wall",
+     "steel-brick",
+     "wide-paddle"
+    ],
+    "oracle_lower_s": null,
+    "par_s": 38.0,
+    "reached": true
+   },
+   "w2-l8": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.44,
+     "precision": 0.34,
+     "speed": 0.38,
+     "variety": 0.44
+    },
+    "elements": [
+     "armored-brick",
+     "laser",
+     "multi-ball",
+     "sliding-row",
+     "standard-brick",
+     "steel-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 32
+    },
+    "geometry": [
+     [
+      "\".##BBBB##.\"",
+      "\".##BBBB##.\"",
+      "\"..SS..SS..\"",
+      "\".###M####.\"",
+      "\"..SS..SS..\""
+     ],
+     [
+      "{\"at_pips\": 14, \"power\": \"laser\"}",
+      "{\"at_pips\": 7, \"power\": \"laser\"}"
+     ],
+     [
+      "{\"dir\": 1, \"fast_at_pips\": 7, \"fast_speed_px_s\": 150, \"rows\": [3], \"speed_px_s\": 90, \"wrap\": true}"
+     ]
+    ],
+    "index": 15,
+    "kinds": [
+     "ball",
+     "boss-clockwork-press",
+     "bricks-left",
+     "laser",
+     "laser-bolt",
+     "sliding-row",
+     "standard-brick-wall",
+     "steel-brick"
+    ],
+    "layout_values": {
+     "boss.kind": "prism",
+     "boss.name": "Clockwork Press",
+     "boss.open": "timed",
+     "boss.open_s": 3,
+     "boss.pips": 14
+    },
+    "oracle_lower_s": null,
+    "par_s": 62.0,
+    "reached": true
+   },
+   "w3-l1": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.44,
+     "precision": 0.34,
+     "speed": 0.29,
+     "variety": 0.54
+    },
+    "elements": [
+     "descending-field",
+     "standard-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 40
+    },
+    "geometry": [
+     [
+      "\".########.\"",
+      "\".########.\"",
+      "\".########.\"",
+      "\".########.\"",
+      "\".########.\""
+     ]
+    ],
+    "index": 16,
+    "kinds": [
+     "ball",
+     "bricks-left",
+     "descending-field",
+     "standard-brick-wall"
+    ],
+    "layout_values": {
+     "descend.interval_s": 8,
+     "descend.lowest_edge_y": 866,
+     "descend.step_px": 24
+    },
+    "naive_runs": {
+     "policies": {
+      "jitter": {
+       "fastest_s": null,
+       "n": 6,
+       "uncleared_min_s": 24.88,
+       "won": 0
+      },
+      "steady": {
+       "fastest_s": null,
+       "n": 6,
+       "uncleared_min_s": 8.58,
+       "won": 0
+      }
+     }
+    },
+    "oracle_lower_s": null,
+    "par_s": 42.0,
+    "reached": true
+   },
+   "w3-l2": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.44,
+     "precision": 0.34,
+     "speed": 0.4,
+     "variety": 0.54
+    },
+    "elements": [
+     "armored-brick",
+     "descending-field",
+     "standard-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 36
+    },
+    "geometry": [
+     [
+      "\".########.\"",
+      "\".########.\"",
+      "\"A#A####A#A\"",
+      "\"A#A#AA#A#A\""
+     ]
+    ],
+    "index": 17,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "descending-field",
+     "standard-brick-wall"
+    ],
+    "layout_values": {
+     "descend.interval_s": 6,
+     "descend.lowest_edge_y": 770,
+     "descend.step_px": 24
+    },
+    "oracle_lower_s": null,
+    "par_s": 44.0,
+    "reached": true
+   },
+   "w3-l3": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.56,
+     "precision": 0.34,
+     "speed": 0.4,
+     "variety": 0.54
+    },
+    "elements": [
+     "descending-field",
+     "sliding-row",
+     "standard-brick",
+     "steel-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 42
+    },
+    "geometry": [
+     [
+      "\".########.\"",
+      "\"##..##..##\"",
+      "\".########.\"",
+      "\".##.##.##.\"",
+      "\".SSSSSSSS.\"",
+      "\"..######..\""
+     ],
+     [
+      "{\"dir\": 1, \"rows\": [1], \"speed_px_s\": 90, \"wrap\": true}",
+      "{\"dir\": -1, \"rows\": [3], \"speed_px_s\": 90, \"wrap\": true}",
+      "{\"dir\": 1, \"rows\": [5], \"speed_px_s\": 90, \"wrap\": true}"
+     ]
+    ],
+    "index": 18,
+    "kinds": [
+     "ball",
+     "bricks-left",
+     "descending-field",
+     "sliding-row",
+     "standard-brick-wall",
+     "steel-brick"
+    ],
+    "layout_values": {
+     "descend.interval_s": 8,
+     "descend.lowest_edge_y": 842,
+     "descend.step_px": 24
+    },
+    "oracle_lower_s": null,
+    "par_s": 46.0,
+    "reached": true
+   },
+   "w3-l4": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.44,
+     "precision": 0.34,
+     "speed": 0.4,
+     "variety": 0.54
+    },
+    "elements": [
+     "armored-brick",
+     "laser",
+     "standard-brick",
+     "steel-brick",
+     "wide-paddle"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 40
+    },
+    "geometry": [
+     [
+      "\"##########\"",
+      "\"#A######A#\"",
+      "\"SL#S..SL#S\"",
+      "\"SS......SS\"",
+      "\"..SL#S....\"",
+      "\"...####...\""
+     ],
+     [
+      "{\"at_s\": 4, \"power\": \"wide\"}"
+     ]
+    ],
+    "index": 19,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "laser",
+     "laser-bolt",
+     "standard-brick-wall",
+     "steel-brick",
+     "wide-paddle"
+    ],
+    "layout_values": {
+     "collect.count": 3,
+     "collect.power": "laser"
+    },
+    "oracle_lower_s": null,
+    "par_s": 40.0,
+    "reached": true
+   },
+   "w3-l5": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.44,
+     "precision": 0.34,
+     "speed": 0.4,
+     "variety": 0.64
+    },
+    "elements": [
+     "armored-brick",
+     "descending-field",
+     "multi-ball",
+     "steel-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 38
+    },
+    "geometry": [
+     [
+      "\".AAAAAAAA.\"",
+      "\".AAAAAAAA.\"",
+      "\".########.\"",
+      "\"...####...\"",
+      "\"SS..SSSS..\"",
+      "\".S......S.\"",
+      "\".S......S.\""
+     ],
+     [
+      "{\"at_s\": 6, \"power\": \"multi\"}",
+      "{\"at_s\": 20, \"power\": \"multi\"}"
+     ]
+    ],
+    "index": 20,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "descending-field",
+     "multi-ball",
+     "standard-brick-wall",
+     "steel-brick"
+    ],
+    "layout_values": {
+     "descend.interval_s": 8,
+     "descend.lowest_edge_y": 818,
+     "descend.step_px": 24
+    },
+    "oracle_lower_s": null,
+    "par_s": 48.0,
+    "reached": true
+   },
+   "w3-l6": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.58,
+     "precision": 0.34,
+     "speed": 0.4,
+     "variety": 0.64
+    },
+    "elements": [
+     "armored-brick",
+     "descending-field",
+     "laser",
+     "sliding-row",
+     "standard-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 40
+    },
+    "geometry": [
+     [
+      "\"#####.....\"",
+      "\".#####....\"",
+      "\"..#####...\"",
+      "\"...#####..\"",
+      "\"....#####.\"",
+      "\".....AA###\"",
+      "\".....AAAAA\"",
+      "\".....AAAAA\""
+     ],
+     [
+      "{\"at_s\": 10, \"power\": \"laser\"}"
+     ],
+     [
+      "{\"dir\": -1, \"rows\": [0, 1, 2, 3, 4, 5, 6, 7], \"speed_px_s\": 60, \"wrap\": true}"
+     ]
+    ],
+    "index": 21,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "descending-field",
+     "sliding-row",
+     "standard-brick-wall"
+    ],
+    "layout_values": {
+     "descend.interval_s": 8,
+     "descend.lowest_edge_y": 818,
+     "descend.step_px": 24
+    },
+    "oracle_lower_s": null,
+    "par_s": 50.0,
+    "reached": true
+   },
+   "w3-l7": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.58,
+     "precision": 0.34,
+     "speed": 0.31,
+     "variety": 0.64
+    },
+    "elements": [
+     "armored-brick",
+     "multi-ball",
+     "standard-brick",
+     "steel-brick",
+     "wide-paddle"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 38
+    },
+    "geometry": [
+     [
+      "\".########.\"",
+      "\".A######A.\"",
+      "\".SSS..SSS.\"",
+      "\".########.\"",
+      "\".AA####AA.\""
+     ],
+     [
+      "{\"at_s\": 5, \"power\": \"wide\"}",
+      "{\"at_s\": 15, \"power\": \"multi\"}"
+     ]
+    ],
+    "index": 22,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "standard-brick-wall",
+     "steel-brick",
+     "wide-paddle"
+    ],
+    "oracle_lower_s": null,
+    "par_s": 42.0,
+    "reached": true
+   },
+   "w3-l8": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.58,
+     "precision": 0.34,
+     "speed": 0.46,
+     "variety": 0.64
+    },
+    "elements": [
+     "armored-brick",
+     "descending-field",
+     "laser",
+     "multi-ball",
+     "sliding-row",
+     "steel-brick",
+     "wide-paddle"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 32
+    },
+    "geometry": [
+     [
+      "\"..ABBBBA..\"",
+      "\"..ABBBBA..\"",
+      "\"SS......SS\"",
+      "\".AAAAAAAA.\"",
+      "\"..AAAAAA..\"",
+      "\"...S..S...\""
+     ],
+     [
+      "{\"at_pips\": 18, \"power\": \"laser\"}",
+      "{\"at_pips\": 12, \"power\": \"multi\"}",
+      "{\"at_pips\": 6, \"power\": \"wide\"}"
+     ],
+     [
+      "{\"dir\": 1, \"rows\": [3], \"speed_px_s\": 90, \"wrap\": true}",
+      "{\"dir\": -1, \"rows\": [4], \"speed_px_s\": 90, \"wrap\": true}"
+     ]
+    ],
+    "index": 23,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "boss-glacier-whale",
+     "bricks-left",
+     "descending-field",
+     "laser",
+     "laser-bolt",
+     "sliding-row",
+     "standard-brick-wall",
+     "steel-brick"
+    ],
+    "layout_values": {
+     "boss.kind": "crusher",
+     "boss.name": "Glacier Whale",
+     "boss.open": "timed",
+     "boss.open_s": 3,
+     "boss.pips": 18,
+     "descend.interval_s": 10,
+     "descend.lowest_edge_y": 818,
+     "descend.step_px": 24
+    },
+    "oracle_lower_s": null,
+    "par_s": 68.0,
+    "reached": true
+   },
+   "w4-l1": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.46,
+     "precision": 0.34,
+     "speed": 0.46,
+     "variety": 0.72
+    },
+    "elements": [
+     "armored-brick",
+     "explosive-brick",
+     "multi-ball",
+     "standard-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 30
+    },
+    "geometry": [
+     [
+      "\".AA####AA.\"",
+      "\".###XX###.\"",
+      "\".A#X##X#A.\"",
+      "\"..AAM###..\""
+     ]
+    ],
+    "index": 24,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "explosive-brick",
+     "multi-ball",
+     "standard-brick-wall"
+    ],
+    "layout_values": {
+     "chain": 2
+    },
+    "oracle_lower_s": null,
+    "par_s": 46.0,
+    "reached": true
+   },
+   "w4-l2": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.46,
+     "precision": 0.34,
+     "speed": 0.46,
+     "variety": 0.8
+    },
+    "elements": [
+     "armored-brick",
+     "falling-ember",
+     "standard-brick",
+     "wide-paddle"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 32
+    },
+    "geometry": [
+     [
+      "\".AAAAAAAA.\"",
+      "\".A######A.\"",
+      "\".########.\"",
+      "\".########.\""
+     ],
+     [
+      "{\"at_s\": 8, \"power\": \"wide\"}"
+     ]
+    ],
+    "index": 25,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "falling-ember",
+     "standard-brick-wall",
+     "wide-paddle"
+    ],
+    "layout_values": {
+     "burn_limit": 3,
+     "embers.fall_px_s": 160,
+     "embers.interval_s": 3
+    },
+    "oracle_lower_s": null,
+    "par_s": 48.0,
+    "reached": true
+   },
+   "w4-l3": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.62,
+     "precision": 0.34,
+     "speed": 0.46,
+     "variety": 0.8
+    },
+    "elements": [
+     "armored-brick",
+     "explosive-brick",
+     "falling-ember",
+     "laser",
+     "steel-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 40
+    },
+    "geometry": [
+     [
+      "\".AA####AA.\"",
+      "\".########.\"",
+      "\"..######..\"",
+      "\"..SSSSSS..\"",
+      "\"..SXXXXS..\"",
+      "\"..SX..XS..\"",
+      "\"...S..S...\""
+     ],
+     [
+      "{\"at_s\": 12, \"power\": \"laser\"}"
+     ]
+    ],
+    "index": 26,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "explosive-brick",
+     "falling-ember",
+     "standard-brick-wall",
+     "steel-brick"
+    ],
+    "layout_values": {
+     "chain": 3,
+     "embers.fall_px_s": 160,
+     "embers.interval_s": 4
+    },
+    "oracle_s": 9.55,
+    "par_s": 50.0,
+    "reached": true
+   },
+   "w4-l4": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.62,
+     "precision": 0.34,
+     "speed": 0.36,
+     "variety": 0.8
+    },
+    "elements": [
+     "explosive-brick",
+     "falling-ember",
+     "multi-ball",
+     "standard-brick",
+     "wide-paddle"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 26
+    },
+    "geometry": [
+     [
+      "\".##M##W##.\"",
+      "\".#X#MW#X#.\"",
+      "\"..######..\"",
+      "\"..##..##..\""
+     ]
+    ],
+    "index": 27,
+    "kinds": [
+     "ball",
+     "bricks-left",
+     "explosive-brick",
+     "falling-ember",
+     "standard-brick-wall"
+    ],
+    "layout_values": {
+     "collect.count": 3,
+     "embers.fall_px_s": 100,
+     "embers.interval_s": 5
+    },
+    "oracle_lower_s": null,
+    "par_s": 42.0,
+    "reached": true
+   },
+   "w4-l5": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.62,
+     "precision": 0.46,
+     "speed": 0.36,
+     "variety": 0.8
+    },
+    "elements": [
+     "explosive-brick",
+     "falling-ember",
+     "sliding-row",
+     "standard-brick",
+     "steel-brick"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 44
+    },
+    "geometry": [
+     [
+      "\".X..X...X.\"",
+      "\".#..#...#.\"",
+      "\".#..#...#.\"",
+      "\"S#SS#S.S#S\"",
+      "\"S#SS#S.S#S\"",
+      "\".#.S#S..#.\"",
+      "\".#..#...#.\"",
+      "\".#..#...#.\"",
+      "\".#..#...#.\"",
+      "\".#..#...#.\""
+     ],
+     [
+      "1",
+      "4",
+      "8"
+     ],
+     [
+      "{\"cols\": [7, 9], \"dir\": 1, \"rows\": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], \"speed_px_s\": 60, \"wrap\": false}"
+     ]
+    ],
+    "index": 28,
+    "kinds": [
+     "ball",
+     "bricks-left",
+     "explosive-brick",
+     "falling-ember",
+     "sliding-row",
+     "standard-brick-wall",
+     "steel-brick"
+    ],
+    "layout_values": {
+     "embers.fall_px_s": 160,
+     "embers.interval_s": 3,
+     "embers.source": "lanes"
+    },
+    "oracle_lower_s": null,
+    "par_s": 52.0,
+    "reached": true
+   },
+   "w4-l6": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.62,
+     "precision": 0.46,
+     "speed": 0.56,
+     "variety": 0.8
+    },
+    "elements": [
+     "armored-brick",
+     "descending-field",
+     "explosive-brick",
+     "falling-ember",
+     "laser"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 34
+    },
+    "geometry": [
+     [
+      "\".A######A.\"",
+      "\".A######A.\"",
+      "\"AA##XX##AA\"",
+      "\".AAX##XAA.\""
+     ],
+     [
+      "{\"at_s\": 8, \"power\": \"laser\"}"
+     ]
+    ],
+    "index": 29,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "descending-field",
+     "explosive-brick",
+     "falling-ember",
+     "laser",
+     "standard-brick-wall"
+    ],
+    "layout_values": {
+     "descend.interval_s": 6,
+     "descend.lowest_edge_y": 770,
+     "descend.step_px": 24,
+     "embers.fall_px_s": 160,
+     "embers.interval_s": 4
+    },
+    "oracle_lower_s": null,
+    "par_s": 54.0,
+    "reached": true
+   },
+   "w4-l7": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.5,
+     "precision": 0.46,
+     "speed": 0.56,
+     "variety": 0.8
+    },
+    "elements": [
+     "armored-brick",
+     "explosive-brick",
+     "falling-ember",
+     "standard-brick",
+     "steel-brick",
+     "wide-paddle"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 38
+    },
+    "geometry": [
+     [
+      "\"...S######\"",
+      "\"..S######S\"",
+      "\".S######S.\"",
+      "\"S##XX##S..\"",
+      "\"AA####S...\""
+     ],
+     [
+      "{\"at_s\": 4, \"power\": \"wide\"}",
+      "{\"at_s\": 20, \"power\": \"wide\"}"
+     ]
+    ],
+    "index": 30,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "bricks-left",
+     "explosive-brick",
+     "falling-ember",
+     "standard-brick-wall",
+     "steel-brick",
+     "wide-paddle"
+    ],
+    "layout_values": {
+     "embers.fall_px_s": 160,
+     "embers.interval_s": 6
+    },
+    "oracle_lower_s": null,
+    "par_s": 44.0,
+    "reached": true
+   },
+   "w4-l8": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.74,
+     "precision": 0.46,
+     "speed": 0.56,
+     "variety": 0.8
+    },
+    "elements": [
+     "armored-brick",
+     "explosive-brick",
+     "falling-ember",
+     "laser",
+     "multi-ball",
+     "standard-brick",
+     "steel-brick",
+     "wide-paddle"
+    ],
+    "extent": {
+     "kind": "grid",
+     "unit": "cells",
+     "value": 34
+    },
+    "geometry": [
+     [
+      "\".A#BBBB#A.\"",
+      "\".##BBBB##.\"",
+      "\".#X####X#.\"",
+      "\"...X##X...\"",
+      "\"...S..S...\"",
+      "\"..S....S..\"",
+      "\"...S..S...\""
+     ],
+     [
+      "{\"at_pips\": 22, \"power\": \"laser\"}",
+      "{\"at_pips\": 15, \"power\": \"wide\"}",
+      "{\"at_pips\": 8, \"power\": \"multi\"}"
+     ]
+    ],
+    "index": 31,
+    "kinds": [
+     "armored-brick",
+     "ball",
+     "boss-cinder-phoenix",
+     "bricks-left",
+     "explosive-brick",
+     "falling-ember",
+     "laser",
+     "laser-bolt",
+     "standard-brick-wall",
+     "steel-brick"
+    ],
+    "layout_values": {
+     "boss.kind": "forge",
+     "boss.name": "Cinder Phoenix",
+     "boss.open": "timed",
+     "boss.open_s": 3,
+     "boss.pips": 22,
+     "boss.swing.fast_at_pips": 11,
+     "boss.swing.fast_speed_px_s": 220,
+     "boss.swing.speed_px_s": 150,
+     "embers.fall_px_s": 160,
+     "embers.fast_at_pips": 11,
+     "embers.fast_interval_s": 1.5,
+     "embers.interval_s": 2,
+     "embers.source": "boss"
+    },
+    "naive_runs": {
+     "policies": {
+      "jitter": {
+       "fastest_s": null,
+       "n": 6,
+       "uncleared_min_s": 24.99,
+       "won": 0
+      },
+      "steady": {
+       "fastest_s": null,
+       "n": 6,
+       "uncleared_min_s": 9.38,
+       "won": 0
+      }
+     }
+    },
+    "oracle_lower_s": null,
+    "par_s": 74.0,
+    "reached": true
+   }
+  }
+ }
+}

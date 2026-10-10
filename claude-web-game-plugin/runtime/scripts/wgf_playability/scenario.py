@@ -44,6 +44,18 @@ SOURCES = dict(analysis.EVIDENCE, **{
     "progression.persists": ("persist",),
     "depth.session_length": ("session",),
     "naive.clear_rate": ("naive",),
+    # The baseline comparison (baseline.py): the candidate's records it reads; the accepted
+    # build's are in the report's baseline_comparison.
+    "baseline.units_kept": ("survey", "naive", "traverse"),
+    "baseline.unit_content": ("survey",),
+    "baseline.unit_extent": ("survey",),
+    "baseline.tuning": ("survey",),
+    "baseline.difficulty_order": ("survey",),
+    "baseline.unit_kinds": ("survey",),
+    "baseline.clear_time": ("naive", "survey"),
+    "baseline.clear_rate": ("naive",),
+    "baseline.entity_size": ("win",),
+    "baseline.responsiveness": ("first-session", "act", "win"),
 })
 # Checks read off every record the bot wrote (errors and the console are counted on all).
 EVERY_RECORD = ("page.errors", "runtime.")

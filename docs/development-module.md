@@ -147,6 +147,11 @@ from 32 units to 12. An adopted game is improved, never rebuilt:
   shipped nothing before it: no floor. A run commit a person accepts by cherry-picking or
   amending keeps its `Wgf-<Step>-Key` trailer and is still the run's: to make it the floor,
   tag it and name the tag in `accepted_baseline`.
+- **The floor's commit is also the accepted build every playability visit is compared with**
+  (the `baseline.*` checks, [baseline-comparison.md](baseline-comparison.md)): the same bot
+  plays both, and a unit cut, a layout or tuning value changed, or a unit cleared in a
+  fraction of the accepted time fails unless a person recorded why
+  (`factory.init.accepted_changes`).
 - **A replacement is refused before a developer starts** (`floor.replacement`, BLOCKED,
   every phase). It reads the content data at the shipped commit - never HEAD, which holds
   the run's own greybox and develop commits - and the design's floor, and refuses a design

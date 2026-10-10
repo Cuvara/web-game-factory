@@ -8,7 +8,7 @@
     "id": "playability-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "producer": "title:prototype",
     "consumers": ["title:prototype", "title:prototype-review", "release:qa", "release:store-listing", "release:draft"],
     "repo_path": "<game-repo>/qa/playability/<commit>.json",
@@ -113,6 +113,27 @@
       "type": "array",
       "description": "Since 1.4.0. What the bot played for each check, read from its own records (scripts/wgf_playability/scenario.py): nothing the bot did not record is added - a field it did not keep is null.",
       "items": { "$ref": "#/$defs/scenario" }
+    },
+    "baseline_comparison": {
+      "type": "object",
+      "description": "Since 1.5.0. The candidate against the build a person accepted (scripts/wgf_playability/baseline.py, core/reference/baseline-compare.yaml): present when the run adopted a game, whose design records the accepted commit (existing_content.source.commit). The step plays that commit with the same bot and the same settings on the comparison's viewport and reports the `baseline.*` checks; `same_build` when this visit played the accepted build itself (nothing compared).",
+      "required": ["accepted_commit", "commit"],
+      "properties": {
+        "accepted_commit": { "type": "string" },
+        "by": { "type": "string", "description": "How the accepted commit was chosen: factory.init.accepted_baseline, or the adopted checkout's shipped commit." },
+        "commit": { "type": "string" },
+        "project": { "type": "string" },
+        "same_build": { "type": "boolean" },
+        "cached": { "type": "boolean", "description": "The accepted build's play was made by an earlier visit with the same bot and settings, and reused." },
+        "records_dir": { "type": "string", "description": "The accepted build's records, relative to the run's directory." },
+        "profiles": { "type": "object", "description": "What each build measured (baseline.profile), each {path, sha256} relative to the run's directory.", "additionalProperties": { "type": "object", "required": ["path", "sha256"], "properties": { "path": { "type": "string" }, "sha256": { "type": "string" } }, "additionalProperties": false } },
+        "rules": { "type": "object", "properties": { "path": { "type": "string" }, "version": { "type": ["string", "null"] } }, "additionalProperties": false },
+        "accepted_changes": { "type": "array", "description": "A person's recorded reasons for changing accepted content (factory.init.accepted_changes) in force for this comparison.", "items": { "type": "object" } },
+        "invalid_changes": { "type": "array", "description": "Entries of factory.init.accepted_changes without a baseline check, a reason or who decided: they waive nothing.", "items": {} },
+        "regressed": { "type": "array", "items": { "type": "string" } },
+        "blocked_reason": { "type": "string" }
+      },
+      "additionalProperties": false
     },
     "failed_checks": { "type": "array", "items": { "type": "string" } },
     "blocked_reason": { "type": ["string", "null"] },

@@ -107,7 +107,9 @@
 # 2.0.1: L23, L25 and L26 name generalizes tests (tests only; no rule changed).
 # 2.1.0: domain, principle, anti_pattern, classification and revision on every lesson
 #        (backfilled on L1-L28, no rule changed); L29.
-version: 2.1.0
+# 2.2.0: L8 partial - the baseline comparison (baseline-compare.yaml) holds a candidate to
+#        the build a person accepted.
+version: 2.2.0
 
 statuses: [enforced, partial, gap, process]
 
@@ -392,8 +394,8 @@ lessons:
     title: Nothing compared a candidate with the last accepted build
     category: gameplay
     domain: game-design
-    classification: OBSERVATION
-    revision: 1
+    classification: REQUIRED
+    revision: 2
     principle: >-
       A candidate build is compared with the build a person accepted, because absolute
       floors let a build pass every check and still be worse than what was accepted.
@@ -410,10 +412,21 @@ lessons:
       Every gate is an absolute floor, so a build can pass every check that passed on the
       build a person accepted and still be worse than it - smaller, flatter, harder to read.
     scope: global
-    status: gap
-    lifecycle: candidate
+    status: partial
+    lifecycle: active
     introduced: {version: 2.8.0, date: 2026-10-07}
-    gap: an accepted-baseline regression gate - paired frame judgement, playability metric deltas, content and feature parity against the build a person accepted.
+    checks: [baseline-compare:baseline.units_kept, baseline-compare:baseline.unit_content, baseline-compare:baseline.unit_extent, baseline-compare:baseline.tuning, baseline-compare:baseline.difficulty_order, baseline-compare:baseline.unit_kinds, baseline-compare:baseline.clear_time, baseline-compare:baseline.clear_rate, baseline-compare:baseline.entity_size, baseline-compare:baseline.responsiveness]
+    tests:
+      catches:
+        - scripts/tests/test_baseline_compare.py::test_K7_the_regressed_2d_head_fails_against_r1
+        - scripts/tests/test_baseline_compare.py::test_K7_the_regressed_3d_head_fails_against_r1
+        - scripts/tests/test_baseline_compare.py::test_K7_the_regressed_3d_courses_are_cut_against_the_accepted_courses
+        - scripts/tests/test_baseline_compare.py::test_a_unit_removed_or_renamed_fails
+        - scripts/tests/test_baseline_compare.py::test_every_unit_renamed_and_cut_still_fails_on_the_whole_game
+      passes:
+        - scripts/tests/test_baseline_compare.py::test_K7_each_accepted_build_passes_against_its_own_repeat
+      generalizes: []
+    gap: a paired frame judgement against the accepted build; and what an accepted build that predates the content contract cannot report (no content data file, no unit link, no entity kinds) is reported unmeasured on it, not compared.
 
   - id: L9
     title: The accepted build is the floor, not the target

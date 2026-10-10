@@ -39,7 +39,7 @@ lessons:
   L5:  {source: {kind: run}, games: [Sky Marble], ledger_row: L5, evidence: [scripts/tests/fixtures/playability/val-3d-transitions.json (in this repository)]}
   L6:  {source: {kind: run}, games: [], ledger_row: L6, evidence: [delegation-proof/PROOF.md]}
   L7:  {source: {kind: run}, games: [Brick Breaker Worlds], ledger_row: L7, evidence: []}
-  L8:  {source: {kind: run}, games: [Brick Breaker Worlds, Sky Marble], ledger_row: L8, evidence: [diagnosis/2d, diagnosis/3d, diagnosis/3d/capture-log.json], planned_by: WS-1}
+  L8:  {source: {kind: run}, games: [Brick Breaker Worlds, Sky Marble], ledger_row: L8, evidence: [diagnosis/2d, diagnosis/3d, diagnosis/3d/capture-log.json, K6 retro report (H1 H4 H6 H7), scripts/tests/fixtures/real/baseline-compare (in this repository)], planned_by: WS-1}
   L9:  {source: {kind: run}, games: [Brick Breaker Worlds, Sky Marble], ledger_row: L9, evidence: [critique/design, critique/3d-art], planned_by: WS-3}
   L10: {source: {kind: run}, games: [Brick Breaker Worlds], ledger_row: L10, evidence: []}
   L11: {source: {kind: run}, games: [Brick Breaker Worlds], ledger_row: L11, evidence: [diagnosis/2d, scripts/tests/fixtures/real/play-realism (in this repository)], planned_by: WS-2, closed_by: WS-2}

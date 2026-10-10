@@ -32,7 +32,9 @@
 #        routed by its own id whatever dimension scores it. Play realism's checks
 #        (play-realism.yaml) in playability-report; qa-report `verification_checks`: a
 #        browser-QA defect (browser-qa.yaml) routed by the check it was made from.
-version: 1.6.0
+# 1.7.0: the baseline comparison's checks (baseline.*, core/reference/baseline-compare.yaml)
+#        in playability-report.
+version: 1.7.0
 
 # The quality dimensions, as the quality-finding schema enumerates them.
 dimensions: [content, level-design, difficulty, progression, gameplay, art-2d, environment-3d, lighting-material, ui, audio, feel, store-copy, platform, art-direction, performance, browser, compliance]
@@ -170,6 +172,20 @@ producers:
       level.: level-design
       runtime.: browser
       runtime.webgl_context: performance
+      # The baseline comparison (core/reference/baseline-compare.yaml, 1.7.0): the candidate
+      # made worse than the build a person accepted. A unit gone or its drawn kinds changed is
+      # the content's; a unit's layout, size, par or clear time the level's; its difficulty
+      # values, their order and how often naive play clears it the difficulty's; the accepted
+      # tuning and the drawn size of the paddle or ball the loop's; the start, an action's
+      # acknowledgement and the frame rate the performance engineer's.
+      baseline.: level-design
+      baseline.units_kept: content
+      baseline.unit_kinds: content
+      baseline.difficulty_order: difficulty
+      baseline.clear_rate: difficulty
+      baseline.tuning: gameplay
+      baseline.entity_size: gameplay
+      baseline.responsiveness: performance
     acceptance: playability plays the next build and measures `{check}` PASS{bar_clause}.
 
   production-quality-report:

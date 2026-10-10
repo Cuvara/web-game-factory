@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       golden_loop:
-        description: "Also run the GOLDEN LOOP category (job golden-loop: two more 2D golden runs)"
+        description: "Also run the GOLDEN LOOP category (job golden-loop: four more 2D golden runs)"
         type: boolean
         default: false
 
@@ -151,8 +151,10 @@ jobs:
 
   # The GOLDEN LOOP category (docs/golden-runs.md "The golden loop"): the 2D golden with a
   # planted defect must fail a real check, be routed back to greybox and pass the same check
-  # on a newer commit; its negative control must not pass. Two more golden runs, so it is kept
-  # out of the job above (its 180 minutes are nearly spent) and runs only when asked: a manual
+  # on a newer commit; its negative control must not pass. The develop-stage variant plants it
+  # in production, where the failure goes through triage to a specialist and the run's finding
+  # ledger must verify the repair; its negative control blocks at triage's budget. Four more
+  # golden runs, so it is kept out of the job above (its 180 minutes are nearly spent) and runs only when asked: a manual
   # run with `golden_loop` ticked, or a pull request carrying the label `golden-loop` (adding
   # the label does not start a run by itself - the next push or a re-run does, so a label
   # event never cancels the acceptance job above through the shared concurrency group).
@@ -163,9 +165,11 @@ jobs:
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'golden-loop'))
     runs-on: ubuntu-24.04
-    # One full 2D golden with one extra greybox build-and-play, and a negative control that
-    # builds and plays the greybox three times and stops: about one and a half goldens.
-    timeout-minutes: 180
+    # Greybox stage: one full 2D golden with one extra greybox build-and-play, and a negative
+    # control that builds and plays the greybox three times and stops. Develop stage: one
+    # full golden with one extra production build-and-play, and a negative control that plays
+    # the production build three times and stops. About four goldens.
+    timeout-minutes: 360
 
     steps:
       - uses: actions/checkout@v4
@@ -206,7 +210,8 @@ jobs:
         run: WGF_GOLDEN_LOOP=1 WGF_GOLDEN_KEEP=1 bin/wgf test-core --only "GOLDEN LOOP" --strict
 
       - name: Golden loop evidence
-        # golden-loop-2d.json (the before/after record) and golden-loop/ (the failing and the
+        # golden-loop-2d.json / golden-loop-2d-develop.json (the before/after record, the
+        # develop stage's with its ledger records) and golden-loop/ (the failing and the
         # passing frames) beside each run's summary and playability reports.
         if: always()
         uses: actions/upload-artifact@v4

@@ -11,9 +11,10 @@ visual-qa step's shape with a FIXTURE judge's scores (scripts/tests/learning_led
 
   single     one run: the objective never on screen FAILs start.objective on build A, the
              owner's visit fixes it on B, the gate passes it once - a single-run lesson
-  validated  one run, three builds: A fails start.objective on desktop and on mobile, B and C
-             pass both - reproduced on two scenarios; the specialist's candidate reported
-             once per scenario
+  validated  two runs: in the first, A fails start.objective on desktop and on mobile, B and
+             C pass both; in the second, C fails it on desktop, D and E pass it - reproduced
+             in two runs (desktop and mobile of one run and build are one context); the
+             specialist's candidate reported once per scenario
   circular   the single run, then only circular "validation": the same run's reports copied
              byte for byte into another run (the same report re-ingested), a later pass that
              replays the failing build (same-build), and a visual judge passing the fixed
@@ -34,7 +35,7 @@ for _path in (SCRIPTS, TESTS):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-A, B, C = ("a" * 40, "b" * 40, "c" * 40)
+A, B, C, D, E = ("a" * 40, "b" * 40, "c" * 40, "d" * 40, "e" * 40)
 
 
 def make(args):
@@ -58,7 +59,9 @@ def make(args):
         made = rounds("validated-1", [(A, ll.blind()), (B, ll.well()), (C, ll.well())])
         ll.store_run(store, "validated-1", made, [[ll.candidate(ll.OBJECTIVE)],
                                                   [ll.candidate(ll.OBJECTIVE_MOBILE)]])
-        runs = ["validated-1"]
+        again = rounds("validated-2", [(C, ll.blind()), (D, ll.well()), (E, ll.well())])
+        ll.store_run(store, "validated-2", again, [ll.candidate(ll.OBJECTIVE)])
+        runs = ["validated-1", "validated-2"]
     else:
         main = rounds("circular-1", [(A, ll.blind()), (B, ll.well()), (A, ll.well())])
         ll.store_run(store, "circular-1", main, [ll.candidate(ll.OBJECTIVE)])

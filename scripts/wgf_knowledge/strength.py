@@ -16,18 +16,21 @@ check-integrity):
                  failure nothing re-measured passing
     single-run   one measured FAIL->PASS pair on one scenario of one run
     reproduced   the passing measurement repeated (a later passing report of the same check,
-                 on a later commit or a repeat run, that is not the same report), on a check
-                 whose ledger does not alternate verdicts, by a class that is not only the
-                 game's own report
-    validated    reproduced in two or more distinct contexts (scenario or run), by a class
-                 that is not only self-reported or one AI judgment
+                 on a later commit than the one that passed, that is not the same report),
+                 on a check whose ledger does not alternate verdicts, by a class that is not
+                 only the game's own report
+    validated    reproduced in two or more distinct contexts - a context is a run and the
+                 commits of its repair, so they differ in run or commit (two viewports of one
+                 run and build are one) - by a class that is not only self-reported or one AI
+                 judgment
 
 A measurement that may not count is refused with its rule and reason - never dropped:
 
     same-report     (a) the report that detected the finding (its content hash), counted again
     own-check       (b) the lesson's own proposed check measured on a build that motivated it
                     (a build another of its sources, on another check, saw the defect on)
-    same-build      (c) a pass on the commit the failure was measured on
+    same-build      (c) a pass on the commit the failure was measured on; or a later pass
+                    on the commit that passed (a re-play of that build, not a repeat)
     self-agreement  (d) an AI judge re-reading a build or frames it already judged
     claim           (e) a person's or specialist's claim: a subjective source, a source a
                     promote cannot re-verify, a person's G4 decision
@@ -367,6 +370,12 @@ def derive(sources, proposed=()):
                         f"({_short(sample.get('commit'))}) - its own verdict again, not a "
                         "second judgment", sample)
                 continue
+            if klass != JUDGED and sample.get("commit") and \
+                    sample.get("commit") == after.get("commit"):
+                _refuse(refused, source, "same-build", f"{snap.get('finding')}: a later pass "
+                        f"on the commit that passed ({_short(sample.get('commit'))}) - a "
+                        "re-play of the build that passed, not an independent repeat", sample)
+                continue
             if snap.get("check") in proposed and sample.get("commit") in {
                     p["source"].get("commit") for p in kept
                     if p is not pair and p["snap"].get("check") != snap.get("check")}:
@@ -401,18 +410,26 @@ def derive(sources, proposed=()):
                             "same_scenario") else "weaker comparison"})
 
     reproduced = [c for c in counted if c["level"] == "reproduced"]
-    contexts = sorted({(c["run"], c["scenario"]) for c in reproduced}, key=str)
+    # A context is a run and the builds of its repair: two scenarios (desktop and mobile) of
+    # one run, failing and passing on the same commits, are one repair measured twice by one
+    # bot - not two independent contexts.
+    contexts = {}
+    for c in reproduced:
+        contexts.setdefault((c["run"], c["before"], c["after"]), []).append(c["scenario"])
     if len(contexts) >= 2:
         strength = "validated"
         why = (f"validated: the repair reproduced in {len(contexts)} distinct contexts ("
-               + "; ".join(f"{r} {s}" for r, s in contexts) + ")")
+               + "; ".join(f"{r} {_short(b)}->{_short(a)} {', '.join(map(str, s))}"
+                           for (r, b, a), s in sorted(contexts.items(), key=str)) + ")")
     elif reproduced:
         first = reproduced[0]
         strength = "reproduced"
         why = (f"reproduced: {first['finding']} FAILED on {_short(first['before'])}, PASSED on "
                f"{_short(first['after'])} and passed again in {first['repeats']} later "
                f"independent measurement(s) ({first['class']}); only one context - validation "
-               "needs a second scenario, run or title")
+               "needs a second run, or a repair on other builds"
+               + (f" ({len(reproduced)} scenarios of one run and build are one context)"
+                  if len(reproduced) > 1 else ""))
     elif counted:
         first = counted[0]
         strength = "single-run"

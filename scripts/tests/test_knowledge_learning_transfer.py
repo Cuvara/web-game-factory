@@ -8,7 +8,8 @@ learning_session.py writes the session's runs; the REAL `wgf knowledge ingest` a
   Single     one measured FAIL->PASS pair on one scenario of one run: ingest records it
              single-run; promote drafts only an experimental candidate lesson
              (OBSERVATION/HEURISTIC) and refuses a RECOMMENDATION or VALIDATED_PRINCIPLE.
-  Validated  the repair reproduced on desktop and on mobile: ingest records it validated;
+  Validated  the repair reproduced in two runs (desktop and mobile of one run and build are
+             one context, review r1 finding 4): ingest records it validated;
              promote may draft a VALIDATED_PRINCIPLE - an enforced, validated lesson with
              its three test stubs and the evidence's verified leg - whose patch applies.
   Circular   the single pair, then only circular "validation": the same reports re-ingested

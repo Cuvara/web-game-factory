@@ -7,7 +7,8 @@ These tests hold:
   * LEVELS. hypothesis (a claim; a measured failure never re-measured), single-run (one
     FAIL->PASS pair - also on REAL bot records: the 3D validation game's naive.pace, FAIL on
     1c6b099 and PASS on c340631), reproduced (the pass repeated in a later report),
-    validated (reproduced on desktop and mobile, or in two runs).
+    validated (reproduced in two runs, or on other builds - desktop and mobile of one run
+    and build are one context).
   * CAPS. A check whose ledger alternates verdicts is `unstable` and capped at single-run; so
     is a pair measured only by the game's own probe (self-reported), one AI judgment, or a
     check of no known class.
@@ -164,11 +165,24 @@ class Levels(Base):
         self.assertIn("1 later independent measurement", record["strength_why"])
         self.assertEqual(record["refused_evidence"], [])
 
-    def test_reproduced_on_desktop_and_mobile_is_validated(self):
+    def test_desktop_and_mobile_of_one_run_and_one_build_are_one_context(self):
+        """Review r1 finding 4 (was test_reproduced_on_desktop_and_mobile_is_validated):
+        desktop and mobile of the same run, failing on A and passing on B and C, are two
+        viewports of one repair measured by one bot - not two independent contexts. A
+        validated context differs in run or commit; this is reproduced."""
         rounds = self.rounds([(A, ll.blind()), (B, ll.well()), (C, ll.well())])
         self.put("run-v", rounds, [[ll.candidate(ll.OBJECTIVE)],
                                    [ll.candidate(ll.OBJECTIVE_MOBILE)]])
         record = self.one("run-v")
+        self.assertEqual(record["strength"], "reproduced", record["strength_why"])
+        self.assertIn("one run and build", record["strength_why"])
+
+    def test_desktop_and_mobile_in_two_runs_are_validated(self):
+        first = self.rounds([(A, ll.blind()), (B, ll.well()), (C, ll.well())])
+        second = self.rounds([(C, ll.blind()), (D, ll.well()), (E, ll.well())])
+        self.put("run-1", first, [ll.candidate(ll.OBJECTIVE)])
+        self.put("run-2", second, [ll.candidate(ll.OBJECTIVE_MOBILE)])
+        record = self.one("run-1", "run-2")
         self.assertEqual(record["strength"], "validated", record["strength_why"])
         self.assertIn("start.objective@desktop", record["strength_why"])
         self.assertIn("start.objective@mobile", record["strength_why"])
@@ -341,6 +355,19 @@ class Circularity(Base):
         self.assertEqual(record["strength"], "single-run", record["strength_why"])
         self.assertEqual(self.rules(record), ["same-build"])
 
+    def test_c_a_repeat_on_the_build_that_passed_is_not_independent(self):
+        """Review r1 finding 4: the pass on B played again on B is a re-play of the same
+        build by the same bot - not an independent repeat. It is refused (same-build) and
+        the pair stays single-run."""
+        rounds = self.rounds([(A, ll.blind()), (B, ll.well()), (B, ll.well())])
+        self.put("run-c3", rounds, [ll.candidate(ll.OBJECTIVE)])
+        record = self.one("run-c3")
+        samples = record["sources"][0]["remeasurement"]["samples"]
+        self.assertEqual([x["commit"] for x in samples], [B, B])
+        self.assertEqual(record["strength"], "single-run", record["strength_why"])
+        self.assertEqual(self.rules(record), ["same-build"])
+        self.assertIn("re-play of the build that passed", record["refused_evidence"][0]["reason"])
+
     def test_d_a_judge_rereading_a_build_it_judged_is_refused(self):
         """The judge ran again on the build it already passed (another report, another
         hash): its own verdict again, not a second judgment."""
@@ -414,6 +441,57 @@ class Circularity(Base):
         self.assertEqual((summary["unchanged"], summary["refreshed"]), (1, []))
         self.assertEqual(again, doc)
         self.assertEqual(again["candidates"][0]["strength"], "single-run")
+
+
+class ReviewProbe(unittest.TestCase):
+    """Review r1's probe_strength.py, as pure derivations: (A) a sample on the commit that
+    passed is not an independent repeat; (B) desktop and mobile of one run, one fix and one
+    commit are one context; (C) another run is a second context."""
+
+    @staticmethod
+    def m(h, commit, seq, status, scenario):
+        return {"artifact_id": f"pr-{seq}", "content_hash": "sha256:" + h * 64,
+                "commit": commit, "seq": seq, "status": status, "scenario": scenario,
+                "frames": []}
+
+    def src(self, project, run="run-1", commits=(A, B), replay=None):
+        failed, passed = commits
+        before = self.m("1" if run == "run-1" else "4", failed, 8, "FAIL",
+                        f"restart@{project}")
+        after = self.m("2" if run == "run-1" else "5", passed, 13, "PASS", f"restart@{project}")
+        again = self.m("3" if run == "run-1" else "6", replay or passed, 17, "PASS",
+                       f"restart@{project}")
+        snap = {"ledger": None, "finding": f"playability-report:act.acknowledged@{project}",
+                "producer": "playability-report", "check": "playability:act.acknowledged",
+                "check_id": "act.acknowledged", "project": project, "class": "deterministic",
+                "status": "closed", "verdict": "passed", "before": before, "after": after,
+                "same_scenario": True, "differences": [], "samples": [after, again],
+                "detected": {"artifact_id": "pr-8", "content_hash": before["content_hash"],
+                             "commit": failed},
+                "outcomes": [{"verdict": "FAIL", "commit": failed},
+                             {"verdict": "PASS", "commit": passed}]}
+        return {"basis": "measured", "run": run, "finding": snap["finding"],
+                "report_hash": "sha256:" + (project[0] + run[-1]) * 32,
+                "artifact_type": "playability-report", "commit": failed,
+                "remeasurement": snap}
+
+    def test_a_a_replay_of_the_passing_commit_is_single_run(self):
+        out = strength.derive([self.src("desktop")])
+        self.assertEqual(out["strength"], "single-run", out["why"])
+        self.assertEqual([r["rule"] for r in out["refused"]], ["same-build"])
+
+    def test_a_a_repeat_on_a_later_commit_reproduces(self):
+        out = strength.derive([self.src("desktop", replay=C)])
+        self.assertEqual(out["strength"], "reproduced", out["why"])
+
+    def test_b_two_viewports_of_one_run_and_commit_are_not_validated(self):
+        out = strength.derive([self.src("desktop", replay=C), self.src("mobile", replay=C)])
+        self.assertEqual(out["strength"], "reproduced", out["why"])
+
+    def test_c_another_run_is_a_second_context(self):
+        out = strength.derive([self.src("desktop", replay=C),
+                               self.src("mobile", run="run-2", commits=(C, D), replay=E)])
+        self.assertEqual(out["strength"], "validated", out["why"])
 
 
 # ----------------------------------------------------------------------- ingest/promote

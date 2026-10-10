@@ -10,17 +10,20 @@ and `core/` is still the contract.
 ## [Unreleased]
 
 **Validated learning: a lesson's evidence strength, derived from the ledger** (K6.4,
-`core/reference/evidence-strength.yaml` 1.0.0, candidate store 1.1.0, `evidence.yaml` 2.1.0,
+`core/reference/evidence-strength.yaml` 1.1.0, candidate store 1.1.0, `evidence.yaml` 2.1.0,
 [docs/knowledge-enforcement.md](docs/knowledge-enforcement.md) "Evidence strength"). `wgf
 knowledge ingest` now records, for every lesson candidate, how far the measurements behind it
 were repeated - `hypothesis` (no measured repair), `single-run` (one FAIL->PASS pair),
-`reproduced` (the pass repeated in a later independent report, on a check that does not
-alternate verdicts, by a class that is not only the game's probe), `validated` (reproduced on
-two scenarios or runs) - derived from each source's re-measurement in its run's finding ledger
+`reproduced` (the pass repeated in a later independent report on a later commit than the
+one that passed, on a check that does not alternate verdicts, by a class that is not only the
+game's probe), `validated` (reproduced in two contexts differing in run or commit - desktop and
+mobile of one run and build are one context) - derived from each source's re-measurement in its run's finding ledger
 (K6.2 before/after/samples, content hashes, history) and the check's measurement class (K6.3),
 with why (`strength_why`), the checks marked `unstable`, and every measurement refused with its
 rule and reason (`refused_evidence`): the detecting report counted again, the lesson's own
-proposed check on a build that motivated it, a pass on the failing commit, a judge re-reading
+proposed check on a build that motivated it, a pass on the failing commit (or a re-play of the
+build that passed, counted as a repeat), a repair the run's newest ledger reopened, a judge
+re-reading
 what it judged, a person's or specialist's claim; hash-identical duplicates count once. A pair
 measured only by the game's own probe, one AI judgment, or a check of no known class is capped
 at single-run. `wgf knowledge promote` derives the strength again from the run store and never

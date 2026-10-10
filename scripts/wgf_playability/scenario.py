@@ -44,6 +44,9 @@ SOURCES = dict(analysis.EVIDENCE, **{
     "progression.persists": ("persist",),
     "depth.session_length": ("session",),
     "naive.clear_rate": ("naive",),
+    # Read off the contact test's frozen frames (realism.judge_contacts).
+    "physics.contact_drawn": ("contact",),
+    "physics.drawn_extent": ("contact",),
 })
 # Checks read off every record the bot wrote (errors and the console are counted on all).
 EVERY_RECORD = ("page.errors", "runtime.")
@@ -66,6 +69,7 @@ POLICIES = {
     "survey": "unit-link",
     "naive": "naive",
     "risk": "declared-policy",
+    "contact": "oracle-frozen-at-turns",
 }
 MAX_ACTIONS = 80
 MAX_FRAMES = 16

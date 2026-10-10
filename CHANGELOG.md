@@ -9,6 +9,30 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Measurement integrity: the physics checks read off the pixels** (K7, `play-realism.yaml`
+1.1.0 `contact`, [docs/playability-module.md](docs/playability-module.md) "What the contact
+frames measure, and what they cannot"). `physics.undrawn_collision` and
+`physics.collider_size` read only what the probe says is drawn, so a repair could satisfy them
+without drawing anything: in the 2D validation game a ball drawing enlarged with its collider
+unchanged (68a12b7, retro H3) and undrawn ceilings added so the bot reached units in time
+(cbac64e, H2). The playability bot's new **contact** test (2D builds, desktop and mobile, its
+window outside the time budget) plays with the page's clock stepped one frame per frame drawn,
+freezes the page on the frame that shows a mover just turned, and keeps a crop of it and of the
+same place once the mover left. Two checks read those pixels: `physics.contact_drawn` (hard) -
+something is drawn where the mover turned, whether or not the probe reports a surface there -
+and `physics.drawn_extent` (quality) - the solid drawing over a reported collider, held to the
+same bar as `physics.collider_size`. Where the mover was and its collider stay the game's own
+report (stated per check); a build reporting no collider is unmeasured on its extent, never
+passed. Both are on `floor.physics_drawn`, `physics-fairness` and lesson L11. Replayed on real
+recordings of four commits (`scripts/tests/fixtures/real/play-contact/`): cbac64e and 68a12b7
+FAIL `contact_drawn`, r1 96f5cea PASSes it; with the collider reported (a harness patch to a
+scratch build), 68a12b7 FAILs `drawn_extent` at 2.7 x, 894b4b8 PASSes at 1.0-1.2 x, and r1
+FAILs it at 1.9-2.05 x - its solid disc is 42 px over a 22 px collider, as 894b4b8's own tuning
+says. The contact crops are kept out of the report's `frames` (visual QA judges screens) and
+pinned by sha256 in each check. Bringing an artifact forward: none - a report from an older bot
+has no contact record and gets neither check; a pinned 1.0.0 `play-realism.yaml` keeps a run
+on the old bars.
+
 **K6 review r1 fixes** (docs/specialist-routing.md, docs/knowledge-enforcement.md). The
 ledger no longer verifies a split finding (`.../develop`, `.../assets`) whose check still
 FAILs its part in a BLOCKED report: the check is split again by the same rule, `unmeasured`

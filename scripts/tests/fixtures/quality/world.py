@@ -491,6 +491,7 @@ class World:
         pause = dict(common, reached="paused")
         out = {"first-session": first, "act": act, "win": win, "lose": lose, "pause": pause}
         out["naive"] = self.naive(project, common)
+        out["contact"] = dict(common, **self.contact(build, project, playing)[0])
 
         # The content: the first units played in order, every unit surveyed (desktop only).
         bars = self.qa.get("content") or {}
@@ -607,8 +608,62 @@ class World:
         with open(path, "wb") as handle:
             handle.write(encode_png(Image(w, h, bytes(pixels))))
 
+    def contact(self, build, project, playing=None):
+        """The contact record, as bot.spec.ts's contact test writes it, and the crops it keeps
+        ({frame id: [(box, colour)]} over the clip): the projectile in play never turns in
+        the window (it travels on, as in the win test), so the bot asks for one pair of frames
+        - the projectile drawn at its box, then gone 18 frames later - for the drawn extent.
+        No projectile in play: nothing is frozen."""
+        playing = playing or self.snapshot(build, project, "playing", self.units[0])
+        moving = [e for e in playing["entities"] if e["role"] == "projectile"]
+        if not moving:
+            return ({"applies": True, "clock": "frame-stepped", "ended": "no projectile in play",
+                     "captures": [], "turns": 0, "passed": 0, "movers_seen": 0}, {})
+        e = moving[0]
+        vw, vh = VIEWPORTS[project]
+
+        def sample(entity, dx=0.0):
+            x = entity["x"] + (dx if entity is e else 0.0)
+            return [entity["id"], entity["role"], 1, x, entity["y"], entity["w"], entity["h"],
+                    entity["asset"], entity["render"], ["rect", x, entity["y"], entity["w"],
+                                                         entity["h"]], None, None]
+        frames = [{"t": 16.667 * n, "e": [sample(o, 4.0 * n) for o in playing["entities"]],
+                   "pf": None} for n in range(3)]
+        after = [{"t": 16.667 * 20, "e": [sample(o, 4.0 * 2 + 300) for o in playing["entities"]],
+                  "pf": None}]
+        pad = max(64, 3 * max(e["w"], e["h"]))
+        x0, y0 = max(0, int(e["x"] + 8 - pad)), max(0, int(e["y"] - pad))
+        x1 = min(vw, int(e["x"] + 8 + e["w"] + pad) + 1)
+        y1 = min(vh, int(e["y"] + e["h"] + pad) + 1)
+        clip = {"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0}
+        paint = {"contact-1-at": [(s[3:7], ENTITY) for s in frames[-1]["e"]],
+                 "contact-1-after": [(s[3:7], ENTITY) for s in after[0]["e"]]}
+        capture = {"n": 1, "at_ms": None, "unit_id": None, "viewport": [vw, vh],
+                   "at": {"frame": "contact-1-at", "event": {"kind": "asked"}, "frames": frames,
+                          "still": True, "clip": clip},
+                   "after": {"frame": "contact-1-after", "event": {"kind": "asked"},
+                             "frames": after, "still": True, "clip": clip}}
+        record = {"applies": True, "clock": "frame-stepped", "ended": "window",
+                  "captures": [capture], "turns": 0, "passed": 0, "movers_seen": 240,
+                  "frames": sorted(paint)}
+        return record, {"clip": clip, "paint": paint}
+
     def write_frames(self, directory, build, project):
         os.makedirs(directory, exist_ok=True)
+        _record, crops = self.contact(build, project)
+        for name, boxes in (crops.get("paint") or {}).items():
+            clip = crops["clip"]
+            w, h = clip["width"], clip["height"]
+            pixels = bytearray(bytes([*BACKGROUND, 255]) * (w * h))
+            for box, colour in boxes:
+                bx0, by0 = int(box[0] - clip["x"]), int(box[1] - clip["y"])
+                bx1, by1 = int(box[0] + box[2] - clip["x"]), int(box[1] + box[3] - clip["y"])
+                for y in range(max(0, by0), min(h, by1)):
+                    for x in range(max(0, bx0), min(w, bx1)):
+                        i = (y * w + x) * 4
+                        pixels[i:i + 3] = bytes(colour)
+            with open(os.path.join(directory, f"{name}.png"), "wb") as handle:
+                handle.write(encode_png(Image(w, h, bytes(pixels))))
 
         def frame(name, kind="play", extra=None):
             self.paint(os.path.join(directory, f"{name}.png"), build, project, kind, extra)

@@ -150,7 +150,7 @@ schema; a build without one is played as before, and the check that needs it is
 
 | Field | For | Read by |
 |---|---|---|
-| `entities[].collider` `{shape: rect\|circle, x, y, w, h}` | the body the simulation collides, projected to the screen beside the drawn box | `physics.undrawn_collision`, `physics.collider_size` |
+| `entities[].collider` `{shape: rect\|circle, x, y, w, h}` | the body the simulation collides, projected to the screen beside the drawn box | `physics.undrawn_collision`, `physics.collider_size`, and on the pixels of the contact frames `physics.contact_drawn` (where the turn was) and `physics.drawn_extent` (what is drawn over it; unmeasured without it). Neither 2026-10 validation game reports it yet: the game-side follow-up is a probe that does (the 9-line harness patch in `scripts/tests/fixtures/real/play-contact/README.md` is one) |
 | `entities[].body` `{x, y, w, h}`, `entities[].halo` | the opaque drawn body inside a glow or halo (`halo: true` is declared with the body) | `physics.collider_size` (judged on the body when reported) |
 | `playfield` `{x, y, w, h}` | a 2D board: the drawn bounds whose edges stop what moves | `physics.undrawn_collision` |
 | `track` `{offset, half_width}` | a path game: the player's signed offset from the centre line, and half the width there | `naive.drift` |

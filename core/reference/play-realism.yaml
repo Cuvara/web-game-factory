@@ -26,7 +26,10 @@
 # (2D 96f5cea, 3D 64ff4c6) and the 3D r1-forward build (c340631) PASS.
 #
 # Changing a bar is a version bump of this file, with the calibration that moved it.
-version: 1.0.0
+# 1.1.0: `contact` - physics.contact_drawn and physics.drawn_extent, the same two questions read
+# off the pixels of frames frozen where a mover turned (the probe-reported checks can be
+# satisfied by reporting a surface or a body that is not drawn).
+version: 1.1.0
 basis: measured-2
 
 # Which quality tiers (quality-benchmark.yaml `tiers[].id`) a measured FAIL of a check here
@@ -78,12 +81,63 @@ physics:
   # passed without something drawn to hold it to - a halo without a body, an empty body, or a
   # body outside the drawn box FAILs. No 2026-10 build reports a collider yet, so the bar is
   # the ledger's (L11: "<= ~1.3x"). From the builds' own tuning (board units, ball radius
-  # and sprite): r1 96f5cea draws a 56.8 glow around a 22 collider (2.6x on the sprite);
+  # and sprite): r1 96f5cea draws a 60 glow around a 22 collider (2.7x on the sprite, 1.9x on
+  # its 42.3 solid disc - measured on its pixels by physics.drawn_extent, below);
   # r1-forward 894b4b8 draws a solid disc of exactly its 40 collider inside the same 56.8
   # glow - 1.0x on its body (PASS), 1.42x on the whole sprite (FAIL), which is why the body
   # is what is judged; a sprite enlarged with the collider unchanged still FAILs on its body.
   max_drawn_to_collider: 1.3
   min_drawn_to_collider: 0.77
+
+# -- physics.contact_drawn, physics.drawn_extent: the same questions read off PIXELS ----------
+contact:
+  # The bot's contact test (bot.spec.ts) freezes the page on the frame that shows a mover of
+  # `roles` just reversed, keeps a crop of it, lets `after_frames` frames run, and keeps the
+  # same crop again; realism.judge_contacts reads both. Where the mover was and its collider
+  # are the probe's (self-reported); what is drawn there is measured on the pixels. Judged on
+  # the `dimensions` whose screen positions are a board's, as physics is.
+  dimensions: [2d]
+  roles: [projectile]
+  projects: [desktop, mobile]
+  # The window per viewport (outside the time budget, like naive play), and how many turns
+  # it freezes on at most, at least `gap_ms` of game time apart.
+  window_s: 40
+  max_captures: 10
+  gap_ms: 400
+  # The page's clock is stepped by `frame_ms` each frame drawn, so a loop that takes its delta
+  # from the frame's timestamp moves one step per frame however slowly the host draws
+  # (measured 3-7 frames a second on the shared Windows host, 2026-10-10). `after_frames`:
+  # 0.3 s of game time for the mover to leave the place it turned. A capture whose frames
+  # around the turn are further apart than `max_frame_ms` (a clock that was not stepped) is
+  # not read.
+  frame_ms: 16.667
+  after_frames: 18
+  max_frame_ms: 40
+  # physics.contact_drawn: in the frame after, along each line across the contact, the largest
+  # colour distance (RGB, 0-441) from the mover's centre to `physics.tolerance_px` + its travel
+  # past its leading edge, against the median colour of the quarter behind its centre (where it
+  # was, now background); the median over the lines. Calibration (real, the 2D game, 2026-10-10,
+  # scripts/tests/fixtures/real/play-contact/): every drawn wall, static brick and board edge
+  # 172-385 (r1 96f5cea, 68a12b7, cbac64e, 894b4b8); every undrawn ceiling 13-34 (33.5 where a
+  # ceiling crosses the backdrop's hill line). 48 sits 1.4 x above the highest undrawn reading
+  # and 3.6 x under the lowest drawn one. One contact under it FAILs: every reading under 34
+  # was a turn at nothing drawn.
+  min_edge: 48
+  min_undrawn: 1
+  # physics.drawn_extent: the entities held (a collider reported on any of them), and how their
+  # solid drawing is told from a glow - the pixels whose colour changed by `min_delta` and by
+  # `solid_share` of the change inside the collider (90th percentile) when the entity moved
+  # away, connected to the collider, within `window_colliders` x its size. The bar is
+  # physics.max_drawn_to_collider / min_drawn_to_collider: one property, two measurements.
+  # Calibration (real, the collider reported by a harness patch): r1 96f5cea 1.9-2.05 x (its
+  # 42.3 solid disc over a 22 collider; its glow, at most 49 % of the disc's change, is left
+  # out), 68a12b7 2.6-2.7 x across (the enlarged paper ball and its dart; its ink outline, 42 %
+  # of the fill's change, is left out too - the fill alone still FAILs), 894b4b8 1.03-1.2 x
+  # (r1's art, the collider grown to its solid disc).
+  extent_roles: [player, projectile, threat, collectible, hazard]
+  solid_share: 0.5
+  min_delta: 24
+  window_colliders: 2
 
 # -- naive.*: the build played by someone who is not perfect ---------------------------------
 naive:

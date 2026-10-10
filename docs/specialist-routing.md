@@ -273,6 +273,31 @@ finding still fails when its part is among the parts the check fails, passes whe
 parts fail, and is `unmeasured` when the check names no failing item to split. Before 1.3.0 every one of these verified the finding: the old rule
 read only the newest report's failing ids. Every other producer keeps that rule.
 
+**A held finding whose check stops applying - a known limitation.** A finding held
+`unmeasured` or `missing` stays open for as long as its check is not measured, and a
+blocker or major one keeps the quality gate BLOCKED and release refusing `open-findings`.
+That is deliberate when a repair hides the check. But a check can also stop applying for a
+legitimate reason - a design-gap cut so the design no longer claims a win (the check is now
+SKIPPED), a platform retarget that drops the viewport the finding was raised on (now
+`missing`) - and then nothing can ever verify the record. **There is no in-run way to close
+it today.** No person's decision closes a gate's finding: a G4 decision re-measures only a
+person's own typed findings (`decision-record` producer), `iterate` sends the build back to
+develop, `pass` does not touch the ledger, and the quality gate's `exceptions` are knowledge
+rule exceptions (the run's knowledge-contract), not ledger records. What a person can do:
+
+- if the check still applies, make it measurable again (restore the viewport or the probe
+  value it reads) so the raising producer re-measures it on a newer build - the only way the
+  record verifies;
+- if it does not, the build cannot be released from that run: end the run (G4 `kill`) or
+  start a new run, whose ledger starts empty - the held record stays in the old run's
+  ledger as evidence.
+
+A person-recorded close (a typed decision naming the finding and why its check no longer
+applies, kept in its history, never counted as a pass nor as evidence strength) is not
+implemented: it needs a ledger status, a decision vocabulary and a gate change of its own,
+larger than the K6 review fixes. Until then, a run that hits this stops, and says which
+finding holds it.
+
 A verified finding of such a producer carries both measurements in `verification`: `before`
 (the last report that failed it - kept on the record as `failed_measurement` - with its
 commit, status, `seq`, content hash and, for playability, the scenario: id, bot version and

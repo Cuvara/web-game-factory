@@ -23,8 +23,9 @@ identifiers, a game pins only its targets' profiles, and a profile bump would fo
 pinned title to re-plan) says how each portal's SDK is recognised in built files and which
 page script CrazyGames and Y8 load; `scripts/wgflib/portal_sdks.py` scans a bundle directory
 or a package archive with it. Verify adds `platform.foreign-sdk:<id>` (the Factory scan, plus
-the template's CrazyGames audit when the checkout ships it - template contract 2.1.0 log
-`PORTAL_AUDITS`, acceptance unchanged) and `platform.sdk-loaded:<id>` (Y8 without
+the template's CrazyGames audit when the checkout ships it - named in the reference's
+`audit`, so the kernel names no portal; template contract 2.1.0 log `PORTAL_AUDITS_DIR`,
+acceptance unchanged) and `platform.sdk-loaded:<id>` (Y8 without
 `WGF_Y8_APP_ID`: BLOCKED for a person, create-before-build), both **not required**: on the
 pin every bundle carries every adapter, so a required check would fail every verification,
 the golden runs' included; a FAIL makes that platform `not-ready`. On contract 1

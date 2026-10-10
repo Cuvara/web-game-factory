@@ -401,6 +401,10 @@ def check_portal_sdks(profiles):
         if loader is not None and not str((loader or {}).get("script") or "").startswith(
                 "https://"):
             ERRORS.append(f"{path}: {pid}: loader.script must be an https URL")
+        audit = entry.get("audit")
+        if audit is not None and not all(str((audit or {}).get(k) or "")
+                                         for k in ("cli", "report", "check")):
+            ERRORS.append(f"{path}: {pid}: audit needs cli, report and check")
     for pid in sorted(set(profiles) - set(portals)):
         NOTES.append(f"{path}: no entry for platform '{pid}': its SDK is not recognised in a "
                      "bundle")

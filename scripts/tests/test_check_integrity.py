@@ -182,7 +182,8 @@ class PlatformCheckTest(unittest.TestCase):
             for check in ("load_artifacts", "load_roles", "check_machines", "check_workflows",
                           "check_bindings", "check_binding_workflows", "check_charters",
                           "check_templates",
-                          "check_platforms", "check_provider_independence",
+                          "check_platforms", "check_portal_sdks",
+                          "check_provider_independence",
                           "check_no_readme_only_dirs", "check_plugin_version",
                           "check_plugin_runtime", "check_template_pin"):
                 setattr(self.ci, check, mock.Mock(return_value=set()))

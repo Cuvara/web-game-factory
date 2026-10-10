@@ -153,6 +153,38 @@ class Scanner(unittest.TestCase):
         self.assertEqual(set(self.reference.portals), profiles)
 
 
+class AtThePin(unittest.TestCase):
+    """What the reference says of the pinned template is true of it: every audit CLI exists,
+    takes --dir and --out, writes its report and reports its result id; every loader script
+    is the URL the template's adapters and build plugin name."""
+
+    def setUp(self):
+        import pinned_template
+        self.root, why = pinned_template.checkout()
+        if self.root is None:
+            self.skipTest(why)
+        self.reference = portal_sdks.load()
+
+    def read(self, relative):
+        with open(os.path.join(self.root, *relative.split("/")), encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_every_named_audit_is_the_pins(self):
+        audits = {pid: entry["audit"] for pid, entry in self.reference.portals.items()
+                  if entry.get("audit")}
+        self.assertTrue(audits)
+        for pid, audit in audits.items():
+            text = self.read(audit["cli"])
+            for needle in ("--dir", "--out", audit["report"], f'"{audit["check"]}"'):
+                self.assertIn(needle, text, (pid, needle))
+
+    def test_every_loader_script_is_the_pins(self):
+        plugin = self.read("scripts/build/game-config-plugin.ts")
+        for pid, entry in self.reference.portals.items():
+            if entry.get("loader"):
+                self.assertIn(f'"{entry["loader"]["script"]}"', plugin, pid)
+
+
 class Guards(Scanner):
     def zip_of(self, label):
         directory = os.path.join(self.scratch, label)

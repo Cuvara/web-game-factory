@@ -257,10 +257,11 @@ def _reference_evidence(reference):
                        if reference.content_hash else {}))
 
 
-def _template_audit(session, pid, bundle):
-    """The template's own audit of this platform's bundle, when the checkout ships one
-    (template_contract.PORTAL_AUDITS): (ran, failing detail or None, evidence)."""
-    audit = contract.PORTAL_AUDITS.get(pid)
+def _template_audit(session, pid, bundle, reference):
+    """The template's own audit of this platform's bundle, when the reference names one and
+    the checkout ships it (core/reference/portal-sdks.yaml `audit`): (ran, failing detail or
+    None, evidence)."""
+    audit = reference.audit(pid)
     if audit is None or not session.exists(*audit["cli"].split("/")):
         return False, None, []
     out_dir = contract.portal_audit_dir(pid)
@@ -287,7 +288,8 @@ def _template_audit(session, pid, bundle):
 def _foreign_sdk(session, pid, bundle, reference, scan, common):
     cid = f"platform.foreign-sdk:{pid}"
     found = portal_sdks.foreign(scan, pid)
-    ran, audit_failure, audit_evidence = _template_audit(session, pid, bundle)
+    ran, audit_failure, audit_evidence = _template_audit(session, pid, bundle, reference)
+    audit = reference.audit(pid) or {}
     evidence = [Evidence("artifact", f"Factory scan of {scan.files} text file(s) in {bundle}/: "
                                      + (portal_sdks.describe(found) if found
                                         else f"portals recognised: "
@@ -295,15 +297,13 @@ def _foreign_sdk(session, pid, bundle, reference, scan, common):
                          path=bundle, data={"scan": "factory", "found": found,
                                             "portals": scan.portals()}),
                 _reference_evidence(reference)] + audit_evidence
-    ran_by = "Factory scan" + (f" and the template's {contract.PORTAL_AUDITS[pid]['cli']}"
-                               if ran else "")
+    ran_by = "Factory scan" + (f" and the template's {audit.get('cli')}" if ran else "")
     if found or audit_failure:
         problems = []
         if found:
             problems.append("Factory scan: " + portal_sdks.describe(found))
         if audit_failure:
-            problems.append(f"template audit {contract.PORTAL_AUDITS[pid]['check']}: "
-                            f"{audit_failure}")
+            problems.append(f"template audit {audit.get('check')}: {audit_failure}")
         return Check(cid, title=FOREIGN_TITLE, status=FAIL, evidence=evidence, **common,
                      message=f"the {pid} bundle carries other portals' SDKs ({ran_by}): "
                              + "; ".join(problems) + ". Not publishable on " + pid

@@ -50,7 +50,9 @@ class Reference:
                 flags = re.I if item.get("ignore_case") else 0
                 signatures.append((str(item["id"]), re.compile(str(item["pattern"]), flags)))
             loader = entry.get("loader") if isinstance(entry.get("loader"), dict) else None
-            self.portals[str(pid)] = {"signatures": signatures, "loader": loader}
+            audit = entry.get("audit") if isinstance(entry.get("audit"), dict) else None
+            self.portals[str(pid)] = {"signatures": signatures, "loader": loader,
+                                      "audit": audit}
 
     @property
     def label(self):
@@ -59,6 +61,11 @@ class Reference:
 
     def loader(self, platform_id):
         return (self.portals.get(platform_id) or {}).get("loader")
+
+    def audit(self, platform_id):
+        """The template's own audit of this platform's bundle ({cli, report, check}), or
+        None."""
+        return (self.portals.get(platform_id) or {}).get("audit")
 
 
 def load(path=None):

@@ -172,7 +172,7 @@ the script its `index.html` must load (CrazyGames always; Y8 only when the build
 
 - `platform.foreign-sdk:<id>` - PASS when the bundle carries no other portal's SDK (for
   generic-web every portal's is foreign). Where the checkout ships the template's own audit
-  for the platform (`template_contract.PORTAL_AUDITS`: `scripts/crazygames-audit.mjs` for
+  for the platform (the reference's `audit`: `scripts/crazygames-audit.mjs` for
   crazygames), it runs too (`--dir <bundle> --out build/portal-audits/<id>`) and its
   `unexpected_dependencies` FAIL fails the check; the message says which ran ("Factory scan"
   or "Factory scan and the template's scripts/crazygames-audit.mjs").

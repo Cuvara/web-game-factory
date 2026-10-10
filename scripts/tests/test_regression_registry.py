@@ -169,9 +169,9 @@ class ShippedRegistry(unittest.TestCase):
                          "advisory")
         self.assertEqual(CHECKS["quality-dimension:ui"]["tier"], "quality")
 
-    def test_every_lesson_is_l1_to_l28_with_a_check_or_a_gap(self):
+    def test_every_lesson_is_l1_to_l29_with_a_check_or_a_gap(self):
         lessons = DATA["lessons"]["lessons"]
-        self.assertEqual([l["id"] for l in lessons], [f"L{i}" for i in range(1, 29)])
+        self.assertEqual([l["id"] for l in lessons], [f"L{i}" for i in range(1, 30)])
         for lesson in lessons:
             if lesson["status"] in ("enforced", "partial"):
                 self.assertTrue(lesson["checks"] and lesson["tests"], lesson["id"])
@@ -777,7 +777,7 @@ class Integrity(unittest.TestCase):
             os.chdir(cwd)
         self.assertEqual(module.ERRORS, [])
         self.assertGreater(len(checks), 100)
-        self.assertEqual(len(lessons), 28)
+        self.assertEqual(len(lessons), 29)
 
 
 if __name__ == "__main__":

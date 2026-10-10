@@ -71,7 +71,9 @@ from . import layouts as geometry_of
 __all__ = ["MODELS_PATH", "VOCABULARY_PATH", "BENCHMARK_PATH", "RULES", "TIER_RULES",
            "MASTERY_MODELS", "load_models", "load_vocabulary", "load_benchmark",
            "family_of_node", "resolve_family", "profile_of", "units_of", "quality_tier",
-           "tier_bars", "check", "content_model_record"]
+           "tier_bars", "check", "content_model_record", "unit_debuts",
+           "introduction_breaches", "introductions_view", "undeclared_units",
+           "introduction_problems"]
 
 MODELS_PATH = os.path.join(paths.REFERENCE, "genre-models.yaml")
 BENCHMARK_PATH = os.path.join(paths.REFERENCE, "quality-benchmark.yaml")
@@ -1470,6 +1472,153 @@ assert _NEEDS_CONTENT <= set(_CHECKS)
 
 def _result(rule_id, measured, breached, note):
     return {"criterion_id": rule_id, "measured": measured, "breached": breached, "note": note}
+
+
+# -- introductions one at a time (design-consistency content.introductions_one_at_a_time) --
+# The same count on the design (here, through consistency.projection `introductions`) and on
+# the built content data file (wgf_sufficiency.audit). What a unit DEBUTS is what it says
+# it introduces: a NON-EMPTY `introduces`, less anything an earlier unit (in index order)
+# already named. An element and the mechanic it stands for (an armored brick, armored
+# bricks) are one introduction, which a unit's `introduces` states once. A unit whose
+# `introduces` is empty or absent is counted by what it shows: every element and mechanic
+# no earlier unit named. On the BUILD each unit is also held to its design unit: an element
+# or mechanic the built unit names that its design unit does not, and no earlier built unit
+# named, is a debut too, whatever `introduces` the build copied (claimed vs actual).
+#
+# Known limitation, accepted: on the DESIGN a non-empty `introduces` is trusted - new
+# elements listed beside it (a boss unit introducing the boss fight, whose shield and weak
+# point are new elements) are not counted there. The build's comparison with its design is
+# what holds a build to the design. After the opening unit, a unit debuts at most one: every
+# new element is first met on its own and practised before it is combined with another new
+# one.
+
+
+def _names(unit, keys=("elements", "mechanics", "introduces")):
+    return {str(x) for key in keys for x in (unit.get(key) or [])
+            if isinstance(unit.get(key), list)}
+
+
+def unit_debuts(units, designed=None):
+    """[(unit, [what it debuts])] over `units` in the order given.
+
+    A unit whose `introduces` lists something debuts what it lists that no earlier unit
+    named; one whose `introduces` is empty or absent debuts every element and mechanic it
+    names that no earlier unit named. A unit that names none of the three debuts nothing it
+    can be held to (None, not []).
+
+    `designed` ({unit id: the design's unit}): the units are a BUILD's, held to their
+    design - a built unit also debuts every element or mechanic it names that its design
+    unit does not and no earlier built unit named (the build added or moved it: claimed vs
+    actual), whatever its `introduces` says."""
+    seen, out = set(), []
+    for unit in units:
+        if not isinstance(unit, dict):
+            continue
+        named = _names(unit)
+        shown = _names(unit, ("elements", "mechanics"))
+        listed = unit.get("introduces") if isinstance(unit.get("introduces"), list) else []
+        declared = bool(listed) or bool(shown)
+        new = (set(map(str, listed)) if listed else shown) - seen
+        design = (designed or {}).get(unit.get("id")) if designed is not None else None
+        if isinstance(design, dict):
+            new |= shown - _names(design) - seen
+        seen |= named
+        out.append((unit, sorted(new) if declared else None))
+    return out
+
+
+def introduction_breaches(units, at=lambda unit: str(unit.get("id")), designed=None):
+    """["<where> debuts a, b"] for every unit after the opening one that debuts more than one
+    element the player has not met. `units` in play (index) order; `designed` as for
+    unit_debuts (a build held to its design)."""
+    out = []
+    for position, (unit, new) in enumerate(unit_debuts(units, designed)):
+        if position and new and len(new) > 1:
+            out.append(f"{at(unit)} debuts {len(new)} elements at once: {', '.join(new)}")
+    return out
+
+
+def undeclared_units(units):
+    """The ids of the units that name no element, mechanic or introduction. What such a unit
+    puts in front of the player is unknown, so what the units after it debut - and which unit
+    opens play - cannot be counted: the count is UNMEASURED, never a pass (a unit naming
+    nothing is never silently skipped, which would let the next unit 'debut' what it met
+    there, or take the opener's exemption)."""
+    return [str(u.get("id")) for u, new in unit_debuts(units) if new is None]
+
+
+def introduction_problems(units, at=lambda unit: str(unit.get("id")), declared=()):
+    """["<where> ..."] for what a unit's `introduces` gets objectively wrong, in play order:
+
+      * an item the unit does not itself contain - not among its own elements or mechanics:
+        a unit cannot introduce what it does not put in front of the player;
+      * an item an earlier unit already named (in its elements, mechanics or introduces): it
+        is not new there, so introducing it again is a re-introduction.
+
+    `declared`: the design's declared element ids (build_spec.content.elements). A unit
+    that states no `elements` list (the field is optional) does not say which elements it
+    shows, so an introduced id that is a declared element is not known to be absent there:
+    its containment is UNVERIFIED and not a breach (the re-introduction check still holds).
+    A unit that does state `elements` is held to them.
+
+    Ids are matched leniently, the way unit kinds are (`_kind`: lowercase, words joined by
+    hyphens, a trailing plural `s` dropped), so `armored-bricks` introduced in a unit whose
+    elements name `armored-brick` is contained, and is the same thing an earlier unit named.
+    The normalisation's limits, known: an `-es` plural is not undone (`boss`/`bosses`,
+    `box`/`boxes` read as two ids, so such a pair would be a false stray), and two ids one
+    trailing `s` apart read as one. An id that is no known mechanic, element or scheduled
+    content at all is content.mechanics_resolve's to refuse. Whether a mechanic is taught
+    WELL - legibly, at the right moment, fun to learn - is not structural, and nothing here
+    judges it."""
+    out, seen = [], set()
+    declared = {_kind(x) for x in declared or ()}
+    for unit in units:
+        if not isinstance(unit, dict):
+            continue
+        own = {_kind(x) for key in ("elements", "mechanics")
+               for x in (unit.get(key) or []) if isinstance(unit.get(key), list)}
+        listed = unit.get("introduces") if isinstance(unit.get("introduces"), list) else []
+        unstated = not isinstance(unit.get("elements"), list)
+        stray = [str(x) for x in listed if _kind(x) not in own
+                 and not (unstated and _kind(x) in declared)]
+        again = [str(x) for x in listed if _kind(x) in seen]
+        if stray:
+            out.append(f"{at(unit)} introduces {', '.join(stray)}, which it does not contain: "
+                       "name it among the unit's own elements or mechanics, or introduce it "
+                       "where it first appears")
+        if again:
+            out.append(f"{at(unit)} introduces {', '.join(again)} again: an earlier unit "
+                       "already named it - introduce each element once, where it first "
+                       "appears")
+        seen |= own | {_kind(x) for x in listed}
+    return out
+
+
+def introductions_view(design):
+    """consistency.projection `introductions`: {"units": n, "over_one": [breach],
+    "debuts": {unit id: [new]}, "undeclared": [unit id]} over the design's units not tiered
+    optional, in index order. `over_one` also carries introduction_problems (an introduction
+    the unit does not contain, or one an earlier unit already named). A design with no units holds the rule and says so (`units` 0).
+    A unit that names nothing makes the count unmeasured, which the rule - like every rule
+    that cannot be checked - records as a breach naming the units to complete."""
+    units = [u for u in units_of(design) if u.get("tier") != "optional"]
+    debuts = unit_debuts(units)
+    undeclared = undeclared_units(units)
+    where = lambda u: f"build_spec.content.units[{u.get('id')}]"  # noqa: E731
+    over_one = [] if undeclared else introduction_breaches(units, at=where)
+    # What a non-empty `introduces` is trusted with must at least be true of the unit.
+    catalogue = ((design or {}).get("build_spec") or {}).get("content") or {}
+    declared = [e.get("id") for e in (catalogue.get("elements") or [])
+                if isinstance(e, dict) and e.get("id")] if isinstance(catalogue, dict) else []
+    over_one += introduction_problems(units, at=where, declared=declared)
+    if undeclared:
+        over_one = [f"build_spec.content.units[{', '.join(undeclared[:8])}"
+                    + (f" and {len(undeclared) - 8} more" if len(undeclared) > 8 else "")
+                    + "] name no element, mechanic or introduction: what each unit debuts "
+                    "cannot be counted (unmeasured, never a pass) - name each unit's elements "
+                    "and mechanics"]
+    return {"units": len(units), "over_one": over_one, "undeclared": undeclared,
+            "debuts": {str(u.get("id")): new for u, new in debuts if new}}
 
 
 def check(design, strategy=None, models=None, vocabulary=None, benchmark=None):

@@ -374,7 +374,7 @@ def lesson_problems(lessons, checks, root=None, evidence=None, runtime=False):
                             "(`held_by`)")
         text = " ".join(str(lesson.get(k) or "") for k in
                         ("title", "lesson", "gap", "held_by", "problem", "root_cause",
-                         "reason")).lower()
+                         "principle", "anti_pattern", "reason")).lower()
         for name in names:
             if name.lower() in text:
                 problems.append(f"{at}: names the game {name!r} - core names no specific "

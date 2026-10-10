@@ -13,8 +13,8 @@ rules that apply to it.
 
 | Piece | Where |
 |---|---|
-| Knowledge model (rules) | `core/reference/lessons.yaml` 2.0.0 |
-| Enforcement vocabulary, where each result is read | `core/reference/check-tiers.yaml` 1.1.0 (`tiers`, `status_at`) |
+| Knowledge model (rules) | `core/reference/lessons.yaml` 2.1.0 |
+| Enforcement vocabulary, where each result is read | `core/reference/check-tiers.yaml` 1.3.0 (`tiers`, `status_at`) |
 | Instance evidence (which game, run, fix, rerun) | `workspace/lessons/evidence.yaml` 2.0.0 |
 | Model, integrity rules, exceptions | `scripts/wgf_knowledge/model.py` |
 | Applicability resolver | `scripts/wgf_knowledge/resolve.py` |
@@ -43,6 +43,7 @@ Each lesson in `lessons.yaml` carries:
 | `tests` | `{catches, passes, generalizes}`: the check fails the defect; it passes the fixed or accepted build; it catches the defect in a game other than the one it was learned from. |
 | `gap`, `held_by` | What is not held yet; where a process lesson is written down. |
 | `level` | Optional, and only to declare a level **stronger** than the derived one. |
+| `domain`, `principle`, `anti_pattern`, `classification`, `revision` | 2.1.0 (K5, below): what part of a game it is about, the reusable why, what violating it looks like, how strongly its evidence lets it speak, and its revision. |
 
 The source game, run, issue, reviewer and the evidence legs live in
 `workspace/lessons/evidence.yaml`, keyed by lesson id: `source` (`run`, `review`,
@@ -68,7 +69,7 @@ the check's tier moves first, by a new version of its source file.
 
 | Level | Lessons |
 |---|---|
-| blocking (6) | L3, L5, L10, L12, L15, L22 |
+| blocking (7) | L3, L5, L10, L12, L15, L22, L29 |
 | required (14) | L1, L2, L4, L7, L11, L13, L14, L20, L23, L24, L25, L26, L27, L28 |
 | experimental (6) | L8, L9, L16, L17, L18, L21 |
 | process (2) | L6, L19 |
@@ -377,8 +378,8 @@ nothing.
 A `new-game` run is held to the knowledge it started under (quality-policy 1.4.0 rule 8,
 workflow 17, gates 1.7.0).
 
-**At the start.** The run records `params.quality.knowledge` - `{"lessons": "lessons@2.0.1",
-"check-tiers": "check-tiers@1.1.0"}`, the version of every file under the policy's
+**At the start.** The run records `params.quality.knowledge` - `{"lessons": "lessons@2.1.0",
+"check-tiers": "check-tiers@1.3.0"}`, the version of every file under the policy's
 `knowledge` - and `params.quality.factory`, the Factory's `VERSION` and git commit (null
 in an installed runtime). Both are corroborated against `WORKFLOW_STARTED` like the rest of
 the snapshot and reported by `wgf status` (`quality.knowledge`, `quality.factory`), so two
@@ -506,11 +507,183 @@ kart - regressed (the check fails) and fixed (it passes).
 Every row lists its budget as `requires human budget approval`, and `starts_run: false`:
 building it imports no engine and starts nothing.
 
+## Cross-session transfer (K5)
+
+A lesson learned in one session reaches a later, unrelated one only through the Factory:
+resolved by applicability, pinned in the run's contract at its revision, given to the
+design agent, applied with a recorded decision, held by checks on the design and on the
+built content, and shown at the quality gate. No prompt is replayed and no game's content
+is copied.
+
+**Knowledge model 2.1.0.** Every lesson of a 2.1.0 file carries five more fields, held by
+integrity (`model.lesson_problems`, `model.file_problems`):
+
+| Field | Meaning |
+|---|---|
+| `domain` | One of `lessons.yaml` `domains` (game-design, level-design, difficulty, pacing, progression, player-feedback, game-feel, ux, ui, content, replayability, art-direction, audio, vfx, performance, accessibility, technical, process). A process lesson, and only one, is `process`. Orthogonal to `category`, the scorecard line compliance counts on. |
+| `principle` | The reusable why, game-agnostic ("X, because Y"). |
+| `anti_pattern` | What violating it looks like, game-agnostic. |
+| `classification` | `OBSERVATION`, `HEURISTIC`, `RECOMMENDATION`, `VALIDATED_PRINCIPLE`, `REQUIRED` or `BLOCKING` - consistent with the level the checks derive, never stronger or weaker: BLOCKING exactly when blocking, REQUIRED exactly when required, RECOMMENDATION a recommended rule, VALIDATED_PRINCIPLE a validated lesson that is not blocking or required, OBSERVATION or HEURISTIC an experimental rule or a process lesson. Subjective evidence never derives blocking or required (K4), so it is never classified so. |
+| `revision` | An integer from 1. A rule version is `<id>@r<revision>`. |
+
+L1-L28 were backfilled mechanically (domain from category and text, classification from
+the derived level, revision 1); no rule changed. The base comparison of check-integrity also
+fails an entry that changed against the base without its `revision` rising, or a revision
+that fell (`model.weakening_problems`; a base before 2.1.0 introduces revisions). Promote
+drafts the 2.1.0 fields (the candidate's `domain`, `principle` and `anti_pattern`, else
+drafted from its category, summary and symptom for review), and a candidate may propose
+several checks (`proposed_checks`: the same rule held on the design and on the build); the
+level is derived over all of them.
+
+**The snapshot.** knowledge-contract 1.2.0 records, for every rule applicable or not, its
+`revision`, `version` and `digest` (sha256 of the canonical lessons.yaml entry,
+`model.lesson_digest`): a run pinned under `L29@r6` keeps exactly that text when its
+contract is made again after the Factory moves on, and a run started after the move gets
+the new one (`test_knowledge_transfer` Versioning). It also records the design's `trace`.
+The checks are pinned like the rules: the design step judges a design by the run's pinned
+`design-consistency-rules.yaml` and content-sufficiency a build by the run's pinned
+`content-sufficiency.yaml` (the live files only for a run that pinned none - every run
+started before K2 on 2026-10-08 pinned nothing, and is judged by the live files), so a run
+that pinned its files before a rule or check existed never meets it - not on resume, not when design is
+entered again (`test_knowledge_transfer` PinnedBefore). Pins fail closed
+(`test_knowledge_pins`, through the real design and content-sufficiency steps, for the
+rules and the quality benchmark): a pinned file that is gone, or a pinned copy edited or substituted (the live newer file copied over it),
+BLOCKS the step naming the file and both digests; the recorded digest cannot be swapped to
+match a substituted copy - the engine refuses a run whose params differ from the ones
+WORKFLOW_STARTED recorded, and a run whose log records no params can claim no pins
+(`pinned_references` is a guarded param); and a blocked step never satisfies a rule - compliance reads its
+check UNMEASURED and holds the release.
+
+**The design request.** The `agent` design author's request carries `knowledge`: the
+resolver's output over the facets known before the design (family, platforms), read from
+the run's PINNED knowledge (`wgf_design/knowledge.py provisional`), each rule with id,
+revision, version, domain, level, classification, principle, anti-pattern, checks, and
+`trace: true` for the design domains (level-design, game-design, pacing, difficulty,
+progression, content), plus an instruction; the prompt gains a short section asking for a
+decision trace. Not the whole registry: process lessons and rules a known facet excludes are
+not given.
+
+**The decision trace.** game-design 1.16.0 `knowledge_applied`: `[{rule, revision, applied,
+where (unit ids), how, verified_by (the rule's checks)}]`. A trace is a claim. The design
+rule `knowledge.trace_matches_design` (blocking, listed last in design-consistency-rules
+2.2.0 because it reads every other result) breaches an entry naming a rule the design was
+not given, a revision it was not given, units the design does not have, checks that are not
+the rule's, or `applied: true` while one of the rule's own design-consistency checks is
+breached on this design; an absent trace is not a breach, a trace with no knowledge to
+check it against is. The contract records `trace: {present, applied, contradicted}`, and
+quality-report 1.4.0 compliance shows each rule's trace entry beside its measured status. A
+claim never makes a rule SATISFIED: only its checks do.
+
+**L29, the first transferred principle.** After the opening unit, a unit introduces at most
+one element the player has not met (`core/craft/content-and-level-design.md`). Held by
+`design-consistency:content.introductions_one_at_a_time` (the design's units, in index
+order) and `content-sufficiency:content.introductions_one_at_a_time` (the BUILT units.json,
+the same count; a design that claims compliance and a build that breaks it FAILs). What a
+unit debuts is what its non-empty `introduces` lists, less what an earlier unit named - an
+element and the mechanic it stands for (an armored brick, armored bricks) are one
+introduction, stated once; a unit whose `introduces` is empty or absent is counted by every
+element and mechanic it shows that no earlier unit named. On the build (content-sufficiency
+1.6.0) each unit is also held to its design unit: an element or mechanic the built unit
+names that its design unit does not, and no earlier built unit named, is a debut whatever
+`introduces` the build copied - a build that shows an element a unit early FAILs. Known,
+accepted limitation: on the DESIGN a non-empty `introduces` is trusted, and new elements
+listed beside it are not counted there (the 2D validation design's boss level introduces
+the boss fight, whose shield and weak point are new elements); the build's comparison with
+its design is what holds a build to the design. What a non-empty `introduces` is trusted
+with must still be structurally true (design-consistency 2.4.0, the same rule): an item the
+unit does not itself contain among its elements or mechanics, or one an earlier unit already
+named (a re-introduction), breaches - ids matched as unit kinds are (`content._kind`: a
+trailing plural `s` dropped, so `armored-bricks` is contained beside `armored-brick`); an
+unknown id is `content.mechanics_resolve`'s. Unverified, and never a breach (2.4.1): a unit
+that states no `elements` list - the field is optional, and the agent-written 2D validation
+design states none - introducing a declared element (build_spec.content.elements); whether it
+shows it there is not known. A unit that lists its elements is held to them, and an id
+neither listed nor declared is a stray either way. The normalisation's limits: an `-es`
+plural is not undone (`boss`/`bosses`, `box`/`boxes` read as two ids, a false stray), and two
+ids one trailing `s` apart read as one. Whether an introduction is taught well stays
+unverified. A unit that names
+no element, mechanic or introduction is never skipped - skipped, the next unit would falsely
+debut what it met there - so any such unit leaves the count UNMEASURED: a breach on the
+design (a rule that cannot be checked is never passed), SKIPPED on the build (never a
+pass). Both checks are hard, so L29 derives **blocking** and is classified BLOCKING. Its
+grounding is observed, never measured: both human-accepted validation games satisfy it,
+recorded in `workspace/lessons/evidence.yaml` as a `research-principle` source. As written,
+with no mapping, the 2D validation run's game-design v4 passes the design rule, and the
+content data both games ship later (2D 0db72b6, 3D 43c08e2) pass the build check judged
+against themselves (each its own design). The 2D content data judged against that design v4
+does NOT pass: the build renames the design's elements (`wide-capsule` for `wide-paddle`,
+`brick` for `standard-brick`, ...), so the build check reads new debuts at w1-l2, w1-l3,
+w1-l8 and w4-l3 - and `content.drift`, a hard check already, fails the same pair on all 32
+units; L29 adds a second report there, not a new block. The builds accepted at G4 (96f5cea,
+c340631) predate those lists and pass only through `test_lesson_l29`'s reading of them (the
+2D game's layout symbols and layout keys named by its own tuning sections, the 3D game's
+counted course features). The genre seed
+author debuted two mechanics in its second teaching unit for five families (puzzle,
+platformer, shooter, strategy, simulation); it now introduces one mechanic per MVP unit -
+the opener the first, then teach, breather, twist, then test units, never the climax or the
+last MVP unit - and the opener takes only what the family's MVP has no unit for (two, for
+racing, survival and simulation).
+
+**The transfer test** (`scripts/tests/test_knowledge_transfer.py`, KNOWLEDGE category). Each
+session is a separate process (`scripts/tests/fixtures/transfer/session.py`) with its own
+`WGF_PROJECT_DIR` and a scrubbed environment, driving the shipped workflow through the real
+engine and gates in the quality fixture world:
+
+| Session | What it shows |
+|---|---|
+| A (the Factory before L29, `prelesson.py`) | a 2D puzzle-like build debuts two elements in one unit; the fixture bot's naive clear rate for it falls against the accepted build's and `naive.clear_rate` FAILs on that build; triage routes it; the encounter designer reports the systemic candidate on a build the gate fails again; splitting the introductions passes. `wgf knowledge ingest` stores it MEASURED; `wgf knowledge promote` (once the check is implemented) drafts the lesson, which is the shipped L29 but for a person's completion - the title and problem stated generally, the tests, the date, the revision its later edits raised - and its patch applies. |
+| B (fresh) | a 3D racer designed by the real design step through the agent author; its designer reads only its request, debuts two elements at once in its own plan, and paces and records its trace only when the request carries the principle. L29 is in its contract at its revision with why it applies, in its request, in its design's trace; both design rules hold; content-sufficiency passes; compliance is SATISFIED with the trace beside it. It opened no file of Session A's, and nothing of A's is in its environment, argv or project. |
+| Control | B on the Factory before L29: the request lacks it, the naive plan ships, nothing holds it. |
+| Held | a violating designer breaches the rule and is repaired in the design step's repair round; a violating build fails content-sufficiency (compliance RELEASE_BLOCKED on L29) and the level designer's visit repairs it - listing the early elements in `introduces`, or showing them with `introduces` left as the design's; a designer that claims the rule applied while breaking it breaches the trace rule. |
+| Held to its design | the designer states each unit's one introduction; the build shows a later element at such a unit with `introduces` copied from the design - only the comparison of each built unit with its design unit catches it (with the comparison disabled the test fails): content-sufficiency FAIL naming the unit, compliance RELEASE_BLOCKED on L29, repaired PASS. |
+| C (cumulative) | a fresh session held to L29 and to an earlier, independently validated lesson, L20 (its check content.structure): both in the contract at their revisions and in the design request; a duplicated level fails L20's check while L29 still passes; repaired, both are SATISFIED. L20's own defect - the judge reading the wrong place - is a Factory bug no game can re-enact; what is exercised is its check holding a build beside L29's. |
+
+Removing retrieval (the request's knowledge resolved to nothing) or injection (the request
+without `knowledge`) makes Session B's test fail: the designer then ships its naive plan, the
+design rule breaches it, and the run never reaches G4.
+
+**What is fixture and what is real.** The engine, every gate, the design step, the
+knowledge step, ingest and promote are real. The developer, the bot (its naive clear rates
+included), the assets and the verify step are the quality suite's fixtures, and the
+designer is a deterministic stand-in for an agent host. Session A's clear-rate failure is a
+fixture measurement, and a tautological one: the fixture bot fails exactly the units
+`unit_debuts` flags as debuting two elements - the same count the new checks make. It proves
+the learning pipeline (a real gate's measured failure, triage, a measured candidate, ingest,
+promote), not the principle - the principle rests on the real games' content and the craft.
+The trace is held against the knowledge the author's request carried (`given_knowledge`),
+never against knowledge resolved again from the finished design.
+
+**A real fresh session (2026-10-08).** The test above is deterministic. Once, by hand, the same
+question was asked of a real agent host: two fresh projects (their own `WGF_PROJECT_DIR`, no run
+or file of Session A's, no conversation), one brief - a 2D platformer with springs, crumbling
+platforms, moving logs, spikes and wind - and `wgf new-game "IDEA"`, with only the design
+author a real headless agent session (`--no-session-persistence`, a USD 8 cap) and the run
+held at G3, so nothing was built:
+
+| Factory | What happened |
+|---|---|
+| this branch (lessons 2.1.0) | The request carried the 27 rules that apply, L29 with its principle, anti-pattern and checks. The agent folded the basic hazards into the opener, debuted one element in each of eight later levels and none in the climaxes, and traced L29 to those eight levels and both checks. The design passed (`content.introductions_one_at_a_time`: none debuts more than one; `knowledge.trace_matches_design`: 13 entries, none contradicted); the knowledge-contract pins L29 at its revision and digest, `why_applicable: [global]`, blocking, with the trace. |
+| main before K5 (lessons 2.0.1) | The first draft also paced one element per level but one (its second level debuted two). No trace. The control run itself ended FAILED at the design step - it did not reach G3. |
+
+What it shows: the knowledge reached a session that knew nothing of where it came from,
+through the resolver, the request and the pinned contract, and was applied, recorded and
+checked. What it does not show: a better game - a capable model paced this brief almost as
+well unprompted; L29's value is that a violation cannot pass. Nothing was built or played.
+The experiment also found two defects of the agent author, fixed here: a foreign-mechanic
+breach named only the lexicon id (`gate`), not the design mechanic it was read from
+("checkpoint flags"), and a repair round's problems were only inside a request of hundreds of
+kilobytes that agents did not read whole - they are now also in the prompt.
+
 ## What is not here yet
 
 This is units K1 (the model and resolver), K2 (the run: the snapshot, the pins, the
-`knowledge-contract` step and `wgf resume --except`), K3 (compliance, above) and K4 (the
+`knowledge-contract` step and `wgf resume --except`), K3 (compliance, above), K4 (the
 learning loop and the plugin surfaces: the `knowledge` skill and `/wgf-knowledge`, adapter
-binding 1.13.0) of the learning-enforcement design. Not yet: the review brief asking the
+binding 1.13.0) and K5 (cross-session transfer, above) of the learning-enforcement design.
+K5 does not yet give the trace to authors other than the agent author (the built-in
+archetype and seed authors record none), nor resolve the request's knowledge over render
+and tier (undetermined before the design, which never excludes a rule). A draft composed
+again without an author session (a resumed execution of an accepted draft) has its trace
+held against knowledge resolved over the design's own family. Not yet: the review brief asking the
 reviewer for `lesson_candidates`, a QA-report source, and `wgf decide <run> --lesson` for the
 person at G4.

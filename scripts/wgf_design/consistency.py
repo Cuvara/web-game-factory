@@ -20,6 +20,14 @@ The rules are written against a projection, not the raw artifact:
     adopted.*                 game-design.existing_content - what an adopted repository
                               already ships - and what the design plans fewer of
                               (wgf_design/existing.py)
+    knowledge.*               the design's decision trace (`knowledge_applied`) against the
+                              Factory knowledge the author was given and the results of every
+                              rule evaluated before it (wgf_design/knowledge.py trace_view): a
+                              rule reading `knowledge.` is evaluated after the rules listed
+                              before it, so the ruleset lists it last
+    introductions.*           what each content unit debuts - the elements, mechanics and
+                              introductions no earlier unit named - and every unit after the
+                              opening one that debuts more than one (content.introductions_view)
 
 A rule that reads `platform.*` is evaluated once per required platform and is breached if it
 is breached on any of them. A platform whose profile holds no value for the rule (no ads,
@@ -33,6 +41,7 @@ import os
 from wgflib import mechanics, paths
 
 from . import commitments as brief_commitments
+from . import content as content_rules
 from . import existing
 from wgflib.criteria import MISSING, Unevaluable, evaluate_named, resolve
 from wgflib.yamllite import load_file
@@ -41,6 +50,8 @@ __all__ = ["RULES_PATH", "load_rules", "load_lexicon", "load_commitments", "proj
            "concept_view", "evaluate", "breach_problems"]
 
 RULES_PATH = os.path.join(paths.REFERENCE, "design-consistency-rules.yaml")
+# The same file relative to the Factory root: what a run pins (wgflib.workflow.references).
+RULES_FILE = "core/reference/design-consistency-rules.yaml"
 
 
 def load_rules(path=None):
@@ -163,6 +174,14 @@ def concept_view(design, strategy, lexicon=None):
     for action in actions:
         core_ids |= mechanics.ids_in(action.get("action", ""), lexicon)
     foreign = sorted(i for i in core_ids - implied if mechanics.kind(i, lexicon) == "defining")
+    # Where each foreign id was read: the design's own mechanics and controls, by id and name,
+    # so an author can find it - the id is the lexicon's word, often not one the design used.
+    sources = {}
+    for i in foreign:
+        sources[i] = [f"mechanic {m.get('id')} ({m.get('name')!r})" for m in built
+                      if is_core(m) and i in ids[m.get("id")]] + [
+            f"control {a.get('action')!r}" for a in actions
+            if i in mechanics.ids_in(a.get("action", ""), lexicon)]
     words = mechanics.stems(allowed_text)
     for m in built:
         own = mechanics.stems(f"{m.get('id', '')} {m.get('name', '')}")
@@ -184,10 +203,12 @@ def concept_view(design, strategy, lexicon=None):
             "implied": sorted(implied),
             "uncarried": sorted(wanted - carried),
             "foreign": foreign,
+            "foreign_sources": sources,
             "pillars_asked": asked, "pillars_unrealized": unrealized}
 
 
-def projection(design, strategy, platform=None, lexicon=None, concept=None, stated=None):
+def projection(design, strategy, platform=None, lexicon=None, concept=None, stated=None,
+               trace=None):
     spec = design.get("build_spec") or {}
     cost = sum(item.get("est_cost", 0) for item in (spec.get("assets") or []) + (spec.get("audio") or []))
     return {
@@ -202,6 +223,8 @@ def projection(design, strategy, platform=None, lexicon=None, concept=None, stat
         "concept": concept if concept is not None else concept_view(design, strategy, lexicon),
         "commitments": stated if stated is not None else brief_commitments.view(design, strategy),
         "adopted": existing.floor_view(design),
+        "introductions": content_rules.introductions_view(design),
+        "knowledge": trace if trace is not None else {"present": False, "problems": []},
     }
 
 
@@ -230,8 +253,10 @@ def _measured(value):
     return value
 
 
-def evaluate(design, strategy, platforms, evaluated_at, rules=None):
-    """Return the `consistency` block for `design`."""
+def evaluate(design, strategy, platforms, evaluated_at, rules=None, knowledge=None):
+    """Return the `consistency` block for `design`. `knowledge`: the Factory knowledge the
+    author was given (wgf_design/knowledge.py provisional), which the design's decision
+    trace is held against; None when it could not be read."""
     ruleset = rules or load_rules()
     concept = concept_view(design, strategy, load_lexicon(ruleset))
     vocabulary = load_commitments(ruleset)
@@ -243,9 +268,14 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None):
 
     for rule in ruleset["rules"]:
         reads_platform = any(p.startswith("platform.") for p in _paths(rule["when"]))
+        trace = None
+        if any(p.startswith("knowledge.") for p in _paths(rule["when"])):
+            # The trace is judged on the results of every rule evaluated before it.
+            from . import knowledge as design_knowledge
+            trace = design_knowledge.trace_view(design, knowledge, results)
         if not reads_platform:
             result = _evaluate_once(rule, projection(design, strategy, concept=concept,
-                                                     stated=stated))
+                                                     stated=stated, trace=trace))
         else:
             per_platform, notes, breached = [], [], False
             for platform in required:
@@ -277,6 +307,18 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None):
             result["note"] = "stated: " + "; ".join(stated["stated"]) + (
                 f". Not binding at tier {stated.get('tier') or 'unstated'}, owed by the "
                 f"release: " + "; ".join(stated["deferred"]) if stated.get("deferred") else "")
+        if rule["id"] == "content.introductions_one_at_a_time" and not result["breached"] \
+                and not result.get("note"):
+            view = content_rules.introductions_view(design)
+            result["note"] = (f"{view['units']} unit(s); after the opening one, none debuts more "
+                              "than one element" if view["units"] else
+                              "the design lists no content units: nothing debuts, the rule holds")
+        if trace is not None and not result.get("note"):
+            result["note"] = ("no decision trace (knowledge_applied): nothing claimed, nothing "
+                              "to contradict" if not trace["present"] else
+                              f"{trace['entries']} trace entr(ies), {len(trace['applied'])} "
+                              f"applied" + (f"; contradicted: {', '.join(trace['contradicted'])}"
+                                            if trace["contradicted"] else ""))
         if result.get("note") is None:
             result.pop("note", None)
         results.append(result)

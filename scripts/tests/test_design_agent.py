@@ -291,6 +291,19 @@ class TheModuleStillJudges(AgentCase):
         self.assertTrue(repair["schema"].endswith("game-design.schema.json"))
         self.assertTrue(os.path.isfile(repair["schema"]))
 
+    def test_the_repair_prompt_itself_lists_the_problems(self):
+        """K5 fresh-session experiment: the request holding `repair` is hundreds of kilobytes
+        and real agents never found the key; the prompt names the problems itself."""
+        config = self.config("repairs")
+        config["design"]["agent"]["argv"].append("{prompt}")
+        result = self.run_design(config)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        with open(os.path.join(self.scratch, "run", "design", "argv.json"),
+                  encoding="utf-8") as handle:
+            prompt = json.load(handle)[0]
+        self.assertIn("The problems to fix: (1) ", prompt)
+        self.assertIn("primary_input", prompt.split("The problems to fix:")[1])
+
     def test_a_draft_that_states_no_production_art_is_shown_what_to_state(self):
         """The production art and UI are held like the experience contract: an agent draft that
         leaves the developer to draw cubes is shown the named problems, and the bars and the

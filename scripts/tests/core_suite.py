@@ -32,7 +32,10 @@ SUITE = {
     "KNOWLEDGE": ["test_knowledge_firewall", "test_knowledge_generalization",
                   "test_knowledge_ingest", "test_knowledge_generations",
                   "test_knowledge_model", "test_knowledge_resolve",
-                  "test_knowledge_exceptions", "test_knowledge_compliance"],
+                  "test_knowledge_exceptions", "test_knowledge_compliance",
+                  # K5: the decision trace, L29's own tests.
+                  "test_knowledge_trace", "test_lesson_l29", "test_knowledge_transfer",
+                  "test_knowledge_pins"],
     "PROCESS CLEANUP": ["test_core_process"],
     "SECURITY": ["test_core_security"],
 }

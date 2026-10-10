@@ -58,6 +58,8 @@ SUBJECTIVE = ("review-report",)
 MEASURING = ("quality-report", "triage-report")
 SCHEMA = "core/artifacts/shared/quality-finding.schema.json"
 ACTIVE = ("active", "validated")
+# Optional candidate fields of knowledge model 2.1.0, kept on the record when reported.
+MODEL_2_1 = ("domain", "principle", "anti_pattern", "proposed_checks")
 
 HEADER = """\
 # Lesson candidates: what runs observed, collected by `wgf knowledge ingest <run-id>`.
@@ -506,7 +508,7 @@ def ingest(doc, observations, lessons, now=None):
             if normalize(cause) not in {normalize(c) for c in causes}:
                 # Another reporter's cause for the same lesson: kept, never dropped.
                 stored["other_root_causes"] = list(stored.get("other_root_causes") or []) + [cause]
-            for field in ("symptom", "systemic", "proposed_level", "proposed_scope"):
+            for field in ("symptom", "systemic", "proposed_level", "proposed_scope") + MODEL_2_1:
                 if stored.get(field) is None and candidate.get(field) is not None:
                     stored[field] = candidate[field]
             summary["merged"].append(stored["id"])
@@ -520,6 +522,10 @@ def ingest(doc, observations, lessons, now=None):
                   "proposed_scope": candidate.get("proposed_scope"),
                   "basis": source["basis"], "duplicate_of": pending.get(check) if check else None,
                   "related_lessons": related, "rejected": None, "sources": [source]}
+        # 2.1.0 (K5): the domain, principle and anti-pattern a reporter states, and the
+        # checks that would hold it at more than one place - only when stated.
+        record.update({field: candidate[field] for field in MODEL_2_1
+                       if candidate.get(field) is not None})
         record["basis"] = basis_of(record)
         doc["candidates"].append(record)
         by_key[key] = record

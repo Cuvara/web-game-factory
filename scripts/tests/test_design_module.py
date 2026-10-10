@@ -445,6 +445,20 @@ class ConceptFidelity(unittest.TestCase):
         view = self.view(design, strategy)
         self.assertEqual((view["uncarried"], view["foreign"]), ([], []))
 
+    def test_a_foreign_mechanic_names_where_the_design_built_it(self):
+        # K5 fresh-session experiment (2026-10-08): "Spikes, falls, lives and checkpoint
+        # flags" read as the lexicon's `gate`; the author was told only "['gate']", searched
+        # its draft for the word gate for three repair rounds and never found the checkpoint.
+        strategy = {"one_liner": "run and jump past spikes"}
+        design = concept_design(
+            [{"id": "hazards", "name": "Spikes, falls, lives and checkpoint flags"}],
+            [{"id": "jump", "action": "Jump", "mechanic": "hazards"}],
+            units=[["hazards"]])
+        view = self.view(design, strategy)
+        self.assertIn("gate", view["foreign"])
+        self.assertEqual(view["foreign_sources"]["gate"],
+                         ["mechanic hazards ('Spikes, falls, lives and checkpoint flags')"])
+
     def test_words_are_matched_whole(self):
         # "gateway" is not a gate; "seven-column" is a column.
         self.assertEqual(mechanics.ids_in("a gateway to a seven-column track", self.LEXICON),

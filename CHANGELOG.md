@@ -9,6 +9,44 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Cross-session quality transfer, and the first transferred principle (L29)** (lessons
+2.1.0, check-tiers 1.3.0, design-consistency-rules 2.4.1, content-sufficiency 1.6.0,
+game-design 1.16.0, knowledge-contract 1.2.0, quality-report 1.4.0,
+[docs/knowledge-enforcement.md](docs/knowledge-enforcement.md) "Cross-session transfer").
+Every lesson now carries a domain, a principle, an anti-pattern, a classification consistent
+with its derived level, and a revision; check-integrity fails an entry changed without its
+revision rising. A run's contract pins each rule's revision and entry digest. The design
+agent is given the applicable rules, structured, from the run's pinned knowledge, and records
+a decision trace (`knowledge_applied`) that a new blocking design rule
+(`knowledge.trace_matches_design`) holds against the design; compliance shows the trace
+beside each rule's measured status. **L29** (blocking): after the opening unit, a unit
+introduces at most one element the player has not met - held on the design
+(`content.introductions_one_at_a_time`) and on the built content data file (same id). **A
+design that debuts two never-seen elements in one unit after the first now fails the design
+step** (an agent author is asked to repair it), and a build whose units.json does so fails
+content-sufficiency; a units.json that names no unit's elements leaves the check
+unmeasured, which a release-tier quality gate holds. The genre seed author's second teaching
+unit debuted two mechanics for five families; it now introduces one mechanic per MVP unit
+(the opener takes only what the MVP has no unit for). A unit naming no element, mechanic or
+introduction leaves the count unmeasured on the design and the build, never a pass. Existing artifacts stay
+valid (every schema change is additive). A run is held to the rule files it pinned when it
+started: the design step reads the run's pinned design-consistency-rules.yaml and
+content-sufficiency its pinned content-sufficiency.yaml, so a run that pinned them before
+this change never meets the new design rules or the new build check - not on resume, not
+when design is entered again. A run that pinned nothing - every run started before K2 on
+2026-10-08, the two paused validation runs among them - is judged by the live files: on
+resume it meets the new rules and check. A unit debuts what its non-empty `introduces` lists
+(an element and the mechanic it stands for are one introduction); a unit whose `introduces`
+is empty or absent is counted by every element and mechanic it shows for the first time, and
+on the build (content-sufficiency 1.6.0, design-consistency-rules 2.3.0) every built unit is
+also held to its design unit - an element the build shows a unit early is a debut there,
+whatever `introduces` it copied. On the design a non-empty `introduces` is trusted; new
+elements beside it are not counted there (documented, accepted) - but what it lists must be
+true of its unit (design-consistency-rules 2.4.0): an introduced item the unit does not
+contain, or one an earlier unit already named, breaches; a unit that states no `elements`
+list introducing a declared element is unverified, never a breach (2.4.1). A pinned rule file that is gone,
+edited or substituted blocks the design and content-sufficiency steps.
+
 **A run is held to its knowledge, and a person's exception is the run's own record**
 (quality-policy 1.4.0 rule 8, new-game 17, gates 1.7.0, knowledge-contract 1.1.0,
 [docs/knowledge-enforcement.md](docs/knowledge-enforcement.md)). A new run records the

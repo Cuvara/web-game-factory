@@ -24,6 +24,14 @@ What is drafted, from the candidate's evidence:
 | subjective (review comments, judgment),   | gap / candidate: experimental, the proposed check |
 | or a check nothing classifies             | named in `gap` - guidance that never blocks       |
 
+Against a 2.1.0 lessons file the draft carries the model's 2.1.0 fields: `domain` (the
+candidate's, `--domain`, else the one its category usually is - DOMAIN_OF_CATEGORY),
+`principle` and `anti_pattern` (the candidate's, else its summary and its symptom, for the
+person to sharpen in review), `classification` (the drafted level's: BLOCKING, REQUIRED,
+RECOMMENDATION, or OBSERVATION for an experimental draft - never stronger than the evidence)
+and `revision: 1`. A candidate may propose several checks (`proposed_checks`, e.g. the same
+rule held on the design and on the build); the level is derived over all of them.
+
 Refused (PromoteRefused, exit 1): a rejected or already promoted candidate; one its reporter
 said is not systemic; a blocking or required proposal on subjective evidence - a review
 comment never becomes a rule that holds a build by itself; a blocking or required proposal
@@ -44,6 +52,15 @@ from . import model
 LESSONS_PATH = "core/reference/lessons.yaml"
 EVIDENCE_PATH = "workspace/lessons/evidence.yaml"
 STRONG = ("blocking", "required")
+# The domain a lesson of a scorecard line usually is (2.1.0), when the candidate names none.
+DOMAIN_OF_CATEGORY = {
+    "gameplay": "game-design", "feel": "game-feel", "level_design": "level-design",
+    "art_2d": "art-direction", "art_3d": "art-direction", "ui_ux": "ui", "audio": "audio",
+    "performance": "performance", "browser": "ux", "technical": "technical",
+    "accessibility": "accessibility", "platform_compliance": "technical",
+    "publishing_readiness": "technical", "process": "process"}
+CLASSIFICATION_OF_LEVEL = {"blocking": "BLOCKING", "required": "REQUIRED",
+                           "recommended": "RECOMMENDATION", "experimental": "OBSERVATION"}
 
 
 class PromoteRefused(Exception):
@@ -113,6 +130,12 @@ def _flow(value):
 def _entry_text(entry):
     out = [f"  - id: {entry['id']}", f"    title: {json.dumps(entry['title'])}",
            f"    category: {entry['category']}"]
+    if entry.get("domain"):
+        out += [f"    domain: {entry['domain']}",
+                f"    classification: {entry['classification']}",
+                f"    revision: {entry['revision']}"]
+        out += _folded("principle", entry["principle"])
+        out += _folded("anti_pattern", entry["anti_pattern"])
     out += _folded("problem", entry["problem"])
     out += _folded("root_cause", entry["root_cause"])
     out += _folded("lesson", entry["lesson"])
@@ -233,7 +256,7 @@ def _yaml_value(value):
 
 def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, evidence=None,
           lesson_id=None, level=None, check=None, category=None, title=None, scope=None,
-          version=None, today=None, promoted=None, verify=None):
+          version=None, today=None, promoted=None, verify=None, domain=None):
     """The Draft of one stored candidate (a candidate_record), or PromoteRefused."""
     from . import ingest
     cid = candidate.get("id")
@@ -254,6 +277,12 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
                              f"({systemic.get('why') or 'no reason given'}) - a build's own "
                              "mistake is not a lesson")
     check = (check or candidate.get("proposed_check") or "").strip() or None
+    # Several proposed checks (the same rule held at two places) are drafted together; an
+    # explicit --check replaces them all.
+    proposed = [] if (check and check != candidate.get("proposed_check")) else [
+        str(c).strip() for c in candidate.get("proposed_checks") or () if str(c).strip()]
+    all_checks = list(dict.fromkeys(([check] if check else []) + proposed))
+    check = check or (all_checks[0] if all_checks else None)
     wanted = level or candidate.get("proposed_level")
     if wanted is not None and wanted not in model.LEVELS:
         raise PromoteRefused(f"level {wanted!r} is not one of {', '.join(model.LEVELS)}")
@@ -267,12 +296,13 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
             "evidence is only subjective (a review's judgment, no measured finding) - a "
             "subjective comment never becomes blocking or required by itself. Draft it "
             "experimental (--level experimental), or ingest a run whose gate measured it")
-    classified = check is not None and check in (checks or {})
+    unclassified = [c for c in all_checks if c not in (checks or {})]
+    classified = bool(all_checks) and not unclassified
     if wanted in STRONG and not classified:
         raise PromoteRefused(
             f"{cid}: a {wanted} rule needs a check that holds it, and "
-            f"{check or 'no check'} is not classified in core/reference/check-tiers.yaml - "
-            "add the check to its source first")
+            f"{', '.join(unclassified) or 'no check'} is not classified in "
+            "core/reference/check-tiers.yaml - add the check to its source first")
     entry_id = lesson_id or next_id(lessons)
     if any(isinstance(l, dict) and l.get("id") == entry_id
            for l in (lessons or {}).get("lessons") or ()):
@@ -298,29 +328,34 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
     held = classified and basis == "measured"
     if held:
         derived = model.derive_level(dict(entry, status="enforced", lifecycle="active",
-                                          checks=[check]), checks)
+                                          checks=all_checks), checks)
         if wanted and model.level_rank(wanted) < model.level_rank(derived):
             raise PromoteRefused(
-                f"{cid}: {check} is {checks[check].get('tier')}, so the rule derives {derived}; "
+                f"{cid}: {', '.join(all_checks)} "
+                f"{'is' if len(all_checks) == 1 else 'are'} "
+                f"{'/'.join(sorted({checks[c].get('tier') for c in all_checks}))}, so the rule "
+                f"derives {derived}; "
                 f"a lesson cannot declare it weaker ({wanted}) - a level is weakened only by "
                 "moving the check's tier, in a new version of its source file")
         test_path = f"scripts/tests/test_lesson_{entry_id.lower()}.py"
         names = (f"test_{entry_id}_the_check_fails_the_defect",
                  f"test_{entry_id}_the_check_passes_the_fixed_build")
-        entry.update(status="enforced", lifecycle="active", checks=[check],
+        entry.update(status="enforced", lifecycle="active", checks=all_checks,
                      tests={"catches": [f"{test_path}::{names[0]}"],
                             "passes": [f"{test_path}::{names[1]}"], "generalizes": []})
         if wanted and model.level_rank(wanted) > model.level_rank(derived):
             entry["level"] = wanted
         files[test_path] = _stub(entry, candidate, test_path, names)
         notes.append(f"{entry_id} is drafted enforced and active at "
-                     f"{entry.get('level') or derived} (its check {check} is "
-                     f"{checks[check].get('tier')}); its two test stubs fail until written")
+                     f"{entry.get('level') or derived} (its checks "
+                     + ", ".join(f"{c} {checks[c].get('tier')}" for c in all_checks)
+                     + "); its two test stubs fail until written")
     else:
         why = ("its evidence is only subjective" if basis != "measured"
-               else f"{check} is not classified in check-tiers.yaml" if check
-               else "it proposes no check")
-        held_text = (f"the proposed check {check}" if check else "no check proposed yet")
+               else f"{', '.join(unclassified)} is not classified in check-tiers.yaml"
+               if all_checks else "it proposes no check")
+        held_text = (f"the proposed check {', '.join(all_checks)}" if all_checks
+                     else "no check proposed yet")
         entry.update(status="gap", lifecycle="candidate",
                      gap=f"nothing holds it yet ({why}): {held_text}. A person confirms it on "
                          "a measured failure and names the check and the test that catches it "
@@ -329,6 +364,28 @@ def draft(candidate, lessons, lessons_text, evidence_text, checks, vocab, eviden
     if candidate.get("duplicate_of"):
         notes.append(f"{cid} proposes the check {candidate['duplicate_of']} already names: "
                      "consider strengthening that lesson instead of adding one")
+    if model.has_model_2_1(lessons):
+        domain = domain or candidate.get("domain") or DOMAIN_OF_CATEGORY.get(category)
+        if not domain:
+            raise PromoteRefused(f"{cid}: name its --domain (one of "
+                                 f"{', '.join(model.DOMAINS)})")
+        level_drafted = model.level_of(entry, checks) or "experimental"
+        principle = _one_line(candidate.get("principle") or candidate["summary"])
+        anti = _one_line(candidate.get("anti_pattern") or candidate.get("symptom")
+                         or candidate["summary"])
+        fields = {"domain": domain,
+                  "classification": CLASSIFICATION_OF_LEVEL.get(level_drafted, "OBSERVATION"),
+                  "revision": 1, "principle": principle, "anti_pattern": anti}
+        # In the order the file writes them: after the category.
+        ordered = {}
+        for key, value in entry.items():
+            ordered[key] = value
+            if key == "category":
+                ordered.update(fields)
+        entry = ordered
+        if not candidate.get("principle"):
+            notes.append(f"{entry_id}: its principle and anti_pattern are drafted from the "
+                         "candidate's summary and symptom - sharpen them in review")
     # The draft holds the model's own rules, or it is not offered.
     after = json.loads(json.dumps(lessons))
     after["lessons"] = list(after.get("lessons") or []) + [entry]

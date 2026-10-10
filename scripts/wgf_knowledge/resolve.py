@@ -126,6 +126,18 @@ def applies(lesson, run_facets):
     return True, why
 
 
+def _pinned(lesson):
+    """What a contract pins of one rule (lessons 2.1.0): its revision, `<id>@r<revision>`
+    and the digest of its entry - so a run says exactly which text of the rule it was held
+    to, after the Factory moves on. The digest is recorded for every lesson; the revision
+    only where the file states one."""
+    out = {"digest": model.lesson_digest(lesson)}
+    version = model.rule_version(lesson)
+    if version:
+        out.update(revision=lesson["revision"], version=version)
+    return out
+
+
 def _producer_steps(workflow):
     """{artifact type: [step ids that output it]} of a parsed workflow mapping."""
     out = {}
@@ -176,19 +188,20 @@ def resolve(lessons, checks, tiers, run_facets, workflow=None, exceptions=(), no
         if not isinstance(lesson, dict) or not lesson.get("id"):
             continue
         lesson_id = lesson["id"]
+        pinned = _pinned(lesson)
         if model.is_process(lesson):
             held = str(lesson.get("held_by") or "its procedure").rstrip(".")
-            excluded.append({"id": lesson_id, "why_not": "a process lesson, never in a run's "
-                             f"contract (held by: {held})"})
+            excluded.append(dict({"id": lesson_id, "why_not": "a process lesson, never in a "
+                                  f"run's contract (held by: {held})"}, **pinned))
             continue
         deprecated = lesson.get("lifecycle") == "deprecated"
         if deprecated and lesson.get("superseded_by"):
-            excluded.append({"id": lesson_id,
-                             "why_not": f"deprecated: superseded by {lesson['superseded_by']}"})
+            excluded.append(dict({"id": lesson_id, "why_not": f"deprecated: superseded by "
+                                  f"{lesson['superseded_by']}"}, **pinned))
             continue
         ok, why = applies(lesson, run_facets)
         if not ok:
-            excluded.append({"id": lesson_id, "why_not": why})
+            excluded.append(dict({"id": lesson_id, "why_not": why}, **pinned))
             continue
         level = model.run_level(lesson, checks)
         if level is None:
@@ -225,6 +238,10 @@ def resolve(lessons, checks, tiers, run_facets, workflow=None, exceptions=(), no
                 "checks": held, "tests": tests, "why_applicable": why}
         if lesson.get("gap"):
             rule["gap"] = lesson["gap"]
+        rule.update(pinned)
+        for key in ("domain", "classification"):
+            if lesson.get(key) is not None:
+                rule[key] = lesson[key]
         rules.append(rule)
         if level == "experimental":
             experimental.append({"id": lesson_id,

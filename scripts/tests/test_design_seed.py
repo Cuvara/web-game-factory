@@ -123,6 +123,46 @@ class EveryFamilySeed(unittest.TestCase):
         for family in FAMILIES:
             cls.results[family] = design_for(family)
 
+    def test_the_agents_starting_point_takes_the_seed_for_a_persons_idea(self):
+        """A person's idea in a family no design archetype carries: the archetype author as
+        the agent's STARTING POINT returns the family seed's shape (the agent rewrites it into
+        the idea); as the design itself it refuses, naming the agent author (07126cd)."""
+        from wgf_design.authors import ArchetypeAuthor, AuthorError
+        from wgf_design.platforms import load_platforms
+        idea = "A fox springs between crumbling ledges while the wind pushes it back"
+        family = "platformer"
+        self.assertNotIn(family, archetypes.ARCHETYPES)
+        strategy = strategy_for(family)
+        strategy = dict(strategy, brief=idea,
+                        concept=dict(strategy["concept"], core_mechanic=idea))
+        brief = {"title_id": "idea-title", "strategy": strategy,
+                 "platforms": load_platforms(strategy), "params": {}}
+        draft = ArchetypeAuthor(starting_point=True).draft(brief)
+        self.assertEqual(draft["genre"]["family"], family)
+        with self.assertRaisesRegex(AuthorError, "agent author"):
+            ArchetypeAuthor().draft(brief)
+
+    def test_mechanics_are_introduced_one_per_unit_never_piled_into_the_opener(self):
+        """core/craft "Introduce one mechanic per unit at most" and L29: after the opening
+        unit each MVP unit debuts at most one mechanic, never on the climax or the last MVP
+        unit; the opener takes only what the MVP has no other unit for (seed._introductions,
+        which caps at the family's MVP unit count)."""
+        for family in FAMILIES:
+            with self.subTest(family=family):
+                design = self.results[family].artifacts[0].content
+                mvp = units(design, "mvp")
+                mechanics = [m["id"] for m in design["build_spec"]["mechanics"]
+                             if m["tier"] == "mvp"]
+                slots = [u for u in mvp[1:-1] if u.get("purpose") in seed.INTRODUCE_IN]
+                for unit in mvp[1:]:
+                    self.assertLessEqual(len(unit.get("introduces") or []), 1, unit["id"])
+                    if unit.get("introduces"):
+                        self.assertNotEqual(unit.get("purpose"), "climax", unit["id"])
+                self.assertFalse(mvp[-1].get("introduces"))
+                self.assertEqual(len(mvp[0]["introduces"]),
+                                 max(1, len(mechanics) - len(slots)))
+                self.assertLessEqual(len(mvp[0]["introduces"]), 2)
+
     def test_every_family_seed_designs_a_valid_design_through_the_step(self):
         for family in FAMILIES:
             with self.subTest(family=family):
@@ -281,6 +321,17 @@ class TheSeedRefusesAnIdeaItCannotDesign(unittest.TestCase):
             GenreSeedAuthor()._resolve({"strategy": strategy, "platforms": [],
                                         "params": {}, "title_id": "t"})
         self.assertIn("agent author", str(caught.exception))
+
+    def test_the_agent_authors_starting_point_takes_the_seed_for_an_idea(self):
+        # /new-game with an idea in a family no archetype carries: the agent author starts
+        # from the seed's shape and rewrites it into the idea, so the seed must not refuse.
+        strategy = strategy_for("simulation")
+        idea = "A lemonade-stand tycoon: price, upgrades, staff and market events"
+        strategy["brief"] = idea
+        strategy["concept"]["core_mechanic"] = idea
+        resolved = GenreSeedAuthor(starting_point=True)._resolve(
+            {"strategy": strategy, "platforms": [], "params": {}, "title_id": "t"})
+        self.assertTrue(resolved.archetype["mechanics"])
 
     def test_a_catalog_concept_is_designed_as_before(self):
         strategy = strategy_for("simulation")

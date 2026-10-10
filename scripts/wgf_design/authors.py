@@ -238,7 +238,8 @@ class ArchetypeAuthor(DesignAuthor):
             family = capability.get("genre_model") if not pinned else None
             if family in families:
                 from .seed import GenreSeedAuthor
-                return GenreSeedAuthor().synthesize(family, models, strategy, families[family])
+                return GenreSeedAuthor(starting_point=self.starting_point).synthesize(
+                    family, models, strategy, families[family])
             archetype_id, why = archetypes.select(strategy, pinned)
             if research is not None:
                 applied.append({"field": "archetype", "source": "default",

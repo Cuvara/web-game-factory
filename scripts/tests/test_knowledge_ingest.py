@@ -469,7 +469,12 @@ class Promote(Base):
         self.assertIn(f"{stub}::test_{lesson['id']}_the_check_fails_the_defect",
                       lesson["tests"]["catches"])
         self.assertIn("diff --git a/core/reference/lessons.yaml", result.patch)
-        self.assertIn("+version: 2.1.0", result.patch)
+        # adding a lesson is a minor version of the file, whatever it is now
+        major, minor, _patch = (int(p) for p in model.version_of(self.data["lessons"]).split("."))
+        self.assertIn(f"+version: {major}.{minor + 1}.0", result.patch)
+        # knowledge model 2.1.0: the draft carries its domain, classification and revision
+        self.assertEqual((lesson["classification"], lesson["revision"]), ("REQUIRED", 1))
+        self.assertTrue(lesson["domain"] and lesson["principle"] and lesson["anti_pattern"])
         # The patch applies to the files as they are, and the result holds the model's rules
         # - stub tests included, which exist and fail until a person writes them.
         work = os.path.join(self.tmp, "repo")
@@ -606,8 +611,9 @@ class Promote(Base):
         for path, data in before.items():
             with open(os.path.join(ROOT, path), "rb") as handle:
                 self.assertEqual(handle.read(), data)
+        drafted = promote.next_id(registry.load(ROOT)["lessons"]).lower()
         self.assertFalse(os.path.exists(os.path.join(ROOT, "scripts", "tests",
-                                                     "test_lesson_l29.py")))
+                                                     f"test_lesson_{drafted}.py")))
 
 
 if __name__ == "__main__":

@@ -37,7 +37,8 @@ from wgflib import build_scope, genre_models, paths
 from wgflib.yamllite import load_file
 
 from wgf_design import existing, layouts as geometry_of
-from wgf_design.content import quality_tier
+from wgf_design.content import (introduction_breaches, quality_tier, undeclared_units,
+                                 unit_debuts)
 
 __all__ = ["RULES_PATH", "BENCHMARK_PATH", "load_rules", "load_benchmark", "owed_units",
            "built_unlocks",
@@ -50,7 +51,8 @@ CHECK_ORDER = ("content.contract", "content.data_present", "content.units_shippe
                "content.units_reachable", "content.entity_kinds", "content.elements",
                "content.combinations", "content.structure", "content.groups",
                "content.difficulty", "content.objectives", "content.climax",
-               "content.progression", "content.playtime", "content.drift")
+               "content.progression", "content.playtime", "content.drift",
+               "content.introductions_one_at_a_time")
 
 _WORD = re.compile(r"[a-z]+")
 _STOP = {"the", "a", "an", "and", "or", "to", "of", "in", "on", "you", "your", "all", "every",
@@ -851,7 +853,55 @@ def _audit(design, strategy, data, records, rules=None, benchmark=None, models=N
                 + (f" and {len(drift) - 6} more" if len(drift) > 6 else "")) if drift else
                "every shipped unit carries the design's commitments",
                measured={"drift": drift[:40]}, route="develop" if drift else None))
+    if "content.introductions_one_at_a_time" in (rules.get("checks") or {}):
+        # Run only where the content-sufficiency file this build is judged by declares it:
+        # the run's pinned copy (wgf_sufficiency.step.run_rules), so a run started before
+        # the check existed is never held to it.
+        add(introductions_check(shipped, built_units))
     return _finish(out, rules, order=True)
+
+
+def introductions_check(shipped, built_units):
+    """content.introductions_one_at_a_time on the BUILT content: the shipped units in the
+    design's index order, each as the content data file states it, held to the design rule
+    of the same id (wgf_design.content.unit_debuts: its non-empty `introduces`, else every
+    element and mechanic it shows for the first time; and every element or mechanic its
+    design unit does not name, which the build added or moved) - after the opening unit,
+    none debuts more than one element. The design units are the shipped units the run's
+    design owes, so the comparison always has them. FAIL routes design-gap when the
+    design's own units debut two at once, develop when only the build does (a design that
+    claims compliance and a build that breaks it). SKIPPED as unmeasured when the content
+    data names no elements or mechanics for a shipped unit - any of them: what that unit puts
+    in front of the player is unknown, so what the units after it debut cannot be counted,
+    and an absence is never a pass."""
+    cid = "content.introductions_one_at_a_time"
+    if not shipped:
+        return _skip(cid, "the build ships none of the units the design owes: nothing debuts")
+    built = [built_units[u.get("id")] for u in shipped]
+    debuts = unit_debuts(built)
+    undeclared = undeclared_units(built)
+    if undeclared:
+        which = ("no shipped unit's" if len(undeclared) == len(built) else
+                 f"{len(undeclared)} of {len(built)} shipped units' ("
+                 + ", ".join(undeclared[:8]) + ")")
+        return _check(cid, "SKIPPED", f"UNMEASURED: the content data names {which} elements, "
+                                      "mechanics or introductions, so what each unit debuts "
+                                      "cannot be counted - unmeasured, never a pass",
+                      measured={"undeclared": undeclared}, route=None)
+    # Each built unit is held to its design unit: an element or mechanic the build names
+    # that the design's unit does not is a debut, whatever `introduces` the build copied.
+    designed = {u.get("id"): u for u in shipped}
+    held = unit_debuts(built, designed)
+    problems = introduction_breaches(built, at=lambda u: f"units.json {u.get('id')}",
+                                     designed=designed)
+    design_problems = introduction_breaches(shipped, at=lambda u: f"design {u.get('id')}")
+    measured = {"debuts": {str(u.get("id")): new for u, new in held if new},
+                "units": len(built), "over_one": problems,
+                "held_to_design": True}
+    return _judged(cid, problems, design_problems,
+                   f"after the opening unit, none of the {len(built)} shipped unit(s) debuts "
+                   "more than one element", measured=measured,
+                   expected="after the opening unit, at most one element a unit debuts")
 
 
 def built_unlocks(data, shipped, built_units):

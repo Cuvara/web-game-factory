@@ -246,23 +246,34 @@ def _durations(purposes, mvp_count, run_seconds, profile, strategy):
     return out
 
 
-def _introductions(introduce_order, mechanics, purposes, mvp_count):
-    """Which unit teaches which mechanic: the family's `introduce_order`, split over the units
-    whose purpose is `teach`, the first of them taking the opening mechanics. Mechanics
-    accumulate, so a unit asks for everything taught up to and including it."""
+# Where a mechanic may be introduced (core/craft/content-and-level-design.md "Introduce, then
+# reuse": during a teach, a breather or the opening of a twist - never on a peak), most
+# preferred first. A `test` unit takes one only when those run out.
+INTRODUCE_IN = ("teach", "breather", "twist", "test")
+
+
+def _introductions(introduce_order, mechanics, purposes, mvp_count, busy=()):
+    """Which unit teaches which mechanic: the family's `introduce_order`, one mechanic per
+    unit. The opening unit, where play begins, takes the first; every later MVP unit that may
+    introduce one (INTRODUCE_IN, never the climax, never the last MVP unit - a mechanic
+    taught there is never asked for again) takes the next, the preferred purposes first, in
+    play order - so no unit after the opener debuts two never-seen mechanics at once
+    (design-consistency content.introductions_one_at_a_time) and the opener is not piled
+    up. Only when the MVP has fewer such units than mechanics does the opener take the
+    excess: the MVP's unit count is the family's (`units.min_mvp` + 1), and a mechanic of the
+    MVP is taught inside it. `busy`: positions that already debut something else (a content
+    element a release lays out): never given a mechanic too. Mechanics accumulate, so a unit
+    asks for everything taught up to and including it."""
     order = [m for m in introduce_order or [] if m in mechanics]
     order += [m for m in mechanics if m not in order]
-    teaching = [i for i, purpose in enumerate(purposes[:mvp_count]) if purpose == "teach"] or [0]
-    teaching = [i for i in teaching if i < max(1, mvp_count - 1)] or [0]
-    chunks = {position: [] for position in teaching}
-    size, extra = divmod(len(order), len(teaching))
-    cursor = 0
-    for rank, position in enumerate(teaching):
-        take = size + (1 if rank < extra else 0)
-        chunks[position] = order[cursor:cursor + take]
-        cursor += take
-    if not chunks[teaching[0]]:
-        chunks[teaching[0]] = order[:1]
+    last = max(1, mvp_count - 1)
+    slots = [i for i in range(1, last) if purposes[i] in INTRODUCE_IN and i not in busy]
+    slots.sort(key=lambda i: (INTRODUCE_IN.index(purposes[i]), i))
+    slots = sorted(slots[:max(0, len(order) - 1)])
+    opening = max(1, len(order) - len(slots))
+    chunks = {0: order[:opening]}
+    for rank, position in enumerate(slots):
+        chunks[position] = order[opening + rank:opening + rank + 1]
     return chunks
 
 
@@ -435,8 +446,12 @@ class GenreSeedAuthor(ArchetypeAuthor):
                 f"research took from the catalog.")
 
     def synthesize(self, family_id, models, strategy, entry):
-        """`Resolved` for a game of family `family_id`, built from the family's `seed` block."""
-        self.refuse_an_idea(family_id, strategy)
+        """`Resolved` for a game of family `family_id`, built from the family's `seed` block.
+        As the agent author's starting point the seed is only the required shape, which the
+        agent rewrites into the person's idea - so an idea is refused only when the seed would
+        be the design."""
+        if not self.starting_point:
+            self.refuse_an_idea(family_id, strategy)
         seed = entry.get("seed")
         if not isinstance(seed, dict) or not isinstance(seed.get("archetype"), dict):
             raise AuthorError(f"core/reference/genre-models.yaml family {family_id!r} carries no "

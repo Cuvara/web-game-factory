@@ -65,11 +65,14 @@ import re
 
 from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+from wgflib.workflow import references as pinned_references
+from wgflib.yamllite import load as load_yaml
 from wgflib.workflow.contracts import ArtifactContracts
 
 from . import (commitments, consistency, content, depth, existing, experience, inherit,
                presentation)
 from . import features as feature_check
+from . import knowledge as design_knowledge
 from .authors import AUTHORS, AuthorError, resolve_author
 from .compose import buildability, finalize
 from .platforms import PlatformError, load_platforms
@@ -177,6 +180,14 @@ class DesignStep(WorkflowStep):
             platforms = load_platforms(strategy, self.platforms_dir)
         except PlatformError as exc:
             return StepResult.blocked(str(exc))
+        # The consistency rules as the run pinned them (the live file for a run that pinned
+        # none): a design is never held to a rule added to the Factory after its run started.
+        try:
+            self._run_rules = self.rules or self.pinned_rules(context)
+        except (pinned_references.PinError, ValueError) as exc:
+            return StepResult.blocked(f"the design consistency rules this run started under "
+                                      f"cannot be read ({exc}): no design is judged against "
+                                      "rules edited after the start")
 
         # The existing-content floor: what an adopted repository already ships. Measured on
         # every visit at the commit the checkout ships (HEAD less this run's own commits): a
@@ -203,6 +214,8 @@ class DesignStep(WorkflowStep):
                  # attempt's files go, and the installation's configuration.
                  "config": context.config or {},
                  "run_dir": getattr(context, "run_dir", None),
+                 # The run's params: where its pinned knowledge is (wgf_design/knowledge.py).
+                 "environment": getattr(context, "environment", None) or {},
                  "visit": getattr(context, "visit", 1),
                  "attempt": getattr(context, "attempt", 1)}
         if self._floor:
@@ -410,6 +423,27 @@ class DesignStep(WorkflowStep):
                               + (f", revises v{revision['version']}" if revision else "")
                               + (f", {len(warnings)} warning(s) for G3" if warnings else ""))
 
+    @staticmethod
+    def given_knowledge(author, design, strategy, context):
+        """The Factory knowledge the author of this draft was GIVEN (its request's
+        `knowledge`, recorded by the author as `given_knowledge`; None when it could not be
+        read) - what the draft's decision trace is held against. An author that records none
+        (a built-in author, which writes no trace; a draft composed again without an author
+        session) is held against the knowledge resolved now over the design's own family."""
+        if hasattr(author, "given_knowledge"):
+            return author.given_knowledge
+        return design_knowledge.provisional(
+            (design.get("genre") or {}).get("family"), strategy,
+            getattr(context, "environment", None) or {}, getattr(context, "run_dir", None))
+
+    @staticmethod
+    def pinned_rules(context):
+        """core/reference/design-consistency-rules.yaml as the run pinned it, else live."""
+        text, _digest, _pinned = pinned_references.read(
+            consistency.RULES_FILE, getattr(context, "environment", None),
+            getattr(context, "run_dir", None))
+        return load_yaml(text)
+
     def _compose(self, draft, platforms, title_id, strategy, ref, context, author, contracts,
                  revision=None):
         """The draft finalized into the game-design artifact, and what makes it invalid: the
@@ -475,8 +509,13 @@ class DesignStep(WorkflowStep):
             outcome.update(strategy=True)
             problems += found
         now = self.clock()
+        # The Factory knowledge an author of this game is given (the run's pinned knowledge,
+        # resolved over the design's family and the strategy's platforms): what the design's
+        # decision trace is held against (consistency knowledge.trace_matches_design).
+        given = self.given_knowledge(author, design, strategy, context)
+        ruleset = getattr(self, "_run_rules", None) or self.rules
         block, blocking, warnings = consistency.evaluate(design, strategy, platforms, now,
-                                                         self.rules)
+                                                         ruleset, knowledge=given)
         if blocking:
             # A breached blocking rule is `descope` for an author that cannot repair; one
             # that can is told which rule it breached, what was measured against what
@@ -484,7 +523,7 @@ class DesignStep(WorkflowStep):
             # concept view found, first. A breach was the one invalid-design class the
             # author was never shown, so a design whose only fault was three assets too
             # many died at `descope` with the fix one round away.
-            ruleset = self.rules or consistency.load_rules()
+            ruleset = ruleset or consistency.load_rules()
             lexicon = consistency.load_lexicon(ruleset)
             concept = consistency.concept_view(design, strategy, lexicon)
             realizing = {pid: (entry or {}).get("realized_by") or []
@@ -495,7 +534,11 @@ class DesignStep(WorkflowStep):
                     "and no MVP mechanic or MVP control of the design builds them.",
                 "design_adds_no_foreign_mechanic":
                     f"The design builds the mechanics {concept.get('foreign')} as core "
-                    "mechanics, and neither the brief nor the strategy implies them. Remove "
+                    "mechanics, and neither the brief nor the strategy implies them"
+                    + "".join(f"; {fid} is read from " + ", ".join(where)
+                              for fid, where in (concept.get("foreign_sources") or {}).items()
+                              if where)
+                    + ". Remove "
                     "each one with the content units and controls that use it; renaming it "
                     "does not change what it is, and a new mechanic is a strategy change for "
                     "G2.",
@@ -515,6 +558,15 @@ class DesignStep(WorkflowStep):
                     "The repository this run adopts already ships this content "
                     "(game-design.existing_content). Plan at least as much: keep its units, "
                     "groups, climax units and elements, and add to them.",
+                "content.introductions_one_at_a_time":
+                    "After the opening unit, a unit debuts at most one element, mechanic or "
+                    "introduction no earlier unit named. Give each extra new element a unit "
+                    "of its own before the unit that combines it with another new one.",
+                "knowledge.trace_matches_design":
+                    "The design's knowledge_applied says something the design does not do. "
+                    "Make the design follow each rule it claims applied (its checks are "
+                    "named), or record the rule as not applied with why; name only rules, "
+                    "revisions, units and checks the request gave.",
             }
             for rule_id in blocking:
                 stated = consistency.breach_problems(block, [rule_id], ruleset) or [

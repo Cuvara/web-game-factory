@@ -164,6 +164,13 @@ def complete_build(family="arcade"):
             for viewport in ("desktop-standard", "mobile"):
                 verification["checks"].append({"id": f"{name}:{viewport}", "status": "PASS"})
     docs["content-sufficiency-report"]["layout_source"] = {"status": "none"}
+    sufficiency = docs["content-sufficiency-report"]
+    counted = {c["id"] for c in sufficiency["checks"]}
+    for check_id in sorted(CHECKS):
+        source, _, name = check_id.partition(":")
+        if source == "content-sufficiency" and name not in counted                 and name != "content.regression":
+            sufficiency["checks"].append({"id": name, "status": "PASS",
+                                          "summary": "passed", "required": True})
     docs["game-design"]["consistency"] = {
         "status": "pass", "rule_results": [
             {"criterion_id": c.partition(":")[2], "breached": False}

@@ -72,7 +72,13 @@ Every mechanic the MVP declares appears in at least `mechanic_reuse_min_units` u
 player never gets to be good at it, and the timebox paid for it anyway.
 
 - Introduce one mechanic per unit at most, during a `teach`, a `breather` or the opening of a
-  `twist` — never on a peak.
+  `twist` — never on a peak. After the opening unit, a unit debuts at most one element the
+  player has not met — what its `introduces` lists (an element and the mechanic it stands
+  for are one introduction, stated once), or, where `introduces` is empty or absent, every
+  element and mechanic it shows for the first time; a build is also held to its design unit,
+  so an element it shows a unit early is a debut there — so every new element is met on its own and practised before it is combined with another new
+  one. This is held on the design (design-consistency `content.introductions_one_at_a_time`)
+  and on the built content data file (content-sufficiency, same id).
 - The reuse recombines rather than repeats: the mechanic meets a different other mechanic, a
   different layout, or a different objective. The climax reuses everything; a mechanic that
   cannot appear there was decoration.

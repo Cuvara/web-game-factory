@@ -52,6 +52,7 @@ ROUTE_ORDER = ("design-gap", "develop")
 # The bars, as the run pinned them when it started (new-game `pinned_references`): an edit
 # made while the run is going applies to the next run, never to this one's build.
 BENCHMARK = "core/reference/quality-benchmark.yaml"
+RULES = "core/reference/content-sufficiency.yaml"
 
 
 def _utc_now():
@@ -78,6 +79,16 @@ def run_benchmark(context):
     that pinned none). Raises PinError when the run's copy is gone or was edited."""
     text, _digest, _pinned = pinned_references.read(
         BENCHMARK, getattr(context, "environment", None), getattr(context, "run_dir", None))
+    return load_yaml(text)
+
+
+def run_rules(context):
+    """core/reference/content-sufficiency.yaml as the run pinned it (the live file for a run
+    that pinned none): a run is held to the checks its own file declares, never to a check
+    added to the Factory after it started. Raises PinError when the run's copy is gone or
+    was edited."""
+    text, _digest, _pinned = pinned_references.read(
+        RULES, getattr(context, "environment", None), getattr(context, "run_dir", None))
     return load_yaml(text)
 
 
@@ -142,20 +153,22 @@ class ContentSufficiencyStep(WorkflowStep):
             else:
                 data, problem = read_data(directory)
                 try:
-                    found, unreadable = read_layouts(directory, data)
+                    rules = run_rules(context)
+                    found, unreadable = read_layouts(directory, data, rules)
                     if unreadable:
                         context.logger.warning("the layout source cannot be read",
                                                reason=unreadable)
                     self._layout_source = (
                         {"status": "unreadable", "problem": str(unreadable)} if unreadable
                         else {"status": "read" if found is not None else "none"})
-                    result = auditing.audit(design, strategy, data, records,
+                    result = auditing.audit(design, strategy, data, records, rules=rules,
                                             benchmark=run_benchmark(context),
                                             data_problem=problem, playability=play,
                                             layouts=found)
                 except pinned_references.PinError as exc:
-                    blocked = (f"the quality benchmark this run started under cannot be read "
-                               f"({exc}): nothing is held to bars edited after the start")
+                    blocked = (f"the quality benchmark or content checks this run started "
+                               f"under cannot be read ({exc}): nothing is held to bars edited "
+                               "after the start")
                 except (OSError, YamlError, ValueError) as exc:
                     blocked = (f"the content bars could not be read ({exc}): nothing can be "
                                "held to them, and no bar is defaulted in code")

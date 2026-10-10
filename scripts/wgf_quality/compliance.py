@@ -366,6 +366,22 @@ def _counts(rules):
     return {"by_level": by_level, "total": totals}
 
 
+def _traces(design):
+    """{rule id: trace entry} of the game-design's decision trace (`knowledge_applied`, K5),
+    each tagged with the design it was read from. A claim: shown beside the rule's measured
+    status, never deciding it."""
+    trace = (design or {}).get("knowledge_applied") if isinstance(design, dict) else None
+    source = ((design or {}).get("provenance") or {}).get("artifact_id") \
+        if isinstance(design, dict) else None
+    out = {}
+    for entry in trace if isinstance(trace, list) else ():
+        if isinstance(entry, dict) and entry.get("rule") and "applied" in entry:
+            kept = {k: entry[k] for k in ("rule", "revision", "applied", "where", "how",
+                                          "verified_by") if entry.get(k) is not None}
+            out[str(entry["rule"])] = dict(kept, design=source)
+    return out
+
+
 def evaluate(contract, tiers, reports, *, refs=None, entries=None, build=None,
              self_report=None, tier=None, contract_ref=None, retroactive=False,
              contract_missing=None, exceptions=(), lessons=None, now=None, candidates=(),
@@ -395,6 +411,7 @@ def evaluate(contract, tiers, reports, *, refs=None, entries=None, build=None,
     facts = {"render": ((contract or {}).get("facets") or {}).get("render"),
              "reports": dict(reports or {})}
     rules = []
+    traced = _traces((reports or {}).get("game-design"))
     for rule in (contract or {}).get("rules") or ():
         checks, viewports = [], {}
         for held in rule.get("checks") or ():
@@ -417,6 +434,9 @@ def evaluate(contract, tiers, reports, *, refs=None, entries=None, build=None,
                     "rule_id", "reason", "scope", "approved_by", "created_at", "expires_at")}
         if rule.get("gap"):
             entry["gap"] = rule["gap"]
+        if rule.get("id") in traced:
+            # The design's claim, beside what the checks measured: never a status.
+            entry["trace"] = traced[rule.get("id")]
         entry["blocks"] = level in BLOCKING_LEVELS and entry["status"] in ("FAILED",
                                                                            "UNMEASURED")
         entry["warning"] = (level not in BLOCKING_LEVELS
@@ -747,6 +767,15 @@ def render_markdown(section):
                                    if rule.get("measured_status") else "")
         out.append(f"| {rule['id']} | {rule['level']} | {rule.get('category')} | {status} | "
                    f"{cited.replace('|', '/')} |")
+    traced = [r for r in section.get("rules") or () if r.get("trace")]
+    if traced:
+        out += ["", "## The design's decision trace (claims, beside what was measured)", ""]
+        for rule in traced:
+            trace = rule["trace"]
+            out.append(f"- {rule['id']}: claimed {'applied' if trace.get('applied') else 'not applied'}"
+                       + (f" at {', '.join(trace.get('where') or [])}" if trace.get("where") else "")
+                       + (f" - {trace['how']}" if trace.get("how") else "")
+                       + f"; measured {rule['status']}")
     out += ["", "## Exceptions", ""]
     if not section.get("exceptions"):
         out.append("None.")

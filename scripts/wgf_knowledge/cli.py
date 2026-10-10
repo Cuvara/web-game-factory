@@ -36,7 +36,7 @@
         The stored candidates, with their state (open, promoted, rejected) and basis.
     wgf knowledge reject C-N --reason TEXT [--by NAME] [--candidates FILE]
         A person rejects a candidate; it is kept, never deleted.
-    wgf knowledge promote C-N [--id L<n>] [--level L] [--check ID] [--category C]
+    wgf knowledge promote C-N [--id L<n>] [--level L] [--check ID] [--category C] [--domain D]
                           [--title TEXT] [--scope KEY=V,..] [--out FILE] [--json]
         A PR-ready patch: the lessons.yaml entry, the evidence.yaml entry and the test stubs.
         Writes nothing but --out; never edits core/. Exit 1 when refused - subjective
@@ -604,7 +604,7 @@ def cmd_promote(args):
             record, data["lessons"], lessons_text, evidence_text, checks,
             model.vocabulary(root), evidence=data.get("evidence"), lesson_id=args.id,
             level=args.level, check=args.check, category=args.category, title=args.title,
-            scope=_scope_arg(args.scope) if args.scope else None,
+            scope=_scope_arg(args.scope) if args.scope else None, domain=args.domain,
             promoted=ingest.promoted(data.get("evidence")),
             verify=ingest.verifier(run_store))
     except promote.PromoteRefused as exc:
@@ -763,6 +763,7 @@ def build_parser():
     prom.add_argument("--level", choices=list(model.LEVELS))
     prom.add_argument("--check", metavar="SOURCE:ID")
     prom.add_argument("--category")
+    prom.add_argument("--domain", help="the lesson's domain (knowledge model 2.1.0)")
     prom.add_argument("--title")
     prom.add_argument("--scope", action="append", metavar="KEY=V,..")
     prom.add_argument("--out", metavar="FILE", help="write the patch here (else stdout)")

@@ -154,7 +154,11 @@
             "tiers": { "type": "array", "items": { "type": "string" } }
           },
           "additionalProperties": false
-        }
+        },
+        "proposed_checks": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true, "description": "Added for knowledge model 2.1.0 (K5). Every check that would hold it, when it is held at more than one place (on the design and on the build); `proposed_check` is the first of them. The level is derived over all of them." },
+        "domain": { "enum": ["game-design", "level-design", "difficulty", "pacing", "progression", "player-feedback", "game-feel", "ux", "ui", "content", "replayability", "art-direction", "audio", "vfx", "performance", "accessibility", "technical", "process"], "description": "Added for knowledge model 2.1.0 (K5). What part of a game the lesson is about (core/reference/lessons.yaml `domains`); promote drafts it on the lesson." },
+        "principle": { "type": "string", "minLength": 1, "description": "Added for knowledge model 2.1.0 (K5). The reusable why, true of any game: X, because Y." },
+        "anti_pattern": { "type": "string", "minLength": 1, "description": "Added for knowledge model 2.1.0 (K5). What violating it looks like, true of any game." }
       },
       "additionalProperties": false
     },
@@ -174,6 +178,10 @@
         "proposed_check": { "type": ["string", "null"] },
         "proposed_level": { "enum": ["blocking", "required", "recommended", "experimental", null] },
         "proposed_scope": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/lesson_candidate/properties/proposed_scope" }] },
+        "proposed_checks": { "$ref": "#/$defs/lesson_candidate/properties/proposed_checks" },
+        "domain": { "$ref": "#/$defs/lesson_candidate/properties/domain" },
+        "principle": { "$ref": "#/$defs/lesson_candidate/properties/principle" },
+        "anti_pattern": { "$ref": "#/$defs/lesson_candidate/properties/anti_pattern" },
         "basis": { "enum": ["measured", "subjective"], "description": "Derived from the sources, never trusted as written. measured: at least one source from a measuring report resolved its finding to one the run's quality-report or triage-report recorded on the same build commit (a gate's check failed on that build); subjective: only judgments (a reviewer's comment, a person's or agent's opinion). A subjective candidate never becomes blocking or required by itself." },
         "duplicate_of": { "type": ["string", "null"], "pattern": "^[A-Z][A-Za-z0-9-]*$", "description": "A lesson that already names the proposed check but holds nothing yet (a candidate or gap lesson)." },
         "related_lessons": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9-]*$" }, "description": "Active lessons that already hold the proposed check while this candidate states another problem (not a regression of them): a person decides whether it strengthens one of them or is a lesson of its own." },

@@ -12,7 +12,7 @@
 # artifact plus the resolved platform profiles. Keep them few and obvious — a rule nobody
 # understands gets waived, and a waived rule is worse than no rule.
 
-version: 2.1.1  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms; 2.0.0: mechanics, not words (below); 2.1.0: brief commitments and the existing-content floor (below); 2.1.1: brief-commitments 1.1.0 (the probe floor)
+version: 2.4.1  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms; 2.0.0: mechanics, not words (below); 2.1.0: brief commitments and the existing-content floor (below); 2.1.1: brief-commitments 1.1.0 (the probe floor); 2.2.0: content.introductions_one_at_a_time and knowledge.trace_matches_design (below); 2.3.0: a unit debuts its non-empty `introduces`, else every element and mechanic it shows for the first time (an empty `introduces` states nothing); 2.4.0: an introduction must be true of its unit - contained in it, and not named by an earlier unit; 2.4.1: a unit stating no `elements` list leaves a declared element's containment unverified, never a breach
 
 # 2.0.0. The concept rules compared words: "tap hops" in a design read as a foreign `jump`
 # for a brief that asked for hops, a goal gate read as a checkpoint `gate`, and an author
@@ -174,6 +174,34 @@ rules:
       ships plans a regression, and every later gate would measure the build against the
       smaller design and pass it.
 
+  # 2.2.0. A unit that debuts two never-seen elements at once teaches neither: the player
+  # meets both in the same breath and cannot tell which one beat them. The same count holds
+  # the BUILT content data file (content-sufficiency.yaml content.introductions_one_at_a_time),
+  # so a design that paces its introductions and a build that does not is caught too.
+  - id: content.introductions_one_at_a_time
+    label: After the opening unit, a unit debuts at most one element the player has not met
+    severity: blocking
+    # `introductions.over_one`: every content unit (not tiered optional, in index order)
+    # after the first that debuts more than one element - its non-empty `introduces`, or, for
+    # a unit whose `introduces` is empty or absent, every element and mechanic no earlier unit
+    # named (wgf_design/content.py unit_debuts, introductions_view). Accepted limitation: a
+    # non-empty `introduces` is trusted here - new elements beside it are not counted on the
+    # design; content-sufficiency holds the build to its design unit. 2.4.0: what it is
+    # trusted with must be structurally true - an introduced item the unit does not itself
+    # contain (among its elements or mechanics), or one an earlier unit already named, is a
+    # breach (ids matched as unit kinds are: a trailing plural `s` dropped - an `-es` plural
+    # such as bosses is not undone, and ids one `s` apart read as one). 2.4.1: a unit that
+    # states no `elements` list (optional in the schema) does not say which elements it
+    # shows, so introducing a declared element (build_spec.content.elements) there is
+    # unverified, not a breach; the re-introduction check still holds. An unknown id is
+    # content.mechanics_resolve's. Whether an introduction is taught well is not checked. The opening unit is exempt: it
+    # is where play begins. A design with no units holds the rule and says so.
+    when: { left: introductions.over_one, op: neq, right: [] }
+    rationale: >
+      Every new element is first met on its own and practised before it is combined with
+      another new one. Two debuts in one unit is the classic way a level becomes a wall: the
+      player fails, cannot tell which new thing beat them, and quits.
+
   - id: first_reward_within_first_session
     label: First reward must land inside the first session
     severity: warning
@@ -208,6 +236,23 @@ rules:
     rationale: >
       An open-ended progression with no designed end state produces an endless content
       obligation, which is exactly what a 7-14 day production model cannot service.
+
+  # 2.2.0. The design's decision trace (game-design 1.16.0 `knowledge_applied`): what the
+  # author says it did with each Factory rule it was given. A claim the design contradicts is
+  # a breach. Listed LAST: it reads the result of every rule above it.
+  - id: knowledge.trace_matches_design
+    label: The design's knowledge trace says what the design does
+    severity: blocking
+    # `knowledge.problems` (wgf_design/knowledge.py trace_view): an entry naming a rule the
+    # design was not given (not applicable to the game), a revision it was not given, units
+    # the design does not have, checks that are not the rule's - or `applied: true` while one
+    # of the rule's own design-side checks (design-consistency) is breached on this design.
+    # An absent trace is not a breach; a trace with no knowledge to check it against is.
+    when: { left: knowledge.problems, op: neq, right: [] }
+    rationale: >
+      A trace is a claim, and a claim nobody checks is decoration. It never makes a rule
+      satisfied - only the rule's checks do, on the build - but a design that says it applied
+      a rule it breaks is wrong about itself, and every reader downstream would believe it.
 
 evaluation:
   pass_condition: No rule with severity=blocking is breached.

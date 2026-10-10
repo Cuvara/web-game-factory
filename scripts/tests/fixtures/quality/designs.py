@@ -98,8 +98,16 @@ def release_units(family_id, entry, strategy, mechanics, profile, run_seconds, k
     axis_profile = block.get("axis_profile") or {}
     readings = seeding._difficulty(entry, axis_profile, purposes, profile)
     durations = seeding._durations(purposes, mvp_count, run_seconds, profile, strategy)
+    elements = _elements(family_id, groups)
+    # A unit whose elements already debut something takes no mechanic as well: after the
+    # opening unit, a unit debuts one thing at a time (content.introductions_one_at_a_time).
+    seen, busy = set(), set()
+    for position, named in enumerate(elements):
+        if set(named) - seen:
+            busy.add(position)
+        seen |= set(named)
     chunks = seeding._introductions(block.get("introduce_order"), list(mechanics), purposes,
-                                    mvp_count)
+                                    mvp_count, busy=busy)
     dimensions = {str(d) for d in (entry.get("variety") or {}).get("dimensions") or []}
     cycle = [str(d) for d in block.get("variation_cycle") or []]
     objectives = list(block.get("objective_templates") or []) or ["Clear {unit}"]

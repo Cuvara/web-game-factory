@@ -335,8 +335,10 @@ a fix whose build then fails the check is held `regressed` - a repair held back,
 broken build passed (independent review r2, finding 2).
 
 Every history entry an artifact caused names it by `by` (the artifact id) and, where known,
-its `content_hash` and run-local `seq`: greybox and develop playability reports can share an
-artifact id, and only the hash and seq say which one detected or verified a finding.
+its `content_hash` and run-local `seq`: greybox and develop playability reports of a run
+before the greybox's ids carried their phase (`wgf:playability-report:<title>-greybox:...`,
+K7) share artifact ids, and only the hash and seq say which one detected or verified a
+finding there.
 
 Tests: `scripts/tests/test_triage.py` `ScenarioVerification` - the repair verified with both
 measurements, a newer bot still verifying with the comparison called weaker, each way of

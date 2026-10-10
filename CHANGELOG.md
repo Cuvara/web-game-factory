@@ -25,6 +25,15 @@ becomes an ordinary finding when a failing report raises it. Bringing an artifac
 none - existing ledgers stay valid; a run's next triage or quality gate records what its
 newest passing reports name.
 
+**Greybox playability reports carry their phase in their id** (K7 #10). The greybox's and
+develop's playability reports minted the same artifact id
+(`wgf:playability-report:<title>:<date>-<execution>`, each step counting from 1): five pairs
+in the 2D run of 2026-10-05, six in the 3D run. A playability step that names a phase
+(`with: {phase: greybox}`) now puts it in the id's scope (`<title>-greybox`); the develop
+loop's ids are unchanged. Bringing an artifact forward: none - old ids stay valid (the
+ledger already tells them apart by content hash and seq). prototype-report ids collide the
+same way (greybox and develop both mint `prototype-report`); not changed here.
+
 **K6 review r1 fixes** (docs/specialist-routing.md, docs/knowledge-enforcement.md). The
 ledger no longer verifies a split finding (`.../develop`, `.../assets`) whose check still
 FAILs its part in a BLOCKED report: the check is split again by the same rule, `unmeasured`

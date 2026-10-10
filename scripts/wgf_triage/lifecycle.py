@@ -53,8 +53,9 @@ regression of the fix. A record with no baseline (a ledger older than triage-rep
 keeps the old rule: any failure first detected at or after the fix.
 
 Every history entry an artifact caused names it by id AND by `content_hash` and run-local
-`seq` where known: two reports of one producer can share an artifact id (greybox and
-develop playability), and the hash and seq say which one it was. A verification keeps
+`seq` where known: two reports of one producer could share an artifact id (greybox and
+develop playability, before the greybox's ids carried their phase), and the hash and seq
+say which one it was. A verification keeps
 `samples`: every later report of the raising producer that measured the same check passing
 again (a single sample of a check known to flip is weak evidence; the count lets a reader
 grade it).

@@ -9,6 +9,22 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**A passing report's own findings are recorded, never routed** (K7 #4, retro H12;
+`core/reference/specialist-routing.yaml` 1.7.0 `ledger.noted_on_pass`, triage-report 1.4.0,
+quality-report 1.6.0, quality-finding record `noted`; docs/specialist-routing.md "A passing
+report's own findings: noted"). The 3D run's visual-qa v3 passed the build with two MAJOR
+findings and the triage that read it recorded neither: only failing reports were normalized.
+A gate report that PASSES now has its own findings at the listed severities
+(`visual-qa-report: [blocker, major]`) recorded in the run's ledger as `noted` - detected and
+classified to their owner, listed in the triage-report's `noted` - never routed and never
+holding the build: `ledger.blocking` leaves them out, so no gate verdict, the quality gate's
+`open`/`awaiting` and release's `open-findings` refusal are unchanged (tested on the real
+triage v12 replayed with and without the rule). A noted record stays open while the
+producer's newest report lists it, is verified when a newer report no longer does, and
+becomes an ordinary finding when a failing report raises it. Bringing an artifact forward:
+none - existing ledgers stay valid; a run's next triage or quality gate records what its
+newest passing reports name.
+
 **K6 review r1 fixes** (docs/specialist-routing.md, docs/knowledge-enforcement.md). The
 ledger no longer verifies a split finding (`.../develop`, `.../assets`) whose check still
 FAILs its part in a BLOCKED report: the check is split again by the same rule, `unmeasured`

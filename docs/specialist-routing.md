@@ -146,6 +146,8 @@ re-entry. The step:
    one build, and the next pending group is routed. Otherwise the step normalizes the current
    build's failing reports and the G4 decision that sent the build back. It drops findings
    routed `assets` by a report that the assets step has run after, because that work is done.
+   A passing report's own blocker and major findings are recorded in the ledger as `noted`
+   and never routed ([below](#a-passing-reports-own-findings-noted)).
 3. **Groups by owner, in order.** `design` comes first and alone: the other groups are
    `deferred`, and the gates measure the rebuilt game again. Then `assets` (one group), then
    each develop specialist. A group whose label the step's `on:` does not map is `held`, with
@@ -355,6 +357,45 @@ person's G4 finding waits for G4 (`ledger.awaiting`). Release advances the ledge
 on the newest reports and G4's decision, and refuses (`open-findings`) while any is open.
 Verified is enough there: the release step's other refusals already hold every report to the
 build it ships. A minor finding never holds a build.
+
+### A passing report's own findings: noted
+
+A report can PASS and still name findings of its own: the visual judge lists what it saw
+beside its verdict. In the 2026-10 3D run, visual-qa v3 passed the build with two MAJOR
+findings - the objective banner covers the goal, the marble loses contrast on dusk worlds -
+and the triage that read it recorded neither, because only failing reports were normalized
+(retro H12). `core/reference/specialist-routing.yaml` 1.7.0 `ledger.noted_on_pass` lists,
+per producer, the severities of such findings the ledger records (`visual-qa-report:
+[blocker, major]`). Each one is:
+
+- **recorded**, `detected` and `classified` to its owner like any finding, with a `noted`
+  block (quality-finding record, triage-report 1.4.0 / quality-report 1.6.0): the report,
+  its seq and hash, its verdict and why it is recorded; the triage-report lists them in
+  `noted`;
+- **never routed** - no triage assigns it, so no specialist visit is spent on what the gate
+  did not send back;
+- **never holding the build** - `ledger.blocking` leaves noted records out, so the quality
+  gate's `open`/`awaiting`, its verdict and release's `open-findings` refusal are exactly
+  what they were. The gate's own judgement of the same findings is unchanged: where a tier
+  holds a build on them, it is the quality floor that does (`floor.visual_major_findings` at
+  the release tier), not the ledger.
+
+It stays open while the producer's newest report still lists it (a later passing report
+listing it again is a history note), is verified (no fix recorded) when a newer report of
+the producer no longer lists it, and becomes an ordinary finding when a failing report
+raises it: `noted` is removed, its history says so, and the triage routes it with that
+report's findings. A record that is not noted - raised earlier by a failing report - keeps
+its status when a passing report lists it again, and its history says that report still
+listed it. Minor findings of a passing report are not recorded: a minor never holds a build.
+The quality gate and release record noted findings too when they advance the ledger
+(`ledger.remeasure`), so a passing report no triage reads is not lost.
+
+Tests: `scripts/tests/test_triage.py` `PassingReportFindings` - the REAL 3D visual-qa v3
+(PASS, 3f394e2) replayed through the REAL triage v12 it was read by, on all of its real
+inputs (`fixtures/real/triage-hygiene`): the two majors recorded noted with the run's own
+route, groups and findings, and the same ledger and blocking set as without the rule; and,
+over fixture reports, the record staying open while listed, verified when gone, promoted by
+a failing report, held by the quality gate's remeasure without blocking it.
 
 ### What the specialist brief carries
 

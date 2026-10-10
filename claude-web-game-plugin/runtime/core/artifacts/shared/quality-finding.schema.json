@@ -425,6 +425,20 @@
         },
         "guarded_by": { "type": "array", "items": { "$ref": "#/$defs/guard" }, "description": "Since quality-report 1.2.0 / triage-report 1.2.0. The lessons whose check this finding's is (see finding.guarded_by)." },
         "detected_seq": { "type": ["integer", "null"], "description": "Run-local order of the report it was first detected in." },
+        "noted": {
+          "type": "object",
+          "description": "Since triage-report 1.4.0 / quality-report 1.6.0. Present when the finding was named by a gate report that PASSED (core/reference/specialist-routing.yaml `ledger.noted_on_pass`): the report it was last listed in and why it is recorded. A noted record is never routed and never holds the build (it is not counted open by `ledger.blocking_severities`); it stays open while the producer's newest report lists it, is verified when a newer report of the producer no longer does, and loses `noted` - becoming an ordinary finding - when a failing report raises it.",
+          "required": ["producer", "artifact_id", "seq", "verdict", "reason"],
+          "properties": {
+            "producer": { "type": "string" },
+            "artifact_id": { "type": ["string", "null"] },
+            "content_hash": { "type": ["string", "null"] },
+            "seq": { "type": ["integer", "null"] },
+            "verdict": { "type": ["string", "null"] },
+            "reason": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
         "history": {
           "type": "array",
           "items": {

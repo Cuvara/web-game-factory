@@ -109,6 +109,28 @@ identical with and without it). G4 shows the three lines. check-integrity holds 
 check-tiers source and check is placed in the mapping or excluded with why. Bringing an
 existing artifact forward: none - a 1.4.0 quality-report without the section stays valid.
 
+**The golden loop through triage and the finding ledger** (K6,
+[docs/golden-runs.md](docs/golden-runs.md) "The develop stage"). The greybox loop never
+reached the Factory's own Diagnose -> Repair -> Verify bookkeeping: greybox-playability's
+`fail` goes straight back to greybox, so its run's triage-report and quality-report ledgers
+were empty. `--defect-stage develop` (`scripts/golden/run.py`, `GoldenRun(defect_stage=)`,
+`replay_developer.STAGES`) plants the defect in the first production develop visit instead;
+playability's failure goes through triage to the specialist that owns `restart.works` (UI),
+and the replay leaves the defect out on the visit briefed with those findings
+(`specialist.findings`), keeping it out on later visits (`kept-repaired`). The loop record
+(`evidence/golden-loop-2d-develop.json`) closes only when the run's ledger verified the
+repair: detected and assigned by triage, implemented at the repairing commit, verified on
+the same scenario with the failing and passing measurements and their frames' sha256,
+nothing open - the ledger records and the assessment lines copied in. Two more GOLDEN LOOP
+classes (`GoldenLoopDevelop2D`, `GoldenLoopDevelopNoRepair2D`; the category is now four
+golden runs, its CI job 360 min) and `WGF_GOLDEN_LOOP_DIR` to run each class in a named
+directory, or assert a kept run of the same variant; fast checks in `GoldenLoopFast`.
+Measured on Windows: closed on `76d9556` -> `c6fb256`, both findings closed in the
+quality-report's ledger; the negative control blocked at triage's `playability.fail` budget
+with the findings never verified. A negative control's exit status now requires every
+report to have failed the planted defect (`loop.control_held`): an unreadable loop record is
+`closed: false` too and used to pass it. No Factory change: nothing to bring forward.
+
 **The golden loop: a real closed loop on a real build, no LLM** (K6.1,
 [docs/golden-runs.md](docs/golden-runs.md) "The golden loop"). The golden replay developer
 takes `--defect NAME` (`replay_developer.DEFECTS`, exact-once rewrites; an anchor not found

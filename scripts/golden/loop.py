@@ -26,6 +26,26 @@ The loop is CLOSED only when all of these hold:
 `write` copies the cited frames of the first and the last report into the evidence directory
 (golden-loop/<n>-<commit>/<project>/<frame>.png) and writes golden-loop-<game>.json there. A
 replay is not an agent: the record says so, and so does every developer record it quotes.
+
+THE DEVELOP STAGE (`stage="develop"`, run.py --defect-stage develop). The defect is planted
+in the first production develop visit instead, so the reports read are playability's, the
+step routed back to is develop - through triage, which turns the failed check into findings
+and routes them to the specialist that owns them - and `after` is the report of the visit
+that repaired it (the first later report whose developer record says `repaired`). That
+route exercises the run's finding ledger, and the loop is closed only when the ledger says
+so too, for each project's finding `playability-report:<check>@<project>`:
+
+    a triage-report detected it and assigned it to its owner, and develop was entered for
+    that owner (route `triage.<owner>`);
+    the newest ledger (the quality-report's, else the newest triage-report's) holds it
+    verified or closed, through `implemented`, with `fix.commit` the repairing commit, and
+    `verification` verdict `passed`, `before` the failing commit's FAIL and `after` the
+    repairing commit's PASS of the same scenario id `<check>@<project>`, the comparison the
+    same scenario, and every frame either measurement cites on disk with its sha256;
+    the quality-report's `open` does not list it.
+
+The record copies those ledger records in (`ledger`), with the quality-report's assessment
+lines (`assessment`): a view of the evidence that decides nothing.
 """
 
 import hashlib
@@ -43,6 +63,23 @@ DEVELOPED_BY = "greybox"
 PLAYABILITY_REPORT = "playability-report"
 PROJECTS = ("desktop", "mobile")
 FORMAT = 1
+# Per defect stage (replay_developer.STAGES): (the develop step, the step that plays it).
+STEPS = {None: (DEVELOPED_BY, PLAYED_BY), "greybox": (DEVELOPED_BY, PLAYED_BY),
+         "develop": ("develop", "playability")}
+TRIAGE_REPORT = "triage-report"
+QUALITY_REPORT = "quality-report"
+DONE = ("verified", "closed")
+
+
+def evidence_key(game_key, stage=None):
+    """The evidence file's key: `<game>` for the greybox stage (as before), else
+    `<game>-<stage>`."""
+    return game_key if stage in (None, "greybox") else f"{game_key}-{stage}"
+
+
+def finding_id(check, project):
+    """The finding triage normalizes a failed playability check into (wgf_triage.findings)."""
+    return f"{PLAYABILITY_REPORT}:{check}@{project}"
 
 
 def _sha256(path):
@@ -79,10 +116,142 @@ def descends(repo, older, newer):
     return _git(repo, "merge-base", "--is-ancestor", older, newer).ok
 
 
-def _reports(state):
+def _reports(state, played_by=PLAYED_BY):
     refs = [ref for versions in (state.artifacts or {}).values() for ref in versions
-            if ref.type == PLAYABILITY_REPORT and ref.produced_by == PLAYED_BY]
+            if ref.type == PLAYABILITY_REPORT and ref.produced_by == played_by]
     return sorted(refs, key=ArtifactRef.order)
+
+
+def _of_type(state, kind):
+    refs = [ref for versions in (state.artifacts or {}).values() for ref in versions
+            if ref.type == kind]
+    return sorted(refs, key=ArtifactRef.order)
+
+
+def _bare(digest):
+    return str(digest or "").split(":", 1)[-1].lower()
+
+
+def _frames_on_disk(run_dir, measurement):
+    """[{id, path, sha256, exists, matches}] for each frame a ledger measurement cites."""
+    out = []
+    for frame in (measurement or {}).get("frames") or []:
+        relative = frame.get("path")
+        absolute = (os.path.join(run_dir, *relative.split("/"))
+                    if relative and not os.path.isabs(relative) else relative)
+        exists = bool(absolute and os.path.isfile(absolute))
+        actual = _sha256(absolute) if exists else None
+        out.append({"id": frame.get("id"), "path": relative, "sha256": frame.get("sha256"),
+                    "exists": exists,
+                    "matches": bool(exists and frame.get("sha256")
+                                    and _bare(actual) == _bare(frame.get("sha256")))})
+    return out
+
+
+def ledger_view(store, state, check, before_commit=None, after_commit=None):
+    """What the run's finding ledger says of the defect's findings, one per project: the
+    records copied from every triage-report and from the newest quality-report, and the
+    reasons the ledger does not show the repair verified (empty when it does)."""
+    run_dir = store.run_dir(state.run_id)
+    ids = [finding_id(check, p) for p in PROJECTS]
+    triage = []
+    for ref in _of_type(state, TRIAGE_REPORT):
+        content = store.read_artifact(state.run_id, ref)
+        by_id = {r.get("id"): r for r in content.get("lifecycle") or []
+                 if isinstance(r, dict)}
+        triage.append({"artifact": f"{ref.id}@v{ref.version}", "seq": ref.seq,
+                       "produced_by": ref.produced_by,
+                       "selected": {k: (content.get("selected") or {}).get(k)
+                                    for k in ("label", "owner", "findings")},
+                       "records": {fid: by_id[fid] for fid in ids if fid in by_id}})
+    quality = None
+    assessment = None
+    qrefs = _of_type(state, QUALITY_REPORT)
+    if qrefs:
+        content = store.read_artifact(state.run_id, qrefs[-1])
+        block = content.get("ledger") or {}
+        by_id = {r.get("id"): r for r in block.get("lifecycle") or [] if isinstance(r, dict)}
+        quality = {"artifact": f"{qrefs[-1].id}@v{qrefs[-1].version}", "seq": qrefs[-1].seq,
+                   "open": list(block.get("open") or []),
+                   "awaiting": list(block.get("awaiting") or []),
+                   "records": {fid: by_id[fid] for fid in ids if fid in by_id}}
+        assessment = [{k: d.get(k) for k in ("id", "status", "basis", "reason", "classes")}
+                      for d in (content.get("assessment") or {}).get("dimensions") or []
+                      if isinstance(d, dict)]
+    reasons = []
+    owners = set()
+    develop = state.steps.get("develop")
+    for fid in ids:
+        seen = [t["records"][fid] for t in triage if fid in t["records"]]
+        statuses = [h.get("status") for r in seen[-1:] for h in r.get("history") or []]
+        if not seen:
+            reasons.append(f"no triage-report records {fid}")
+            continue
+        if "detected" not in statuses or "assigned" not in statuses:
+            reasons.append(f"the triage-report never took {fid} through detected -> "
+                           f"assigned: {statuses}")
+        owner = seen[-1].get("owner")
+        owners.add(owner)
+        if not develop or not (develop.route_visits or {}).get(f"triage.{owner}"):
+            reasons.append(f"develop was never entered for {fid}'s owner {owner!r} "
+                           f"(route triage.{owner}): {develop and develop.route_visits}")
+        final = (quality or {}).get("records", {}).get(fid) if quality else None
+        final = final or seen[-1]
+        history = [h.get("status") for h in final.get("history") or []]
+        verification = final.get("verification") or {}
+        if final.get("status") not in DONE:
+            reasons.append(f"the ledger holds {fid} {final.get('status')}, not verified or "
+                           f"closed (verification {verification.get('verdict')})")
+            continue
+        if "implemented" not in history or "verified" not in history:
+            reasons.append(f"{fid} reached {final.get('status')} without implemented -> "
+                           f"verified: {history}")
+        if after_commit and (final.get("fix") or {}).get("commit") != after_commit:
+            reasons.append(f"{fid}'s fix commit is {(final.get('fix') or {}).get('commit')}, "
+                           f"not the repairing commit {after_commit}")
+        if verification.get("verdict") != "passed":
+            reasons.append(f"{fid}'s verification verdict is {verification.get('verdict')}")
+        project = fid.rsplit("@", 1)[-1]
+        scenario_id = f"{check}@{project}"
+        for side, commit, status in (("before", before_commit, "FAIL"),
+                                     ("after", after_commit, "PASS")):
+            measurement = verification.get(side) or {}
+            if commit and measurement.get("commit") != commit:
+                reasons.append(f"{fid}'s verification.{side} is commit "
+                               f"{measurement.get('commit')}, not {commit}")
+            if measurement.get("status") != status:
+                reasons.append(f"{fid}'s verification.{side} is {measurement.get('status')}, "
+                               f"not {status}")
+            if ((measurement.get("scenario") or {}).get("id")) != scenario_id:
+                reasons.append(f"{fid}'s verification.{side} scenario is "
+                               f"{(measurement.get('scenario') or {}).get('id')}, not "
+                               f"{scenario_id}")
+            frames = _frames_on_disk(run_dir, measurement)
+            if not frames or not all(f["exists"] and f["matches"] for f in frames):
+                reasons.append(f"{fid}'s verification.{side} frames are not all on disk with "
+                               f"their sha256: {frames}")
+        if not (verification.get("comparison") or {}).get("same_scenario"):
+            reasons.append(f"{fid}'s comparison is not the same scenario: "
+                           f"{(verification.get('comparison') or {}).get('note')}")
+        if quality and fid in quality["open"]:
+            reasons.append(f"the quality-report lists {fid} open")
+    if quality is None:
+        reasons.append("no quality-report: nothing advanced the ledger after the repair")
+    final_records = {}
+    for fid in ids:
+        record = ((quality or {}).get("records") or {}).get(fid)
+        if record is None:
+            record = next((t["records"][fid] for t in reversed(triage)
+                           if fid in t["records"]), None)
+        if record is not None:
+            verification = record.get("verification") or {}
+            record = dict(record, frames_on_disk={
+                side: _frames_on_disk(run_dir, verification.get(side))
+                for side in ("before", "after")})
+        final_records[fid] = record
+    return {"ids": ids, "owners": sorted(o for o in owners if o), "triage": triage,
+            "quality": quality, "final": final_records, "assessment": assessment,
+            "verified": not reasons, "reasons": reasons}
 
 
 def _version(store, state, ref, number, check, repo):
@@ -120,8 +289,10 @@ def _version(store, state, ref, number, check, repo):
         "failed_checks": report.get("failed_checks"),
         "check_status": {p: (per_project.get(p) or {}).get("status") for p in PROJECTS},
         "check": per_project,
-        "developer": ({k: defect.get(k) for k in ("status", "reason", "label", "iteration",
-                                                   "failures_named", "repair")}
+        "developer": ({**{k: defect.get(k) for k in ("status", "reason", "label", "iteration",
+                                                      "failures_named", "repair")},
+                       **{k: defect[k] for k in ("stage", "specialist", "findings_named")
+                          if k in defect}}
                       if isinstance(defect, dict) else None),
     }
 
@@ -134,16 +305,26 @@ def _failed_with_evidence(version):
         for p in PROJECTS)
 
 
-def record(store, state, repo, defect, repair=True):
-    """The loop's record: {"closed", "reasons", "versions", "before", "after", ...}."""
+def record(store, state, repo, defect, repair=True, stage=None):
+    """The loop's record: {"closed", "reasons", "versions", "before", "after", ...}.
+    `stage` (replay_developer.STAGES; None = the defect's own phase, greybox) says which
+    develop step the defect was planted in, and so which reports are read."""
     spec = replay_developer.DEFECTS[defect]
     check = spec["check"]
+    if stage not in STEPS:
+        raise ValueError(f"unknown defect stage {stage!r}")
+    DEVELOPED_BY, PLAYED_BY = STEPS[stage]  # noqa: N806 - the module's names, per stage
     versions = [_version(store, state, ref, number, check, repo)
-                for number, ref in enumerate(_reports(state), 1)]
+                for number, ref in enumerate(_reports(state, PLAYED_BY), 1)]
     greybox = state.steps.get(DEVELOPED_BY)
     played = state.steps.get(PLAYED_BY)
     first = versions[0] if versions else None
     last = versions[-1] if len(versions) > 1 else None
+    if stage == "develop" and len(versions) > 1:
+        # The report of the visit that repaired it: later develop visits (another
+        # specialist's) may be played again after it.
+        last = next((v for v in versions[1:]
+                     if (v["developer"] or {}).get("status") == "repaired"), last)
     reasons = []
     if first is None:
         reasons.append(f"{PLAYED_BY} produced no playability-report")
@@ -170,6 +351,11 @@ def record(store, state, repo, defect, repair=True):
     if not greybox or greybox.visits < 2:
         reasons.append(f"{DEVELOPED_BY} was visited {greybox.visits if greybox else 0} time(s): "
                        f"no failure was routed back to it")
+    ledger = None
+    if stage == "develop":
+        ledger = ledger_view(store, state, check, before_commit=first and first["commit"],
+                             after_commit=last and last["commit"])
+        reasons.extend("ledger: " + r for r in ledger["reasons"])
 
     def side(version):
         if version is None:
@@ -183,7 +369,15 @@ def record(store, state, repo, defect, repair=True):
                                  "frames": (version["check"].get(p) or {}).get("frames") or []}
                              for p in PROJECTS}}
 
+    extra = {}
+    if stage is not None:
+        extra = {"stage": stage, "steps": {"developed_by": DEVELOPED_BY, "played_by": PLAYED_BY},
+                 "route_visits": {DEVELOPED_BY: dict(greybox.route_visits) if greybox else {}}}
+    if ledger is not None:
+        extra["ledger"] = ledger
+        extra["assessment"] = ledger.pop("assessment")
     return {
+        **extra,
         "format": FORMAT,
         "kind": "golden-loop",
         "defect": defect,
@@ -204,6 +398,31 @@ def record(store, state, repo, defect, repair=True):
         "closed": not reasons,
         "reasons": reasons,
     }
+
+
+def control_held(loop_record):
+    """(held, reasons) for a negative control's record: it held only when the record has
+    versions and every one FAILs, with the defect's check FAIL on every project, on a commit
+    whose developer record says `planted`. `closed: false` alone is not enough - a record
+    that could not be read is `closed: false` too, and must never count as the control."""
+    reasons = []
+    versions = (loop_record or {}).get("versions") or []
+    if not versions:
+        reasons.append("the record has no playability report: nothing shows the defect "
+                       "failing - " + "; ".join((loop_record or {}).get("reasons") or []))
+    for version in versions:
+        label = f"report v{version.get('version')} ({(version.get('commit') or '')[:12]})"
+        if version.get("verdict") != "FAIL":
+            reasons.append(f"{label} is {version.get('verdict')}, not FAIL")
+        statuses = version.get("check_status") or {}
+        if any(statuses.get(p) != "FAIL" for p in PROJECTS):
+            reasons.append(f"{label}: the check is not FAIL on every project: {statuses}")
+        if ((version.get("developer") or {}).get("status")) != "planted":
+            reasons.append(f"{label}: the developer record is not `planted`: "
+                           f"{version.get('developer')}")
+    if (loop_record or {}).get("closed"):
+        reasons.append("the record says the loop closed")
+    return not reasons, reasons
 
 
 def write(loop_record, run_dir, evidence_dir, key):

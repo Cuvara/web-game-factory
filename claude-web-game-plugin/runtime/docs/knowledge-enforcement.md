@@ -765,9 +765,11 @@ repeatably wrong about what a player feels, and the gaming the retro found (a re
 changes what the gate reads, not the game) repeats as well as an honest repair does. The
 guard refuses the circular sources it can name from the ledger; it cannot see two reports
 that are independent on paper but share a cause (the same bot, the same flawed oracle), and
-a person's G4 decision counts as a claim, not a measurement. A single-run lesson held by a
-hard check is still drafted BLOCKING (K4): that check holds the build; strength speaks only
-to how far the principle has been shown.
+a person's G4 decision counts as a claim, not a measurement. A lesson held by a hard or
+quality check is drafted BLOCKING or REQUIRED (K4) on `hypothesis` or `single-run` evidence
+too: that level comes from the check's tier - the check already holds every build - not
+from the evidence, and it is not a claim of strength. The draft's evidence entry records the
+strength beside it; strength speaks only to how far the principle has been shown.
 
 **Tests.** `test_knowledge_strength` (KNOWLEDGE): every level through ledgers the REAL
 triage step makes from playability reports judged by the playability step's own path over

@@ -39,8 +39,10 @@ by step or artifact type, so any checkpoint whose inputs carry the same fields s
                                                    states it (never shown as a pass unless it
                                                    is one), the class mix its checks were
                                                    measured by, a PASS resting on the game's own
-                                                   report or one AI judgment named so, and
-                                                   every unresolved judge finding
+                                                   report or one AI judgment named so, how
+                                                   many of its checks were not reported (a
+                                                   producer's report absent), and every
+                                                   unresolved judge finding
     compliance           (quality-report)          the run's knowledge compliance: enforcing or
                                                    advisory (and why), the verdict, the rules
                                                    by level - satisfied, failed, unmeasured,
@@ -178,6 +180,8 @@ def _assessment(content):
                     "held": len(held),
                     "unmeasured": sum(1 for c in held if c.get("status") not in ("PASS", "FAIL")),
                     "failed": sum(1 for c in held if c.get("status") == "FAIL"),
+                    "not_reported": len([n for n in dim.get("not_reported") or []
+                                         if isinstance(n, dict)]),
                     "classes": classes, "human": len(dim.get("human") or []),
                     "strength": basis.get("strength"), "basis_why": basis.get("why"),
                     "judges": [j for j in dim.get("judges") or [] if isinstance(j, dict)],
@@ -200,6 +204,8 @@ def _assessment_lines(assessment):
         lines.append(f"      {str(dim['label']):<24} {status:<16} {dim['held']} held"
                      + (f", {dim['failed']} failed" if dim["failed"] else "")
                      + (f", {dim['unmeasured']} not measured" if dim["unmeasured"] else "")
+                     + (f", {dim['not_reported']} not reported" if dim.get("not_reported")
+                        else "")
                      + (f"; {mix}" if mix else "")
                      + (f"; {dim['human']} person's decision(s)" if dim["human"] else ""))
         if dim["status"] != "PASS" and dim.get("reason"):

@@ -9,6 +9,30 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**K6 review r1 fixes** (docs/specialist-routing.md, docs/knowledge-enforcement.md). The
+ledger no longer verifies a split finding (`.../develop`, `.../assets`) whose check still
+FAILs its part in a BLOCKED report: the check is split again by the same rule, `unmeasured`
+when its part cannot be established. The run ledger's reopen (quality gate, release)
+refreshes the record's `build` and `failed_measurement`, so a re-play of the reopening build
+is held `same-build` and `before` names that failure. A record's regression baseline keeps,
+per check, the newest measurement the ledger recorded when the newest report left the check
+unmeasured (a BLOCKED report no longer erases an earlier pass). Evidence strength reads the
+run's newest ledger (a newer quality-report's `ledger.lifecycle` over the last
+triage-report's) and refuses a repair it reopened; a re-play of the build that passed is no
+independent repeat, and validated contexts differ in run or commit
+(`evidence-strength.yaml` 1.1.0). A held finding whose check stops applying has no in-run
+close - documented as a known limitation. G4's assessment lines also count the checks not
+reported. Bringing an artifact forward: none - existing ledgers and candidates stay valid; a
+candidate's strength is derived again on its next ingest or promote.
+
+**Core v1 change: `scripts/wgflib/gate_evidence.py`** (K6.3; reason: G4 is decided on the
+quality-report, and a person must see its assessment - the three questions, each check's
+measurement class, a PASS resting on the game's own report or one AI judgment named so, the
+checks not reported - to decide it). Display only: it adds the assessment lines to the
+evidence the CLI shows for a waiting checkpoint (`status --json` `pending.evidence`), reads only the report's
+`assessment` section, and decides nothing - no gate, verdict, route or release decision reads
+it.
+
 **Validated learning: a lesson's evidence strength, derived from the ledger** (K6.4,
 `core/reference/evidence-strength.yaml` 1.1.0, candidate store 1.1.0, `evidence.yaml` 2.1.0,
 [docs/knowledge-enforcement.md](docs/knowledge-enforcement.md) "Evidence strength"). `wgf

@@ -391,6 +391,22 @@ class GateSummary(_Base):
         self.assertIn("PASS (qualified)", runtime)
         self.assertIn("self-reported", runtime)
 
+    def test_g4_shows_the_checks_whose_report_is_absent(self):
+        """Review r1: a `when: reported` family whose producer's report is absent is listed
+        `not_reported` - it narrows a PASS, so G4 says how many."""
+        report = self.report(complete_build())
+        runtime = next(d for d in report["assessment"]["dimensions"]
+                       if d["id"] == "runtime_correctness")
+        runtime["not_reported"] = [{"check": "browser-qa:browser.console", "family": "x"},
+                                   {"check": "browser-qa:browser.errors", "family": "x"}]
+        lines = gate_evidence.render(gate_evidence.summarize({"quality-report": report}))
+        row = next(line for line in lines if "Runtime correctness" in line)
+        self.assertIn("2 not reported", row)
+        runtime["not_reported"] = []
+        lines = gate_evidence.render(gate_evidence.summarize({"quality-report": report}))
+        row = next(line for line in lines if "Runtime correctness" in line)
+        self.assertNotIn("not reported", row)
+
     def test_not_supported_and_inconclusive_are_never_shown_as_a_pass(self):
         report = self.report(complete_build())
         for dim in report["assessment"]["dimensions"]:

@@ -34,14 +34,14 @@ evidence the CLI shows for a waiting checkpoint (`status --json` `pending.eviden
 it.
 
 **Validated learning: a lesson's evidence strength, derived from the ledger** (K6.4,
-`core/reference/evidence-strength.yaml` 1.1.0, candidate store 1.1.0, `evidence.yaml` 2.1.0,
+`core/reference/evidence-strength.yaml` 1.2.0, candidate store 1.1.0, `evidence.yaml` 2.1.0,
 [docs/knowledge-enforcement.md](docs/knowledge-enforcement.md) "Evidence strength"). `wgf
 knowledge ingest` now records, for every lesson candidate, how far the measurements behind it
 were repeated - `hypothesis` (no measured repair), `single-run` (one FAIL->PASS pair),
 `reproduced` (the pass repeated in a later independent report on a later commit than the
 one that passed, on a check that does not alternate verdicts, by a class that is not only the
-game's probe), `validated` (reproduced in two contexts differing in run or commit - desktop and
-mobile of one run and build are one context) - derived from each source's re-measurement in its run's finding ledger
+game's probe), `validated` (reproduced in two contexts differing in the commits measured - desktop and
+mobile of one run and build, or two runs of the identical commits, are one context) - derived from each source's re-measurement in its run's finding ledger
 (K6.2 before/after/samples, content hashes, history) and the check's measurement class (K6.3),
 with why (`strength_why`), the checks marked `unstable`, and every measurement refused with its
 rule and reason (`refused_evidence`): the detecting report counted again, the lesson's own

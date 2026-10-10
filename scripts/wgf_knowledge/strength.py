@@ -430,8 +430,8 @@ def derive(sources, proposed=()):
         why = (f"reproduced: {first['finding']} FAILED on {_short(first['before'])}, PASSED on "
                f"{_short(first['after'])} and passed again in {first['repeats']} later "
                f"independent measurement(s) ({first['class']}); only one context - validation "
-               "needs a second run, or a repair on other builds"
-               + (f" ({len(reproduced)} scenarios of one run and build are one context)"
+               "needs the repair reproduced on other builds"
+               + (f" ({len(reproduced)} measurements of the same builds are one context)"
                   if len(reproduced) > 1 else ""))
     elif counted:
         first = counted[0]

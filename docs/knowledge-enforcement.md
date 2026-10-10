@@ -16,7 +16,7 @@ rules that apply to it.
 | Knowledge model (rules) | `core/reference/lessons.yaml` 2.1.0 |
 | Enforcement vocabulary, where each result is read | `core/reference/check-tiers.yaml` 1.3.0 (`tiers`, `status_at`) |
 | Instance evidence (which game, run, fix, rerun) | `workspace/lessons/evidence.yaml` 2.1.0 |
-| Evidence strength of a learned lesson (K6.4) | `core/reference/evidence-strength.yaml` 1.1.0, `scripts/wgf_knowledge/strength.py` |
+| Evidence strength of a learned lesson (K6.4) | `core/reference/evidence-strength.yaml` 1.2.0, `scripts/wgf_knowledge/strength.py` |
 | Model, integrity rules, exceptions | `scripts/wgf_knowledge/model.py` |
 | Applicability resolver | `scripts/wgf_knowledge/resolve.py` |
 | Versions a run is judged by | `scripts/wgf_knowledge/versions.py` |
@@ -689,7 +689,7 @@ self-confirming can raise it.
 
 | Piece | Where |
 |---|---|
-| The vocabulary | `core/reference/evidence-strength.yaml` 1.1.0 (held equal to the code by check-integrity) |
+| The vocabulary | `core/reference/evidence-strength.yaml` 1.2.0 (held equal to the code by check-integrity) |
 | Derivation, circularity guard | `scripts/wgf_knowledge/strength.py` |
 | Recorded at ingest | `ingest.py`; candidate store 1.1.0 (`quality-finding.schema.json` `candidate_record`: `strength`, `strength_why`, `refused_evidence`, `unstable`; `candidate_source.remeasurement`) |
 | Ceiling at promote | `promote.py` (`--classification`), the evidence entry's `strength` leg (`evidence.yaml` 2.1.0) |

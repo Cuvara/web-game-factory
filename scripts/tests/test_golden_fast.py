@@ -62,7 +62,8 @@ class GoldenLoopFast(unittest.TestCase):
             defined = set(re.findall(r"^class (GoldenLoop\w*)\(", fh.read(), re.M))
         workflow = os.path.join(tests, "..", "..", ".github", "workflows", "acceptance.yml")
         with open(workflow, encoding="utf-8") as fh:
-            listed = set(re.findall(r"test_golden_loop\.(GoldenLoop\w*)", fh.read()))
+            listed = {name for line in fh if line.strip().startswith("classes:")
+                      for name in re.findall(r"test_golden_loop\.(GoldenLoop\w*)", line)}
         self.assertTrue(defined)
         self.assertEqual(defined, listed)
 

@@ -93,6 +93,8 @@ conformance, the reviewer) always runs, in about 20 s, and needs no node.
     playability/reports/                    every playability-report version, as the store holds it
     playability/<step>/<visit>-<attempt>/   the bot's settings.json and <project>/first-session.json,
                                             act.json, ... (no frames, no logs), pass or fail
+    golden-loop-2d.json                     with --defect: the loop's before/after record (below)
+    golden-loop/v<n>-<commit>/<project>/    with --defect: the frames the first and last report cite
 ```
 
 The summary holds: `run_id`; every step's status, expected outcome, route, duration,
@@ -367,6 +369,195 @@ They do **not** prove:
 - **that the art is good.** The baseline judge proves the run's frames look like frames a
   person approved, not that the approved look is good; an agent judge (`kind: command`) is
   what reads a new game's frames against the rubric.
+
+## The golden loop
+
+A golden run proves the pipeline carries a known-good game to a release. It does not prove
+the Factory's loop: that a real build failing a real check is routed back, rebuilt, and the
+**same check re-played and passed on a newer commit** - through the production workflow, not
+a fixture world. The golden loop does, with no LLM: the 2D golden with a defect planted by
+the replay developer.
+
+```
+greybox (visit 1)       replay plants `restart-dead`             -> commit A
+greybox-playability     clones A, builds, plays in Chromium:     FAIL  restart.works
+                        the bot clicks the result screen's          (desktop + mobile,
+                        restart, the run stays lost                 frames end-lost, retry-dead)
+  route fail -> greybox (visit 2), brief.json playability_failures names restart.works
+greybox (visit 2)       replay reads the brief, leaves it out    -> commit B (descends from A)
+greybox-playability     clones B, builds, re-plays:              PASS  restart.works (measured)
+assets -> ... -> release                                          the normal golden outcome
+```
+
+**The defect.** `replay_developer.DEFECTS["restart-dead"]` (2D only, greybox phase only):
+in the port's `src/game/index.ts` the result screen's `restart` UI action keeps `click();`
+and drops `void app.restart();`. Typecheck, lint, the unit tests and the port's own browser
+tests (which restart through the `window.__game.restart()` hook) all pass; only a player's
+click on the button - the bot's, at the coordinates the play probe lists - finds it dead.
+`restart.works` is a hard check and a universal-floor blocker. The rewrite is an exact-once
+string replacement in the style of `SEAM_REWRITES`: an anchor not found exactly once refuses
+the replay (exit 3) before anything is written, on a repairing visit too.
+
+**Plant and repair are read from the brief, nothing else.** `defect_decision`: a greybox
+brief whose `playability_failures` name no `restart.works` failure gets the defect
+(`planted`); one that names it - the develop step hands a visit the failed checks of the
+report that played the commit it starts from - lays the port's own line (`repaired`); a
+production visit lays the port as it is (`not-applied`). Each visit records what it did in
+`docs/development/report.json` `replay.defect`, labelled `GOLDEN-LOOP DEFECT: a scripted
+rewrite ... a replay, not an agent's fix`. The repair proves the routing and the re-play,
+not a developer's ability to fix anything - that is the live loop's question.
+
+**Evidence.** The playability bot captures `retry-dead` - the screen a retry that never
+returned to play leaves - and `restart.works` cites the lose recording's `end-<reached>`,
+`retry-dead` and `state-retry` frames. `scripts/golden/loop.py` reads the run store and the
+game's history and writes `evidence/golden-loop-2d.json`: every greybox-playability report
+(commit, verdict, `restart.works` per project with its viewport, summary, measurement and
+frames - path, existence, sha256), the developer record at each commit, the visits, how the
+run ended, a `before` / `after` pair, and `closed` with the `reasons` it is not. The first and
+the last report's frames are copied to `evidence/golden-loop/v<n>-<commit>/<project>/`.
+`closed` requires: v1 FAIL with `restart.works` FAIL on desktop and mobile, citing frames that
+exist, on a commit recorded `planted`; the last report PASS with `restart.works` PASS on both
+(UNMEASURED, SKIPPED, BLOCKED or absent never count) on a commit recorded `repaired`; that
+commit different from and descending from A; greybox visited at least twice.
+
+**The negative control.** `--defect restart-dead --no-repair` plants it on every greybox
+visit whatever the brief says. The loop must not close: greybox is entered once and then
+`max_visits_by_route: {greybox-playability.fail: 2}` more times, every report FAILs
+`restart.works`, and the engine stops the run `BLOCKED` (`blocked_reason.kind: loop-limit`,
+step greybox) - nothing after greybox runs, nothing is released, and `closed` is false.
+
+```bash
+python3 scripts/golden/run.py --game 2d --defect restart-dead --keep        # exit 0: closed
+python3 scripts/golden/run.py --game 2d --defect restart-dead --no-repair   # exit 0: not closed
+python3 scripts/golden/run.py --game 2d --defect restart-dead --defect-stage develop --keep
+python3 scripts/golden/run.py --game 2d --defect restart-dead --defect-stage develop --no-repair
+WGF_GOLDEN_LOOP=1 bin/wgf test-core --only "GOLDEN LOOP" --strict           # all four, asserted
+```
+
+Measured 2026-10-09 on Windows 11 (k6/golden-loop): the repaired run planted the defect at
+commit A `700ec25`; greybox-playability failed exactly `restart.works`, on desktop (1280x720)
+and mobile (393x851) - "retry (input:restart) returned to play in None ms; score did not
+reset", `retry-dead` showing the game-over screen 15 s after the press; greybox's second visit
+(source diff: the one restored line) built B `38244e9`, re-played `restart.works` PASS (568 /
+604 ms) and the run completed every step to the drafted release (61.6 min). The negative
+control failed `restart.works` on all three greybox builds and stopped BLOCKED at the loop
+limit after 39 min. Eleven of the twelve GOLDEN LOOP tests passed; the twelfth is the
+template's own `makes no insecure requests` smoke in the independent browser evidence, the
+known Windows environment failure every Windows golden shows (Chromium on win32 ignores the
+refusing proxy), not the loop.
+
+### The develop stage: through triage and the finding ledger
+
+The greybox loop never reaches the Factory's own Diagnose -> Repair -> Verify bookkeeping:
+greybox-playability's `fail` goes straight back to greybox, so no triage runs and the run's
+finding ledger stays empty. `--defect-stage develop` plants the same defect in the first
+**production** develop visit instead (the greybox stays clean), where a playability failure
+goes through triage:
+
+```
+greybox -> greybox-playability PASS -> assets -> triage (nothing to route)
+develop (visit 1)       replay plants `restart-dead`                -> commit A
+playability             FAIL restart.works (desktop + mobile, frames)
+  route fail -> triage  normalizes playability-report:restart.works@desktop / @mobile,
+                        classifies them (specialist-routing: restart.works -> ui -> ui),
+                        assigns them and routes `ui`
+develop (visit 2)       entered as triage.ui: briefed as the UI specialist with the two
+                        findings (brief.json specialist.findings); the replay reads them and
+                        leaves the defect out                        -> commit B
+playability             PASS restart.works, measured
+production-quality -> visual-qa -> content-sufficiency -> review -> sdk -> sdk-review ->
+verify -> quality-gate  advances the ledger: implemented (B) -> verified (playability on B)
+                        -> closed (every gate measured B)
+G4 (the harness passes it, as in every golden) -> store-listing -> listing-validation -> release
+```
+
+**The decision** (`replay_developer.defect_decision(..., stage="develop", prior=...)`): a
+production visit whose brief names no `restart.works` failure plants it; one whose
+`specialist.findings` include a `playability-report` finding of `restart.works` - or whose
+`playability_failures` name it - leaves it out (`repaired`); a later visit that names
+nothing keeps it out (`kept-repaired`), read from the replay's own record in the checkout the
+visit starts from. The record (`replay.defect`) adds `stage`, `specialist`, `findings_named`
+and `triage_report`; it is still a replay, never an agent's fix. Without `--defect-stage`
+nothing changes.
+
+**Closed** (`loop.record(stage="develop")`, `evidence/golden-loop-2d-develop.json`): the
+greybox-stage conditions over playability's reports - `after` is the report of the visit
+that repaired it - and, for each project's finding, the run's own ledger: a triage-report
+detected and assigned it; develop was entered for its owner (`triage.<owner>`); the newest
+ledger (the quality-report's) holds it verified or closed, through `implemented`, with
+`fix.commit` = B; `verification.verdict: passed`, `before` = A's FAIL and `after` = B's PASS
+of the same scenario id `restart.works@<project>`, `comparison.same_scenario` true, every
+frame either side cites on disk with its sha256; and the quality-report's `open` does not
+list it. The record copies the ledger records in (`ledger.triage`, `ledger.quality`,
+`ledger.final` with `frames_on_disk`) and the quality-report's assessment lines
+(`assessment`).
+
+**Its negative control** (`--defect-stage develop --no-repair`): every develop visit plants
+it, briefed or not. Playability fails it on each build, triage reopens the finding
+(`still-failing`) and routes it to the UI specialist again, and on the third failure
+triage's `max_visits_by_route: {playability.fail: 2}` stops the run `BLOCKED`
+(`blocked_reason.kind: loop-limit`, step triage). The ledger never verifies the finding and
+`closed` is false.
+
+Measured 2026-10-09 on Windows 11 (k6/develop-loop), run `new-game-20261009-115717-1f2d20`,
+64.9 min: greybox `5d5298e` PASS; develop planted the defect at A `76d9556`; playability
+FAILED exactly `restart.works` on desktop (1280x720) and mobile (393x851) - "retry
+(input:restart) returned to play in None ms; score did not reset", frames `end-lost`,
+`retry-dead`; triage routed "2 finding(s) to UI (route `ui`)"; the UI visit's commit B
+`c6fb256` restored the one line (`void app.restart();`); playability re-played
+`restart.works` PASS (635 / 738 ms). Every later step passed (verify 148 pass, 0 fail), G4
+was passed by the harness and release r1 was drafted at the sdk commit `62b1366`. The
+quality-report's ledger holds both findings **closed**: detected (playability-report 01, A,
+seq 15) -> classified (specialist-routing 1.6.0, ui) -> assigned (triage-report 02) ->
+implemented (prototype-report 02, B, seq 17) -> verified (playability-report 02, B, seq 18,
+"the same scenario, bot and settings measured the failure and the pass") -> closed
+(quality-report 01: every gate measured B); `open: []`; one sample. The assessment: design
+validity, runtime correctness and player-facing quality all **INCONCLUSIVE** - runtime
+correctness holds `playability:restart.works` PASS and nothing FAILED, but 10 of its 60 held
+checks measured nothing (browser QA's `browser.win`, `.lose`, `.restart`, the audio and
+context-menu checks report WARNING on this port: the design states no win, bad play does not
+lose within 90 s), and no person had judged the build when the quality gate ran. The
+GOLDEN LOOP assertions do not require a runtime PASS for that reason.
+
+The negative control, measured 2026-10-10 (run `new-game-20261010-062926-0102fe`, 53.9 min;
+an earlier attempt was interrupted by a host restart and is not counted): develop planted
+the defect on all three visits (`7ebb60b`; then `1d0142a` and `31c64a7`, each briefed as the
+UI specialist with both findings and planting it anyway), playability FAILED `restart.works`
+on desktop and mobile each time, and the run stopped `BLOCKED` at triage (`loop-limit`,
+`playability.fail`, limit 2). The ledger took each finding detected -> classified ->
+assigned -> implemented -> classified (`still-failing`: reopened) -> assigned and never
+verified it; no quality-report was produced; `closed` false; `control_held` true. The run.py
+exit status of a negative control now needs that too (`loop.control_held`: versions, every
+one FAIL on every project, every developer record `planted`): a record that could not be
+read is also `closed: false`, and used to pass the control vacuously.
+Asserted on the two kept runs (`WGF_GOLDEN_LOOP_DIR`): `GoldenLoopDevelop2D` 9 of 10 - the tenth
+is `browser_passed`. The independent browser evidence of the repaired run failed three of 30
+tests: the same `makes no insecure requests` browser smoke on both projects, and once, on mobile,
+`plays its music after the first input and falls silent under the platform mute` (`music-loop`
+not playing after 15 s). That audio test passed in the three other kept runs of the same port
+source on this machine (the baseline 2D golden, the greybox loop, the develop negative control)
+and was not investigated further: a single Windows observation, not shown to be a defect, and
+not explained either. The smoke is the known Windows environment
+failure - and `GoldenLoopDevelopNoRepair2D` 5 of 5.
+
+`scripts/tests/test_golden_loop.py` is the **GOLDEN LOOP** category, gated by
+`WGF_GOLDEN_LOOP=1` (SKIP otherwise; a skip is never a pass). It is **opt-in**
+(`core_suite.OPT_IN`): a plain `wgf test-core` - the release gate included - leaves it out and
+says so under the table, unless the variable is `1` or the category is named with `--only`.
+It asserts everything above from the run store, `git show <commit>:` and the files on disk,
+plus the run's normal golden outcome for the repaired runs: four classes, `GoldenLoop2D`,
+`GoldenLoopNoRepair2D`, `GoldenLoopDevelop2D` and `GoldenLoopDevelopNoRepair2D`, four golden
+runs. `WGF_GOLDEN_LOOP_DIR=<dir>` runs each class in `<dir>/<key>` (`greybox`,
+`greybox-no-repair`, `develop`, `develop-no-repair`); a class whose directory already holds a
+finished run's summary is asserted on that kept run instead of running again. CI runs it in
+its own job (`golden-loop` in `.github/workflows/acceptance.yml`), never in the acceptance
+job: one runner per stage (matrix `greybox`, `develop`, 240 min each, two goldens each; a
+skipped test fails the job, as `--strict` does for the category), on a manual run with
+`golden_loop` ticked, or on a pull request labelled `golden-loop` (the label takes effect on
+the next push or re-run), and uploads `golden-loop-evidence-<stage>`. The
+always-on part - the anchors against the pinned port, the decision, the refusals, the argv,
+`loop.record` over a synthetic store and a real git history - is `GoldenLoopFast` in
+`test_golden_fast.py`.
 
 ## The live loop
 

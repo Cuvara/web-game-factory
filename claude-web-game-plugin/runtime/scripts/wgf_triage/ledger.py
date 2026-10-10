@@ -166,4 +166,4 @@ def remeasure(refs, load, *, at, by, routing=None, run_dir=None, current=None):
         seqs=seqs, reports=reports, proto=proto, proto_seq=seq_of(refs, "prototype-report"),
         decision=decision if isinstance(decision, dict) else None,
         decision_seq=seq_of(refs, "decision-record"), human_ids=human, selected=None,
-        triage_id=by, routing_version=routing.version, build_of=build_of)
+        triage_id=by, routing_version=routing.version, build_of=build_of, routing=routing)

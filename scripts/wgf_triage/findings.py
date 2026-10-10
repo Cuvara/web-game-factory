@@ -23,6 +23,10 @@ id means the same items' route on every measurement and the ledger closes the `a
 when its assets are made while the `develop` part stays open until the game draws its own.
 The check's verdict and its whole-check route are the producer's and stay as reported.
 
+A finding of a producer that lists its checks (measurement.CHECKED) carries `measurement`: the
+report, commit and status it failed on and, for playability, the scenario the bot played for
+the check (playability-report 1.4.0) - the `before` a later verification is compared with.
+
 The quality scorecard (WS-7) emits findings in this shape directly; `normalize` accepts its
 `findings` list as the `quality-scorecard` producer. The quality gate's quality-report
 (scripts/wgf_quality) is read as the `quality-report` producer: its open findings in a
@@ -32,7 +36,10 @@ dimension below the floor, each mapped onto a routing dimension by the producer 
 import json
 import re
 
-__all__ = ["normalize", "from_requests", "NormalizeError", "PRODUCERS", "finding_id"]
+from . import measurement as measurements
+
+__all__ = ["normalize", "from_requests", "NormalizeError", "PRODUCERS", "finding_id",
+           "failing_parts"]
 
 # The artifact types a finding can be read from, in the order a build's reports are read.
 PRODUCERS = ("playability-report", "production-quality-report", "visual-qa-report",
@@ -186,9 +193,32 @@ def _split_parts(ctx, check):
         order.index(kv[0]) if kv[0] in order else len(order), kv[0]))
 
 
+def failing_parts(routing, kind, check):
+    """The routes (split parts) `check` of a `kind` report fails, by the same rule that
+    splits its findings (`_split_parts`); None when the producer table does not split the
+    check, or the check names no failing item to split."""
+    ctx = _Context(routing, kind, {})
+    parts = _split_parts(ctx, check if isinstance(check, dict) else {})
+    return None if parts is None else {route for route, _items in parts}
+
+
+def _measured(ctx, check, findings):
+    """Each finding of `check`, with the measurement it was failed on."""
+    taken = measurements.of_check(ctx.kind, ctx.report, check,
+                                  content_hash=getattr(ctx.ref, "content_hash", None),
+                                  seq=getattr(ctx.ref, "seq", None))
+    for finding in findings:
+        finding["measurement"] = dict(taken)
+    return findings
+
+
 def _check_findings(ctx, check, route, evidence, assets=None):
     """The findings of one failed check: one, under the check's own id and route; or, for a
     check the producer table splits, one per route its failing items take."""
+    return _measured(ctx, check, _check_parts(ctx, check, route, evidence, assets))
+
+
+def _check_parts(ctx, check, route, evidence, assets=None):
     cid, project = check.get("id") or "check", check.get("project")
     parts = _split_parts(ctx, check)
     if parts is None:
@@ -396,12 +426,12 @@ def _listing(ctx):
             continue
         cid = check.get("id") or "check"
         project = "/".join(p for p in (check.get("platform_id"), check.get("locale")) if p)
-        out.append(ctx.make(
+        out.extend(_measured(ctx, check, [ctx.make(
             check=cid, project=project or None,
             dimension=ctx.dimension(sections.get(check.get("section"))), severity="blocker",
             summary=check.get("summary"), route=ctx.table.get("route") or "listing",
             measured=check.get("measured"), bar=check.get("expected"),
-            evidence=check.get("files") or ()))
+            evidence=check.get("files") or ())]))
     return out
 
 

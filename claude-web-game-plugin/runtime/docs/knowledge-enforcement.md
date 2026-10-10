@@ -15,7 +15,8 @@ rules that apply to it.
 |---|---|
 | Knowledge model (rules) | `core/reference/lessons.yaml` 2.1.0 |
 | Enforcement vocabulary, where each result is read | `core/reference/check-tiers.yaml` 1.3.0 (`tiers`, `status_at`) |
-| Instance evidence (which game, run, fix, rerun) | `workspace/lessons/evidence.yaml` 2.0.0 |
+| Instance evidence (which game, run, fix, rerun) | `workspace/lessons/evidence.yaml` 2.1.0 |
+| Evidence strength of a learned lesson (K6.4) | `core/reference/evidence-strength.yaml` 1.2.0, `scripts/wgf_knowledge/strength.py` |
 | Model, integrity rules, exceptions | `scripts/wgf_knowledge/model.py` |
 | Applicability resolver | `scripts/wgf_knowledge/resolve.py` |
 | Versions a run is judged by | `scripts/wgf_knowledge/versions.py` |
@@ -362,6 +363,7 @@ wgf knowledge ingest <run-id> [--dry-run]     # the run's lesson candidates -> c
 wgf knowledge candidates [--open]             # the stored candidates
 wgf knowledge reject C-<n> --reason TEXT      # a person rejects one (kept)
 wgf knowledge promote C-<n> [--out FILE]      # a PR-ready patch; never edits core/
+        [--classification C]                  # refused beyond the evidence strength (K6.4)
 wgf knowledge firewall [ID ...] [--run ID]    # every lesson's regression tests, run here
 wgf knowledge generations [--json]            # runs compared by the knowledge they consumed
 ```
@@ -480,8 +482,9 @@ optional but `summary`, additive to the 1.2.0 shape.
 | Generations | `wgf knowledge generations [--json]` | Runs grouped by the Factory and knowledge versions their outcome was judged by - the quality-report compliance's versions, else the run's contract's, else what the run recorded at start (`attributed_from`); the Factory code is the one that ran the quality gate (compliance `evaluated_by`) where the report records it (`factory_from`) - with the lessons each applied, compliance outcomes, failed and excepted rules, and the lessons one generation applied that the previous did not (`generations.py`). Read-only. |
 
 **What promote drafts.** A measured candidate whose proposed check is classified becomes an
-enforced, active lesson whose level is derived from the check's tier; a stronger proposal is
-declared as `level`, a weaker one refused (a level is weakened only by a check's tier). A
+enforced, active lesson whose level is derived from the check's tier (one that derives
+`recommended` only when its evidence strength reaches `reproduced` - K6.4, below); a stronger
+proposal is declared as `level`, a weaker one refused (a level is weakened only by a check's tier). A
 subjective candidate, or one whose check nothing classifies, becomes a gap / candidate lesson -
 experimental, never blocking - with the proposed check named in `gap`. Refused (exit 1): a
 rejected or already promoted candidate, one reported not systemic, **a blocking or required
@@ -674,12 +677,120 @@ breach named only the lexicon id (`gate`), not the design mechanic it was read f
 ("checkpoint flags"), and a repair round's problems were only inside a request of hundreds of
 kilobytes that agents did not read whole - they are now also in the prompt.
 
+## Evidence strength: validated learning (K6.4)
+
+The real 2D and 3D runs showed what a learning loop learns from when nothing grades its
+evidence: one check's verdict flipped seven times in fifteen reports, seventeen of
+twenty-five closures rested on a single AI-judge run, and specialists repaired the measurement
+instead of the game. A lesson drawn from one such pass is not a principle. So every lesson
+candidate now carries an **evidence strength**, derived mechanically from the finding ledger
+and the check's measurement class - never written by a reporter - and nothing
+self-confirming can raise it.
+
+| Piece | Where |
+|---|---|
+| The vocabulary | `core/reference/evidence-strength.yaml` 1.2.0 (held equal to the code by check-integrity) |
+| Derivation, circularity guard | `scripts/wgf_knowledge/strength.py` |
+| Recorded at ingest | `ingest.py`; candidate store 1.1.0 (`quality-finding.schema.json` `candidate_record`: `strength`, `strength_why`, `refused_evidence`, `unstable`; `candidate_source.remeasurement`) |
+| Ceiling at promote | `promote.py` (`--classification`), the evidence entry's `strength` leg (`evidence.yaml` 2.1.0) |
+
+**The vocabulary.**
+
+| Strength | When | Ceiling (below REQUIRED) |
+|---|---|---|
+| `hypothesis` | No measured repair: a specialist's claim, a judge's prose, a person's note without a pinned measurement - or a measured failure the ledger never re-measured passing | OBSERVATION / HEURISTIC |
+| `single-run` | One measured FAIL->PASS pair: the raising gate failed the check on one build and passed the same check on the same scenario on a later build, in one run | OBSERVATION / HEURISTIC |
+| `reproduced` | The repair held in two or more independent measurements: the passing measurement repeated (the ledger's `verification.samples`: a later passing report of the same check, on a later commit than the one that passed, that is not the same report - a re-play of the build that passed is not a repeat), on a check that does not alternate verdicts, by a class that is not only the game's own report | RECOMMENDATION |
+| `validated` | Reproduced in two or more distinct contexts - a context is the commits of a repair, so contexts differ in the builds measured (another repair on other builds, in another run, project or title); desktop and mobile of one run and build are one context, and so is another run replaying the identical commits - by a class that is not only self-reported or one AI judgment | VALIDATED_PRINCIPLE |
+
+**Derivation.** At ingest each candidate source keeps `remeasurement`: what the run's newest
+finding ledger holds of the source's finding - chosen as `wgf_triage.ledger.previous_lifecycle`
+chooses it: the newest triage-report's `lifecycle`, or the newest quality-report's
+`ledger.lifecycle` when that report is newer (the quality gate and release advance the ledger
+after the last triage, and may reopen what it closed) - the
+K6.2 `verification` (`before`, `after`, `comparison`, `samples`, the verdict), the detection
+and its content hash, the history's outcomes (detected and reopened are failures, verified a
+pass), and the check's measurement class from K6.3's mapping (`quality-assessment.yaml`
+through `wgf_quality.assessment.expand`; a finding of no declared check takes the class of the
+families whose judge is its producer's report - a visual judge's `score:<dim>` is
+`ai-judged`). A pair counts when the ledger verified it (`passed`), the failing and passing
+measurements are on different commits, the ledger still holds it `verified` or `closed`
+(a record reopened since is `no-repair`, and listed in `unstable` when its outcomes
+alternate), and nothing below refuses it. Per pair: repeats are
+its accepted samples; `reproduced` with one or more, else `single-run`; capped at
+`single-run` when its check is **unstable** (a pass followed by a failure again in the
+ledger, or a failure and a pass on one commit - the pair is listed in `unstable`), when its
+class is `self-reported` (the game's probe), when it is `ai-judged` with one judge run, or
+when no class is known. The candidate is `validated` with reproduced pairs in two distinct
+contexts (run, failing commit, passing commit - two scenarios of one run and build are one
+context), `reproduced` with one, `single-run` with any counted pair, else
+`hypothesis`. `strength_why` says which pair, its repeats, the caps and the refusals. A
+source already stored is refreshed from a newer ledger when its run is ingested again (more
+samples; `refreshed` in the summary) - never counted twice. Promote derives all of it again
+from the run store: each measured source re-verified (K4) and its re-measurement read again
+from its run's ledger (`ingest.remeasurer`); the stored strength and remeasurement are never
+trusted, and with no run store there is no repair, so `hypothesis`.
+
+**The circularity guard.** A measurement offered that may not count is recorded on the
+candidate in `refused_evidence` with its rule and reason - never dropped silently:
+
+| Rule | Refused |
+|---|---|
+| `same-report` (a) | The report (content hash) that detected the finding - or the candidate's own report - counted again as its pass or a sample |
+| `own-check` (b) | The lesson's own proposed check measured on a build that motivated it: a pair or sample of a proposed check on a build another source of the candidate, on another check, saw the defect on. The same check on another game's builds counts |
+| `same-build` (c) | A pass on the commit the failure was measured on: the ledger's `same-build`, or a later sample replaying the failing build; or a later sample on the commit that passed - a re-play of that build, not an independent repeat (a judge's is `self-agreement`) |
+| `self-agreement` (d) | An AI judge re-reading what it judged: an `ai-judged` sample on a commit already judged, or of the same frames |
+| `claim` (e) | A person's or a specialist's claim: a subjective source (a review, a finding no gate measured on that build, a source promote cannot re-verify), a person's G4 finding |
+| `duplicate` | The same report digest offered again (a run copied byte for byte), or the same FAIL->PASS pair of content hashes: counted once |
+| `no-repair` | A measured failure never re-measured passing (no ledger record, still failing, regressed, unmeasured, missing), or a repair the run's ledger reopened since |
+
+**Promote.** Strength caps the classification a draft proposes below REQUIRED. A measured
+candidate whose checks derive `recommended` (an advisory check) on `hypothesis` or
+`single-run` evidence is drafted a gap / candidate lesson - experimental, OBSERVATION (or
+HEURISTIC, asked for) - with the strength in its `gap`; on `reproduced` evidence it is an
+active RECOMMENDATION as before; on `validated` evidence `--classification
+VALIDATED_PRINCIPLE` drafts an enforced, `validated` lesson with its three test stubs
+(catches, passes, generalizes), a `validated` stamp and the evidence entry's `verified` leg
+(the reproduced pass: run, report, commit) - the model's own rules for a validated lesson.
+A classification asked for beyond the evidence, or a `recommended` level asked for (`--level`)
+or proposed by the reporter on evidence that does not reach `reproduced`, is refused (exit 1). **BLOCKING and REQUIRED stay the check
+tiers'**, exactly as K4 derives them: a measured candidate held by hard or quality checks is
+drafted at that level whatever its strength, and strength never raises a lesson to them.
+Every draft's evidence entry records `strength: {level, why}`.
+
+**What it cannot justify.** Strength is about whether a *measurement* repeats - the same
+check failing a defect and passing its repair, again, elsewhere. It says nothing about
+whether the lesson makes a game more fun, fairer or better for a player: a check can be
+repeatably wrong about what a player feels, and the gaming the retro found (a repair that
+changes what the gate reads, not the game) repeats as well as an honest repair does. The
+guard refuses the circular sources it can name from the ledger; it cannot see two reports
+that are independent on paper but share a cause (the same bot, the same flawed oracle), and
+a person's G4 decision counts as a claim, not a measurement. A lesson held by a hard or
+quality check is drafted BLOCKING or REQUIRED (K4) on `hypothesis` or `single-run` evidence
+too: that level comes from the check's tier - the check already holds every build - not
+from the evidence, and it is not a claim of strength. The draft's evidence entry records the
+strength beside it; strength speaks only to how far the principle has been shown.
+
+**Tests.** `test_knowledge_strength` (KNOWLEDGE): every level through ledgers the REAL
+triage step makes from playability reports judged by the playability step's own path over
+FIXTURE bot records, and on REAL bot records (the 3D game's naive.pace, FAIL on 1c6b099,
+PASS on c340631: single-run); the caps; each circularity rule refused with its reason (a
+ledger counting its detecting report again and a same-commit flip are real ledgers EDITED to
+show what no real ledger reaches yet, and say so); duplicates once; ingest refresh; the
+promote ceiling. `test_knowledge_learning_transfer` (KNOWLEDGE): three sessions, each its own
+process and `WGF_PROJECT_DIR` with a scrubbed environment, through the real `wgf knowledge
+ingest` and `promote` - single-run drafts only an experimental lesson; validated in two runs
+may draft a VALIDATED_PRINCIPLE whose patch applies and holds the model; a
+circular "validation" (the same reports re-ingested, a same-build pass, a judge re-reading
+its own build) stays single-run and the stronger classifications are refused.
+
 ## What is not here yet
 
 This is units K1 (the model and resolver), K2 (the run: the snapshot, the pins, the
 `knowledge-contract` step and `wgf resume --except`), K3 (compliance, above), K4 (the
 learning loop and the plugin surfaces: the `knowledge` skill and `/wgf-knowledge`, adapter
-binding 1.13.0) and K5 (cross-session transfer, above) of the learning-enforcement design.
+binding 1.13.0), K5 (cross-session transfer, above) and K6.4 (evidence strength, above) of
+the learning-enforcement design.
 K5 does not yet give the trace to authors other than the agent author (the built-in
 archetype and seed authors record none), nor resolve the request's knowledge over render
 and tier (undetermined before the design, which never excludes a rule). A draft composed

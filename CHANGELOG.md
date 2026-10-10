@@ -9,6 +9,150 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**K6 review r1 fixes** (docs/specialist-routing.md, docs/knowledge-enforcement.md). The
+ledger no longer verifies a split finding (`.../develop`, `.../assets`) whose check still
+FAILs its part in a BLOCKED report: the check is split again by the same rule, `unmeasured`
+when its part cannot be established. The run ledger's reopen (quality gate, release)
+refreshes the record's `build` and `failed_measurement`, so a re-play of the reopening build
+is held `same-build` and `before` names that failure. A record's regression baseline keeps,
+per check, the newest measurement the ledger recorded when the newest report left the check
+unmeasured (a BLOCKED report no longer erases an earlier pass). Evidence strength reads the
+run's newest ledger (a newer quality-report's `ledger.lifecycle` over the last
+triage-report's) and refuses a repair it reopened; a re-play of the build that passed is no
+independent repeat, and validated contexts differ in the commits measured - two runs replaying
+the identical commits are one context (`evidence-strength.yaml` 1.2.0, review r2). A held finding whose check stops applying has no in-run
+close - documented as a known limitation. G4's assessment lines also count the checks not
+reported. Bringing an artifact forward: none - existing ledgers and candidates stay valid; a
+candidate's strength is derived again on its next ingest or promote.
+
+**Core v1 change: `scripts/wgflib/gate_evidence.py`** (K6.3; reason: G4 is decided on the
+quality-report, and a person must see its assessment - the three questions, each check's
+measurement class, a PASS resting on the game's own report or one AI judgment named so, the
+checks not reported - to decide it). Display only: it adds the assessment lines to the
+evidence the CLI shows for a waiting checkpoint (`status --json` `pending.evidence`), reads only the report's
+`assessment` section, and decides nothing - no gate, verdict, route or release decision reads
+it.
+
+**Validated learning: a lesson's evidence strength, derived from the ledger** (K6.4,
+`core/reference/evidence-strength.yaml` 1.2.0, candidate store 1.1.0, `evidence.yaml` 2.1.0,
+[docs/knowledge-enforcement.md](docs/knowledge-enforcement.md) "Evidence strength"). `wgf
+knowledge ingest` now records, for every lesson candidate, how far the measurements behind it
+were repeated - `hypothesis` (no measured repair), `single-run` (one FAIL->PASS pair),
+`reproduced` (the pass repeated in a later independent report on a later commit than the
+one that passed, on a check that does not alternate verdicts, by a class that is not only the
+game's probe), `validated` (reproduced in two contexts differing in the commits measured - desktop and
+mobile of one run and build, or two runs of the identical commits, are one context) - derived from each source's re-measurement in its run's finding ledger
+(K6.2 before/after/samples, content hashes, history) and the check's measurement class (K6.3),
+with why (`strength_why`), the checks marked `unstable`, and every measurement refused with its
+rule and reason (`refused_evidence`): the detecting report counted again, the lesson's own
+proposed check on a build that motivated it, a pass on the failing commit (or a re-play of the
+build that passed, counted as a repeat), a repair the run's newest ledger reopened, a judge
+re-reading
+what it judged, a person's or specialist's claim; hash-identical duplicates count once. A pair
+measured only by the game's own probe, one AI judgment, or a check of no known class is capped
+at single-run. `wgf knowledge promote` derives the strength again from the run store and never
+drafts a classification beyond it: a measured candidate held only by an advisory check is
+drafted an experimental candidate lesson on hypothesis or single-run evidence, a
+RECOMMENDATION on reproduced, and may be drafted a VALIDATED_PRINCIPLE (`--classification`;
+an enforced, validated lesson with its three test stubs and the evidence's `verified` leg) on
+validated evidence; a classification asked for beyond the evidence is refused. **BLOCKING and
+REQUIRED are unchanged**: still derived only from the check tiers (K4). Strength is about a
+measurement repeating, not about player value. Bringing an existing artifact forward: none -
+stored candidates without the fields stay valid, and get them when a new source merges
+into them or their run's ledger re-measures a source's finding on its next ingest; promote
+derives them regardless.
+
+**Repairs verified on the same scenario** (playability-report 1.4.0, triage-report 1.3.0,
+[docs/specialist-routing.md](docs/specialist-routing.md) "What counts as a re-measurement",
+[docs/playability-module.md](docs/playability-module.md) "The scenario each check was
+measured on"). Every playability check names a stable scenario, `<check>@<project>`, and the
+report lists what the bot played for it, read from the records it already writes: the bot
+version (sha256 of bot.spec.ts) and settings, the viewport, the policy and seed, the records
+with their sha256, the inputs and probe states those records list, the frames with their
+sha256. The finding ledger now verifies a finding of a producer that lists its checks
+(playability, production-quality, listing-validation) only when the same check on the same
+project was measured and passed: a newer report that leaves the check unmeasured (BLOCKED,
+SKIPPED, WARNING, `measured.unmeasured`), no longer lists it, lists it only on another
+viewport, or - for playability - passes it on the commit it failed on, **no longer verifies
+the finding**; it stays open with the verdict `unmeasured`, `missing` or `same-build`, said
+in its history. A FAIL check in a BLOCKED report still fails. Each verification keeps the
+failing and passing measurements (`before`, `after`) and a `comparison` naming every
+difference (a newer bot, other settings: a weaker comparison, said so), and `samples` of the
+passes after it. **A regression now needs a prior pass**: a failure after a fix is its
+regression only when its check passed in the record's `baseline` (what the gates had
+measured when it was assigned) or it was verified before - a gate measuring for the first
+time raises a new finding, not a regression (the real 2D/3D runs: nine fixes never verified
+for this). History entries name the artifact's content hash and seq beside its id. A done finding whose raising producer's newest report fails it again is reopened also when
+the quality gate or release advances the ledger (`ledger.remeasure`, no triage findings of its
+own) - replaying the real 2D run's ledger left two findings closed beside the report failing
+them. Existing
+artifacts stay valid (every change is additive); a ledger written before this keeps the old
+regression rule for its records (no baseline). An open finding of a run in progress that the
+old rule would have verified on an unmeasured, missing or same-commit pass stays open on
+resume until its check is measured passing.
+
+**The quality assessment: three separate questions, and how each was measured** (K6.3,
+quality-report 1.5.0, `core/reference/quality-assessment.yaml` 1.0.0,
+[docs/quality-assessment.md](docs/quality-assessment.md)). The quality-report gains an
+additive `assessment` section that reads the evidence the gate already read as design
+validity, runtime correctness and player-facing quality - each PASS, FAIL, INCONCLUSIVE or
+NOT_SUPPORTED with the checks it rests on (read through check-tiers `status_at`, the reader
+knowledge compliance uses), each check's measurement class (deterministic, heuristic,
+self-reported by the game's probe, AI-judged; human for a person's G4 decision), the judges'
+recorded runs, every blocker or major visual-judge finding listed unresolved whatever its
+report's verdict, a PASS that rests on the game's own report or one AI judgment marked
+`qualified` or `weak`, and what the evidence cannot justify. A held check that failed fails a
+dimension; one that measured nothing leaves it INCONCLUSIVE, never PASS; player-facing quality
+is never PASS without a person's G4 decision that pins this build's reports. **It decides
+nothing**: the floor, the verdict and the release decision are computed without it (tested
+identical with and without it). G4 shows the three lines. check-integrity holds that every
+check-tiers source and check is placed in the mapping or excluded with why. Bringing an
+existing artifact forward: none - a 1.4.0 quality-report without the section stays valid.
+
+**The golden loop through triage and the finding ledger** (K6,
+[docs/golden-runs.md](docs/golden-runs.md) "The develop stage"). The greybox loop never
+reached the Factory's own Diagnose -> Repair -> Verify bookkeeping: greybox-playability's
+`fail` goes straight back to greybox, so its run's triage-report and quality-report ledgers
+were empty. `--defect-stage develop` (`scripts/golden/run.py`, `GoldenRun(defect_stage=)`,
+`replay_developer.STAGES`) plants the defect in the first production develop visit instead;
+playability's failure goes through triage to the specialist that owns `restart.works` (UI),
+and the replay leaves the defect out on the visit briefed with those findings
+(`specialist.findings`), keeping it out on later visits (`kept-repaired`). The loop record
+(`evidence/golden-loop-2d-develop.json`) closes only when the run's ledger verified the
+repair: detected and assigned by triage, implemented at the repairing commit, verified on
+the same scenario with the failing and passing measurements and their frames' sha256,
+nothing open - the ledger records and the assessment lines copied in. Two more GOLDEN LOOP
+classes (`GoldenLoopDevelop2D`, `GoldenLoopDevelopNoRepair2D`; the category is now four
+golden runs, its CI job 360 min) and `WGF_GOLDEN_LOOP_DIR` to run each class in a named
+directory, or assert a kept run of the same variant; fast checks in `GoldenLoopFast`.
+Measured on Windows: closed on `76d9556` -> `c6fb256`, both findings closed in the
+quality-report's ledger; the negative control blocked at triage's `playability.fail` budget
+with the findings never verified. A negative control's exit status now requires every
+report to have failed the planted defect (`loop.control_held`): an unreadable loop record is
+`closed: false` too and used to pass it. No Factory change: nothing to bring forward.
+
+**The golden loop: a real closed loop on a real build, no LLM** (K6.1,
+[docs/golden-runs.md](docs/golden-runs.md) "The golden loop"). The golden replay developer
+takes `--defect NAME` (`replay_developer.DEFECTS`, exact-once rewrites; an anchor not found
+exactly once refuses the replay): `restart-dead` makes the 2D port's restart button click
+without restarting. It is planted on a greybox visit whose brief names no `restart.works`
+failure and left out on one that does, and each visit records which in its report
+(`replay.defect`, labelled a replay, never an agent's fix); `--no-repair` is the negative
+control. `GoldenRun(defect=, repair=)` / `scripts/golden/run.py --defect NAME [--no-repair]`;
+`scripts/golden/loop.py` writes the before/after record (`evidence/golden-loop-2d.json`,
+frames under `evidence/golden-loop/`). New Core Acceptance category **GOLDEN LOOP**
+(`test_golden_loop`, `WGF_GOLDEN_LOOP=1`): greybox-playability FAILs `restart.works` on both
+viewports on commit A with frames, greybox is re-entered, the same check PASSes measured on a
+newer commit B, and the run ends in its normal golden outcome; the negative control exhausts
+greybox's route budget and blocks with the check still failing. The category is **opt-in**
+(`core_suite.OPT_IN`): `wgf test-core` without `--only` leaves it out and lists it as not run
+(`opt_in_not_run` in `--json`), so `WGF_GOLDEN=1 bin/wgf test-core --strict` is unchanged; it
+runs in its own CI job (`golden-loop`: a manual run with `golden_loop`, or a pull request
+labelled `golden-loop`). The playability bot now captures `retry-dead` when a retry never
+returns to play, and `restart.works` cites the lose recording's result and retry frames
+(before, it cited none). Nothing to bring forward: an existing playability-report stays
+valid; a new one's `restart.works` may carry `frames`.
+
 **Cross-session quality transfer, and the first transferred principle (L29)** (lessons
 2.1.0, check-tiers 1.3.0, design-consistency-rules 2.4.1, content-sufficiency 1.6.0,
 game-design 1.16.0, knowledge-contract 1.2.0, quality-report 1.4.0,

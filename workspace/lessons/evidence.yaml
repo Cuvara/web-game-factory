@@ -20,8 +20,12 @@
 #                 game that raised it, after the fix. Required before core/reference/
 #                 lessons.yaml may mark the lesson `lifecycle: validated`
 #   regressions   [{run, artifact_id, date}]: a later run where the check caught it again
+#   strength      {level, why} (2.1.0, K6.4): the evidence strength `wgf knowledge promote`
+#                 derived from the candidate's sources' finding ledgers - hypothesis,
+#                 single-run, reproduced or validated (core/reference/evidence-strength.yaml) -
+#                 when the lesson was drafted
 
-version: 2.0.0
+version: 2.1.0
 
 source: factory-learning-ledger.md L1-L22 and M1-M6 (the Lead's ledger of the 2026-10-05..07 validation runs), and factory-gap-audit-2026-10-07.md section 2; L23-L28 added at the quality-system integration (2026-10-08)
 

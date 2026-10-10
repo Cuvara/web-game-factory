@@ -8,6 +8,13 @@ says INCOMPLETE rather than a bare OK; `--strict` exits 4 on any skip (docs/core
 
 Adding a category or a module is an edit to this mapping and nothing else. Module names
 are files in scripts/tests/ without `.py`.
+
+OPT_IN names categories a plain `wgf test-core` does not run: each runs only when named with
+`--only`, or when its variable is exactly "1". One not run is listed as such under the table
+(and in --json as `opt_in_not_run`), never as PASS; named or enabled, it runs like any other
+category - its tests SKIP without the variable, and a skip is never a pass. It keeps a
+category that needs its own runner (the golden loop: two more golden runs) out of the
+release gate's time budget without making that gate --strict-incomplete.
 """
 
 SUITE = {
@@ -21,10 +28,16 @@ SUITE = {
                 "test_publish_adaptive", "test_publish_campaign", "test_publish_portals"],
     # An intentionally bad game cannot pass new-game: six genres held to one floor, eleven
     # degradations each detected, blocking and routed, recovery, anti-gaming (WS-13,
-    # docs/quality-consistency-tests.md).
-    "QUALITY": ["test_quality_consistency"],
+    # docs/quality-consistency-tests.md). K6.3: the assessment - design validity, runtime
+    # correctness and player-facing quality, each with its checks' measurement class
+    # (docs/quality-assessment.md).
+    "QUALITY": ["test_quality_consistency", "test_quality_assessment"],
     "2D GOLDEN": ["test_golden_2d"],
     "3D GOLDEN": ["test_golden_3d"],
+    # The closed loop on a real build: the 2D golden with a planted defect fails a real check
+    # (restart.works, real clicks), is routed back to greybox, and passes the same check on a
+    # newer commit; and its negative control never passes (docs/golden-runs.md). Opt-in.
+    "GOLDEN LOOP": ["test_golden_loop"],
     # The knowledge the Factory learned holds: every lesson's catches, passes and generalizes
     # tests exist and pass (the regression firewall), the model and the resolver, a run held
     # to its contract and its compliance, and the learning loop - ingestion, promotion
@@ -35,7 +48,12 @@ SUITE = {
                   "test_knowledge_exceptions", "test_knowledge_compliance",
                   # K5: the decision trace, L29's own tests.
                   "test_knowledge_trace", "test_lesson_l29", "test_knowledge_transfer",
-                  "test_knowledge_pins"],
+                  "test_knowledge_pins",
+                  # K6.4: evidence strength derived from the ledger, nothing self-confirming
+                  # raises it, and a promoted draft never claims more than it supports.
+                  "test_knowledge_strength", "test_knowledge_learning_transfer"],
     "PROCESS CLEANUP": ["test_core_process"],
     "SECURITY": ["test_core_security"],
 }
+
+OPT_IN = {"GOLDEN LOOP": "WGF_GOLDEN_LOOP"}

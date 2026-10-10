@@ -457,6 +457,12 @@ seen by the engine — validate what you write there with ajv.
 - `docs/quality-gate-module.md` — the `quality-gate` step: one build scored on every quality
   dimension from the same build's reports, hard floors per dimension (no averaging past a
   blocker), stale evidence, the finding lifecycle, the release decision, routing, pinning
+- `docs/quality-assessment.md` — the quality-report's `assessment`: design validity, runtime
+  correctness and player-facing quality, each PASS / FAIL / INCONCLUSIVE / NOT_SUPPORTED with
+  its checks' measurement class (deterministic, heuristic, self-reported, AI-judged, human)
+  and the metric table of what each check family measures and cannot justify
+  (`core/reference/quality-assessment.yaml`); a view that decides nothing, and player-facing
+  quality is never PASS without a person's G4 decision on the build
 - `docs/factory-quality-benchmark.md` — the Factory quality benchmark as a system: the
   benchmark and the two-layer floor (universal + genre/3D), calibration and how to version it
 - `docs/store-listing-module.md` — the `store-listing` and `listing-validation` steps: the

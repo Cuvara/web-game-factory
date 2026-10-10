@@ -542,7 +542,8 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
     # (current=[]), so without this a closed record would sit beside the report failing it.
     for record in records.values():
         producer = (record.get("source") or {}).get("producer")
-        if record["status"] not in DONE or producer == "decision-record"                 or producer not in failing or record["id"] not in failing[producer]:
+        if record["status"] not in DONE or producer == "decision-record" \
+                or producer not in failing or record["id"] not in failing[producer]:
             continue
         verification = record.get("verification") or {}
         held = [verification.get("seq")] + [x.get("seq") for x in

@@ -326,6 +326,11 @@ detection or reopening (a failure), a verified pass of an unsplit finding. So a 
 report does not erase an earlier pass, and a fix that then breaks that check is a regression.
 The limit: a step sees only each producer's newest report, so a pass measured in a report no
 triage read and no baseline was taken on is not known to the ledger, and not to the baseline.
+The same limit works the other way: a failure measured in a report no ledger update read (a
+production-quality failure routed `assets` goes to the assets step without triage) is not
+known either, so an earlier recorded pass of that check is carried into a later baseline and
+a fix whose build then fails the check is held `regressed` - a repair held back, never a
+broken build passed (independent review r2, finding 2).
 
 Every history entry an artifact caused names it by `by` (the artifact id) and, where known,
 its `content_hash` and run-local `seq`: greybox and develop playability reports can share an

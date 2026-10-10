@@ -53,6 +53,19 @@ class GoldenLoopFast(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="wgf-golden-loop-fast-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
+    def test_every_golden_loop_class_runs_in_a_ci_stage(self):
+        """The CI job runs the category's classes by name, one stage per runner: a class
+        added to test_golden_loop.py and left out of the matrix would never run in CI."""
+        import re
+        tests = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(tests, "test_golden_loop.py"), encoding="utf-8") as fh:
+            defined = set(re.findall(r"^class (GoldenLoop\w*)\(", fh.read(), re.M))
+        workflow = os.path.join(tests, "..", "..", ".github", "workflows", "acceptance.yml")
+        with open(workflow, encoding="utf-8") as fh:
+            listed = set(re.findall(r"test_golden_loop\.(GoldenLoop\w*)", fh.read()))
+        self.assertTrue(defined)
+        self.assertEqual(defined, listed)
+
     def test_every_defect_anchor_occurs_exactly_once_in_the_pinned_port(self):
         if not harness.PORTS_DIR:
             self.skipTest("the golden ports commit cannot be checked out")

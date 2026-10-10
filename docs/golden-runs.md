@@ -531,7 +531,13 @@ exit status of a negative control now needs that too (`loop.control_held`: versi
 one FAIL on every project, every developer record `planted`): a record that could not be
 read is also `closed: false`, and used to pass the control vacuously.
 Asserted on the two kept runs (`WGF_GOLDEN_LOOP_DIR`): `GoldenLoopDevelop2D` 9 of 10 - the tenth
-is the same `makes no insecure requests` browser smoke, the known Windows environment
+is `browser_passed`. The independent browser evidence of the repaired run failed three of 30
+tests: the same `makes no insecure requests` browser smoke on both projects, and once, on mobile,
+`plays its music after the first input and falls silent under the platform mute` (`music-loop`
+not playing after 15 s). That audio test passed in the three other kept runs of the same port
+source on this machine (the baseline 2D golden, the greybox loop, the develop negative control)
+and was not investigated further: a single Windows observation, not shown to be a defect, and
+not explained either. The smoke is the known Windows environment
 failure - and `GoldenLoopDevelopNoRepair2D` 5 of 5.
 
 `scripts/tests/test_golden_loop.py` is the **GOLDEN LOOP** category, gated by

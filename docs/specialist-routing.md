@@ -246,7 +246,10 @@ moves it past `implemented`. If the raising gate still fails it, the finding is 
 gate fails again is reopened the same way - also when the quality gate or release advances
 the ledger with no triage of its own: a done finding whose raising producer's newest report,
 newer than every measurement the record holds, fails it is reopened there, never left closed
-beside the report failing it. A person's G4 finding is re-measured by the next
+beside the report failing it. The reopening report becomes the record's `build` and (for a
+producer that lists its checks) its `failed_measurement`, so a later pass on that same commit
+is held `same-build` and the verification's `before` names the failure that reopened it. A
+person's G4 finding is re-measured by the next
 G4 decision: it is verified unless that decision is `iterate` and names it again.
 
 ### What counts as a re-measurement (triage-report 1.3.0)

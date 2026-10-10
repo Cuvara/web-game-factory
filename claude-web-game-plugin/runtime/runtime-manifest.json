@@ -394,7 +394,7 @@
     "scripts/wgf_triage/__init__.py": "sha256:f8689663dc9cddd6a9f05ea641cfc70bf47b4ad940abd898438b31dc681b907b",
     "scripts/wgf_triage/findings.py": "sha256:8223964100caf02e383c90baf6ec0ba1e2bbca83c5048d135ea163ba643ea70b",
     "scripts/wgf_triage/ledger.py": "sha256:ebad6b71e1829bc3ae40d414225edacd2689884734a2632fbd733309c870aa7b",
-    "scripts/wgf_triage/lifecycle.py": "sha256:669f810942b0365695deba185ad2df81564ddc3fe8c5fdcbee71f47ed02a5e8c",
+    "scripts/wgf_triage/lifecycle.py": "sha256:86d71316d20c1bf8899df36e5ca812eb9d600200ffc166e3cf2c8e19e9064c8c",
     "scripts/wgf_triage/measurement.py": "sha256:2409133f8640deca83675de2341868515018f67b4f87b98ca32cce88ca717361",
     "scripts/wgf_triage/routing.py": "sha256:8502a65ad5a453cf99c2e4414ec08317dd8c8b7c05adc59ba5ff37d1440f66b5",
     "scripts/wgf_triage/step.py": "sha256:ef22df44ca7ab5690fc565334dd91c7293b838c1b326c9214c8fc42ef1f626f7",

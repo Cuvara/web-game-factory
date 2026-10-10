@@ -1277,6 +1277,46 @@ class ScenarioVerification(unittest.TestCase):
         self.assertEqual(len(events), 1 + sum(1 for h in ledger[self.DESKTOP]["history"]
                                               if h["status"] == "classified"))
 
+    def test_a_replay_of_the_reopening_build_does_not_verify_it(self):
+        """Review r1 finding 2: detected on A, verified on B, then the run ledger (no
+        findings of its own: current=[]) reopens it on C. A re-play of C that passes is the
+        same build, not a repair: held `same-build`, and the record's `before` names the
+        failure on C that reopened it - never the stale failure on A."""
+        from wgf_triage import lifecycle
+        a, b, c = "a" * 40, "b" * 40, "c" * 40
+
+        def adv(previous, report, seq, commit, current=()):
+            failing = {f["id"] for f in normalize("playability-report", report, ROUTING)} \
+                if report["verdict"] == "FAIL" else set()
+            return {r["id"]: r for r in lifecycle.advance(
+                list(previous), at="t", current=list(current),
+                failing={"playability-report": failing}, seqs={"playability-report": seq},
+                reports={"playability-report": report}, proto=None, proto_seq=5,
+                decision=None, decision_seq=-1, human_ids=set(), selected=None,
+                triage_id=f"t{seq}", routing_version="x",
+                build_of=lambda k: {"commit": commit, "digest": None})}.values()
+
+        first = self.report(a, self.dead())
+        found = normalize("playability-report", first, ROUTING)
+        for f in found:
+            f["build"] = {"commit": a, "digest": None}
+        ledger = adv([], first, 8, a, found)
+        ledger = adv(ledger, self.report(b, self.fixed()), 12, b)
+        record = next(r for r in ledger if r["id"] == self.DESKTOP)
+        self.assertIn(record["status"], ("verified", "closed"))
+        ledger = adv(ledger, self.report(c, self.dead()), 20, c)
+        record = next(r for r in ledger if r["id"] == self.DESKTOP)
+        self.assertEqual(record["status"], "classified")
+        self.assertEqual(record["failed_measurement"]["commit"], c)
+        self.assertEqual(record["failed_measurement"]["status"], "FAIL")
+        self.assertEqual(record["failed_measurement"]["seq"], 20)
+        self.assertEqual(record["build"]["commit"], c)
+        ledger = adv(ledger, self.report(c, self.fixed()), 22, c)
+        record = next(r for r in ledger if r["id"] == self.DESKTOP)
+        self.assertEqual(record["status"], "classified", record["history"][-1])
+        self.assertEqual(record["verification"]["verdict"], "same-build")
+        self.assertEqual(record["verification"]["before"]["commit"], c)
+
     def test_the_run_ledger_keeps_a_done_finding_its_newest_report_still_passes(self):
         from types import SimpleNamespace
         from wgf_triage import ledger as ledgers

@@ -498,9 +498,19 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
             continue
         report = reports.get(producer) or {}
         provenance = report.get("provenance") or {}
+        # As triage's _observe would: the reopening report is now the build and the failure
+        # a later verification is compared with - so a re-play of this build is held
+        # `same-build`, and `before` names this failure, not the one first detected.
+        record["build"] = build_of(producer) or record.get("build")
+        check = measurements.check_of(producer, report, record.get("source"))
+        if check is not None:
+            record["failed_measurement"] = measurements.of_check(
+                producer, report, check, commit=(record["build"] or {}).get("commit"),
+                artifact_id=provenance.get("artifact_id"),
+                content_hash=provenance.get("content_hash"), seq=seq)
         record["fix"] = None
         _event(record, "classified", at, by=provenance.get("artifact_id"),
-               build=build_of(producer).get("commit"),
+               build=(record["build"] or {}).get("commit"),
                note="reopened: failing again after it was " + record["status"],
                content_hash=provenance.get("content_hash"), seq=seq)
 

@@ -400,6 +400,31 @@ def record(store, state, repo, defect, repair=True, stage=None):
     }
 
 
+def control_held(loop_record):
+    """(held, reasons) for a negative control's record: it held only when the record has
+    versions and every one FAILs, with the defect's check FAIL on every project, on a commit
+    whose developer record says `planted`. `closed: false` alone is not enough - a record
+    that could not be read is `closed: false` too, and must never count as the control."""
+    reasons = []
+    versions = (loop_record or {}).get("versions") or []
+    if not versions:
+        reasons.append("the record has no playability report: nothing shows the defect "
+                       "failing - " + "; ".join((loop_record or {}).get("reasons") or []))
+    for version in versions:
+        label = f"report v{version.get('version')} ({(version.get('commit') or '')[:12]})"
+        if version.get("verdict") != "FAIL":
+            reasons.append(f"{label} is {version.get('verdict')}, not FAIL")
+        statuses = version.get("check_status") or {}
+        if any(statuses.get(p) != "FAIL" for p in PROJECTS):
+            reasons.append(f"{label}: the check is not FAIL on every project: {statuses}")
+        if ((version.get("developer") or {}).get("status")) != "planted":
+            reasons.append(f"{label}: the developer record is not `planted`: "
+                           f"{version.get('developer')}")
+    if (loop_record or {}).get("closed"):
+        reasons.append("the record says the loop closed")
+    return not reasons, reasons
+
+
 def write(loop_record, run_dir, evidence_dir, key):
     """Copy the first and the last report's cited frames into <evidence_dir>/golden-loop/ and
     write <evidence_dir>/golden-loop-<key>.json. Each copied frame's `evidence` path is

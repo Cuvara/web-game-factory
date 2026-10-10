@@ -522,6 +522,70 @@ class GoldenLoopFast(unittest.TestCase):
         self.assertEqual(record["after"]["commit"], commits[1])
         self.assertEqual(record["after"]["developer"], "repaired")
 
+    # -- the negative control's exit status (run.py) -------------------------------------
+
+    def _main_with(self, loop_record, no_repair=True):
+        """run.main's exit status for a run whose summary carries `loop_record`."""
+        from unittest import mock
+        from golden import run as runner
+
+        summary = {"passed": False, "browser_passed": False, "run_id": "run-1",
+                   "run_status": "BLOCKED", "duration_s": 1, "steps": [],
+                   "engine": {"consistent": True}, "release": None,
+                   "golden_loop": loop_record}
+
+        class Fake:
+            def __init__(self, *args, **kwargs):
+                self.game = games.game("2d")
+                self.workdir = "w"
+
+            def execute(self, **kwargs):
+                return summary
+
+            def cleanup(self):
+                pass
+
+        argv = ["--game", "2d", "--defect", "restart-dead", "--json"]
+        if no_repair:
+            argv.append("--no-repair")
+        with mock.patch.object(runner.harness, "GoldenRun", Fake), \
+                mock.patch("sys.stdout", new_callable=__import__("io").StringIO), \
+                mock.patch("sys.stderr", new_callable=__import__("io").StringIO):
+            return runner.main(argv)
+
+    @staticmethod
+    def _control_version(n, verdict="FAIL", status="FAIL", developer="planted"):
+        return {"version": n, "commit": f"{n}" * 40, "verdict": verdict,
+                "check_status": {p: status for p in loop.PROJECTS},
+                "developer": {"status": developer, "repair": False}}
+
+    def test_a_negative_control_never_passes_on_a_record_that_could_not_be_read(self):
+        unreadable = {"kind": "golden-loop", "defect": "restart-dead", "repair": False,
+                      "closed": False, "versions": [],
+                      "reasons": ["the loop record could not be read: KeyError('x')"]}
+        self.assertEqual(self._main_with(unreadable), 1)
+        held = {"closed": False, "reasons": ["never repaired"],
+                "versions": [self._control_version(n) for n in (1, 2, 3)]}
+        self.assertEqual(self._main_with(held), 0)
+        for name, versions in {
+            "a passing report": [self._control_version(1),
+                                 self._control_version(2, "PASS", "PASS")],
+            "the check passing on one project": [
+                self._control_version(1),
+                dict(self._control_version(2), check_status={"desktop": "FAIL",
+                                                             "mobile": "PASS"})],
+            "a visit that did not plant it": [self._control_version(1),
+                                              self._control_version(2, developer="repaired")],
+            "no developer record": [dict(self._control_version(1), developer=None)],
+        }.items():
+            with self.subTest(name):
+                self.assertEqual(self._main_with({"closed": False, "reasons": ["x"],
+                                                  "versions": versions}), 1)
+        self.assertEqual(loop.control_held(held), (True, []))
+        ok, reasons = loop.control_held(unreadable)
+        self.assertFalse(ok)
+        self.assertTrue(reasons)
+
 
 if __name__ == "__main__":
     unittest.main()

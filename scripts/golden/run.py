@@ -92,8 +92,15 @@ def main(argv=None):
     ok = summary["passed"] and summary["browser_passed"]
     loop_record = summary.get("golden_loop")
     if loop_record is not None:
-        # A loop run passes when its loop closed; the negative control when it did not.
-        ok = ok and loop_record["closed"] if not args.no_repair else not loop_record["closed"]
+        # A loop run passes when its loop closed; the negative control when every report it
+        # holds failed the planted defect - never merely because the record is not closed
+        # (a record that could not be read is not closed either).
+        if args.no_repair:
+            from golden import loop as loops
+            ok, held_reasons = loops.control_held(loop_record)
+            loop_record["control_held"] = {"held": ok, "reasons": held_reasons}
+        else:
+            ok = ok and loop_record["closed"]
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True, default=str))
     else:

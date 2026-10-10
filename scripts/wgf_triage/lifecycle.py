@@ -166,13 +166,13 @@ def _before(record):
             "project": source.get("project"), "status": "FAIL", "scenario": None, "frames": []}
 
 
-def _remeasured(record, producer, report, failing, measured_by):
+def _remeasured(record, producer, report, failing, measured_by, routing=None):
     """For a producer that lists its checks: (kind, after) - what its newest report measured
     of the finding's check (measurement.state), with the measurement; a held kind
     (`unmeasured`, `missing`, `same-build`) verifies nothing. (None, None) for any other
     producer: its rule is the newest report not failing the finding's id."""
     kind = measurements.state(producer, report, record["id"], record.get("source"),
-                              failing.get(producer) or set())
+                              failing.get(producer) or set(), routing)
     if kind is None:
         return None, None
     check = measurements.check_of(producer, report, record.get("source"))
@@ -293,7 +293,7 @@ def _evidence(record, after):
 
 def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, decision,
             decision_seq, human_ids, selected, triage_id, routing_version, build_of,
-            handed=None):
+            handed=None, routing=None):
     """The ledger after this triage.
 
     previous     the previous triage-report's `lifecycle` (or [])
@@ -310,6 +310,8 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
     handed       [(finding, {"specialist", "artifact_id", "seq"})]: findings a gate routed
                  straight to a step that has run since (the assets step's asset-manifest),
                  so no triage routed them
+    routing      the routing.Routing whose split rules re-split a check (measurement.state);
+                 the shipped data when None
     """
     records = {}
     for record in previous or []:
@@ -364,7 +366,7 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
                            "seq": seqs.get(producer)}
         measured = sorted(p for p, s in seqs.items() if (s or -1) > after)
         kind, remeasured = (None, None) if producer == "decision-record" else _remeasured(
-            record, producer, reports.get(producer), failing, measured_by)
+            record, producer, reports.get(producer), failing, measured_by, routing)
         if kind == "fail" and not still:
             still = True
             measured_by["observed"] = "fails"
@@ -437,7 +439,7 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
         remeasured = None
         if producer != "decision-record":
             kind, remeasured = _remeasured(record, producer, reports.get(producer), failing,
-                                           measured_by)
+                                           measured_by, routing)
             if kind == "fail":
                 continue  # the whole check still fails, in a report that is not failing
             if kind in HELD:
@@ -469,7 +471,7 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
             continue
         report = reports.get(producer) or {}
         if measurements.state(producer, report, record["id"], record.get("source"),
-                              failing[producer]) not in (None, "pass"):
+                              failing[producer], routing) not in (None, "pass"):
             continue
         provenance = report.get("provenance") or {}
         samples.append(_sample({"artifact_id": provenance.get("artifact_id"),

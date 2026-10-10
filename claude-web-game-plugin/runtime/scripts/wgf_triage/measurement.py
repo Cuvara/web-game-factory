@@ -10,7 +10,10 @@ the finding. `state(producer, report, finding_id, source)` says which it is:
     pass        the same check on the same project was measured and no longer fails the
                 finding (PASS; or, for a check split by route, measured and not failing
                 this part)
-    fail        measured, and still failing it
+    fail        measured, and still failing it - also a check that FAILs in a report that
+                is not itself failing (BLOCKED, never normalized): for a split finding, when
+                its part is among the parts the check fails (findings.failing_parts); a
+                part that cannot be established is `unmeasured`
     unmeasured  listed, but nothing was measured: any other status, or a value the report
                 marks `measured.unmeasured`
     missing     not listed for that project at all (removed, renamed, or played only on
@@ -54,9 +57,10 @@ def check_of(producer, report, source):
     return None
 
 
-def state(producer, report, finding_id, source, failing):
+def state(producer, report, finding_id, source, failing, routing=None):
     """pass | fail | unmeasured | missing for a CHECKED producer; None otherwise. `failing`
-    is the set of finding ids the report fails (normalized)."""
+    is the set of finding ids the report fails (normalized); `routing` (routing.Routing,
+    the shipped data when None) splits a check a split finding belongs to."""
     if producer not in CHECKED:
         return None
     check = check_of(producer, report, source)
@@ -69,11 +73,39 @@ def state(producer, report, finding_id, source, failing):
         return "unmeasured"
     if finding_id in failing:
         return "fail"
-    if status == "FAIL" and "/" not in str(finding_id).split(":", 1)[-1].split("@")[0]:
-        # The whole check fails - in a report that is not itself failing (BLOCKED), whose
-        # findings were never normalized: still failing, never a pass.
-        return "fail"
+    if status == "FAIL":
+        # The check fails - in a report that is not itself failing (BLOCKED), whose findings
+        # were never normalized: still failing, never a pass. A split finding (one route's
+        # items of the check) fails when its route is among the parts the check fails, split
+        # by the same rule findings.py splits them; which part fails cannot be established
+        # when the check names no failing item - unmeasured.
+        part = _part_of(finding_id)
+        if part is None:
+            return "fail"
+        from .findings import failing_parts
+        parts = failing_parts(routing or _routing(), producer, check)
+        if parts is None:
+            return "unmeasured"
+        return "fail" if part in parts else "pass"
     return "pass"
+
+
+def _part_of(finding_id):
+    """The split part (route) of a finding id `<producer>:<check>/<part>[@<project>]`, or
+    None for an unsplit id."""
+    check = str(finding_id).split(":", 1)[-1].split("@")[0]
+    return check.split("/", 1)[1] if "/" in check else None
+
+
+_ROUTING = []
+
+
+def _routing():
+    """The shipped routing data (specialist-routing.yaml), read once: the split rules."""
+    if not _ROUTING:
+        from .routing import Routing
+        _ROUTING.append(Routing.load())
+    return _ROUTING[0]
 
 
 def _scenario(report, check):

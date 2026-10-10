@@ -264,7 +264,10 @@ verdict and a history note:
 | `same-build` | (playability) passed it on the commit it failed on: a re-play of the same build, not a repair |
 
 A check that FAILs in a report whose verdict is `BLOCKED` (whose findings are never
-normalized) still fails. Before 1.3.0 every one of these verified the finding: the old rule
+normalized) still fails. For a finding of a check split by route (`.../develop`,
+`.../assets`), the check is split again by the same rule (`findings.failing_parts`): the
+finding still fails when its part is among the parts the check fails, passes when only other
+parts fail, and is `unmeasured` when the check names no failing item to split. Before 1.3.0 every one of these verified the finding: the old rule
 read only the newest report's failing ids. Every other producer keeps that rule.
 
 A verified finding of such a producer carries both measurements in `verification`: `before`

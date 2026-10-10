@@ -38,7 +38,8 @@ import re
 
 from . import measurement as measurements
 
-__all__ = ["normalize", "from_requests", "NormalizeError", "PRODUCERS", "finding_id"]
+__all__ = ["normalize", "from_requests", "NormalizeError", "PRODUCERS", "finding_id",
+           "failing_parts"]
 
 # The artifact types a finding can be read from, in the order a build's reports are read.
 PRODUCERS = ("playability-report", "production-quality-report", "visual-qa-report",
@@ -190,6 +191,15 @@ def _split_parts(ctx, check):
     order = list(ctx.routing.route_order)
     return sorted(parts.items(), key=lambda kv: (
         order.index(kv[0]) if kv[0] in order else len(order), kv[0]))
+
+
+def failing_parts(routing, kind, check):
+    """The routes (split parts) `check` of a `kind` report fails, by the same rule that
+    splits its findings (`_split_parts`); None when the producer table does not split the
+    check, or the check names no failing item to split."""
+    ctx = _Context(routing, kind, {})
+    parts = _split_parts(ctx, check if isinstance(check, dict) else {})
+    return None if parts is None else {route for route, _items in parts}
 
 
 def _measured(ctx, check, findings):

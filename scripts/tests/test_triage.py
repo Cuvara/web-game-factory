@@ -1073,6 +1073,63 @@ class SplitByRoute(unittest.TestCase):
         self.assertIn(records[self.DEVELOP]["status"], ("verified", "closed"))
         self.assertEqual(records[self.DEVELOP]["verification"]["verdict"], "passed")
 
+    def blocked_after(self, after_failures, part=None):
+        """A split finding detected on A, re-measured by a production-quality report on B
+        whose verdict is BLOCKED (another required check stale), so its findings are never
+        normalized - `failing` is empty. Returns (state, record) of the `part` finding."""
+        from wgf_triage import lifecycle, measurement
+        part = part or self.DEVELOP
+        before = self.runtime("a" * 40, {"ball": "visible", "brick": "exists"})
+        before["provenance"]["content_hash"] = "sha256:" + "1" * 64
+        after = self.runtime("b" * 40, after_failures)
+        after["verdict"] = "BLOCKED"  # the report, not the check: assets.runtime still FAILs
+        after["provenance"]["content_hash"] = "sha256:" + "2" * 64
+        found = normalize("production-quality-report", before, ROUTING)
+        for f in found:
+            f["build"] = {"commit": "a" * 40, "digest": None}
+        records = lifecycle.advance(
+            [], at="t", current=found,
+            failing={"production-quality-report": {f["id"] for f in found}},
+            seqs={"production-quality-report": 8},
+            reports={"production-quality-report": before}, proto=None, proto_seq=5,
+            decision=None, decision_seq=-1, human_ids=set(), selected=None, triage_id="t1",
+            routing_version="x", build_of=lambda k: {"commit": "a" * 40, "digest": None})
+        out = lifecycle.advance(
+            records, at="t", current=[], failing={"production-quality-report": set()},
+            seqs={"production-quality-report": 12},
+            reports={"production-quality-report": after}, proto=None, proto_seq=5,
+            decision=None, decision_seq=-1, human_ids=set(), selected=None, triage_id="t2",
+            routing_version="x", build_of=lambda k: {"commit": "b" * 40, "digest": None})
+        source = next(f for f in found if f["id"] == part)["source"]
+        return (measurement.state("production-quality-report", after, part, source, set()),
+                next(r for r in out if r["id"] == part))
+
+    def test_a_split_part_still_failing_in_a_blocked_report_is_not_verified(self):
+        """Review r1 finding 1: a split finding's check still FAILs its item (ball@visible)
+        in a BLOCKED production-quality report. The report's findings are never normalized,
+        so `failing` is empty - the part must still read `fail`, never verified."""
+        state, record = self.blocked_after({"ball": "visible"})
+        self.assertEqual(state, "fail")
+        self.assertNotIn(record["status"], ("verified", "closed"))
+        self.assertNotIn("verified", [h["status"] for h in record["history"]])
+
+    def test_a_split_part_no_longer_failing_in_a_blocked_report_still_passes(self):
+        """The other part (brick@exists) measured clean in the same BLOCKED report: its own
+        items no longer fail, so it reads `pass` - only the failing part is held."""
+        state, _record = self.blocked_after({"ball": "visible"}, part=self.ASSETS)
+        self.assertEqual(state, "pass")
+
+    def test_a_split_check_failing_with_no_part_to_split_is_unmeasured(self):
+        """The whole check FAILs in a BLOCKED report but names no failing item: which part
+        it fails cannot be established - unmeasured, never a pass."""
+        from wgf_triage import measurement
+        after = self.runtime("b" * 40, {})
+        after["verdict"] = "BLOCKED"
+        after["checks"][0]["status"] = "FAIL"
+        source = {"check": "assets.runtime", "project": None}
+        self.assertEqual(measurement.state("production-quality-report", after, self.DEVELOP,
+                                           source, set()), "unmeasured")
+
 
 
 def _proto(commit, iteration, specialist=None):

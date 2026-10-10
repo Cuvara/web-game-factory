@@ -544,10 +544,11 @@ plus the run's normal golden outcome for the repaired runs: four classes, `Golde
 runs. `WGF_GOLDEN_LOOP_DIR=<dir>` runs each class in `<dir>/<key>` (`greybox`,
 `greybox-no-repair`, `develop`, `develop-no-repair`); a class whose directory already holds a
 finished run's summary is asserted on that kept run instead of running again. CI runs it in
-its own job (`golden-loop` in `.github/workflows/acceptance.yml`, 360 min), never in the
-acceptance job: on a manual
-run with `golden_loop` ticked, or on a pull request labelled `golden-loop` (the
-label takes effect on the next push or re-run), and uploads `golden-loop-evidence`. The
+its own job (`golden-loop` in `.github/workflows/acceptance.yml`), never in the acceptance
+job: one runner per stage (matrix `greybox`, `develop`, 240 min each, two goldens each; a
+skipped test fails the job, as `--strict` does for the category), on a manual run with
+`golden_loop` ticked, or on a pull request labelled `golden-loop` (the label takes effect on
+the next push or re-run), and uploads `golden-loop-evidence-<stage>`. The
 always-on part - the anchors against the pinned port, the decision, the refusals, the argv,
 `loop.record` over a synthetic store and a real git history - is `GoldenLoopFast` in
 `test_golden_fast.py`.

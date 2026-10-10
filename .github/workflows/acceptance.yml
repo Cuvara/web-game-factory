@@ -159,17 +159,26 @@ jobs:
   # the label does not start a run by itself - the next push or a re-run does, so a label
   # event never cancels the acceptance job above through the shared concurrency group).
   golden-loop:
-    name: GOLDEN LOOP (2D, planted defect, negative control)
+    name: GOLDEN LOOP ${{ matrix.stage }} (2D, planted defect, negative control)
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.golden_loop) ||
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'golden-loop'))
     runs-on: ubuntu-24.04
-    # Greybox stage: one full 2D golden with one extra greybox build-and-play, and a negative
-    # control that builds and plays the greybox three times and stops. Develop stage: one
-    # full golden with one extra production build-and-play, and a negative control that plays
-    # the production build three times and stops. About four goldens.
-    timeout-minutes: 360
+    # One job per stage, on its own runner (each golden holds port 4173): the greybox stage is
+    # one full 2D golden with one extra greybox build-and-play and a negative control that
+    # builds and plays the greybox three times and stops; the develop stage is one full golden
+    # with one extra production build-and-play and a negative control that plays the
+    # production build three times and stops. About two goldens each.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - stage: greybox
+            classes: test_golden_loop.GoldenLoop2D test_golden_loop.GoldenLoopNoRepair2D
+          - stage: develop
+            classes: test_golden_loop.GoldenLoopDevelop2D test_golden_loop.GoldenLoopDevelopNoRepair2D
+    timeout-minutes: 240
 
     steps:
       - uses: actions/checkout@v4
@@ -206,8 +215,15 @@ jobs:
       - name: An MP4 encoder for the store-listing trailer
         run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg && ffmpeg -hide_banner -encoders | grep -w libx264
 
-      - name: The golden loop and its negative control
-        run: WGF_GOLDEN_LOOP=1 WGF_GOLDEN_KEEP=1 bin/wgf test-core --only "GOLDEN LOOP" --strict
+      - name: The golden loop and its negative control (this stage)
+        # The category's classes for this stage; a skip is a failure here (WGF_GOLDEN_LOOP=1
+        # runs them all), as --strict makes it for the whole category.
+        working-directory: scripts/tests
+        run: |
+          WGF_GOLDEN_LOOP=1 WGF_GOLDEN_KEEP=1 python3 -m unittest -v ${{ matrix.classes }} 2>&1 | tee golden-loop.log
+          status=${PIPESTATUS[0]}
+          if grep -E "... skipped|skipped=" golden-loop.log; then echo "a golden-loop test was skipped"; exit 4; fi
+          exit $status
 
       - name: Golden loop evidence
         # golden-loop-2d.json / golden-loop-2d-develop.json (the before/after record, the
@@ -216,7 +232,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: golden-loop-evidence
+          name: golden-loop-evidence-${{ matrix.stage }}
           path: /tmp/wgf-golden-*/evidence
           if-no-files-found: warn
           retention-days: 14

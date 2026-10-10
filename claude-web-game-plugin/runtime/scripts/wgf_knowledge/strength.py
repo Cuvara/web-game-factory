@@ -32,7 +32,8 @@ A measurement that may not count is refused with its rule and reason - never dro
     claim           (e) a person's or specialist's claim: a subjective source, a source a
                     promote cannot re-verify, a person's G4 decision
     duplicate       a hash-identical copy of a report or pair already counted: counted once
-    no-repair       a measured failure the ledger never re-measured passing
+    no-repair       a measured failure the ledger never re-measured passing, or a repair
+                    the run's newest ledger has reopened since
 
 and what caps a pair at single-run: `unstable` (the ledger's verdicts for the check
 alternate - a pass, then a failure again; or a failure and a pass on one commit),
@@ -64,6 +65,8 @@ SELF_REPORTED = "self-reported"
 JUDGED = "ai-judged"
 # A person's G4 finding: re-measured by a person's next decision, which is a judgment.
 PERSON = "decision-record"
+# The ledger statuses of a repair that holds (wgf_triage.lifecycle.DONE).
+DONE = ("verified", "closed")
 MEASURED = "measured"
 
 
@@ -270,6 +273,17 @@ def derive(sources, proposed=()):
                 before.get("commit") and before.get("commit") == after.get("commit")):
             _refuse(refused, source, "same-build", f"{snap.get('finding')} passed on the commit "
                     f"it failed on ({_short(before.get('commit'))}): a re-play, not a repair",
+                    after)
+            continue
+        if snap.get("status") and snap.get("status") not in DONE:
+            # The ledger holds the record open again: its repair failed a later
+            # measurement (reopened), whatever verification it kept from before.
+            why_unstable = _unstable(snap)
+            if why_unstable:
+                unstable.append(snap.get("finding"))
+            _refuse(refused, source, "no-repair", f"{snap.get('finding')}: the run's ledger "
+                    f"holds it {snap.get('status')} - reopened after its verification, so the "
+                    "repair did not hold" + (f" ({why_unstable})" if why_unstable else ""),
                     after)
             continue
         if snap.get("verdict") != "passed" or before.get("status") != "FAIL" \

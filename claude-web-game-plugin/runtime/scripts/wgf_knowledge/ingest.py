@@ -272,17 +272,31 @@ def _measured_findings(docs):
     return out
 
 
+# The reports that carry the run's finding ledger, and where (wgf_triage.ledger).
+LEDGERS = {"triage-report": ("lifecycle",), "quality-report": ("ledger", "lifecycle")}
+
+
 def _ledger(docs):
-    """(ref, {finding id: record}) of the run's newest finding ledger: the triage-report
-    that carries a `lifecycle`, newest by run-local order; (None, {}) when there is none."""
-    newest = None
+    """(ref, {finding id: record}) of the run's newest finding ledger, chosen as
+    wgf_triage.ledger.previous_lifecycle chooses it: the newest triage-report's `lifecycle`,
+    or the newest quality-report's `ledger.lifecycle` when that report is newer by run-local
+    order and carries one (the quality gate and release advance the ledger after the last
+    triage); (None, {}) when there is none."""
+    newest = {}
     for ref, doc in docs:
-        if ref.type == "triage-report" and isinstance(doc.get("lifecycle"), list) and (
-                newest is None or ref.order() > newest[0].order()):
-            newest = (ref, doc)
-    if newest is None:
+        if ref.type in LEDGERS and isinstance(doc, dict) and (
+                ref.type not in newest or ref.order() > newest[ref.type][0].order()):
+            newest[ref.type] = (ref, doc)
+    triage, quality = newest.get("triage-report"), newest.get("quality-report")
+    chosen = None
+    if triage is not None and isinstance(triage[1].get("lifecycle"), list):
+        chosen = (triage[0], triage[1]["lifecycle"])
+    own = _get(quality[1], LEDGERS["quality-report"]) if quality is not None else None
+    if isinstance(own, list) and (triage is None or quality[0].order() > triage[0].order()):
+        chosen = (quality[0], own)
+    if chosen is None:
         return None, {}
-    return newest[0], {str(r["id"]): r for r in newest[1]["lifecycle"]
+    return chosen[0], {str(r["id"]): r for r in chosen[1]
                        if isinstance(r, dict) and r.get("id")}
 
 
@@ -443,14 +457,15 @@ def verify_source(source, state, read_artifact, record):
 
 def remeasure_source(source, state, read_artifact, classify=None):
     """The source's re-measurement read again from its run store's newest finding ledger
-    (never the one stored with it), or None."""
+    (_ledger: the newest triage-report's, or a newer quality-report's; never the one stored
+    with it), or None."""
     from . import strength
     if state.run_id != source.get("run") or not source.get("finding"):
         return None
     docs = []
     for versions in (state.artifacts or {}).values():
         for ref in versions or ():
-            if getattr(ref, "type", None) != "triage-report":
+            if getattr(ref, "type", None) not in LEDGERS:
                 continue
             try:
                 doc = read_artifact(ref)

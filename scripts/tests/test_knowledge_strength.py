@@ -437,6 +437,55 @@ class IngestRefresh(Base):
         self.assertEqual(len(doc["candidates"][0]["sources"]), 1)
         self.assertEqual(doc["candidates"][0]["strength"], "reproduced")
 
+    def reopened_by_the_quality_gate(self, run_id):
+        """Review r1 finding 3: the last triage closed OBJECTIVE (A FAIL, B PASS); the
+        quality gate then advances the run's ledger on a newer playability report that
+        fails it again on C (ledger.remeasure: current=[]), and records that ledger in its
+        quality-report - newer than every triage-report of the run."""
+        from wgf_triage import lifecycle
+        rounds = self.rounds([(A, ll.blind()), (B, ll.well())])
+        closed = {r["id"]: r for r in rounds.triages[-1]["lifecycle"]}
+        self.assertIn(closed[ll.OBJECTIVE]["status"], ("verified", "closed"))
+        again = ll.tp.played_report(rounds.run_dir, C, records=ll.blind(), visit=99)
+        failing = {f["id"] for f in ll.tt.normalize("playability-report", again, ll.tt.ROUTING)}
+        reopened = lifecycle.advance(
+            rounds.triages[-1]["lifecycle"], at="2026-10-09T00:00:00Z", current=[],
+            failing={"playability-report": failing}, seqs={"playability-report": 40},
+            reports={"playability-report": again}, proto=None, proto_seq=15, decision=None,
+            decision_seq=-1, human_ids=set(), selected=None, triage_id="quality-gate",
+            routing_version="x", build_of=lambda k: {"commit": C, "digest": None})
+        record = next(r for r in reopened if r["id"] == ll.OBJECTIVE)
+        self.assertEqual(record["status"], "classified")
+        run = self.put(run_id, rounds, [ll.candidate(ll.OBJECTIVE)])
+        kr.add_report(self.store, run, "quality-report",
+                      {"build": {"commit": C}, "findings": [],
+                       "ledger": {"lifecycle": reopened}}, artifact_id="quality-report")
+        return run
+
+    def test_the_run_ledger_is_the_quality_gates_when_it_is_newer(self):
+        """Ingest reads the run's newest ledger as ledger.previous_lifecycle does - the
+        quality-report's when it is newer than the last triage-report. The repair the
+        quality gate's ledger reopened is not counted: no repair, and the reopen shows."""
+        self.reopened_by_the_quality_gate("run-reopened")
+        record = self.one("run-reopened")
+        snap = record["sources"][0]["remeasurement"]
+        self.assertEqual(snap["status"], "classified")
+        self.assertEqual(snap["ledger"]["artifact_id"], "quality-report")
+        self.assertEqual([o["verdict"] for o in snap["outcomes"]], ["FAIL", "PASS", "FAIL"])
+        self.assertEqual(record["strength"], "hypothesis", record["strength_why"])
+        self.assertIn("no-repair", self.rules(record))
+        self.assertIn(ll.OBJECTIVE, record["unstable"])
+
+    def test_promote_reads_the_quality_gates_newer_ledger_too(self):
+        """remeasure_source (promote's re-read of the run store) takes the same ledger."""
+        state = self.reopened_by_the_quality_gate("run-reopened")
+        state = self.store.load(state.run_id)
+        snap = ingest.remeasure_source(
+            {"run": state.run_id, "finding": ll.OBJECTIVE}, state,
+            lambda ref: self.store.read_artifact(state.run_id, ref))
+        self.assertEqual(snap["status"], "classified")
+        self.assertEqual(snap["ledger"]["artifact_id"], "quality-report")
+
 
 class PromoteCeiling(Base):
     def setUp(self):

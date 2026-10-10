@@ -704,14 +704,19 @@ self-confirming can raise it.
 | `validated` | Reproduced in two or more distinct contexts - scenarios (desktop and mobile), runs, projects or titles - by a class that is not only self-reported or one AI judgment | VALIDATED_PRINCIPLE |
 
 **Derivation.** At ingest each candidate source keeps `remeasurement`: what the run's newest
-finding ledger (the newest triage-report's `lifecycle`) holds of the source's finding - the
+finding ledger holds of the source's finding - chosen as `wgf_triage.ledger.previous_lifecycle`
+chooses it: the newest triage-report's `lifecycle`, or the newest quality-report's
+`ledger.lifecycle` when that report is newer (the quality gate and release advance the ledger
+after the last triage, and may reopen what it closed) - the
 K6.2 `verification` (`before`, `after`, `comparison`, `samples`, the verdict), the detection
 and its content hash, the history's outcomes (detected and reopened are failures, verified a
 pass), and the check's measurement class from K6.3's mapping (`quality-assessment.yaml`
 through `wgf_quality.assessment.expand`; a finding of no declared check takes the class of the
 families whose judge is its producer's report - a visual judge's `score:<dim>` is
 `ai-judged`). A pair counts when the ledger verified it (`passed`), the failing and passing
-measurements are on different commits, and nothing below refuses it. Per pair: repeats are
+measurements are on different commits, the ledger still holds it `verified` or `closed`
+(a record reopened since is `no-repair`, and listed in `unstable` when its outcomes
+alternate), and nothing below refuses it. Per pair: repeats are
 its accepted samples; `reproduced` with one or more, else `single-run`; capped at
 `single-run` when its check is **unstable** (a pass followed by a failure again in the
 ledger, or a failure and a pass on one commit - the pair is listed in `unstable`), when its
@@ -736,7 +741,7 @@ candidate in `refused_evidence` with its rule and reason - never dropped silentl
 | `self-agreement` (d) | An AI judge re-reading what it judged: an `ai-judged` sample on a commit already judged, or of the same frames |
 | `claim` (e) | A person's or a specialist's claim: a subjective source (a review, a finding no gate measured on that build, a source promote cannot re-verify), a person's G4 finding |
 | `duplicate` | The same report digest offered again (a run copied byte for byte), or the same FAIL->PASS pair of content hashes: counted once |
-| `no-repair` | A measured failure never re-measured passing (no ledger record, still failing, regressed, unmeasured, missing) |
+| `no-repair` | A measured failure never re-measured passing (no ledger record, still failing, regressed, unmeasured, missing), or a repair the run's ledger reopened since |
 
 **Promote.** Strength caps the classification a draft proposes below REQUIRED. A measured
 candidate whose checks derive `recommended` (an advisory check) on `hypothesis` or

@@ -44,8 +44,9 @@ enough there, and never verifies:
 
 A regression of a fix is a failure of a check that was measured passing before it: the
 record keeps a `baseline` when it is assigned (or implemented) - per producer, the report
-then newest, its commit, the checks it passed (for a producer that lists them) and the
-findings it failed. A failure after the fix is a regression only when its check passed in
+then newest, its commit, the checks it passed (for a producer that lists them: per check,
+as the newest report measured it, else as the ledger last recorded it - a BLOCKED newest
+report does not erase an earlier pass) and the findings it failed. A failure after the fix is a regression only when its check passed in
 that baseline, or the finding was verified before; a producer or check that had never
 measured before the fix (a gate running for the first time) raises a new finding, not a
 regression of the fix. A record with no baseline (a ledger older than triage-report 1.3.0)
@@ -228,10 +229,54 @@ def _check_key(fid):
     return (found.group(1) + (found.group(2) or "")) if found else str(fid)
 
 
-def _baseline(failing, seqs, reports, build_of, before=None):
+def _recorded(records, producer, before):
+    """{check key: (seq, "PASS" | "FAIL")}: the newest measurement of each of `producer`'s
+    checks the ledger itself recorded before `before` (a run-local seq) - the earlier
+    baselines' passing and failing checks, each record's detection and reopening (a failure)
+    and its verified pass (a pass; never a split part's, which says nothing of the check's
+    other parts). The step sees only each producer's newest report; this is what the run
+    measured before it, as far as the ledger kept it."""
+    out = {}
+
+    def put(key, seq, status):
+        if isinstance(seq, int) and (before is None or seq < before) and (
+                key not in out or seq >= out[key][0]):
+            out[key] = (seq, status)
+    for record in records or ():
+        if not isinstance(record, dict):
+            continue
+        seen = (record.get("baseline") or {}).get(producer) if isinstance(
+            record.get("baseline"), dict) else None
+        if isinstance(seen, dict):
+            for key in seen.get("passing") or ():
+                put(key, seen.get("seq"), "PASS")
+            for fid in seen.get("failing") or ():
+                put(_check_key(fid), seen.get("seq"), "FAIL")
+        if (record.get("source") or {}).get("producer") != producer:
+            continue
+        key = _check_key(record.get("id"))
+        for entry in record.get("history") or ():
+            if isinstance(entry, dict) and (entry.get("status") == "detected" or str(
+                    entry.get("note") or "").startswith("reopened")):
+                put(key, entry.get("seq"), "FAIL")
+        verification = record.get("verification") or {}
+        if verification.get("verdict") == "passed" and key == record.get("id"):
+            for measured in [verification] + list(verification.get("samples") or []):
+                if isinstance(measured, dict) and measured.get("status", "PASS") == "PASS":
+                    put(key, measured.get("seq"), "PASS")
+    return out
+
+
+def _baseline(failing, seqs, reports, build_of, before=None, records=None):
     """What the gates had measured: per producer, its newest report (only those older than
     `before`, a run-local seq, when given), its commit, the checks it passed (a producer
-    that lists them) and the findings it failed."""
+    that lists them) and the findings it failed.
+
+    `passing` is per check: the newest report's measurement where it measured the check
+    (PASS or FAIL), else the newest measurement of it the ledger recorded before that report
+    (`records`, _recorded) - so a BLOCKED newest report, its check unmeasured, does not
+    erase a pass measured earlier. A pass in a report the ledger never recorded (no triage
+    read it, no baseline was taken on it) is not known here."""
     from .findings import finding_id
     out = {}
     for producer, ids in (failing or {}).items():
@@ -246,11 +291,22 @@ def _baseline(failing, seqs, reports, build_of, before=None):
                  "commit": (build_of(producer) or {}).get("commit"),
                  "failing": sorted(ids)}
         if producer in measurements.CHECKED:
-            entry["passing"] = sorted({
-                finding_id(producer, c.get("id"), measurements.project_of(producer, c))
-                for c in report.get("checks") or []
-                if isinstance(c, dict) and c.get("status") == "PASS"
-                and not (isinstance(c.get("measured"), dict) and c["measured"].get("unmeasured"))})
+            measured = {}
+            for c in report.get("checks") or []:
+                if not isinstance(c, dict) or c.get("status") not in measurements.MEASURED:
+                    continue
+                unmeasured = isinstance(c.get("measured"), dict) \
+                    and c["measured"].get("unmeasured")
+                if c.get("status") == "PASS" and unmeasured:
+                    continue
+                measured[finding_id(producer, c.get("id"),
+                                    measurements.project_of(producer, c))] = c.get("status")
+            measured.update({_check_key(fid): "FAIL" for fid in ids})
+            earlier = _recorded(records, producer, seq)
+            entry["passing"] = sorted(
+                {key for key, status in measured.items() if status == "PASS"}
+                | {key for key, (_s, status) in earlier.items()
+                   if status == "PASS" and key not in measured})
         out[producer] = entry
     return out
 
@@ -331,7 +387,8 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
                                  "prototype_report": proto_id, "seq": proto_seq}
                 if "baseline" not in record:
                     record["baseline"] = _baseline(failing, seqs, reports, build_of,
-                                                   before=proto_seq)
+                                                   before=proto_seq,
+                                                   records=list(records.values()))
                 _event(record, "implemented", at, by=proto_id, build=commit,
                        note=f"{block.get('role')} visit {(proto or {}).get('iteration')}",
                        content_hash=((proto or {}).get("provenance") or {}).get("content_hash"),
@@ -529,7 +586,8 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
                    build=(finding.get("build") or {}).get("commit"),
                    note="reopened: failing again after it was " + record["status"])
         if record["status"] in ("detected", "classified"):
-            record["baseline"] = _baseline(failing, seqs, reports, build_of)
+            record["baseline"] = _baseline(failing, seqs, reports, build_of,
+                                           records=list(records.values()))
             _event(record, "assigned", at, by=(finding.get("source") or {}).get("artifact_id"),
                    note=f"routed `{finding.get('route')}` straight from "
                         f"{(finding.get('source') or {}).get('step') or 'its gate'}",
@@ -576,7 +634,8 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
     for fid in (selected or {}).get("findings") or []:
         record = records.get(fid)
         if record and record["status"] in ("detected", "classified"):
-            record["baseline"] = _baseline(failing, seqs, reports, build_of)
+            record["baseline"] = _baseline(failing, seqs, reports, build_of,
+                                           records=list(records.values()))
             _event(record, "assigned", at, by=triage_id,
                    note=f"to {(selected or {}).get('owner')} (route "
                         f"{(selected or {}).get('label')})")

@@ -293,6 +293,15 @@ running for the first time - raises a new finding, not a regression: in the real
 runs that rule kept nine fixes from ever being verified although their own gate passed them
 again and again. A ledger with no baseline keeps the old rule.
 
+The checks a baseline passed are per check, not per report: for a producer that lists its
+checks, a check the newest report measured (PASS or FAIL) is as that report says, and a check
+it left unmeasured (a BLOCKED report, a check BLOCKED or SKIPPED, or no longer listed) keeps
+the newest measurement of it the ledger recorded before - an earlier record's baseline, a
+detection or reopening (a failure), a verified pass of an unsplit finding. So a BLOCKED newest
+report does not erase an earlier pass, and a fix that then breaks that check is a regression.
+The limit: a step sees only each producer's newest report, so a pass measured in a report no
+triage read and no baseline was taken on is not known to the ledger, and not to the baseline.
+
 Every history entry an artifact caused names it by `by` (the artifact id) and, where known,
 its `content_hash` and run-local `seq`: greybox and develop playability reports can share an
 artifact id, and only the hash and seq say which one detected or verified a finding.

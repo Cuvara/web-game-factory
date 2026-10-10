@@ -352,7 +352,7 @@
         "failed_measurement": { "$ref": "#/$defs/measurement", "description": "Since triage-report 1.3.0. The last measurement that failed the finding: the `before` its verification is compared with." },
         "baseline": {
           "type": "object",
-          "description": "Since triage-report 1.3.0. What the gates had measured when the finding was assigned (or, assigned by none, implemented): per producer, its newest report then, the commit, the findings it failed and - for a producer that lists its checks - the checks it passed (`<producer>:<check>[@<project>]`). A failure after the fix is a regression of it only when its check passed here, or it was verified before: a producer or check that had never measured raises a new finding, not a regression.",
+          "description": "Since triage-report 1.3.0. What the gates had measured when the finding was assigned (or, assigned by none, implemented): per producer, its newest report then, the commit, the findings it failed and - for a producer that lists its checks - the checks it passed (`<producer>:<check>[@<project>]`): as the newest report measured each, else - a check it left unmeasured - as the ledger last recorded it. A failure after the fix is a regression of it only when its check passed here, or it was verified before: a producer or check that had never measured raises a new finding, not a regression.",
           "additionalProperties": {
             "type": "object",
             "properties": {

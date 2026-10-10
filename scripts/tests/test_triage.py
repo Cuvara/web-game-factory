@@ -1690,5 +1690,93 @@ class ScenarioVerification(unittest.TestCase):
         self.assertTrue(ver["comparison"]["same_scenario"], ver["comparison"])
 
 
+class BaselineAcrossReports(unittest.TestCase):
+    """Review r1 finding 6: a record's regression baseline is what the gates had MEASURED,
+    check by check - not only what the newest report says. When the newest report of a
+    producer is BLOCKED (its check unmeasured), a pass the ledger recorded earlier still
+    counts: a fix that then breaks that check is a regression, not a verified repair."""
+
+    PQ = "production-quality-report"
+    LOADED = "production-quality-report:assets.loaded"
+    MIX = "production-quality-report:audio.mix"
+    TARGETS = "production-quality-report:ui.targets"
+
+    @staticmethod
+    def report(commit, seq, verdict, **statuses):
+        return {"title_id": "demo", "commit": commit, "verdict": verdict,
+                "provenance": {"artifact_id": f"production-quality-report-{seq}",
+                               "content_hash": "sha256:" + f"{seq:02d}" * 32},
+                "checks": [{"id": cid.replace("_", "."), "status": st, "required": True,
+                            "summary": cid, "route": "develop"}
+                           for cid, st in statuses.items()]}
+
+    def advance(self, previous, report, seq, commit, *, current=(), selected=None, proto=None,
+                proto_seq=-1):
+        from wgf_triage import lifecycle
+        failing = {f["id"] for f in normalize(self.PQ, report, ROUTING)} \
+            if report["verdict"] == "FAIL" else set()
+        found = list(current)
+        for f in found:
+            f["build"] = {"commit": commit, "digest": None}
+        return lifecycle.advance(
+            previous, at="t", current=found, failing={self.PQ: failing}, seqs={self.PQ: seq},
+            reports={self.PQ: report}, proto=proto, proto_seq=proto_seq, decision=None,
+            decision_seq=-1, human_ids=set(),
+            selected={"findings": selected, "owner": "gameplay", "label": "develop"}
+            if selected else None, triage_id=f"t{seq}", routing_version="x",
+            build_of=lambda k: {"commit": commit, "digest": None})
+
+    def test_a_pass_before_a_blocked_report_is_still_in_the_baseline(self):
+        a, b, c = "a" * 40, "b" * 40, "c" * 40
+        first = self.report(a, 8, "FAIL", assets_loaded="FAIL", ui_targets="PASS",
+                            audio_mix="FAIL")
+        ledger = self.advance([], first, 8, a, current=normalize(self.PQ, first, ROUTING),
+                              selected=[self.LOADED])
+        records = {r["id"]: r for r in ledger}
+        self.assertIn(self.TARGETS, records[self.LOADED]["baseline"][self.PQ]["passing"])
+        # The visit fixes assets.loaded on B; production-quality re-measures B BLOCKED (a
+        # stale input), ui.targets unmeasured. The next triage assigns audio.mix.
+        blocked = self.report(b, 12, "BLOCKED", assets_loaded="PASS", ui_targets="BLOCKED",
+                              audio_mix="FAIL")
+        ledger = self.advance(ledger, blocked, 12, b, selected=[self.MIX],
+                              proto=_proto(b, 2, {"role": "gameplay",
+                                                  "findings": [self.LOADED]}), proto_seq=11)
+        records = {r["id"]: r for r in ledger}
+        self.assertIn(records[self.LOADED]["status"], ("verified", "closed"))
+        self.assertEqual(records[self.MIX]["status"], "assigned")
+        self.assertIn(self.TARGETS, records[self.MIX]["baseline"][self.PQ]["passing"])
+        # The audio fix on C breaks ui.targets, which passed on A: a regression of it.
+        broken = self.report(c, 16, "FAIL", assets_loaded="PASS", ui_targets="FAIL",
+                             audio_mix="PASS")
+        ledger = self.advance(ledger, broken, 16, c, current=normalize(self.PQ, broken, ROUTING),
+                              proto=_proto(c, 3, {"role": "gameplay", "findings": [self.MIX]}),
+                              proto_seq=15)
+        record = {r["id"]: r for r in ledger}[self.MIX]
+        self.assertEqual(record["status"], "implemented", record["history"][-1])
+        self.assertEqual(record["verification"]["verdict"], "regressed")
+        self.assertEqual(record["verification"]["regressions"], [self.TARGETS])
+
+    def test_a_check_failing_since_the_earlier_pass_is_not_carried(self):
+        """The newer measurement wins: a check that passed on A and FAILED on B (a finding
+        the ledger recorded) is not a pass of the baseline taken on a BLOCKED C."""
+        a, b, c = "a" * 40, "b" * 40, "c" * 40
+        first = self.report(a, 8, "FAIL", assets_loaded="FAIL", ui_targets="PASS",
+                            audio_mix="PASS")
+        ledger = self.advance([], first, 8, a, current=normalize(self.PQ, first, ROUTING),
+                              selected=[self.LOADED])
+        second = self.report(b, 12, "FAIL", assets_loaded="FAIL", ui_targets="FAIL",
+                             audio_mix="PASS")
+        ledger = self.advance(ledger, second, 12, b, current=normalize(self.PQ, second,
+                                                                       ROUTING))
+        blocked = self.report(c, 16, "BLOCKED", assets_loaded="FAIL", ui_targets="BLOCKED",
+                              audio_mix="PASS")
+        ledger = self.advance(ledger, blocked, 16, c, selected=[self.TARGETS])
+        record = {r["id"]: r for r in ledger}[self.TARGETS]
+        self.assertEqual(record["status"], "assigned")
+        self.assertNotIn(self.TARGETS, record["baseline"][self.PQ]["passing"])
+        self.assertIn("production-quality-report:audio.mix",
+                      record["baseline"][self.PQ]["passing"])
+
+
 if __name__ == "__main__":
     unittest.main()

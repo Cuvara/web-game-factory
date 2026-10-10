@@ -235,6 +235,45 @@ class RequiredForGatesTest(unittest.TestCase):
         self.assertTrue(any("beta" in e and "G3" in e for e in self.module.ERRORS))
 
 
+class PortalSdksTest(unittest.TestCase):
+    """core/reference/portal-sdks.yaml names only platforms with a profile, and every
+    signature compiles: the verify step and platform-validate scan bundles with it."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix="wgf-integrity-sdks-")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.cwd = os.getcwd()
+        os.chdir(self.base)
+        self.addCleanup(os.chdir, self.cwd)
+        self.module = load_check_integrity()
+        self.module.ERRORS.clear()
+        self.module.NOTES.clear()
+
+    def reference(self, text):
+        write(os.path.join(self.base, "core", "reference", "portal-sdks.yaml"), text)
+
+    def test_the_shipped_reference_passes(self):
+        with open(os.path.join(SCRIPTS, "..", "core", "reference", "portal-sdks.yaml"),
+                  encoding="utf-8") as handle:
+            self.reference(handle.read())
+        profiles = {name[:-5] for name in os.listdir(os.path.join(
+            SCRIPTS, "..", "core", "reference", "platforms")) if name.endswith(".yaml")}
+        self.module.check_portal_sdks(profiles)
+        self.assertEqual(self.module.ERRORS, [])
+
+    def test_an_unknown_portal_a_bad_pattern_and_a_bad_loader_are_errors(self):
+        self.reference("version: 1.0.0\nportals:\n"
+                       "  alpha:\n    signatures:\n      - {id: a, pattern: '([a'}\n"
+                       "    loader: {script: 'http://insecure.example/sdk.js'}\n"
+                       "  ghost:\n    signatures: []\n")
+        self.module.check_portal_sdks({"alpha", "beta"})
+        self.assertEqual(len(self.module.ERRORS), 3, self.module.ERRORS)
+        self.assertTrue(any("ghost" in e for e in self.module.ERRORS))
+        self.assertTrue(any("invalid pattern" in e for e in self.module.ERRORS))
+        self.assertTrue(any("https" in e for e in self.module.ERRORS))
+        self.assertTrue(any("'beta'" in n for n in self.module.NOTES))
+
+
 class PluginVersionTest(unittest.TestCase):
     """The Claude plugin manifest's version is VERSION: the host detects an update by that
     field alone. The marketplace entry carries none, so there is one number, not two."""

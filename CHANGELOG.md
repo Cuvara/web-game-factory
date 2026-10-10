@@ -9,6 +9,38 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Platform preflight: portal SDKs measured in each bundle** (docs/verification-module.md
+"Portal SDKs in a bundle", docs/publish-module.md, docs/platform-targets-2026-10.md "Portal
+SDKs in each bundle"). The Factory never looked at which portal SDKs a platform's bundle
+carries: real per-platform builds of both validation candidates (2D 0db72b6, 3D 43c08e2) on
+the pinned template v1.2.0 carry Poki, Yandex, CrazyGames, Y8, GameDistribution and
+GameMonetize code in every bundle, the template's own `crazygames-audit.mjs` FAILs their
+crazygames bundles on `unexpected_dependencies`, and verify passed them; and `y8_sdk_present`
+held for a Y8 bundle that loads no Y8 SDK, because on contract 1 `collect-facts.mjs` echoes
+the platform id into `package.platform_sdk`. Now `core/reference/portal-sdks.yaml` 1.0.0 (new;
+a file of its own, not a profile field: a bundle is judged against every other portal's
+identifiers, a game pins only its targets' profiles, and a profile bump would force every
+pinned title to re-plan) says how each portal's SDK is recognised in built files and which
+page script CrazyGames and Y8 load; `scripts/wgflib/portal_sdks.py` scans a bundle directory
+or a package archive with it. Verify adds `platform.foreign-sdk:<id>` (the Factory scan, plus
+the template's CrazyGames audit when the checkout ships it - template contract 2.1.0 log
+`PORTAL_AUDITS`, acceptance unchanged) and `platform.sdk-loaded:<id>` (Y8 without
+`WGF_Y8_APP_ID`: BLOCKED for a person, create-before-build), both **not required**: on the
+pin every bundle carries every adapter, so a required check would fail every verification,
+the golden runs' included; a FAIL makes that platform `not-ready`. On contract 1
+`policy.assertions:<id>` no longer counts profile assertions on `package.platform_sdk`
+(recorded as `not_counted`). platform-validate adds the guards `portal_sdk_isolated` and
+`portal_sdk_loaded` on the package archive itself, so every portal package on the current pin
+is BLOCKED there; moving the pin to a template whose build carries one adapter (the
+unreviewed backport `backport/1.2.0-platform-sdk` does, measured) clears it. check-integrity
+holds the reference's keys to the platform profiles. Regression input is real and minimised:
+`scripts/tests/fixtures/portal-sdks/sky-marble-43c08e2.json` (`test_portal_sdks`, RELEASE).
+Docs: platform-targets-2026-10.md (the current runs replace the workflow-v7 runs in "Exact
+commands"; Y-3: both games cancel the context menu since 27c49f0 / ff7f451; gap 4 now seen),
+platform-sdk-verification.md (adapters at the pin, profile status on 2026-10-10). Bringing an
+artifact forward: none - a verification-report without the new checks still validates;
+platform-validate re-run on an existing release reads the package itself.
+
 **K6 review r1 fixes** (docs/specialist-routing.md, docs/knowledge-enforcement.md). The
 ledger no longer verifies a split finding (`.../develop`, `.../assets`) whose check still
 FAILs its part in a BLOCKED report: the check is split again by the same rule, `unmeasured`

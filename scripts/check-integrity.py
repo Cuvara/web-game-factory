@@ -367,6 +367,45 @@ def check_platforms():
     return profiles
 
 
+def check_portal_sdks(profiles):
+    """core/reference/portal-sdks.yaml (wgflib.portal_sdks): every key a platform profile,
+    every signature a valid pattern with an id, every loader a script URL. A profile without
+    an entry is a note: its SDK is simply not recognised in a bundle yet."""
+    path = os.path.join("core", "reference", "portal-sdks.yaml")
+    sys.path.insert(0, "scripts")
+    try:
+        from wgflib.yamllite import YamlError, load_file
+        try:
+            document = load_file(path) or {}
+        except (OSError, YamlError) as exc:
+            ERRORS.append(f"{path}: {exc}")
+            return
+    finally:
+        sys.path.pop(0)
+    if not re.match(r"^[0-9]+\.[0-9]+\.[0-9]+$", str(document.get("version") or "")):
+        ERRORS.append(f"{path}: version must be semver")
+    portals = document.get("portals") or {}
+    for pid, entry in portals.items():
+        if pid not in profiles:
+            ERRORS.append(f"{path}: portal '{pid}' has no platform profile in core")
+        entry = entry if isinstance(entry, dict) else {}
+        for item in entry.get("signatures") or []:
+            if not isinstance(item, dict) or not item.get("id") or not item.get("pattern"):
+                ERRORS.append(f"{path}: {pid}: a signature needs an id and a pattern")
+                continue
+            try:
+                re.compile(str(item["pattern"]))
+            except re.error as exc:
+                ERRORS.append(f"{path}: {pid}.{item['id']}: invalid pattern ({exc})")
+        loader = entry.get("loader")
+        if loader is not None and not str((loader or {}).get("script") or "").startswith(
+                "https://"):
+            ERRORS.append(f"{path}: {pid}: loader.script must be an https URL")
+    for pid in sorted(set(profiles) - set(portals)):
+        NOTES.append(f"{path}: no entry for platform '{pid}': its SDK is not recognised in a "
+                     "bundle")
+
+
 def check_template_adapters(directory, profiles):
     """The lock's platform_adapters is the pinned template's adapter registry: the list
     strategy and tech-plan refuse every other platform by. A profile without an adapter at the
@@ -689,6 +728,7 @@ def main():
     check_charters()
     check_templates()
     platforms = check_platforms()
+    check_portal_sdks(platforms)
     publication = check_publication_profiles()
     check_provider_independence()
     check_no_readme_only_dirs()

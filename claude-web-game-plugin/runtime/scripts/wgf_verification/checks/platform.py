@@ -10,6 +10,7 @@ claims otherwise.
 import os
 import re
 
+from wgflib import portal_sdks
 from wgflib import template_contract as contract
 
 from ..model import BLOCKED, FAIL, PASS, PASS_MOCK, WARNING, Check, Evidence
@@ -97,6 +98,7 @@ def _per_platform(session, platform):
     common = {"category": "platform", "required": required, "platform_id": pid}
 
     yield _build_target(session, pid, common)
+    yield from _portal_sdks(session, pid, common)
 
     # The profile the build is judged by: the pinned one, by content hash - never the
     # latest, and never a copy that only declares the pinned version.
@@ -193,6 +195,155 @@ def _build_target(session, pid, common):
                          f"{pid} needs its own build (per-platform builds are template "
                          "contract 2); until then it is not shippable",
                  evidence=evidence, **common)
+
+
+def _bundle_ready(session, pid):
+    """The check this platform's bundle depends on, when it is not there to read."""
+    if not session.passed("build.bundle"):
+        return "build.bundle"
+    if session.platform_build_mode is not None and not session.passed(f"build.platform:{pid}"):
+        return f"build.platform:{pid}"
+    return None
+
+
+def _portal_sdks(session, pid, common):
+    """platform.foreign-sdk:<id> and platform.sdk-loaded:<id>: which portals' SDKs this
+    platform's bundle carries, and whether its page loads its own - measured from the built
+    files against core/reference/portal-sdks.yaml (wgflib.portal_sdks).
+
+    Neither is required here. On the pinned template (v1.2.0, contract 1) every bundle carries
+    every portal adapter, so a required check would fail every verification on the pin -
+    the golden runs' too - and route to a developer who cannot fix template code. Each is
+    reported on its platform (a FAIL makes that platform not-ready in platform_readiness),
+    and platform-validate refuses to publish the package (guards portal_sdk_isolated,
+    portal_sdk_loaded), which is where it blocks: per platform, before anything uploads.
+    Moving the template pin to a release whose build carries only the selected adapter is
+    what clears the foreign-SDK finding."""
+    common = dict(common, required=False)
+    upstream = _bundle_ready(session, pid)
+    try:
+        reference = session.portal_sdk_reference()
+    except (OSError, ValueError, KeyError, re.error) as exc:
+        for cid, title in ((f"platform.foreign-sdk:{pid}", FOREIGN_TITLE),
+                           (f"platform.sdk-loaded:{pid}", LOADED_TITLE)):
+            yield Check(cid, title=title, status=BLOCKED,
+                        message=f"core/reference/portal-sdks.yaml cannot be read: {exc}",
+                        evidence=[Evidence("observation", f"portal-sdks reference: {exc}")],
+                        **common)
+        return
+    declares_loader = reference.loader(pid) is not None
+    if upstream is not None:
+        yield session.blocked_by(upstream, id=f"platform.foreign-sdk:{pid}",
+                                 title=FOREIGN_TITLE, **common)
+        if declares_loader:
+            yield session.blocked_by(upstream, id=f"platform.sdk-loaded:{pid}",
+                                     title=LOADED_TITLE, **common)
+        return
+    bundle, _env = session.platform_bundle(pid)
+    scan = portal_sdks.scan_directory(reference, session.path(*bundle.split("/")), bundle)
+    yield _foreign_sdk(session, pid, bundle, reference, scan, common)
+    if declares_loader:
+        yield _sdk_loaded(session, pid, bundle, reference, scan, common)
+
+
+FOREIGN_TITLE = "No other portal's SDK in this platform's bundle"
+LOADED_TITLE = "This platform's page loads its SDK"
+
+
+def _reference_evidence(reference):
+    return Evidence("reference", f"{reference.label}: how each portal's SDK is recognised",
+                    path="core/reference/portal-sdks.yaml",
+                    **({"content_hash": reference.content_hash}
+                       if reference.content_hash else {}))
+
+
+def _template_audit(session, pid, bundle):
+    """The template's own audit of this platform's bundle, when the checkout ships one
+    (template_contract.PORTAL_AUDITS): (ran, failing detail or None, evidence)."""
+    audit = contract.PORTAL_AUDITS.get(pid)
+    if audit is None or not session.exists(*audit["cli"].split("/")):
+        return False, None, []
+    out_dir = contract.portal_audit_dir(pid)
+    report_path = f"{out_dir}/{audit['report']}"
+    session.remove(report_path)  # never read a previous run's report
+    result = session.run(["node", audit["cli"], "--dir", bundle, "--out", out_dir])
+    evidence = [Evidence.of_command(result, f"template {audit['cli']} on {bundle}")]
+    report = session.read_json(report_path)
+    found = None
+    for entry in (report or {}).get("audits") or []:
+        for item in (entry or {}).get("results") or []:
+            if isinstance(item, dict) and item.get("id") == audit["check"]:
+                found = item
+    if found is None:
+        evidence.append(Evidence("observation", f"{report_path} reports no {audit['check']}: "
+                                                "the template audit decided nothing here"))
+        return False, None, evidence
+    evidence.append(Evidence("file", f"{audit['check']}: {found.get('status')} - "
+                                     f"{found.get('detail')}", path=report_path,
+                             content_hash=session.file_hash(report_path)))
+    return True, (str(found.get("detail")) if found.get("status") == FAIL else None), evidence
+
+
+def _foreign_sdk(session, pid, bundle, reference, scan, common):
+    cid = f"platform.foreign-sdk:{pid}"
+    found = portal_sdks.foreign(scan, pid)
+    ran, audit_failure, audit_evidence = _template_audit(session, pid, bundle)
+    evidence = [Evidence("artifact", f"Factory scan of {scan.files} text file(s) in {bundle}/: "
+                                     + (portal_sdks.describe(found) if found
+                                        else f"portals recognised: "
+                                             f"{', '.join(scan.portals()) or 'none'}"),
+                         path=bundle, data={"scan": "factory", "found": found,
+                                            "portals": scan.portals()}),
+                _reference_evidence(reference)] + audit_evidence
+    ran_by = "Factory scan" + (f" and the template's {contract.PORTAL_AUDITS[pid]['cli']}"
+                               if ran else "")
+    if found or audit_failure:
+        problems = []
+        if found:
+            problems.append("Factory scan: " + portal_sdks.describe(found))
+        if audit_failure:
+            problems.append(f"template audit {contract.PORTAL_AUDITS[pid]['check']}: "
+                            f"{audit_failure}")
+        return Check(cid, title=FOREIGN_TITLE, status=FAIL, evidence=evidence, **common,
+                     message=f"the {pid} bundle carries other portals' SDKs ({ran_by}): "
+                             + "; ".join(problems) + ". Not publishable on " + pid
+                             + " (platform-validate: portal_sdk_isolated). The pinned template "
+                               "builds every adapter into every bundle; a template build "
+                               "carrying only the selected adapter clears it")
+    return Check(cid, title=FOREIGN_TITLE, status=PASS, evidence=evidence, **common,
+                 message=f"no other portal's SDK in {bundle}/ ({ran_by}, {scan.files} text "
+                         f"file(s))")
+
+
+def _sdk_loaded(session, pid, bundle, reference, scan, common):
+    cid = f"platform.sdk-loaded:{pid}"
+    script, loaded, needs = portal_sdks.loader_status(scan, pid)
+    evidence = [Evidence("file", f"{bundle}/index.html "
+                                 + ("loads " if loaded else "does not load " if loaded is False
+                                    else "is missing; cannot load ") + script,
+                         path=f"{bundle}/index.html",
+                         content_hash=session.file_hash(f"{bundle}/index.html")),
+                _reference_evidence(reference)]
+    if loaded:
+        return Check(cid, title=LOADED_TITLE, status=PASS, evidence=evidence, **common,
+                     message=f"{bundle}/index.html loads {script}")
+    if loaded is None:
+        return Check(cid, title=LOADED_TITLE, status=FAIL, evidence=evidence, **common,
+                     message=f"{bundle}/ has no index.html to load {script}")
+    if needs:
+        # The template injects the loader only when the build is given the portal's ids; a
+        # portal that issues them when a person creates the game makes this a person's act.
+        return Check(cid, title=LOADED_TITLE, status=BLOCKED, evidence=evidence, **common,
+                     message=f"{bundle}/index.html does not load {script}: the {pid} build was "
+                             f"not given {', '.join(needs)}, so the bundle runs without the "
+                             f"{pid} SDK and is not publishable (platform-validate: "
+                             f"portal_sdk_loaded). BLOCKED for a person: the portal issues the "
+                             f"ids when a person creates the game (create-before-build, "
+                             f"docs/publish-module.md); then the build must be given them "
+                             f"(factory.agents.game_env_passthrough) and verified again")
+    return Check(cid, title=LOADED_TITLE, status=FAIL, evidence=evidence, **common,
+                 message=f"{bundle}/index.html does not load {script}: the {pid} bundle runs "
+                         f"without its SDK")
 
 
 def _feature_evidence(pid, feature):
@@ -373,6 +524,29 @@ def _device_performance(session):
                                     path=RUNTIME_FACTS)])
 
 
+ECHOED_FACT = "package.platform_sdk"
+
+
+def _without_echoed(session, pid, results):
+    """(results, not counted): a profile assertion on package.platform_sdk is not evidence on
+    template contract 1 - collect-facts.mjs writes the platform id it is asked about (none for
+    generic-web) into that fact without looking at the bundle, so `y8_sdk_present` held for
+    a Y8 bundle that loads no Y8 SDK. Such results are left out of what the check counts and
+    records for platform-validate; the Factory measures the bundle itself
+    (platform.foreign-sdk / platform.sdk-loaded, wgflib.portal_sdks)."""
+    if contract.template_contract_of(session.package) >= 2:
+        return results, []
+    profile, _source = session.profile(pid)
+    echoed_ids = {str(a.get("id")) for a in (profile or {}).get("assertions") or []
+                  if isinstance(a, dict)
+                  and ((a.get("check") or {}).get("left") == ECHOED_FACT)}
+    if not echoed_ids:
+        return results, []
+    kept = [r for r in results if str(r.get("criterion_id")) not in echoed_ids]
+    dropped = [r for r in results if str(r.get("criterion_id")) in echoed_ids]
+    return kept, dropped
+
+
 def _assertions(session, platform):
     pid = platform["id"]
     cid, title = f"policy.assertions:{pid}", "Platform profile assertions"
@@ -413,13 +587,26 @@ def _assertions(session, platform):
         return Check(cid, title=title, status=status,
                      message="assertions produced no results: " + evaluate.describe(),
                      evidence=evidence, **common)
+    results, echoed = _without_echoed(session, pid, results)
     session.assertions[pid] = results
     blocking = [r for r in results if r.get("breached") and r.get("severity") == "blocking"]
     warnings = [r for r in results if r.get("breached") and r.get("severity") != "blocking"]
     evidence.append(Evidence("file", f"{len(results)} assertion(s): {len(blocking)} blocking "
                                      f"breach(es), {len(warnings)} warning(s)",
-                             path=results_out, data={"results": results},
+                             path=results_out,
+                             data={"results": results,
+                                   **({"not_counted": echoed} if echoed else {})},
                              content_hash=session.file_hash(results_out)))
+    if echoed:
+        evidence.append(Evidence(
+            "observation", "not counted: " + ", ".join(r.get("criterion_id") for r in echoed)
+            + f" - on template contract 1 {contract.COLLECT_FACTS} sets package.platform_sdk "
+              "to the platform it is asked about, whatever the bundle loads, so the result is "
+              "no evidence; the bundle is measured on "
+            + f"platform.foreign-sdk:{pid}"
+            + (f" and platform.sdk-loaded:{pid}"
+               if session.portal_sdk_reference().loader(pid) else ""),
+            check_ref=f"platform.foreign-sdk:{pid}"))
     if not evaluate.ok and not blocking:
         # The evaluator failed without reporting a breach that explains it: its results are
         # not a clean bill.

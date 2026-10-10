@@ -181,6 +181,14 @@ class VerificationSession:
             return build.path, build.env
         return self.output_dir, {}
 
+    def portal_sdk_reference(self):
+        """core/reference/portal-sdks.yaml, parsed once (wgflib.portal_sdks)."""
+        cache = self.__dict__.setdefault("_portal_sdks", [])
+        if not cache:
+            from wgflib import portal_sdks
+            cache.append(portal_sdks.load())
+        return cache[0]
+
     def verification_flag(self, name, default=True):
         return bool((self.game_config.get("verification") or {}).get(name, default))
 

@@ -94,7 +94,7 @@ are the only recorded "not the game" causes.
 | gameplay | `quality.report-commit`, `quality.<group>:<check>` | the playability-report: what the bot measured about the design's content, difficulty, progression and depth, carried not re-measured — see below |
 | browser QA | `run`, then `browser.<check>[:<viewport>]` filed under gameplay, policy or assets | the Factory's browser spec against the build at five viewports, judged against `core/reference/browser-qa.yaml` - see [Browser QA](#browser-qa-every-viewport-audio-and-performance) |
 | policy | `runtime-facts`, `assertions:<platform>`, `assertion-warnings:<platform>`, `asset-licenses` | `test:verify`; the template's `collect-facts.mjs` / `evaluate-assertions.mjs` against the **pinned** profile (a breached `blocking` assertion FAILs `assertions:<platform>`; breached `warning`-severity ones go on the optional `assertion-warnings:<platform>`, so they never weaken the release's evidence); the asset manifest |
-| platform | `profile:<p>`, `sdk-init:<p>`, `hooks:<p>`, `requirements:<p>`, `fallback` | vendored `config/platforms/`; sdk-report per platform and feature (`BLOCKED` when it names another commit; `PASS_MOCK` unless observed live); declared ad kinds; shipped locales; a boot with no portal SDK present |
+| platform | `profile:<p>`, `build-target:<p>`, `foreign-sdk:<p>`, `sdk-loaded:<p>`, `sdk-init:<p>`, `hooks:<p>`, `requirements:<p>`, `fallback` | vendored `config/platforms/`; the platform's own bundle scanned for portal SDKs against `core/reference/portal-sdks.yaml` (and the template's own audit where it has one) - see [Portal SDKs in a bundle](#portal-sdks-in-a-bundle); sdk-report per platform and feature (`BLOCKED` when it names another commit; `PASS_MOCK` unless observed live); declared ad kinds; shipped locales; a boot with no portal SDK present |
 | assets | `manifest`, `missing`, `formats`, `paths`, `runtime-manifest`, `loading` | asset-manifest vs files named after each item id under `public/`, `src/assets/`, `assets/` (source code under `src/assets/` is the bundler's input, not an asset); extensions per asset type; asset paths in `src/`; `public/assets/assets.json` against the repository with the assets module's validator (broken references FAIL; a stale hash, unlisted/unused file or large texture is a WARNING; absent is a WARNING) ([assets-module.md](assets-module.md#validation)); failed requests while playing |
 
 A check that depends on another (nothing is played until it builds) is `BLOCKED` with a
@@ -154,10 +154,48 @@ script) builds its platforms itself into the same layout: verify runs the ordina
 refusing a bundle whose digest is not the one recorded. A single-platform title on contract
 1 is built once, exactly as before: no `build/platforms/`, no `build.platform:` check.
 
-What the profiles cannot tell verify: which SDK script a portal requires in `index.html`.
-Their `<id>_sdk_present` assertions read `package.platform_sdk`, which the template's
-`collect-facts` echoes from `--platform`; the adapter a bundle boots is established by how it
-was built (`platform.build-target`), not by those assertions.
+What the profiles cannot tell verify: which SDK a bundle carries. Their `<id>_sdk_present`
+assertions (and generic-web's `generic_web_standalone`) read `package.platform_sdk`, which the
+template's `collect-facts` (contract 1) sets to the `--platform` it is asked about without
+looking at the bundle - `y8_sdk_present` held for a real Y8 bundle that loads no Y8 SDK. On
+contract 1 such results are **not counted** (since 2.8.0): `policy.assertions:<id>` leaves
+them out of its verdict and of the results it records for platform-validate, lists them as
+`not_counted` in its evidence, and the bundle is measured instead (next section).
+
+### Portal SDKs in a bundle
+
+`wgflib/portal_sdks.py` scans the files a platform's bundle ships (every text file, source
+maps included: they are in the package) against `core/reference/portal-sdks.yaml`: per portal,
+the patterns that recognise its SDK, and - where the portal documents one way to load it -
+the script its `index.html` must load (CrazyGames always; Y8 only when the build is given
+`WGF_Y8_APP_ID`). Deterministic, offline, the same scan platform-validate runs on the package.
+
+- `platform.foreign-sdk:<id>` - PASS when the bundle carries no other portal's SDK (for
+  generic-web every portal's is foreign). Where the checkout ships the template's own audit
+  for the platform (`template_contract.PORTAL_AUDITS`: `scripts/crazygames-audit.mjs` for
+  crazygames), it runs too (`--dir <bundle> --out build/portal-audits/<id>`) and its
+  `unexpected_dependencies` FAIL fails the check; the message says which ran ("Factory scan"
+  or "Factory scan and the template's scripts/crazygames-audit.mjs").
+- `platform.sdk-loaded:<id>` - only for a platform the reference gives a loader: PASS when
+  `index.html` loads it; FAIL when it does not; **BLOCKED** when the loader needs ids a
+  portal issues only when a person creates the game (Y8: create-before-build,
+  [publish-module.md](publish-module.md)) - BLOCKED for a person, who creates the game and has
+  the build given the ids (`factory.agents.game_env_passthrough`; on the pinned template the
+  ids reach the build through the environment, not game.config.yaml).
+
+**Neither is required.** On the pinned template (v1.2.0, contract 1) every bundle carries
+every portal adapter: the real per-platform builds of both validation games carry Poki,
+Yandex, CrazyGames, Y8, GameDistribution and GameMonetize code in every bundle, and the
+template's own CrazyGames audit FAILs their crazygames bundles on `unexpected_dependencies`
+([platform-targets-2026-10.md](platform-targets-2026-10.md#portal-sdks-in-each-bundle)). A
+required check would fail every verification on the pin - the golden runs' included - and
+route to a developer, who cannot change template code. So each is reported on its platform:
+a FAIL makes that platform `not-ready` in `platform_readiness` (a BLOCKED one `unverified`)
+without failing the verdict, and **platform-validate refuses to publish the package**
+(guards `portal_sdk_isolated`, `portal_sdk_loaded`), per platform, before anything uploads.
+What clears the foreign-SDK finding is a template whose build carries only the selected
+adapter (the unreviewed backport `backport/1.2.0-platform-sdk` does: the same builds then
+PASS), reached by moving the template pin - a person's decision, with both golden runs.
 
 The game's `test:e2e` runs at `e2e_workers` Playwright workers (the step's `with:`), else at the
 machine's `factory.develop.smoke_workers`, the same suite develop's smoke check runs; unset
@@ -435,7 +473,8 @@ platform's build. With one target it is (one bundle boots the first `required` p
 else the first: `template_contract.build_target`). With several, each platform's own bundle
 is (above); a platform whose own build failed is BLOCKED by `build.platform:<id>`. The
 profile assertions cannot say it: the template's `platform_sdk` fact echoes the platform it
-is asked about.
+is asked about. Which adapters the bundle actually carries is `platform.foreign-sdk:<id>`'s
+measurement (above).
 
 `policy.device-performance` carries the runtime facts' fps and time to interactive with
 `evidence_status: PASS_MOCK`: they are measured in CPU-throttled desktop Chromium, a proxy for
@@ -494,6 +533,16 @@ configs (the build target last, `dist/` its bundle), the facts collected through
 the config (byte-identical bundles) and one platform's failed build fail the verdict; every
 targeted platform is required; a single platform is built once with nothing under
 `build/platforms/`; a contract-2 repository's `build:platforms`.
+
+`scripts/tests/test_portal_sdks.py` holds the portal-SDK scan on real data
+(`fixtures/portal-sdks/sky-marble-43c08e2.json`: the per-platform bundles of the 3D validation
+game at 43c08e2 on template v1.2.0, and with the template backport applied, minimised to
+their file lists, `index.html` script tags and the text around each match): the v1.2.0
+crazygames bundle FAILs `platform.foreign-sdk:crazygames` (the four portals the template's
+audit names, and Y8) without failing the verdict, the backport PASSes, the template audit is
+reused when the checkout ships it, the SDK-less Y8 bundle is BLOCKED on
+`platform.sdk-loaded:y8` with `y8_sdk_present` not counted, a Y8 bundle built with ids
+PASSes; and platform-validate's two guards on the package archive.
 
 `scripts/tests/test_browser_qa.py` holds browser QA: the contract (versioned, every check
 tiered, the five viewports, the request's checks all present, the shared bars read from

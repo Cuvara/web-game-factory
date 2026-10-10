@@ -30,8 +30,10 @@ Nothing here contacts a portal, and the checkout is only read.
 """
 
 import os
+import zipfile
 
 from wgflib import checkout as checkouts
+from wgflib import portal_sdks
 from wgflib import publication as pub
 from wgflib.workflow import StepOutcome, StepResult, WorkflowStep
 
@@ -90,6 +92,11 @@ class PlatformValidateStep(WorkflowStep):
         except portal_registry.RegistryError as exc:
             return StepResult.blocked(f"the portal registry for {title_id} cannot be read: "
                                       f"{exc}")
+        try:
+            sdk_reference = portal_sdks.load()
+        except (OSError, ValueError, KeyError) as exc:
+            return StepResult.failed(f"core/reference/portal-sdks.yaml cannot be read: {exc}",
+                                     retryable=False)
         frozen = pub.candidate_frozen(manifest)
         complete = pub.store_metadata_complete(manifest, profiles, metadata)
 
@@ -126,6 +133,19 @@ class PlatformValidateStep(WorkflowStep):
                     pid, publication_profile, registry.get(pid) if registry else None, root,
                     verification),
             }
+            # The package's own bytes, scanned for portal SDKs (wgflib.portal_sdks): no other
+            # portal's SDK, and its own loaded - read only when the bytes are the manifest's.
+            scan, scan_problem = self._scan(sdk_reference, path, on_disk)
+            registry_entry = registry.get(pid) if registry else None
+            ids_pending = bool(identity.issued(publication_profile)) and not (
+                identity.registry_ids(publication_profile, registry_entry))
+            guards["portal_sdk_isolated"] = portal_sdks.isolated_guard(
+                pid, scan, common.verified_check(verification, manifest,
+                                                 f"platform.foreign-sdk:{pid}"))
+            guards["portal_sdk_loaded"] = portal_sdks.loaded_guard(pid, scan, ids_pending)
+            if scan_problem:
+                guards["portal_sdk_isolated"] = pub.unknown(scan_problem)
+                guards["portal_sdk_loaded"] = pub.unknown(scan_problem)
             try:
                 credential = read_credential(publication_profile, settings.data, env)
                 present = credential.present if credential.kind != "none" else None
@@ -217,6 +237,18 @@ class PlatformValidateStep(WorkflowStep):
                               data={"unknown": unknown})
         return StepResult.success(artifacts, message=message + "; nothing published",
                                   readiness=summary)
+
+    @staticmethod
+    def _scan(reference, path, on_disk):
+        """(Scan or None, problem or None): the package archive scanned, when its bytes are
+        the manifest's; None (UNKNOWN) when it was not read or cannot be opened."""
+        if not on_disk or not path:
+            return None, None
+        try:
+            return portal_sdks.scan_zip(reference, path), None
+        except (OSError, zipfile.BadZipFile) as exc:
+            return None, (f"the package {os.path.basename(path)} cannot be read as an "
+                          f"archive: {exc}")
 
     @staticmethod
     def _criterion(result):

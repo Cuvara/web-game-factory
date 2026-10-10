@@ -55,6 +55,8 @@ __all__ = [
     "EXEC_VITEST", "EXEC_TSC", "EXEC_TOOLS",
     # node CLIs
     "COLLECT_FACTS", "EVALUATE_ASSERTIONS", "NODE_CLIS",
+    # portal audits the verify step reuses when present
+    "CRAZYGAMES_AUDIT", "PORTAL_AUDITS", "PORTAL_AUDITS_DIR", "portal_audit_dir",
     # outputs
     "RUNTIME_FACTS", "SDK_CONFORMANCE_REPORT", "FACTS_DIR", "ASSERTIONS_DIR",
     "GAMEPLAY_SESSION", "PLAYWRIGHT_E2E_REPORT", "RELEASE_ROOT", "RELEASE_PACKAGES",
@@ -98,11 +100,16 @@ CONTRACT_LOG = (
                        "required, because its KNOWN_PLATFORM_IDS is now read (the template "
                        "lock's platform_adapters, held equal to it): no entry changed what a "
                        "repository must contain"),
+    ("2.1.0", "2.8.0", "PORTAL_AUDITS - scripts/crazygames-audit.mjs --dir --out, its "
+                       "crazygames-audit.json and unexpected_dependencies: the verify step "
+                       "reuses the template's own CrazyGames audit on the crazygames bundle "
+                       "when the checkout ships it (platform.foreign-sdk:crazygames), beside "
+                       "the Factory's own scan; a repository without it is accepted"),
 )
 # contract_digest() of the entries CONTRACT_LOG's last line describes. A change to any entry
 # fails test_template_contract until it is recorded: bump CONTRACT_VERSION if acceptance
 # changed (above), add a CONTRACT_LOG line either way, then update this.
-CONTRACT_DIGEST = "sha256:328b112aa6ccb166cd17d6e364b3e9e507978e424dbc5804ecb9bc629259fba6"
+CONTRACT_DIGEST = "sha256:c9431bacc1190ebb10a6de42b1b0e2396e6e11fb7a8fcc3029bb166e26918afb"
 
 # -- engines ----------------------------------------------------------------------------------
 
@@ -326,6 +333,23 @@ NODE_CLIS = {
     EVALUATE_ASSERTIONS: ("--platform", "--facts", "--out"),
 }
 
+# The template's own portal audits the verify step reuses, per platform, when the checkout
+# ships them: the CLI, the report it writes into --out, and the result id that says whether
+# the bundle carries another portal's SDK (platform.foreign-sdk:<id>). Optional: a checkout
+# without the CLI is judged by the Factory's own scan alone (wgflib.portal_sdks).
+CRAZYGAMES_AUDIT = "scripts/crazygames-audit.mjs"
+PORTAL_AUDITS = {
+    "crazygames": {"cli": CRAZYGAMES_AUDIT, "flags": ("--dir", "--out"),
+                   "report": "crazygames-audit.json", "check": "unexpected_dependencies"},
+}
+PORTAL_AUDITS_DIR = "build/portal-audits"
+
+
+def portal_audit_dir(platform_id):
+    """build/portal-audits/<id>: where the Factory asks a template audit to write."""
+    return f"{PORTAL_AUDITS_DIR}/{platform_id}"
+
+
 # -- outputs: files written in the checkout -----------------------------------------------------
 
 RUNTIME_FACTS = "build/runtime-facts.json"
@@ -359,6 +383,8 @@ OUTPUTS = {
     PLATFORM_BUILDS_DIR + "/<platform>/build.json": ("the verify step, per platform", "factory"),
     PLATFORM_BUILDS_INDEX: ("the verify step", "factory"),
     PLAYWRIGHT_E2E_REPORT: (SCRIPT_TEST_E2E, "factory"),
+    # The directory is the Factory's (--out); the file name is the template audit's own.
+    PORTAL_AUDITS_DIR + "/crazygames/crazygames-audit.json": (CRAZYGAMES_AUDIT, "template"),
 }
 
 

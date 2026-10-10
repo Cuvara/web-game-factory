@@ -19,8 +19,8 @@ per check, the newest measurement the ledger recorded when the newest report lef
 unmeasured (a BLOCKED report no longer erases an earlier pass). Evidence strength reads the
 run's newest ledger (a newer quality-report's `ledger.lifecycle` over the last
 triage-report's) and refuses a repair it reopened; a re-play of the build that passed is no
-independent repeat, and validated contexts differ in run or commit
-(`evidence-strength.yaml` 1.1.0). A held finding whose check stops applying has no in-run
+independent repeat, and validated contexts differ in the commits measured - two runs replaying
+the identical commits are one context (`evidence-strength.yaml` 1.2.0, review r2). A held finding whose check stops applying has no in-run
 close - documented as a known limitation. G4's assessment lines also count the checks not
 reported. Bringing an artifact forward: none - existing ledgers and candidates stay valid; a
 candidate's strength is derived again on its next ingest or promote.

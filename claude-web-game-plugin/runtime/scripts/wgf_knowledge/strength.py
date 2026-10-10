@@ -19,10 +19,10 @@ check-integrity):
                  on a later commit than the one that passed, that is not the same report),
                  on a check whose ledger does not alternate verdicts, by a class that is not
                  only the game's own report
-    validated    reproduced in two or more distinct contexts - a context is a run and the
-                 commits of its repair, so they differ in run or commit (two viewports of one
-                 run and build are one) - by a class that is not only self-reported or one AI
-                 judgment
+    validated    reproduced in two or more distinct contexts - a context is the commits of
+                 a repair, so they differ in the builds measured (two viewports of one run
+                 and build are one, and so are two runs of the identical commits) - by a class
+                 that is not only self-reported or one AI judgment
 
 A measurement that may not count is refused with its rule and reason - never dropped:
 
@@ -410,17 +410,20 @@ def derive(sources, proposed=()):
                             "same_scenario") else "weaker comparison"})
 
     reproduced = [c for c in counted if c["level"] == "reproduced"]
-    # A context is a run and the builds of its repair: two scenarios (desktop and mobile) of
-    # one run, failing and passing on the same commits, are one repair measured twice by one
-    # bot - not two independent contexts.
+    # A context is the builds of a repair: two scenarios (desktop and mobile) of one run,
+    # failing and passing on the same commits, are one repair measured twice by one bot - not
+    # two independent contexts; nor is another run that replays the identical failing and
+    # passing commits. Only when a commit is unknown does the run tell contexts apart.
     contexts = {}
     for c in reproduced:
-        contexts.setdefault((c["run"], c["before"], c["after"]), []).append(c["scenario"])
+        builds = (c["before"], c["after"])
+        key = builds if all(builds) else (c["run"],) + builds
+        contexts.setdefault(key, []).append(f"{c['run']} {c['scenario']}")
     if len(contexts) >= 2:
         strength = "validated"
         why = (f"validated: the repair reproduced in {len(contexts)} distinct contexts ("
-               + "; ".join(f"{r} {_short(b)}->{_short(a)} {', '.join(map(str, s))}"
-                           for (r, b, a), s in sorted(contexts.items(), key=str)) + ")")
+               + "; ".join(f"{_short(key[-2])}->{_short(key[-1])} {', '.join(map(str, s))}"
+                           for key, s in sorted(contexts.items(), key=str)) + ")")
     elif reproduced:
         first = reproduced[0]
         strength = "reproduced"

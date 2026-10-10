@@ -21,10 +21,10 @@
 # wrong about what a player feels.
 
 # 1.1.0: a later pass on the commit that already passed is a re-play of that build, never an
-# independent repeat (refused as same-build); a validated context differs in run or commit -
+# independent repeat (refused as same-build); a validated context differs in the commits measured -
 # two viewports of one run and build are one context; a repair the run's newest ledger has
 # reopened since is no-repair.
-version: 1.1.0
+version: 1.2.0
 
 # In order, weakest first. `ceiling` is the strongest classification (lessons.yaml
 # `classifications`) a promoted draft may propose on this evidence, on the scale
@@ -41,7 +41,7 @@ levels:
     meaning: The repair held in two or more independent measurements - the passing measurement repeated (a later passing report of the same check, on a later commit than the one that passed, that is not the same report; a re-play of the build that passed is not a repeat) - on a check whose ledger does not alternate verdicts, measured by a class that is not only the game's own report.
   - id: validated
     ceiling: VALIDATED_PRINCIPLE
-    meaning: Reproduced in two or more distinct contexts - a context is a run and the commits of its repair, so contexts differ in run or commit (runs, projects, titles, or another repair on other builds); two scenarios (desktop and mobile) of one run and build are one context - with a measurement class that is not only self-reported or one AI judgment.
+    meaning: Reproduced in two or more distinct contexts - a context is the commits of a repair (failing and passing), so contexts differ in the builds measured (another repair on other builds, in another run, project or title); two scenarios (desktop and mobile) of one run and build are one context, and so is another run replaying the identical commits; the run tells contexts apart only where a commit is unknown - with a measurement class that is not only self-reported or one AI judgment.
 
 # BLOCKING and REQUIRED are the check tiers' (K4): a lesson held by hard or quality checks is
 # drafted at the level those checks derive, whatever its strength, and strength never raises a

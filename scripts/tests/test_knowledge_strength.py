@@ -493,6 +493,13 @@ class ReviewProbe(unittest.TestCase):
                                self.src("mobile", run="run-2", commits=(C, D), replay=E)])
         self.assertEqual(out["strength"], "validated", out["why"])
 
+    def test_d_two_runs_of_the_identical_builds_are_one_context(self):
+        """Review r2 finding 3: a second run that replays the very same failing and passing
+        commits measures the same builds again - one context, never `validated`."""
+        out = strength.derive([self.src("desktop", replay=C),
+                               self.src("desktop", run="run-2", commits=(A, B), replay=C)])
+        self.assertEqual(out["strength"], "reproduced", out["why"])
+
 
 # ----------------------------------------------------------------------- ingest/promote
 

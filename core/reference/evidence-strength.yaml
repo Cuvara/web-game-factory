@@ -21,9 +21,12 @@
 # wrong about what a player feels.
 
 # 1.1.0: a later pass on the commit that already passed is a re-play of that build, never an
-# independent repeat (refused as same-build); a validated context differs in the commits measured -
-# two viewports of one run and build are one context; a repair the run's newest ledger has
-# reopened since is no-repair.
+# independent repeat (refused as same-build); a validated context differs in run or commit - two
+# viewports of one run and build are one context; a repair the run's newest ledger has reopened
+# since is no-repair.
+# 1.2.0: a validated context differs in the commits measured - another run replaying the
+# identical failing and passing commits is the same context; the run separates contexts only
+# where a commit is unknown.
 version: 1.2.0
 
 # In order, weakest first. `ceiling` is the strongest classification (lessons.yaml

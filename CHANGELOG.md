@@ -77,14 +77,14 @@ evidence the CLI shows for a waiting checkpoint (`status --json` `pending.eviden
 it.
 
 **Validated learning: a lesson's evidence strength, derived from the ledger** (K6.4,
-`core/reference/evidence-strength.yaml` 1.1.0, candidate store 1.1.0, `evidence.yaml` 2.1.0,
+`core/reference/evidence-strength.yaml` 1.2.0, candidate store 1.1.0, `evidence.yaml` 2.1.0,
 [docs/knowledge-enforcement.md](docs/knowledge-enforcement.md) "Evidence strength"). `wgf
 knowledge ingest` now records, for every lesson candidate, how far the measurements behind it
 were repeated - `hypothesis` (no measured repair), `single-run` (one FAIL->PASS pair),
 `reproduced` (the pass repeated in a later independent report on a later commit than the
 one that passed, on a check that does not alternate verdicts, by a class that is not only the
-game's probe), `validated` (reproduced in two contexts differing in run or commit - desktop and
-mobile of one run and build are one context) - derived from each source's re-measurement in its run's finding ledger
+game's probe), `validated` (reproduced in two contexts differing in the commits measured - desktop and
+mobile of one run and build, or two runs of the identical commits, are one context) - derived from each source's re-measurement in its run's finding ledger
 (K6.2 before/after/samples, content hashes, history) and the check's measurement class (K6.3),
 with why (`strength_why`), the checks marked `unstable`, and every measurement refused with its
 rule and reason (`refused_evidence`): the detecting report counted again, the lesson's own
@@ -195,6 +195,15 @@ labelled `golden-loop`). The playability bot now captures `retry-dead` when a re
 returns to play, and `restart.works` cites the lose recording's result and retry frames
 (before, it cited none). Nothing to bring forward: an existing playability-report stays
 valid; a new one's `restart.works` may carry `frames`.
+
+**Template pin: web-game-template v1.2.1** (`workspace/config/template.lock.json`: `v1.2.1`,
+`4b74b08`, was `v1.2.0`, `b106261`). Template contract unchanged (1); `platform_adapters` and
+`golden_ports` unchanged. 1.2.1 fixes the platform SDK on the 1.2 line: a build carries only
+its own portal's adapter and SDK (a v1.2.0 build carried every portal's, which the CrazyGames
+audit fails), Yandex rewarded video counts as shown without `onClose(wasShown)`, a Y8
+frequency-capped break is not an ad shown, and generic-web stays in every build. A game
+created from v1.2.0 keeps its pin; bringing one forward is applying the template's 1.2.1
+patches in the game repository. Both golden runs pass on the new pin in CI.
 
 **Cross-session quality transfer, and the first transferred principle (L29)** (lessons
 2.1.0, check-tiers 1.3.0, design-consistency-rules 2.4.1, content-sufficiency 1.6.0,

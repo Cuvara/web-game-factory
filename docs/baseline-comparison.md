@@ -54,16 +54,20 @@ factory:
   init:
     accepted_changes:
       - check: baseline.unit_extent   # the check
-        unit: w1-l1                   # default "*": every unit
+        unit: w1-l1                   # required for a unit-scoped check ("*" only with a quantity)
         quantity: extent              # default "*": every quantity of the check
         reason: the opener was cut on purpose after the 2026-10-09 playtest
         decided_by: a-person
 ```
 
-A matching regression is reported as an `accepted-change` item with the reason and who decided,
-and does not fail the check. An entry without a `baseline.*` check, a reason or who decided
-waives nothing and is listed under `baseline_comparison.invalid_changes`. A change nobody
-recorded is a `QUALITY REGRESSION`.
+A matching regression - or a matching quantity the candidate no longer reports - is reported
+as an `accepted-change` item with the reason and who decided, and does not fail the check. An
+entry without a `baseline.*` check, a reason or who decided waives nothing and is listed under
+`baseline_comparison.invalid_changes`. So is an entry for a unit-scoped check
+(`baseline.UNIT_SCOPED`: `units_kept`, `unit_content`, `unit_extent`, `difficulty_order`,
+`unit_kinds`, `clear_time`, `clear_rate`) that names no `unit`, or names `unit: "*"` without the
+`quantity` it changes on every unit (e.g. `total.extent`): a check named alone would waive every
+accepted unit of it. A change nobody recorded is a `QUALITY REGRESSION`.
 
 ## How both builds are measured the same way
 
@@ -78,16 +82,23 @@ When the design names an accepted commit other than the one played:
    same bot** on the comparison's viewports (`baseline-compare.yaml play.projects`: desktop),
    under `<run>/baseline/<commit[:12]>-<sha256(settings + bot)[:12]>/`. A later visit with the
    same bot and settings reuses it (`baseline_comparison.cached`); other settings play it again.
+   A play with any recording made on a degraded host is used by its own visit (those timings
+   unmeasured) and never kept: the next visit plays the accepted build again, and a kept play
+   whose records read degraded is played again too.
 4. `baseline.profile` reads each build's records and the content data file it ships, and
    `baseline.compare` reports the checks. Both profiles are kept beside the records and named,
    with their sha256, in `baseline_comparison.profiles`.
 
 The accepted play also feeds play-realism's `naive.clear_rate` when the step has no
 `with: accepted_play` of its own: the fall of a clear rate is that check's, against the same
-play.
+play. An accepted naive recording made on a degraded host is not compared there: a slowed bot
+clears less and would hide a real drop, so `naive.clear_rate` is BLOCKED, required,
+`environment-degraded`.
 
-A build that cannot be played (install, build or the bot fails) makes every `baseline.*` check
-BLOCKED and required - never a pass. A recording either build made on a degraded host (every
+An accepted build that cannot be played (install, build or the bot fails) makes every
+`baseline.*` check BLOCKED and required (`accepted-not-played`), and the playability step
+BLOCKED for a person - never a pass, and not a defect of the candidate to send to develop -
+unless a real failure already sends the build back. A recording either build made on a degraded host (every
 attempt degraded, `visual-quality.yaml environment`) makes the timing quantities it carries
 unmeasured: BLOCKED, never a pass and never a regression - a host-slowed accepted play would
 make any candidate look fast. Observed while calibrating: the accepted 3D build's naive play,
@@ -118,12 +129,12 @@ a pass, and says why:
 
 | `measured.unmeasured` | Means | Status |
 |---|---|---|
-| `not-reported` | the **candidate** does not report what the accepted build does (no content data file, no unit reached, no kinds) | held as quality-policy.yaml `skipped_checks` says: a required FAIL at the release tier, a WARNING below |
+| `not-reported` | the **candidate** does not report what the accepted build does - for the whole check (no content data file, no unit reached, no kinds) or for one accepted unit, role or action beside others that were compared: a unit's layout, extent, par or difficulty it no longer declares while still declaring the unit elsewhere is a regression instead; a unit, role or action it no longer reports (a role reported under another name, an action the act test did not press, a policy naive play did not enter, no frame counted) is not reported. The `not_reported` count is in `measured` | held as quality-policy.yaml `skipped_checks` says: a required FAIL at the release tier, a WARNING below - whatever else was compared |
 | `accepted-unmeasured` | the **accepted build** does not report it - its probe or data predates the contract (no content data file, no unit link, no entity kinds). No candidate can fix that | WARNING, not held; the assessment reads it INCONCLUSIVE. Name an accepted build that reports it (`factory.init.accepted_baseline`) to compare |
 | `accepted-declares-none` | the accepted build ships a content data file with none of this quantity (no tuning block): nothing accepted to keep | WARNING, NOT_APPLICABLE to the quality gate |
-| `undetermined` | measured on both builds and no measurement decides (neither cleared the unit within its run; the candidate no longer offers an action the act test pressed) | WARNING, not held |
-| `environment-degraded` | a recording read was made on a degraded host | BLOCKED, required: measured again on a quiet host |
-| `accepted-not-played` | the accepted commit could not be built or played | BLOCKED, required |
+| `undetermined` | measured on both builds and no measurement decides (neither cleared the unit within its run) - alone, or beside items that were compared (the summary counts both; `measured.undetermined`) | WARNING, not held - never a PASS |
+| `environment-degraded` | a recording read was made on a degraded host | BLOCKED, required: measured again on a quiet host (the step is BLOCKED) |
+| `accepted-not-played` | the accepted commit could not be built or played | BLOCKED, required; the step is BLOCKED |
 
 ## Findings and routing
 
@@ -212,7 +223,9 @@ The current candidates, as measured (not tuned to pass; `test_K7_the_2d_candidat
   `descending-field.min_interval_s` 3.8 -> 4. No person has recorded these changes.
 - 3D 43c08e2 (feat/release-content) against 64ff4c6, played: the opening course held forward
   in 19.0 s against 22.86 s (0.83 x), cleared as often, drawn the same size, as responsive -
-  PASS. Against the accepted courses as data (c340631): all twelve courses, their layouts,
+  PASS, except `baseline.clear_time`: a WARNING, because under jittered input neither build
+  cleared the opening course in its 25 s run (undetermined beside the kept steady clear). The
+  accepted 3D build against its own repeat reads the same WARNING. Against the accepted courses as data (c340631): all twelve courses, their layouts,
   extents, pars and tuning kept - and `baseline.difficulty_order` FAILS: hairpin-rise's declared
   `difficulty.precision` 0.73 -> 0.89 and `speed` 0.87 -> 0.82: on precision it was below
   switchbacks and the-gauntlet (0.81 each) and is now above them (0.84 each) - two pairs of
@@ -229,3 +242,33 @@ The current candidates, as measured (not tuned to pass; `test_K7_the_2d_candidat
   measured.
 - A tolerance is a bar, not taste: a change inside it can still be worse, and a person's
   recorded change can still be wrong.
+
+## Known limitations (independent review of 43c4554)
+
+- **Which commit is "accepted".** Without `factory.init.accepted_baseline` the accepted build
+  is the adopted checkout's HEAD less this run's own commits - on a repository an earlier run
+  left regressed, that is the earlier run's head, not a build a person accepted at G4.
+  `baseline_comparison.by` records which case applied; every K7 run on the validation games
+  must set `factory.init.accepted_baseline: baseline-r1`.
+- **The accepted 3D build is mostly unmeasured.** 64ff4c6 ships no content data file and its
+  probe reports no unit, so `units_kept`, `unit_content`, `unit_extent`, `tuning`,
+  `difficulty_order` and `unit_kinds` are `accepted-unmeasured` WARNINGs against it, which
+  `floor.accepted_baseline` (required checks only) does not hold. The course cut (H6) is caught
+  against r1 only through the opening course's clear time and rate: a cut that kept the first
+  course intact passes every held check against r1. Naming c340631 (its courses as data) as
+  `accepted_baseline` compares the courses, but c340631 is not a commit a person accepted at
+  G4 - that is a person's decision to record, not a default.
+- **The whole game's totals count new units.** `total.extent` and `total.par_s` sum every
+  declared unit, so a candidate that adds units raises them; each accepted unit's own extent
+  and par - including one it no longer declares - is compared on its own and is what holds.
+- **A unit the survey could not enter** fails `units_kept` only where the accepted build's
+  survey entered it; an accepted build with no unit link (2D 96f5cea) cannot show that.
+- **The timing bars rest on two samples per build.** The frame-rate bar (0.6) is 0.17 from the
+  accepted 3D build against itself, the start bar 0.6 s from the worst repeat, and neither has
+  been shown to catch a real regression; their false-FAIL rate on a shared host is unknown.
+  More repeats per build are needed before `baseline.responsiveness` is trusted at release.
+- `baseline.clear_rate` reads play-realism's `clear_rate.min_drop` as its minimum *rise* (one
+  band both ways; reported as `max_rise` in `expected`).
+- Waivers (`accepted_changes`) are read from the project's config on every visit; they are not
+  snapshotted at run start or pinned by hash, and `decided_by` is free text - weaker than a
+  decision-record.

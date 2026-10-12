@@ -51,7 +51,8 @@ from .realism import Strength, layout_length, _is_path
 __all__ = ["RULES_PATH", "RULES_REF", "IDS", "load_rules", "accepted_of", "play_settings",
            "profile", "compare", "accepted_changes", "NO_BASELINE", "ACCEPTED_NONE",
            "ACCEPTED_UNMEASURED", "UNDETERMINED",
-           "UNREPORTED", "DEGRADED", "strength_for", "identical"]
+           "UNREPORTED", "DEGRADED", "NOT_PLAYED", "UNIT_SCOPED", "strength_for", "identical",
+           "degraded_records"]
 
 RULES_PATH = os.path.join(paths.REFERENCE, "baseline-compare.yaml")
 RULES_REF = "core/reference/baseline-compare.yaml"
@@ -63,6 +64,10 @@ IDS = ("baseline.units_kept", "baseline.unit_content", "baseline.unit_extent",
 # The checks compared unit by unit, on the accepted units the candidate still ships.
 UNIT_BY_UNIT = ("baseline.unit_content", "baseline.unit_extent", "baseline.difficulty_order",
                 "baseline.unit_kinds")
+# The checks whose items name a unit: a person's recorded change of one names the unit (or
+# `*` with the quantity it changes on every unit, e.g. total.extent) - never the whole check.
+UNIT_SCOPED = ("baseline.units_kept",) + UNIT_BY_UNIT + ("baseline.clear_time",
+                                                         "baseline.clear_rate")
 # `measured.unmeasured` values.
 NO_BASELINE = "no-accepted-baseline"        # the run adopted nothing: nothing to compare with
 ACCEPTED_NONE = "accepted-declares-none"    # the accepted build carries none of this quantity
@@ -73,6 +78,7 @@ UNDETERMINED = "undetermined"               # measured on both, and the measurem
                                             # decide (two lower bounds)
 UNREPORTED = "not-reported"                 # one build does not report what the check reads
 DEGRADED = "environment-degraded"           # every attempt of a recording read was degraded
+NOT_PLAYED = "accepted-not-played"          # the accepted commit could not be built or played
 _TIMING = {"baseline.clear_time": ("naive", "survey"), "baseline.clear_rate": ("naive",),
            "baseline.responsiveness": ("first-session", "win", "act")}
 
@@ -121,8 +127,10 @@ def identical(a, b):
 
 def accepted_changes(config):
     """(changes, invalid): a person's recorded reasons for changing accepted content, from
-    factory.init.accepted_changes - entries {check, unit?, reason, decided_by}. An entry
-    without a check, a reason or who decided is invalid and waives nothing."""
+    factory.init.accepted_changes - entries {check, unit?, quantity?, reason, decided_by}. An
+    entry without a check, a reason or who decided is invalid and waives nothing; so is one of
+    a unit-scoped check (UNIT_SCOPED) that names no unit, or names `*` without the quantity it
+    changes on every unit - a check named alone would waive every accepted unit of it."""
     section = {}
     if config is not None:
         section = (config.section("init") if hasattr(config, "section")
@@ -131,7 +139,11 @@ def accepted_changes(config):
     for entry in section.get("accepted_changes") or []:
         if (isinstance(entry, dict) and str(entry.get("check") or "").startswith("baseline.")
                 and str(entry.get("reason") or "").strip()
-                and str(entry.get("decided_by") or "").strip()):
+                and str(entry.get("decided_by") or "").strip()
+                and (str(entry["check"]) not in UNIT_SCOPED
+                     or (str(entry.get("unit") or "").strip() not in ("", "*"))
+                     or (str(entry.get("unit") or "").strip() == "*"
+                         and str(entry.get("quantity") or "").strip() not in ("", "*")))):
             out.append({"check": str(entry["check"]), "unit": str(entry.get("unit") or "*"),
                         "quantity": str(entry.get("quantity") or "*"),
                         "reason": str(entry["reason"]).strip(),
@@ -260,6 +272,13 @@ def _health_bad(record, env_bars):
     return bool(attempts) and bool(attempts[-1]["degraded"])
 
 
+def degraded_records(records, env_bars):
+    """["project:test", ...] of every recording in {project: {test: record}} whose attempts
+    were all degraded: a play that measured its host there, to be made again, never kept."""
+    return sorted(f"{project}:{name}" for project, found in (records or {}).items()
+                  for name, record in (found or {}).items() if _health_bad(record, env_bars))
+
+
 def _median(values):
     values = [v for v in values if v is not None]
     return round(statistics.median(values), 2) if values else None
@@ -318,9 +337,11 @@ def profile(records, content, source=None, frames_dir=None, rules=None, env_bars
         if not isinstance(visit, dict) or not visit.get("asked"):
             continue
         entry = unit(visit["asked"])
+        # Asked for through the unit link: whether it could be entered is measured.
+        entry["asked"] = True
         if not visit.get("entered"):
             continue
-        entry["reached"] = True
+        entry["reached"] = entry["entered"] = True
         kinds = sorted({str(k) for role, found in (visit.get("kinds_by_role") or {}).items()
                         if role not in not_content for k in found or []})
         drawn, unkinded = visit.get("content_entities") or 0, visit.get("unkinded") or 0
@@ -473,6 +494,31 @@ def _result(cid, project, strength, items, quantity_note, expected, unmeasured_w
                       f"unmeasured: the {degraded} recording of one of the builds was made on a "
                       "degraded host - measured again on a quiet host, never passed",
                       required=True, measured=measured, expected=expected, blocked=True)
+    unreported = [i for i in items if i["verdict"] == UNREPORTED]
+    if unreported:
+        # The accepted build reports something for an accepted unit, role or action that the
+        # candidate no longer declares or measures: what was compared beside it never carries
+        # the check to a pass (review of 43c4554, M1).
+        why = strength.held(cid)
+        measured.update(unmeasured=UNREPORTED, reason=unreported[0]["summary"],
+                        not_reported=len(unreported))
+        return _check(cid, project, False,
+                      f"unmeasured on the candidate: {len(unreported)} quantity(ies) the "
+                      f"accepted build reports are not reported - {unreported[0]['summary']}"
+                      + (f" (and {len(unreported) - 1} more)" if len(unreported) > 1 else "")
+                      + (f"; {len(decided)} compared, none worse" if decided else "")
+                      + (f" - {why}" if why else ""),
+                      required=bool(why), measured=measured, expected=expected)
+    undetermined = [i for i in items if i["verdict"] == UNDETERMINED]
+    if decided and undetermined:
+        # Some of the comparison decided nothing: a WARNING naming it, never a pass.
+        measured.update(unmeasured=UNDETERMINED, reason=unmeasured_why,
+                        undetermined=len(undetermined))
+        return _check(cid, project, False,
+                      f"{len(decided)} {quantity_note} compared with the accepted build, none "
+                      f"worse beyond tolerance; {len(undetermined)} undetermined - "
+                      f"{undetermined[0]['summary']}", required=False, measured=measured,
+                      expected=expected)
     if decided:
         return _check(cid, project, True,
                       f"{len(decided)} {quantity_note} compared with the accepted build: none "
@@ -511,7 +557,7 @@ def _item(verdict, summary, changes=None, check=None, unit=None, quantity=None, 
     if quantity is not None:
         item["quantity"] = quantity
     item.update(values)
-    if verdict == "regressed" and changes is not None:
+    if verdict in ("regressed", UNREPORTED) and changes is not None:
         change = _waived(changes, check, unit, quantity)
         if change:
             item["verdict"] = "accepted-change"
@@ -554,14 +600,33 @@ def compare(accepted, candidate, rules=None, realism_rules=None, changes=None, s
 
     kept_ids = [u for u in ids if (c_units.get(u) or {}).get("declared")
                 or (c_units.get(u) or {}).get("reached")]
+
+    def missing(uid, check, quantity, what, accepted_value=None, declared=True):
+        """What the accepted build declares or reports for an accepted unit and the candidate
+        does not: a regression when the candidate still declares the unit in its data and
+        dropped it there (`declared`: the quantity is the data's), else not reported - held
+        as an unmeasured check is, never left out of a pass."""
+        if declared and (c_units.get(uid) or {}).get("declared"):
+            return _item("regressed", f"{uid}: {what} no longer declared", changes, check,
+                         uid, quantity, accepted=accepted_value, candidate=None)
+        return _item(UNREPORTED, f"{uid}: {what} not reported by the candidate", changes,
+                     check, uid, quantity, accepted=accepted_value, candidate=None)
     # units_kept: every accepted unit still shipped, under its own id.
     items = []
     for uid in ids:
         entry = c_units.get(uid) or {}
         kept = entry.get("declared") or entry.get("reached")
-        items.append(_item("kept" if kept else "regressed",
-                           f"{uid}: shipped" if kept else f"{uid}: gone from the candidate "
-                           "(removed or renamed)", changes, "baseline.units_kept", uid, "present"))
+        summary = (f"{uid}: shipped" if kept else
+                   f"{uid}: gone from the candidate (removed or renamed)")
+        if (kept and entry.get("asked") and not entry.get("reached")
+                and (a_units.get(uid) or {}).get("entered")):
+            # Declared, and the survey asked for it and could not enter it - where it entered
+            # it on the accepted build: shipped in the data, not in the game.
+            kept = False
+            summary = (f"{uid}: declared, but the survey could not enter it (it entered it on "
+                       "the accepted build)")
+        items.append(_item("kept" if kept else "regressed", summary, changes,
+                           "baseline.units_kept", uid, "present"))
     finish("baseline.units_kept", items, "accepted unit(s)",
            "every accepted unit shipped under its own id",
            "the accepted build reports no unit - no content data file, and its play probe "
@@ -575,6 +640,8 @@ def compare(accepted, candidate, rules=None, realism_rules=None, changes=None, s
     items = []
     for uid in kept_ids:
         a, c = a_units.get(uid) or {}, c_units.get(uid) or {}
+        if a.get("geometry") and not c.get("geometry"):
+            items.append(missing(uid, "baseline.unit_content", "layout", "its layout"))
         if a.get("geometry") and c.get("geometry"):
             sim = round(layouts.similarity([tuple(s) for s in a["geometry"]],
                                            [tuple(s) for s in c["geometry"]]), 3)
@@ -585,15 +652,24 @@ def compare(accepted, candidate, rules=None, realism_rules=None, changes=None, s
                                f"{uid}: layout {'unchanged' if same else 'changed'} "
                                f"(similarity {sim})", changes, "baseline.unit_content", uid,
                                "layout", accepted=None, candidate=None, similarity=sim))
-        if isinstance(a.get("layout_values"), dict) and isinstance(c.get("layout_values"), dict):
+        if isinstance(a.get("layout_values"), dict) and not c.get("declared"):
+            items.append(missing(uid, "baseline.unit_content", "layout.*",
+                                 "its layout's own values", sorted(a["layout_values"])))
+        elif isinstance(a.get("layout_values"), dict):
+            # A key the candidate no longer declares (its block deleted, a code default in
+            # its place) is a change like any other value.
+            values = c.get("layout_values") if isinstance(c.get("layout_values"), dict) else {}
             for key, value in sorted(a["layout_values"].items()):
-                now = c["layout_values"].get(key)
+                now = values.get(key)
                 av, cv = _number(value), _number(now)
                 same = (av is not None and cv is not None and av == cv) or value == now
                 if not same:
                     items.append(_item("regressed", f"{uid}: layout {key} {value} -> {now}",
                                        changes, "baseline.unit_content", uid, f"layout.{key}",
                                        accepted=value, candidate=now))
+        if isinstance(a.get("elements"), list) and not isinstance(c.get("elements"), list):
+            items.append(missing(uid, "baseline.unit_content", "elements", "its elements",
+                                 a["elements"]))
         if isinstance(a.get("elements"), list) and isinstance(c.get("elements"), list):
             gone = sorted(set(a["elements"]) - set(c["elements"]))
             added = sorted(set(c["elements"]) - set(a["elements"]))
@@ -620,6 +696,14 @@ def compare(accepted, candidate, rules=None, realism_rules=None, changes=None, s
     for uid in kept_ids:
         a, c = a_units.get(uid) or {}, c_units.get(uid) or {}
         ae, ce = a.get("extent"), c.get("extent")
+        if ae and ae["value"] and not ce:
+            items.append(missing(uid, "baseline.unit_extent", "extent", "its extent",
+                                 ae["value"]))
+        elif ae and ce and ae["unit"] != ce["unit"] and ae["value"]:
+            items.append(_item("regressed", f"{uid}: extent measured in {ae['unit']} on the "
+                               f"accepted build, in {ce['unit']} now (another layout kind)",
+                               changes, "baseline.unit_extent", uid, "extent",
+                               accepted=ae["value"], candidate=ce["value"]))
         if ae and ce and ae["unit"] == ce["unit"] and ae["value"]:
             ratio = round(ce["value"] / float(ae["value"]), 3)
             items.append(_item("regressed" if ratio < min_ratio else "kept",
@@ -627,6 +711,8 @@ def compare(accepted, candidate, rules=None, realism_rules=None, changes=None, s
                                f"({ratio} x)", changes, "baseline.unit_extent", uid, "extent",
                                accepted=ae["value"], candidate=ce["value"], ratio=ratio,
                                measure=ae["unit"]))
+        if a.get("par_s") and not c.get("par_s"):
+            items.append(missing(uid, "baseline.unit_extent", "par_s", "its par", a["par_s"]))
         if a.get("par_s") and c.get("par_s"):
             ratio = round(c["par_s"] / float(a["par_s"]), 3)
             items.append(_item("regressed" if ratio < min_par else "kept",
@@ -705,6 +791,13 @@ def compare(accepted, candidate, rules=None, realism_rules=None, changes=None, s
     for axis in axes:
         both = [u for u in kept_ids if _number(difficulty(a_units[u]).get(axis)) is not None
                 and _number(difficulty(c_units.get(u) or {}).get(axis)) is not None]
+        for uid in kept_ids:
+            av = _number(difficulty(a_units[uid]).get(axis))
+            if av is not None and uid not in both:
+                # The data's own value dropped where the unit is still declared: a change.
+                items.append(missing(uid, "baseline.difficulty_order", axis,
+                                     f"difficulty.{axis}", av, declared=axis in (
+                                         a_units[uid].get("difficulty") or {})))
         for uid in both:
             av = float(difficulty(a_units[uid])[axis])
             cv = float(difficulty(c_units[uid])[axis])
@@ -736,6 +829,9 @@ def compare(accepted, candidate, rules=None, realism_rules=None, changes=None, s
     items = []
     for uid in kept_ids:
         a, c = a_units.get(uid) or {}, c_units.get(uid) or {}
+        if isinstance(a.get("kinds"), list) and not isinstance(c.get("kinds"), list):
+            items.append(missing(uid, "baseline.unit_kinds", "kinds", "its drawn kinds",
+                                 a["kinds"], declared=False))
         if isinstance(a.get("kinds"), list) and isinstance(c.get("kinds"), list):
             gone = sorted(set(a["kinds"]) - set(c["kinds"]))
             added = sorted(set(c["kinds"]) - set(a["kinds"]))
@@ -763,7 +859,15 @@ def compare(accepted, candidate, rules=None, realism_rules=None, changes=None, s
     if _degraded(accepted, candidate, "win"):
         a_size = {}
     for role in sorted(a_size):
-        if role not in c_size or None in a_size[role] or None in c_size[role]:
+        if None in a_size[role]:
+            continue
+        if role not in c_size or None in c_size[role]:
+            # A readable role the accepted build drew that the candidate no longer reports
+            # (renamed, or not sampled): never left out of a pass.
+            items.append(_item(UNREPORTED, f"{role}: drawn {a_size[role]} px on the accepted "
+                               "build, not sampled on the candidate", changes,
+                               "baseline.entity_size", "*", role, accepted=a_size[role],
+                               candidate=None))
             continue
         ratios = [round(c / float(a), 3) for a, c in zip(a_size[role], c_size[role]) if a]
         moved = any(abs(r - 1.0) > max_change for r in ratios)
@@ -834,6 +938,11 @@ def _clear_time(accepted, candidate, kept_ids, rules, changes, strength, project
     naive_bad = _degraded(accepted, candidate, "naive")
     survey_bad = _degraded(accepted, candidate, "survey")
     for name, a, c in ([] if naive_bad else pairs):
+        for policy in sorted(set(a.get("policies") or {}) - set(c.get("policies") or {})):
+            items.append(_item(UNREPORTED, f"{name}, naive {policy}: played on the accepted "
+                               "build, not entered by naive play on the candidate", changes,
+                               "baseline.clear_time", name, f"naive.{policy}",
+                               accepted=a["policies"][policy], candidate=None))
         for policy in sorted(set(a.get("policies") or {}) & set(c.get("policies") or {})):
             ac, cc = a["policies"][policy], c["policies"][policy]
             verdict, ratio, note = _shrink(ac.get("fastest_s"), ac.get("uncleared_min_s"),
@@ -848,6 +957,13 @@ def _clear_time(accepted, candidate, kept_ids, rules, changes, strength, project
                                f"naive.{policy}", accepted=ac, candidate=cc, ratio=ratio))
     for uid in ([] if survey_bad else kept_ids):
         a, c = accepted["units"].get(uid) or {}, candidate["units"].get(uid) or {}
+        if (a.get("oracle_s") is not None or a.get("oracle_lower_s")) and c.get("asked") \
+                and not c.get("reached"):
+            items.append(_item(UNREPORTED, f"{uid}, oracle: timed on the accepted build, not "
+                               "entered by the survey on the candidate", changes,
+                               "baseline.clear_time", uid, "oracle",
+                               accepted=a.get("oracle_s"), candidate=None))
+            continue
         if not (a.get("reached") and c.get("reached")):
             continue
         if a.get("oracle_s") is None and c.get("oracle_s") is None:
@@ -885,8 +1001,23 @@ def _clear_rate(accepted, candidate, kept_ids, realism_rules, changes, strength,
                       (candidate["units"].get(uid) or {}).get("naive_runs") or {}))
     naive_bad = _degraded(accepted, candidate, "naive")
     for name, a, c in ([] if naive_bad else pairs):
+        for policy in sorted(set(a.get("policies") or {}) - set(c.get("policies") or {})):
+            if a["policies"][policy]["n"] >= min_runs:
+                items.append(_item(UNREPORTED, f"{name}, naive {policy}: run "
+                                   f"{a['policies'][policy]['n']} times on the accepted build, "
+                                   "never on the candidate", changes, "baseline.clear_rate",
+                                   name, f"naive.{policy}", accepted=[
+                                       a["policies"][policy]["won"], a["policies"][policy]["n"]],
+                                   candidate=None))
         for policy in sorted(set(a.get("policies") or {}) & set(c.get("policies") or {})):
             ac, cc = a["policies"][policy], c["policies"][policy]
+            if ac["n"] >= min_runs and cc["n"] < min_runs:
+                items.append(_item(UNREPORTED, f"{name}, naive {policy}: run {ac['n']} times on "
+                                   f"the accepted build, {cc['n']} on the candidate (< "
+                                   f"{min_runs})", changes, "baseline.clear_rate", name,
+                                   f"naive.{policy}", accepted=[ac["won"], ac["n"]],
+                                   candidate=[cc["won"], cc["n"]]))
+                continue
             if ac["n"] < min_runs or cc["n"] < min_runs:
                 continue
             p0, p1 = ac["won"] / ac["n"], cc["won"] / cc["n"]
@@ -929,6 +1060,12 @@ def _responsiveness(accepted, candidate, rules, changes, strength, project):
                            f"first byte (limit {round(limit)})", changes,
                            "baseline.responsiveness", "*",
                            "start_ms", accepted=a["start_ms"], candidate=c["start_ms"]))
+    elif not _degraded(accepted, candidate, "first-session") and \
+            _number(a.get("start_ms")) is not None:
+        items.append(_item(UNREPORTED, f"play began {a['start_ms']} ms after the page's first "
+                           "byte on the accepted build; the candidate's start was not measured",
+                           changes, "baseline.responsiveness", "*", "start_ms",
+                           accepted=a["start_ms"], candidate=None))
     ack_bar = float(bars.get("min_ack_fraction", 0.0))
     if not _degraded(accepted, candidate, "act"):
         for action, fraction in sorted((a.get("acknowledged") or {}).items()):
@@ -936,7 +1073,7 @@ def _responsiveness(accepted, candidate, rules, changes, strength, project):
             if fraction < ack_bar:
                 continue
             if now is None:
-                items.append(_item("undetermined", f"action {action}: acknowledged on the "
+                items.append(_item(UNREPORTED, f"action {action}: acknowledged on the "
                                    "accepted build, not pressed by the act test on the candidate",
                                    changes, "baseline.responsiveness", "*", f"ack.{action}",
                                    accepted=fraction, candidate=None))
@@ -953,6 +1090,12 @@ def _responsiveness(accepted, candidate, rules, changes, strength, project):
                            f"frames per second while the oracle plays {a['fps']} -> {c['fps']} "
                            f"({ratio} x)", changes, "baseline.responsiveness", "*", "fps",
                            accepted=a["fps"], candidate=c["fps"], ratio=ratio))
+    elif not _degraded(accepted, candidate, "win") and _number(a.get("fps")):
+        # No frame counted on the candidate in the win test (review n1): not reported.
+        items.append(_item(UNREPORTED, f"frames per second while the oracle plays {a['fps']} "
+                           "on the accepted build; no frame rate measured on the candidate",
+                           changes, "baseline.responsiveness", "*", "fps", accepted=a["fps"],
+                           candidate=None))
     degraded = _degraded(accepted, candidate, "first-session", "act", "win")
     waived = [{"unit": i.get("unit"), "quantity": i.get("quantity"), "reason": i["reason"],
                "decided_by": i["decided_by"]} for i in items if i["verdict"] == "accepted-change"]

@@ -34,6 +34,23 @@ fail against r1; each accepted build passes against its own repeat. Bringing an 
 forward: none - a playability-report 1.4.0 stays valid; an adopted run's quality gate reads the
 `baseline.*` checks UNMEASURED until its next playability visit.
 
+**Baseline comparison review r1 fixes** (docs/baseline-comparison.md). An accepted build that
+cannot be played makes the playability step BLOCKED, never a PASS (`accepted-not-played` joins
+the unmeasured reasons `_finish` holds). What the candidate stops declaring or reporting for one
+accepted unit, role or action is no longer skipped while the rest of the check passes: a
+declared layout, layout value, element set, extent, par or difficulty dropped from a unit the
+candidate still declares is a regression; a role, action, start, frame rate, naive policy or
+oracle unit it no longer reports is `not-reported` (held at release); a unit still declared
+that the survey asked for and could not enter, where it entered it on the accepted build, is
+not kept. A check with an undetermined item beside compared ones is a WARNING, never a PASS.
+An accepted play with a recording made on a degraded host is never cached (the next visit
+plays it again), and its degraded naive recording makes `naive.clear_rate` BLOCKED instead of
+being compared. A waiver of a unit-scoped check names its unit (`*` only with a quantity).
+Also: the knowledge and pinning tests follow L8's promotion and new-game 18's pin (both failed
+on 43c4554). Bringing an artifact forward: none; a run's next playability visit applies it.
+The real 3D measurements now read `baseline.clear_time` WARNING (jittered play cleared the
+opening course on neither build).
+
 **K6 review r1 fixes** (docs/specialist-routing.md, docs/knowledge-enforcement.md). The
 ledger no longer verifies a split finding (`.../develop`, `.../assets`) whose check still
 FAILs its part in a BLOCKED report: the check is split again by the same rule, `unmeasured`

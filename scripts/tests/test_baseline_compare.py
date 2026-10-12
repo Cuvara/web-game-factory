@@ -382,6 +382,117 @@ class TheChecks(unittest.TestCase):
             self.assertEqual((got["status"], got["required"]), ("FAIL", True))
 
 
+class WhatTheCandidateStopsDeclaring(unittest.TestCase):
+    """Independent review of 43c4554 (M1, m1, m3): an accepted unit's quantity the candidate no
+    longer declares or measures is a regression or unmeasured - never left out of a PASS."""
+
+    def test_a_unit_s_own_tuning_block_deleted_fails(self):
+        # P1: deleting the block (a code default applies) is a change, as moving it is.
+        rows = ["##.###.##", "#.#.#.#.#"]
+        a = profile([unit("w3-l2", 1, {"rows": rows, "descend": {"interval_s": 4.2}})])
+        c = profile([unit("w3-l2", 1, {"rows": rows})])
+        got = checks(a, c)["baseline.unit_content"]
+        self.assertEqual(got["status"], "FAIL")
+        self.assertIn(("w3-l2", "layout.descend.interval_s"), regressed(got))
+
+    def test_a_unit_s_layout_removed_from_the_data_fails_beside_a_new_unit(self):
+        # P2: unit a's layout moved out of the data file, and a new long unit d added - the new
+        # unit must not carry the whole game's total past a's missing extent and par.
+        units = copy.deepcopy(ACCEPTED_UNITS)
+        del units[0]["layout"]
+        units.append(unit("d", 4, path_layout(400), ["rail"], {"speed": 0.8}, 60))
+        got = checks(profile(), profile(units))
+        self.assertEqual(got["baseline.unit_content"]["status"], "FAIL")
+        self.assertIn(("a", "layout"), regressed(got["baseline.unit_content"]))
+        self.assertEqual(got["baseline.unit_extent"]["status"], "FAIL")
+        self.assertTrue({("a", "extent"), ("a", "par_s")} <= set(regressed(
+            got["baseline.unit_extent"])))
+
+    def test_a_unit_s_elements_and_difficulty_removed_fail(self):
+        # P3
+        units = copy.deepcopy(ACCEPTED_UNITS)
+        del units[2]["elements"]
+        del units[2]["difficulty"]
+        got = checks(profile(), profile(units))
+        self.assertEqual(got["baseline.unit_content"]["status"], "FAIL")
+        self.assertIn(("c", "elements"), regressed(got["baseline.unit_content"]))
+        self.assertEqual(got["baseline.difficulty_order"]["status"], "FAIL")
+        self.assertIn(("c", "speed"), regressed(got["baseline.difficulty_order"]))
+
+    def test_a_role_the_candidate_no_longer_reports_is_not_passed(self):
+        # P4: the paddle drawn twice as wide, reported under another role.
+        def recs(player_size, role):
+            r = records()
+            r["win"]["sampled"]["frames"] = [[["paddle", role, 1, 0, 0] + list(player_size),
+                                              ["ball", "projectile", 1, 0, 0, 12, 12]]]
+            return r
+        a = profile(recs=recs((80, 20), "player"))
+        c = profile(recs=recs((160, 20), "hud"))
+        got = checks(a, c)["baseline.entity_size"]
+        self.assertEqual((got["status"], got["required"]), ("FAIL", True))
+        self.assertEqual(got["measured"]["unmeasured"], baseline.UNREPORTED)
+        self.assertIn("player", got["summary"])
+        below = checks(a, c, strength=MVP)["baseline.entity_size"]
+        self.assertEqual((below["status"], below["required"]), ("WARNING", False))
+
+    def test_an_action_the_candidate_no_longer_offers_is_not_passed(self):
+        # P5 (m1): accepted acknowledged jump and left; the candidate's act test pressed no jump.
+        a, c = profile(), profile()
+        a["responsiveness"]["acknowledged"] = {"jump": 0.2, "left": 0.1}
+        c["responsiveness"]["acknowledged"] = {"left": 0.1}
+        got = checks(a, c)["baseline.responsiveness"]
+        self.assertEqual((got["status"], got["required"]), ("FAIL", True))
+        self.assertEqual(got["measured"]["unmeasured"], baseline.UNREPORTED)
+        self.assertIn("jump", got["summary"])
+
+    def test_an_undetermined_item_beside_a_decided_one_is_a_warning_never_a_pass(self):
+        # m1: the opening cleared on both builds within the bar, unit b cleared on neither.
+        a = profile(recs=records(naive=[naive_run("steady", None, "a", True, 20000),
+                                        naive_run("steady", "b", "b", False, 25000)]))
+        c = profile(recs=records(naive=[naive_run("steady", None, "a", True, 19000),
+                                        naive_run("steady", "b", "b", False, 25000)]))
+        got = checks(a, c)["baseline.clear_time"]
+        self.assertEqual((got["status"], got["required"]), ("WARNING", False))
+        self.assertEqual(got["measured"]["unmeasured"], baseline.UNDETERMINED)
+        self.assertIn("1 undetermined", got["summary"])
+        # A regression still fails beside an undetermined item.
+        c = profile(recs=records(naive=[naive_run("steady", None, "a", True, 6000),
+                                        naive_run("steady", "b", "b", False, 25000)]))
+        self.assertEqual(checks(a, c)["baseline.clear_time"]["status"], "FAIL")
+
+    def test_a_declared_unit_the_survey_could_not_enter_is_not_kept(self):
+        # P6: still in units.json, asked for by the survey and not entered - while the
+        # accepted build's survey entered it.
+        surveyed = records(survey=[visit("a", ["x"]), visit("b", ["x"]), visit("c", ["x"])])
+        recs = records(survey=[visit("a", ["x"]), {"asked": "b", "entered": False},
+                               visit("c", ["x"])])
+        got = checks(profile(recs=surveyed), profile(recs=recs))["baseline.units_kept"]
+        self.assertEqual(got["status"], "FAIL")
+        self.assertEqual(regressed(got), [("b", "present")])
+        # Not entered on the accepted build either: the survey cannot tell, the data can.
+        unentered = records(survey=[visit("a", ["x"]), {"asked": "b", "entered": False},
+                                    visit("c", ["x"])])
+        self.assertEqual(checks(profile(recs=unentered), profile(recs=recs))[
+            "baseline.units_kept"]["status"], "PASS")
+
+    def test_a_waiver_of_a_unit_scoped_check_names_its_unit(self):
+        # P7 (m3): an entry naming only the check would waive every unit of it.
+        changes, invalid = baseline.accepted_changes({"init": {"accepted_changes": [
+            {"check": "baseline.units_kept", "reason": "x", "decided_by": "y"},
+            {"check": "baseline.units_kept", "unit": "*", "reason": "x", "decided_by": "y"},
+            {"check": "baseline.unit_extent", "unit": "*", "quantity": "total.extent",
+             "reason": "the game was cut on purpose", "decided_by": "a person"},
+            {"check": "baseline.tuning", "reason": "retuned on purpose",
+             "decided_by": "a person"}]}})
+        self.assertEqual([(c["check"], c["unit"], c["quantity"]) for c in changes],
+                         [("baseline.unit_extent", "*", "total.extent"),
+                          ("baseline.tuning", "*", "*")])
+        self.assertEqual(len(invalid), 2)
+        units = copy.deepcopy(ACCEPTED_UNITS)[:1]
+        self.assertEqual(checks(profile(), profile(units), changes)["baseline.units_kept"][
+            "status"], "FAIL")
+
+
 class ThePlaySettings(unittest.TestCase):
     def test_both_builds_survey_and_sample_the_accepted_units(self):
         settings = {"survey_units": ["a"], "survey_projects": [], "survey_ms": 0,
@@ -452,7 +563,99 @@ class TheStep(unittest.TestCase):
             REALISM, RULES, "release", context)
         self.assertEqual([c["id"] for c in found], list(baseline.IDS))
         self.assertTrue(all(c["status"] == "BLOCKED" and c["required"] for c in found))
+        self.assertTrue(all(c["measured"]["unmeasured"] == baseline.NOT_PLAYED for c in found))
         self.assertEqual(info["blocked_reason"], "pnpm build failed")
+        # Review of 43c4554, B1: the step itself is BLOCKED - a visit that compared nothing
+        # never passes playability.
+        step.clock = lambda: "2026-10-12T00:00:00Z"
+        context.execution = 1
+        context.logger = types.SimpleNamespace(warning=lambda *a, **k: None,
+                                               error=lambda *a, **k: None,
+                                               info=lambda *a, **k: None)
+        inputs = types.SimpleNamespace(refs={}, load=lambda t: None)
+        result = step._finish(context, inputs, "t", "b" * 40, found, [], {}, None,
+                              comparison=info)
+        report = result.artifacts[0].content
+        self.assertEqual(report["verdict"], "BLOCKED")
+        self.assertNotEqual(result.outcome, "SUCCESS")
+        self.assertIn("10 required playability check(s)", report["blocked_reason"])
+        self.assertIn("pnpm build failed", report["blocked_reason"])
+
+    def _degrading_step(self, healthy_after=None):
+        """A step whose accepted play records a naive recording made on a degraded host (every
+        attempt), or a healthy one from play number `healthy_after` on."""
+        step = PlayabilityStep(types.SimpleNamespace(params={}, id="playability"))
+        calls = []
+        bad = {"bot": {"max_lag_ms": 5000, "stalled_ms": 5000, "elapsed_ms": 20000}}
+        good = {"bot": {"max_lag_ms": 10, "stalled_ms": 0, "elapsed_ms": 20000}}
+
+        def prepare(located, commit, repo, logs, context):
+            calls.append(commit)
+            os.makedirs(repo, exist_ok=True)
+
+        def play(repo, out, logs, settings, context, *a, **k):
+            os.makedirs(os.path.join(out, "desktop"), exist_ok=True)
+            health = good if healthy_after and len(calls) >= healthy_after else bad
+            with open(os.path.join(out, "desktop", "naive.json"), "w") as handle:
+                json.dump({"applies": True, "health": health, "runs": [
+                    naive_run("jitter", None, "w1-l1", False, 25000)]}, handle)
+
+        step._prepare, step._play = prepare, play
+        step.clock = lambda: "t"
+        return step, calls
+
+    def test_a_degraded_accepted_play_is_measured_again_never_cached(self):
+        # Review of 43c4554, M2: a degraded accepted recording kept as the cache would hold
+        # every later visit BLOCKED, even on a quiet host.
+        step, calls = self._degrading_step(healthy_after=2)
+        context = types.SimpleNamespace(run_dir=self.base)
+        settings = {"survey_ms": 0, "ramp_extend_ms": 0, "start_timeout_ms": 1000,
+                    "naive_run_ms": 0}
+        first = step._play_accepted("x", "a" * 40, settings, RULES, context, 600)
+        self.assertFalse(first["cached"])
+        self.assertEqual(first["degraded"], ["desktop:naive"])
+        self.assertFalse(os.path.isfile(os.path.join(os.path.dirname(first["out"]),
+                                                     "played.json")), "never kept")
+        again = step._play_accepted("x", "a" * 40, settings, RULES, context, 600)
+        self.assertEqual(len(calls), 2, "a degraded accepted play is played again")
+        self.assertFalse(again["cached"])
+        self.assertEqual(again["degraded"], [])
+        third = step._play_accepted("x", "a" * 40, settings, RULES, context, 600)
+        self.assertEqual(len(calls), 2, "a healthy accepted play is reused")
+        self.assertTrue(third["cached"])
+
+    def test_a_degraded_accepted_play_kept_by_an_earlier_visit_is_played_again(self):
+        # A cache written before degraded plays were refused (43c4554 wrote one) is not
+        # reused: its records are read and the play is made again.
+        step, calls = self._degrading_step(healthy_after=2)
+        context = types.SimpleNamespace(run_dir=self.base)
+        settings = {"survey_ms": 0, "ramp_extend_ms": 0, "start_timeout_ms": 1000,
+                    "naive_run_ms": 0}
+        first = step._play_accepted("x", "a" * 40, settings, RULES, context, 600)
+        self.assertEqual(first["degraded"], ["desktop:naive"])
+        done = os.path.join(os.path.dirname(first["out"]), "played.json")
+        with open(done, "w", encoding="utf-8") as handle:
+            json.dump({"commit": "a" * 40}, handle)
+        again = step._play_accepted("x", "a" * 40, settings, RULES, context, 600)
+        self.assertEqual(len(calls), 2)
+        self.assertFalse(again["cached"])
+        self.assertEqual(again["degraded"], [])
+
+    def test_a_degraded_accepted_naive_play_is_not_compared_by_naive_clear_rate(self):
+        # Review of 43c4554, M3: a host-slowed accepted bot clears less, which would mask a
+        # real drop of the candidate's clear rate.
+        step, _calls = self._degrading_step()
+        context = types.SimpleNamespace(run_dir=self.base)
+        settings = {"survey_ms": 0, "ramp_extend_ms": 0, "start_timeout_ms": 1000,
+                    "naive_run_ms": 0}
+        played = step._play_accepted("x", "a" * 40, settings, RULES, context, 600)
+        accepted = PlayabilityStep._accepted_naive(played, RULES)
+        self.assertTrue(accepted["degraded"])
+        runs = [naive_run("jitter", None, "w1-l1", True, 9000) for _ in range(6)]
+        got = realism._clear_rate_check(runs, accepted, REALISM, "desktop", HELD)
+        self.assertEqual((got["id"], got["status"], got["required"]),
+                         ("naive.clear_rate", "BLOCKED", True))
+        self.assertEqual(got["measured"]["unmeasured"], baseline.DEGRADED)
 
     def test_the_accepted_play_feeds_naive_clear_rate_only_when_it_names_its_units(self):
         named = {"records": {"desktop": {"naive": {"applies": True, "runs": [
@@ -604,8 +807,14 @@ class TheRealGames(unittest.TestCase):
                     self.assertNotIn(check["status"], ("FAIL", "BLOCKED"),
                                      f"{a} -> {c}: {cid}: {check['summary']}")
                     self.assertEqual(check["measured"]["regressed"], 0)
-                decided = [cid for cid, check in got.items() if check["status"] == "PASS"]
+                # At least four checks compared something; a check whose comparison also
+                # holds an undetermined item is a WARNING, never a PASS (review m1).
+                decided = [cid for cid, check in got.items() if check["measured"]["compared"]]
                 self.assertGreaterEqual(len(decided), 4, (game, decided))
+                for cid, check in got.items():
+                    if check["status"] == "WARNING" and check["measured"]["compared"]:
+                        self.assertEqual(check["measured"]["unmeasured"], baseline.UNDETERMINED,
+                                         cid)
 
     def test_K7_the_2d_candidate_as_measured(self):
         # Not tuned to pass: the current 2D candidate (main 0db72b6) keeps every accepted
@@ -626,9 +835,16 @@ class TheRealGames(unittest.TestCase):
         # Played: the opening course held forward clears in 19.0 s against 22.86 s (0.83 x),
         # as often, drawn the same size, as responsive.
         got = real_checks("3d-64ff4c6-accepted", "3d-43c08e2-candidate")
-        for cid in ("baseline.clear_time", "baseline.clear_rate", "baseline.entity_size",
-                    "baseline.responsiveness"):
+        for cid in ("baseline.clear_rate", "baseline.entity_size", "baseline.responsiveness"):
             self.assertEqual(got[cid]["status"], "PASS", cid)
+        # The opening course held forward: kept (0.831 x). Under jitter neither build cleared
+        # it in its run - undetermined, so the check is a WARNING, never a PASS (review m1).
+        clear = got["baseline.clear_time"]
+        self.assertEqual((clear["status"], clear["required"]), ("WARNING", False))
+        self.assertEqual(clear["measured"]["unmeasured"], baseline.UNDETERMINED)
+        verdicts = {i["quantity"]: (i["verdict"], i["ratio"]) for i in clear["measured"]["items"]}
+        self.assertEqual(verdicts, {"naive.steady": ("kept", 0.831),
+                                    "naive.jitter": ("undetermined", None)})
         # Declared: the twelve accepted courses kept verbatim, their extents, pars and tuning -
         # and hairpin-rise's declared difficulty moved, out of order with switchbacks.
         got = real_checks("3d-c340631-accepted-courses-data", "3d-43c08e2-data")

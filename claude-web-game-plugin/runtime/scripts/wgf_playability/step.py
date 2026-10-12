@@ -319,9 +319,11 @@ class PlayabilityStep(WorkflowStep):
             accepted_play = None
             if comparing and not blocked:
                 accepted_play = self._play_accepted(located, accepted_build["commit"], settings,
-                                                    baseline_rules, context, total_s)
+                                                    baseline_rules, context, total_s,
+                                                    env_bars=rules.get("environment") or {})
                 if accepted is None:
-                    accepted = self._accepted_naive(accepted_play, baseline_rules)
+                    accepted = self._accepted_naive(accepted_play, baseline_rules,
+                                                    rules.get("environment") or {})
             judged = copy.deepcopy(rules)
             judged["_idle_ms"] = settings["idle_ms"]
             judged["_truncated"] = truncated
@@ -688,10 +690,15 @@ class PlayabilityStep(WorkflowStep):
                     ["desktop"])[0])
 
     def _play_accepted(self, located, accepted_commit, settings, baseline_rules, context,
-                       total_s):
-        """{records, out, commit, cached, blocked}: the accepted commit built and played with
-        `settings` - the candidate's own - on the comparison's viewports, kept under the run
-        and reused by a later visit that plays it with the same bot and settings."""
+                       total_s, env_bars=None):
+        """{records, out, commit, cached, blocked, degraded}: the accepted commit built and
+        played with `settings` - the candidate's own - on the comparison's viewports, kept
+        under the run and reused by a later visit that plays it with the same bot and settings.
+        A play with a recording made on a degraded host (`degraded`, visual-quality.yaml
+        environment) is used by this visit - its timings unmeasured - and never kept: the next
+        visit plays it again (review of 43c4554, M2)."""
+        if env_bars is None:
+            env_bars = load_file(RULES_PATH).get("environment") or {}
         handed = json.dumps(settings, sort_keys=True).encode("utf-8")
         key = hashlib.sha256(handed + scenario.bot_version(BOT_SPEC).encode("utf-8")).hexdigest()
         where = os.path.join(context.run_dir, BASELINE_DIR,
@@ -701,6 +708,9 @@ class PlayabilityStep(WorkflowStep):
         projects = [str(p) for p in ((baseline_rules or {}).get("play") or {}).get("projects")
                     or []]
         found = {"commit": accepted_commit, "out": out, "cached": True, "blocked": None}
+        if os.path.isfile(done) and baseline.degraded_records(
+                {p: self._records(os.path.join(out, p)) for p in projects}, env_bars):
+            os.remove(done)  # kept before degraded plays were refused: played again
         if not os.path.isfile(done):
             found["cached"] = False
             shutil.rmtree(where, ignore_errors=True)
@@ -720,27 +730,36 @@ class PlayabilityStep(WorkflowStep):
                 self._viewports = viewports
                 shutil.rmtree(repo, ignore_errors=True)
             found["blocked"] = blocked
-            if not blocked:
-                with open(done, "w", encoding="utf-8") as handle:
-                    json.dump({"commit": accepted_commit, "settings_sha256": key,
-                               "played_at": self.clock()}, handle)
         found["records"] = {p: self._records(os.path.join(out, p)) for p in projects}
+        found["degraded"] = baseline.degraded_records(found["records"], env_bars)
+        if not found["cached"] and not found["blocked"] and not found["degraded"]:
+            with open(done, "w", encoding="utf-8") as handle:
+                json.dump({"commit": accepted_commit, "settings_sha256": key,
+                           "played_at": self.clock()}, handle)
         if not found["blocked"] and not any(found["records"].values()):
             found["blocked"] = ("the bot produced no records of the accepted build; see "
                                 + os.path.join(where, "logs", "bot.log"))
         return found
 
     @classmethod
-    def _accepted_naive(cls, accepted_play, baseline_rules):
+    def _accepted_naive(cls, accepted_play, baseline_rules, env_bars=None):
         """The accepted build's naive record for naive.clear_rate, which holds the fall of each
         clear rate against the same play - or None when its probe names no unit it played: a
         build like that has no per-unit rate to fall from (baseline.clear_rate compares its
         opening unit), and naive.clear_rate stays not applicable, as without an accepted
-        build."""
+        build. A record made on a degraded host is marked `degraded`: a slowed bot clears
+        less, so naive.clear_rate reports it unmeasured rather than compare a real drop
+        against it (review of 43c4554, M3)."""
         record = (((accepted_play or {}).get("records") or {}).get(
             cls._compared_project(baseline_rules)) or {}).get("naive") or {}
         runs = [r for r in record.get("runs") or [] if isinstance(r, dict)]
-        return record if realism.clear_rates(runs) else None
+        if not realism.clear_rates(runs):
+            return None
+        if env_bars is None:
+            env_bars = load_file(RULES_PATH).get("environment") or {}
+        if baseline.degraded_records({"accepted": {"naive": record}}, env_bars):
+            return dict(record, degraded=True)
+        return record
 
     def _baseline_checks(self, accepted_build, accepted_play, commit, out, played, design,
                          rules, realism_rules, baseline_rules, tier, context):
@@ -794,7 +813,7 @@ class PlayabilityStep(WorkflowStep):
         return analysis._check(cid, project, False,
                                f"unmeasured: the accepted build could not be played ({why})",
                                required=True, blocked=True,
-                               measured={"unmeasured": "accepted-not-played",
+                               measured={"unmeasured": baseline.NOT_PLAYED,
                                          "reason": str(why)[:300]})
 
     @staticmethod
@@ -1005,15 +1024,17 @@ class PlayabilityStep(WorkflowStep):
         for check in checks:
             if check["status"] == "SKIPPED" and check["id"] not in {s["id"] for s in skipped}:
                 skipped.append({"id": check["id"], "reason": check["summary"]})
-        # A required check the host never let be measured, or whose unit the traverse cut
-        # short, is not a defect of the build to send back to develop - and never a pass: the
-        # step is BLOCKED for a person (resume on a quieter host) unless a real failure
+        # A required check the host never let be measured, whose unit the traverse cut
+        # short, or whose accepted build could not be played, is not a defect of the build to
+        # send back to develop - and never a pass: the step is BLOCKED for a person (resume on
+        # a quieter host, or make the accepted commit buildable) unless a real failure
         # already sends the build back.
         unmeasured = sorted({f"{c['project']}:{c['id']}" for c in checks
                              if c["required"] and c["status"] == "BLOCKED"
                              and isinstance(c.get("measured"), dict)
                              and c["measured"].get("unmeasured")
-                             in (analysis.ENVIRONMENT_DEGRADED, analysis.SAMPLE_CUT)})
+                             in (analysis.ENVIRONMENT_DEGRADED, analysis.SAMPLE_CUT,
+                                 baseline.NOT_PLAYED)})
         if unmeasured and not blocked and not failed:
             blocked = (f"{len(unmeasured)} required playability check(s) could not be measured "
                        f"and are not passed: {', '.join(unmeasured[:8])} - "

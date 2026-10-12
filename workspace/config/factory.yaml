@@ -162,10 +162,11 @@ factory:
     #                                   # docs/baseline-comparison.md).
     # accepted_changes:                 # a person's recorded reasons for changing accepted
     #   - check: baseline.unit_extent   # content: a matching baseline.* regression is listed
-    #     unit: w1-l1                   # as an accepted change instead of failing. `unit` and
-    #     quantity: "*"                 # `quantity` default to "*"; an entry without a
-    #     reason: "the opener was cut on purpose: playtest 2026-10-09"   # reason or who
-    #     decided_by: a-person          # decided waives nothing.
+    #     unit: w1-l1                   # as an accepted change instead of failing. `quantity`
+    #     quantity: "*"                 # defaults to "*"; a unit-scoped check needs `unit`
+    #     reason: "the opener was cut on purpose: playtest 2026-10-09"   # ("*" only with a
+    #     decided_by: a-person          # quantity). An entry without a reason or who decided
+    #                                   # waives nothing.
     populate_timeout_seconds: 60        # GitHub generates from a template asynchronously
 
   # The verification module (scripts/wgf_verification, docs/verification-module.md). It

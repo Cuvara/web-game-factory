@@ -36,6 +36,11 @@ is BLOCKED there; moving the pin to a template whose build carries one adapter (
 unreviewed backport `backport/1.2.0-platform-sdk` does, measured) clears it. check-integrity
 holds the reference's keys to the platform profiles. Regression input is real and minimised:
 `scripts/tests/fixtures/portal-sdks/sky-marble-43c08e2.json` (`test_portal_sdks`, RELEASE).
+Preflight review fixes: a package archive is scanned whole (a file beside its single
+top-level folder was skipped), a bundle directory's `node_modules/` is scanned (the package
+zips it), a bundle or package with no text file to read is never isolated (FAIL / RED), and
+`portal_sdk_loaded` grants the create-only exemption only while no issued id is in the
+registry or the build's config.
 Docs: platform-targets-2026-10.md (the current runs replace the workflow-v7 runs in "Exact
 commands"; Y-3: both games cancel the context menu since 27c49f0 / ff7f451; gap 4 now seen),
 platform-sdk-verification.md (adapters at the pin, profile status on 2026-10-10). Bringing an

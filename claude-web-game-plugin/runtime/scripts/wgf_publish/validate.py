@@ -138,7 +138,8 @@ class PlatformValidateStep(WorkflowStep):
             scan, scan_problem = self._scan(sdk_reference, path, on_disk)
             registry_entry = registry.get(pid) if registry else None
             ids_pending = bool(identity.issued(publication_profile)) and not (
-                identity.registry_ids(publication_profile, registry_entry))
+                identity.registry_ids(publication_profile, registry_entry)) and not (
+                self._build_carries_ids(publication_profile, root, verification, pid))
             guards["portal_sdk_isolated"] = portal_sdks.isolated_guard(
                 pid, scan, common.verified_check(verification, manifest,
                                                  f"platform.foreign-sdk:{pid}"))
@@ -237,6 +238,17 @@ class PlatformValidateStep(WorkflowStep):
                               data={"unknown": unknown})
         return StepResult.success(artifacts, message=message + "; nothing published",
                                   readiness=summary)
+
+    @staticmethod
+    def _build_carries_ids(profile, root, verification, pid):
+        """Whether the build's config already carries an id the portal issues only on create:
+        then the game exists, whatever the registry holds, and the package is not exempt from
+        loading its SDK as a create-only visit's would be."""
+        keys = identity.build_keys(profile)
+        if not keys:
+            return False
+        entry, _source, _problem = identity.build_entry(root, verification, pid)
+        return any((entry or {}).get(key) not in (None, "") for key in keys.values())
 
     @staticmethod
     def _scan(reference, path, on_disk):

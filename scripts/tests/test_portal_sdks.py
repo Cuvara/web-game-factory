@@ -237,6 +237,82 @@ class Guards(Scanner):
             "yandex", self.zip_of("43c08e2+backport-yandex")).value, True)
 
 
+class WhatShips(unittest.TestCase):
+    """Every file a package ships is read, and nothing read is never a pass (K7 preflight
+    review, 2026-10-12). The bundles are the real backported ones, with one file added."""
+
+    setUp = Scanner.setUp
+
+    POKI = "window.PokiSDK.init();\n"  # the real poki identifier the v1.2.0 bundles carry
+
+    def zip_dir(self, directory, archive, prefix="", extra=()):
+        with zipfile.ZipFile(archive, "w") as handle:
+            for root, _, names in os.walk(directory):
+                for name in names:
+                    full = os.path.join(root, name)
+                    handle.write(full, prefix + os.path.relpath(full, directory)
+                                 .replace(os.sep, "/"))
+            for name, text in extra:
+                handle.writestr(name, text)
+        return archive
+
+    def test_a_root_file_beside_a_single_folder_is_scanned(self):
+        # A zip of one folder holding index.html, plus a file at the archive's root: the
+        # portal receives that file too.
+        directory = os.path.join(self.scratch, "clean")
+        materialise(BUNDLES["43c08e2+backport-crazygames"], directory)
+        archive = self.zip_dir(directory, os.path.join(self.scratch, "pkg.zip"), "game/",
+                               extra=[("loader.js", self.POKI)])
+        scan = portal_sdks.scan_zip(self.reference, archive)
+        self.assertEqual(sorted(portal_sdks.foreign(scan, "crazygames")), ["poki"])
+        self.assertIn("loader.js", scan.found["poki"]["poki-sdk"])
+        # The folder is still the bundle root: its index.html is the entry page.
+        self.assertIs(portal_sdks.loader_status(scan, "crazygames")[1], True)
+        self.assertIs(portal_sdks.isolated_guard("crazygames", scan).value, False)
+
+    def test_a_bundle_s_node_modules_is_scanned_as_its_package_ships_it(self):
+        # The template's release:package zips the whole bundle directory, node_modules too.
+        directory = os.path.join(self.scratch, "clean")
+        materialise(BUNDLES["43c08e2+backport-crazygames"], directory)
+        os.makedirs(os.path.join(directory, "node_modules", "x"))
+        with open(os.path.join(directory, "node_modules", "x", "index.js"), "w") as handle:
+            handle.write(self.POKI)
+        plain = portal_sdks.scan_directory(self.reference, directory)
+        zipped = portal_sdks.scan_zip(self.reference, self.zip_dir(
+            directory, os.path.join(self.scratch, "pkg.zip")))
+        self.assertEqual(sorted(portal_sdks.foreign(plain, "crazygames")), ["poki"])
+        self.assertEqual(plain.found, zipped.found)
+
+    def test_a_missing_or_empty_bundle_is_never_isolated(self):
+        missing = portal_sdks.scan_directory(self.reference,
+                                             os.path.join(self.scratch, "never-built"))
+        self.assertEqual(missing.files, 0)
+        self.assertIs(portal_sdks.isolated_guard("yandex", missing).value, False)
+        archive = os.path.join(self.scratch, "images.zip")
+        with zipfile.ZipFile(archive, "w") as handle:
+            handle.writestr("cover.png", b"\x89PNG")
+        empty = portal_sdks.scan_zip(self.reference, archive)
+        result = portal_sdks.isolated_guard("yandex", empty)
+        self.assertIs(result.value, False)
+        self.assertIn("no text file", result.reason)
+        # verify's check on a bundle it cannot read a file of
+        from wgf_verification.checks import platform as checks
+        common = {"category": "platform", "required": False, "platform_id": "yandex"}
+        check = checks._foreign_sdk(None, "yandex", "build/platforms/yandex/dist",
+                                    self.reference, missing, common)
+        self.assertEqual(check.status, "FAIL", check.message)
+
+    def test_another_portal_named_in_a_shipped_source_map_fails_as_the_template_audit_does(self):
+        # Deliberate, not a false positive: the map ships in the package, and the template's
+        # own crazygames-audit reads .map files for FORBIDDEN_DEPENDENCIES too (v1.2.0).
+        directory = os.path.join(self.scratch, "clean")
+        materialise(BUNDLES["43c08e2+backport-crazygames"], directory)
+        with open(os.path.join(directory, "assets", "game.js.map"), "w") as handle:
+            handle.write('{"version":3,"sourcesContent":["// unlike PokiSDK, we ..."]}')
+        scan = portal_sdks.scan_directory(self.reference, directory)
+        self.assertEqual(sorted(portal_sdks.foreign(scan, "crazygames")), ["poki"])
+
+
 # -- the verify step -------------------------------------------------------------------------
 
 Y8_RESULTS = [
@@ -379,10 +455,6 @@ class Verify(VerificationCase):
             self.check(report, "platform.sdk-loaded:generic-web")  # no loader declared
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 # -- platform-validate -----------------------------------------------------------------------
 
 from test_publish_module import PublishCase  # noqa: E402
@@ -434,3 +506,7 @@ class ValidateForeign(ValidateCase):
                        "gamemonetize"):
             self.assertIn(portal, reason)
         self.assertIn("portal_sdk_isolated RED", result.error)
+
+
+if __name__ == "__main__":
+    unittest.main()

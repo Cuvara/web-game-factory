@@ -287,6 +287,15 @@ def _template_audit(session, pid, bundle, reference):
 
 def _foreign_sdk(session, pid, bundle, reference, scan, common):
     cid = f"platform.foreign-sdk:{pid}"
+    if not scan.files:
+        # Nothing read is never a clean bill: a bundle with no text file (or none at all).
+        return Check(cid, title=FOREIGN_TITLE, status=FAIL, **common,
+                     evidence=[Evidence("artifact", f"Factory scan of {bundle}/: no text file "
+                                                    f"to read", path=bundle,
+                                        data={"scan": "factory", "files": 0}),
+                               _reference_evidence(reference)],
+                     message=f"{bundle}/ holds no text file to scan, so which portal SDKs the "
+                             f"{pid} bundle carries is not established")
     found = portal_sdks.foreign(scan, pid)
     ran, audit_failure, audit_evidence = _template_audit(session, pid, bundle, reference)
     audit = reference.audit(pid) or {}

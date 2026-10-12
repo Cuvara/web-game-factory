@@ -165,13 +165,16 @@ them out of its verdict and of the results it records for platform-validate, lis
 ### Portal SDKs in a bundle
 
 `wgflib/portal_sdks.py` scans the files a platform's bundle ships (every text file, source
-maps included: they are in the package) against `core/reference/portal-sdks.yaml`: per portal,
+maps and any `node_modules/` included: the package is a zip of the whole directory, and the
+template's own audit reads `.map` files too; in an archive, every file - one beside a single
+top-level folder as well) against `core/reference/portal-sdks.yaml`: per portal,
 the patterns that recognise its SDK, and - where the portal documents one way to load it -
 the script its `index.html` must load (CrazyGames always; Y8 only when the build is given
 `WGF_Y8_APP_ID`). Deterministic, offline, the same scan platform-validate runs on the package.
 
 - `platform.foreign-sdk:<id>` - PASS when the bundle carries no other portal's SDK (for
-  generic-web every portal's is foreign). Where the checkout ships the template's own audit
+  generic-web every portal's is foreign); FAIL when it holds no text file to read (nothing
+  read is never a pass). Where the checkout ships the template's own audit
   for the platform (the reference's `audit`: `scripts/crazygames-audit.mjs` for
   crazygames), it runs too (`--dir <bundle> --out build/portal-audits/<id>`) and its
   `unexpected_dependencies` FAIL fails the check; the message says which ran ("Factory scan"

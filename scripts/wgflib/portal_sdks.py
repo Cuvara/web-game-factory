@@ -115,9 +115,11 @@ def scan_files(reference, items, label=""):
 
 
 def scan_directory(reference, directory, label=None):
+    """Scan every text file under `directory` - node_modules too: the package is a zip of the
+    whole directory, so whatever it holds ships. A missing directory scans as no files."""
     def items():
         for root, dirnames, filenames in os.walk(directory):
-            dirnames[:] = sorted(d for d in dirnames if d != "node_modules")
+            dirnames[:] = sorted(dirnames)
             for name in sorted(filenames):
                 full = os.path.join(root, name)
                 if not _is_text(name):
@@ -128,8 +130,9 @@ def scan_directory(reference, directory, label=None):
 
 
 def scan_zip(reference, path, label=None):
-    """Scan a package archive. A single top-level directory holding index.html (a zip of a
-    folder) is treated as the bundle root."""
+    """Scan a package archive - every text file in it, since every one reaches the portal. A
+    single top-level directory holding index.html (a zip of a folder) is treated as the
+    bundle root: its files are named relative to it, any file beside it by its own name."""
     with zipfile.ZipFile(path) as archive:
         names = [i.filename for i in archive.infolist() if not i.is_dir()]
         prefix = ""
@@ -137,8 +140,8 @@ def scan_zip(reference, path, label=None):
             tops = {n.split("/", 1)[0] for n in names if "/" in n}
             if len(tops) == 1 and f"{next(iter(tops))}/{INDEX_HTML}" in names:
                 prefix = next(iter(tops)) + "/"
-        items = [(n[len(prefix):], archive.read(n)) for n in names
-                 if n.startswith(prefix) and _is_text(n)]
+        items = [(n[len(prefix):] if prefix and n.startswith(prefix) else n, archive.read(n))
+                 for n in names if _is_text(n)]
     return scan_files(reference, items, label or os.path.basename(path))
 
 
@@ -191,6 +194,10 @@ def isolated_guard(platform_id, scan, verified=None):
     if scan is None:
         return pub.unknown(f"{platform_id}: the package was not read, so which portal SDKs it "
                            f"carries is not established")
+    if not scan.files:
+        return pub.red(f"{platform_id}: the package holds no text file to read "
+                       f"({', '.join(TEXT_EXTENSIONS)}), so nothing establishes which portal "
+                       f"SDKs it carries - and it has no page to run", foreign=[])
     found = foreign(scan, platform_id)
     if found:
         return pub.red(f"{platform_id}: the package carries other portals' SDKs - "

@@ -43,7 +43,8 @@ zips it), a bundle or package with no text file to read is never isolated (FAIL 
 registry or the build's config. Final review fixes: a platform without a portal-sdks.yaml entry is an
 error in check-integrity and UNKNOWN on `portal_sdk_loaded` (undescribed is not SDK-less); a
 checkout shipping the template audit that reports nothing makes `platform.foreign-sdk`
-BLOCKED; a loader inside an HTML comment is not loaded; the scan's limits and the Y8
+BLOCKED, and `portal_sdk_isolated` UNKNOWN on that verify verdict; a loader inside an
+HTML comment is not loaded; the scan's limits and the Y8
 create-before-build consequences on the current pin are documented.
 Docs: platform-targets-2026-10.md (the current runs replace the workflow-v7 runs in "Exact
 commands"; Y-3: both games cancel the context menu since 27c49f0 / ff7f451; gap 4 now seen),

@@ -191,7 +191,7 @@ def describe(found):
 def isolated_guard(platform_id, scan, verified=None):
     """portal_sdk_isolated: the package carries no other portal's SDK. `verified` is verify's
     platform.foreign-sdk:<id> check for this commit (it may include the template's own audit),
-    read when present: a FAIL there is RED here too."""
+    read when present: a FAIL there is RED here too, a BLOCKED one UNKNOWN (never GREEN)."""
     from . import publication as pub
     if scan is None:
         return pub.unknown(f"{platform_id}: the package was not read, so which portal SDKs it "
@@ -209,6 +209,12 @@ def isolated_guard(platform_id, scan, verified=None):
     if verified is not None and verified.get("status") == "FAIL":
         return pub.red(f"{platform_id}: verify's platform.foreign-sdk:{platform_id} failed on "
                        f"this commit: {verified.get('message')}", foreign=["verify"])
+    if verified is not None and verified.get("status") == "BLOCKED":
+        # Verify could not decide (e.g. the template's own audit, which knows more than this
+        # scan, reported nothing): the scan alone is not a clean bill.
+        return pub.unknown(f"{platform_id}: verify's platform.foreign-sdk:{platform_id} is "
+                           f"BLOCKED on this commit ({verified.get('message')}); the package "
+                           f"scan alone found no other portal's SDK, which does not decide it")
     return pub.green(f"{platform_id}: no other portal's SDK in the package "
                      f"({scan.files} text file(s), {scan.reference.label})", foreign=[])
 

@@ -213,6 +213,32 @@ class Guards(Scanner):
         self.assertIs(result.value, False)
         self.assertIn("template audit", result.reason)
 
+    def test_verifys_blocked_check_is_unknown_never_green(self):
+        # Final review round 2, N-1: the template audit decided nothing, so verify's check is
+        # BLOCKED; the package carries an ad network only the audit's list names
+        # (googlesyndication.com), which the Factory scan does not recognise.
+        directory = os.path.join(self.scratch, "ads")
+        materialise(BUNDLES["43c08e2+backport-crazygames"], directory)
+        with open(os.path.join(directory, "assets", "ads.js"), "w") as handle:
+            handle.write('load("https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js");\n')
+        archive = os.path.join(self.scratch, "ads.zip")
+        with zipfile.ZipFile(archive, "w") as handle:
+            for root, _, names in os.walk(directory):
+                for name in names:
+                    full = os.path.join(root, name)
+                    handle.write(full, os.path.relpath(full, directory).replace(os.sep, "/"))
+        scan = portal_sdks.scan_zip(self.reference, archive)
+        self.assertEqual(portal_sdks.foreign(scan, "crazygames"), {})  # the scan alone is clean
+        verified = {"id": "platform.foreign-sdk:crazygames", "status": "BLOCKED",
+                    "message": "the template's scripts/crazygames-audit.mjs ... reported no "
+                               "unexpected_dependencies"}
+        result = portal_sdks.isolated_guard("crazygames", scan, verified)
+        self.assertIsNone(result.value, result.reason)
+        self.assertIn("BLOCKED", result.reason)
+        # A Factory finding still makes it RED whatever verify said.
+        self.assertIs(portal_sdks.isolated_guard(
+            "crazygames", self.zip_of("43c08e2-crazygames"), verified).value, False)
+
     def test_an_unread_package_is_unknown(self):
         self.assertIsNone(portal_sdks.isolated_guard("y8", None).value)
         self.assertIsNone(portal_sdks.loaded_guard("y8", None).value)

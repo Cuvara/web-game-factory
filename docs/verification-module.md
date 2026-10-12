@@ -180,7 +180,8 @@ the script its `index.html` must load (CrazyGames always; Y8 only when the build
   `unexpected_dependencies` FAIL fails the check; the message says which ran ("Factory scan"
   or "Factory scan and the template's scripts/crazygames-audit.mjs"). A checkout that ships
   the audit while it reports no `unexpected_dependencies` makes the check BLOCKED, not a
-  PASS on the Factory scan alone (which lacks the audit's ad-network list).
+  PASS on the Factory scan alone (which lacks the audit's ad-network list); platform-validate's
+  `portal_sdk_isolated` is then UNKNOWN, never GREEN.
 - `platform.sdk-loaded:<id>` - only for a platform the reference gives a loader: PASS when
   `index.html` loads it; FAIL when it does not; **BLOCKED** when the loader needs ids a
   portal issues only when a person creates the game (Y8: create-before-build,

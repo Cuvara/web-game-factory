@@ -742,7 +742,7 @@ candidate in `refused_evidence` with its rule and reason - never dropped silentl
 | `self-agreement` (d) | An AI judge re-reading what it judged: an `ai-judged` sample on a commit already judged, or of the same frames |
 | `claim` (e) | A person's or a specialist's claim: a subjective source (a review, a finding no gate measured on that build, a source promote cannot re-verify), a person's G4 finding |
 | `duplicate` | The same report digest offered again (a run copied byte for byte), or the same FAIL->PASS pair of content hashes: counted once |
-| `no-repair` | A measured failure never re-measured passing (no ledger record, still failing, regressed, unmeasured, missing), or a repair the run's ledger reopened since |
+| `no-repair` | A measured failure never re-measured passing (no ledger record, still failing, regressed, unmeasured, missing), or a repair the run's ledger reopened since; or a pass - the verifying one or a later sample - by a report that still listed the finding beside its pass (the ledger's `listed by a passing` note at that report's seq; evidence-strength 1.3.0) |
 
 **Promote.** Strength caps the classification a draft proposes below REQUIRED. A measured
 candidate whose checks derive `recommended` (an advisory check) on `hypothesis` or

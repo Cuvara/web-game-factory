@@ -406,7 +406,17 @@ is that report's commit to the fix's, never the passing report's; a noted record
 because the judge stopped listing it has no measured failure at all and its strength is
 refused `no-repair` - a judge's silence is not a repair. A noted record that was verified, then
 raised by a failing report, keeps the flip (pass, then failure) in its outcomes, and
-the `unstable` cap holds.
+the `unstable` cap holds. When a failing report raises a noted record of a producer that lists
+its checks, the failure the record keeps (`failed_measurement`) is that report's measurement,
+never the passing report's it was detected with.
+
+**A pass that still lists the finding is not a repair** (K6.4, evidence-strength 1.3.0). An
+ordinary record a passing report verifies - or adds a sample to - while still listing it at a
+severity `noted_on_pass` names keeps the status that verdict gives it: the producer's pass
+stands, and no gate outcome changes (holding it open would change what the quality gate and
+release decide, which a passing report never does). Its history says that report still listed
+it (`listed by a passing ...`, at the report's seq), and evidence strength refuses that pass
+`no-repair`, as the verification or as a sample: the judge still saw the defect.
 
 Tests: `scripts/tests/test_triage.py` `PassingReportFindings` - the REAL 3D visual-qa v3
 (PASS, 3f394e2) replayed through the REAL triage v12 it was read by, on all of its real

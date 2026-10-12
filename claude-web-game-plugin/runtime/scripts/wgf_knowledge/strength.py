@@ -36,7 +36,8 @@ A measurement that may not count is refused with its rule and reason - never dro
                     promote cannot re-verify, a person's G4 decision
     duplicate       a hash-identical copy of a report or pair already counted: counted once
     no-repair       a measured failure the ledger never re-measured passing, or a repair
-                    the run's newest ledger has reopened since
+                    the run's newest ledger has reopened since; or a pass (verifying or a
+                    sample) by a report that still listed the finding beside its pass
 
 and what caps a pair at single-run: `unstable` (the ledger's verdicts for the check
 alternate - a pass, then a failure again; or a failure and a pass on one commit),
@@ -112,6 +113,25 @@ def _measurement(m):
 # A history note starting with this is a PASSING report's listing of a noted record
 # (wgf_triage.lifecycle.NOTED_PREFIX): its detection is not a measured failure.
 NOTED = "noted:"
+# A history note starting with this says a PASSING report still listed an ordinary record
+# (wgf_triage.lifecycle, the noted pass): a pass at that report's seq is the judge still
+# naming the defect beside its verdict - never a measured repair, nor a repeat of one.
+LISTED = "listed by a passing"
+
+
+def _listed_seqs(history):
+    """The run-local seqs of the passing reports that still listed the finding."""
+    return {h.get("seq") for h in history or () if isinstance(h, dict)
+            and isinstance(h.get("seq"), int)
+            and str(h.get("note") or "").startswith(LISTED)}
+
+
+def _mark_listed(measurement, listed):
+    """`measurement` (a _measurement), marked `listed` when its report still listed the
+    finding."""
+    if isinstance(measurement, dict) and measurement.get("seq") in listed:
+        measurement["listed"] = True
+    return measurement
 
 
 def _failure(entry):
@@ -170,6 +190,7 @@ def snapshot(record, ledger=None, classify=None):
                  "seq": verification.get("seq"),
                  "status": ("PASS" if verification.get("verdict") == "passed"
                             else "FAIL" if verification.get("observed") == "fails" else None)}
+    listed = _listed_seqs(history)
     check, klass = (None, None)
     if classify is not None:
         check, klass = classify(source.get("producer"), source.get("check"))
@@ -178,10 +199,12 @@ def snapshot(record, ledger=None, classify=None):
             "check": check, "check_id": source.get("check"), "project": source.get("project"),
             "class": klass, "status": record.get("status"),
             "verdict": verification.get("verdict"),
-            "before": _measurement(before), "after": _measurement(after),
+            "before": _measurement(before),
+            "after": _mark_listed(_measurement(after), listed),
             "same_scenario": comparison.get("same_scenario"),
             "differences": list(comparison.get("differences") or []),
-            "samples": [_measurement(s) for s in verification.get("samples") or ()
+            "samples": [_mark_listed(_measurement(s), listed)
+                        for s in verification.get("samples") or ()
                         if isinstance(s, dict)],
             "detected": {"artifact_id": detected.get("by"),
                          "content_hash": detected.get("content_hash"),
@@ -311,6 +334,11 @@ def derive(sources, proposed=()):
                     "repair did not hold" + (f" ({why_unstable})" if why_unstable else ""),
                     after)
             continue
+        if after.get("listed"):
+            _refuse(refused, source, "no-repair", f"{snap.get('finding')}: the passing report "
+                    "that verified it still lists it - the judge still saw the defect beside "
+                    "its pass, not a repair", after)
+            continue
         if snap.get("verdict") != "passed" or before.get("status") != "FAIL" \
                 or after.get("status") != "PASS":
             _refuse(refused, source, "no-repair", f"{snap.get('finding')}: the ledger's "
@@ -370,6 +398,11 @@ def derive(sources, proposed=()):
             if sample.get("seq") == after.get("seq") and \
                     sample.get("content_hash") == after.get("content_hash"):
                 continue  # the verifying measurement itself, kept as the first sample
+            if sample.get("listed"):
+                _refuse(refused, source, "no-repair", f"{snap.get('finding')}: a later passing "
+                        "report that still lists it - the judge still saw the defect, not a "
+                        "repeat of the repair", sample)
+                continue
             if sample.get("commit") and sample.get("commit") == before.get("commit"):
                 _refuse(refused, source, "same-build", f"{snap.get('finding')}: a later pass on "
                         f"the commit it failed on ({_short(sample.get('commit'))}) - a re-play "

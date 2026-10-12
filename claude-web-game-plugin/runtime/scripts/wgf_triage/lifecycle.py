@@ -420,6 +420,16 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
         provenance = report.get("provenance") or {}
         record["build"] = build_of(producer) or record.get("build")
         record["fix"] = None
+        # the failure a later verification is compared with is the failing report's, never
+        # the passing report's measurement the noted record was detected with
+        check = measurements.check_of(producer, report, record.get("source"))
+        if check is not None:
+            record["failed_measurement"] = measurements.of_check(
+                producer, report, check, commit=(record["build"] or {}).get("commit"),
+                artifact_id=provenance.get("artifact_id"),
+                content_hash=provenance.get("content_hash"), seq=seqs.get(producer))
+        else:
+            record.pop("failed_measurement", None)
         _event(record, "classified", at, by=provenance.get("artifact_id"),
                build=(record["build"] or {}).get("commit"),
                note=f"reopened: {NOTED_RAISED} ({producer} fails it)",

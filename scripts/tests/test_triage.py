@@ -1976,6 +1976,11 @@ class PassingReportFindings(unittest.TestCase):
         self.assertEqual(record["noted"]["seq"], 14)
         self.assertEqual(record["build"]["commit"], b)
         self.assertIn("listed again", record["history"][-1]["note"])
+        # never verified while the judge still lists it: no `verified` (or `closed`) entry,
+        # no passing verification (review r2 F3)
+        self.assertEqual([h for h in record["history"] if h["status"] in ("verified",
+                                                                         "closed")], [])
+        self.assertIsNone(record["verification"])
         # a newer build the judge no longer lists it on: verified, with no fix recorded
         docs.update({"triage-report": second.artifacts[0].content,
                      "prototype-report": self.proto(c, 3),
@@ -2165,6 +2170,107 @@ class PassingReportFindings(unittest.TestCase):
                                                   "visual-qa-report", None))
         self.assertEqual(lifecycle._recorded(steps[-1]["lifecycle"], "visual-qa-report",
                                              None).get(key), (14, "FAIL"))
+
+    def ordinary_then_passes(self, listed):
+        """The banner raised by a FAILING visual-qa (b, seq 14), then three PASSING reports
+        (c, d, e), each listing it at major or not (`listed`, one flag per report, or one
+        for all). The newest ledger."""
+        flags = listed if isinstance(listed, tuple) else (listed,) * 3
+        docs = {"game-design": DESIGN_3D, "prototype-report": self.proto("b" * 40, 1),
+                "visual-qa-report": self.vqa("b" * 40, 14, verdict="FAIL", blocker=True)}
+        seqs = {"prototype-report": 13, "visual-qa-report": 14}
+        ledger = run_triage(docs, seqs=seqs).artifacts[0].content
+        for i, (c, s) in enumerate((("c", 18), ("d", 22), ("e", 26))):
+            docs.update({"triage-report": ledger, "prototype-report": self.proto(c * 40, i + 2),
+                         "visual-qa-report": self.vqa(c * 40, s, banner=flags[i])})
+            seqs.update({"triage-report": s - 2, "prototype-report": s - 1,
+                         "visual-qa-report": s})
+            ledger = run_triage(docs, seqs=seqs, entered=None).artifacts[0].content
+        return ledger
+
+    def test_r2_f1_a_pass_that_still_lists_the_finding_is_no_repair(self):
+        """Review r2 F1 (pre-existing on 29d22de, the reviewer's p_base.py): an ordinary
+        finding still listed at major by the passing reports after it is verified, and
+        closed, by them - its ledger status is the producer's verdict's (no gate changes),
+        but K6.4 strength refuses each such pass: the judge still saw the defect."""
+        from wgf_knowledge import strength
+        record = self.banner(self.ordinary_then_passes(listed=True))
+        self.assertIn(record["status"], ("verified", "closed"))  # the gate outcome stands
+        snap = strength.snapshot(record)
+        snap["class"] = "ai-judged"
+        self.assertTrue(snap["after"]["listed"])
+        self.assertTrue(all(s.get("listed") for s in snap["samples"]))
+        found = strength.derive([{"basis": "measured", "run": "r", "report_hash": "x",
+                                  "finding": self.BANNER, "commit": "b" * 40,
+                                  "remeasurement": snap}])
+        self.assertEqual(found["strength"], "hypothesis")
+        self.assertEqual({r["rule"] for r in found["refused"]}, {"no-repair"})
+        self.assertIn("still lists it", found["refused"][0]["reason"])
+        # verified by a pass that no longer lists it (c), then listed again by the next
+        # passing reports (d, e): those samples are refused, so it is not reproduced
+        later = strength.snapshot(self.banner(self.ordinary_then_passes(
+            listed=(False, True, True))))
+        later["class"] = "ai-judged"
+        self.assertNotIn("listed", later["after"])
+        found = strength.derive([{"basis": "measured", "run": "r", "report_hash": "x",
+                                  "finding": self.BANNER, "commit": "b" * 40,
+                                  "remeasurement": later}])
+        self.assertEqual(found["strength"], "single-run")
+        self.assertEqual([r["rule"] for r in found["refused"]], ["no-repair", "no-repair"])
+        # the control: the same passes, no longer listing it, reproduce the repair
+        control = strength.snapshot(self.banner(self.ordinary_then_passes(listed=False)))
+        control["class"] = "ai-judged"
+        self.assertNotIn("listed", control["after"])
+        self.assertEqual(strength.derive([{"basis": "measured", "run": "r",
+                                           "report_hash": "x", "finding": self.BANNER,
+                                           "commit": "b" * 40,
+                                           "remeasurement": control}])["strength"],
+                         "reproduced")
+
+    def test_r2_f2_a_checked_producer_raised_from_noted_keeps_the_failing_measurement(self):
+        """Review r2 F2 (latent: only visual-qa is noted_on_pass today, and it lists no
+        checks). With a FIXTURE routing that notes playability's own findings on a pass, a
+        noted record carries the PASSING report's measurement of its check; raised by a
+        failing report on the quality gate's path (current=[]), the failure kept is the
+        failing report's - the `before` K6.4 measures a repair against."""
+        from wgf_knowledge import strength
+        from wgf_triage import ledger as ledgers, lifecycle
+        data = json.loads(json.dumps(ROUTING.data))
+        data["ledger"]["noted_on_pass"]["playability-report"] = ["blocker", "major"]
+        routing = Routing(data, {"roles": ROUTING.roles})
+        self.assertEqual(routing.problems(), [])
+        a, b = "a" * 40, "b" * 40
+
+        def report(commit, seq, verdict):
+            body = playability(("core.loop", {}), verdict=verdict)
+            body["commit"] = commit
+            body["provenance"] = {"artifact_id": f"playability-report-{seq}",
+                                  "content_hash": "sha256:" + f"{seq:02d}" * 32}
+            return body
+
+        def advance(previous, body, seq, failing, noted):
+            return lifecycle.advance(
+                previous, at="2026-10-12T00:00:00Z", current=[],
+                failing={"playability-report": failing}, seqs={"playability-report": seq},
+                reports={"playability-report": body}, proto=None, proto_seq=None,
+                decision=None, decision_seq=-1, human_ids=set(), selected=None,
+                triage_id=f"t-{seq}", routing_version=routing.version,
+                build_of=lambda kind: {"commit": body["commit"], "digest": None},
+                routing=routing, noted=noted)
+
+        passing = report(a, 8, "PASS")
+        noted = ledgers.noted_reports({"playability-report": passing}, {}, routing,
+                                      dimension_3d=False, commit=a, verification=None)
+        fid = noted["playability-report"][0]["id"]
+        first = advance([], passing, 8, set(), noted)
+        self.assertTrue(first[0].get("noted"))
+        self.assertEqual(first[0]["failed_measurement"]["commit"], a)
+        raised = advance(first, report(b, 14, "FAIL"), 14, {fid}, {})[0]
+        self.assertNotIn("noted", raised)
+        kept = raised["failed_measurement"]
+        self.assertEqual((kept["commit"], kept["seq"], kept["status"],
+                          kept["artifact_id"]), (b, 14, "FAIL", "playability-report-14"))
+        self.assertEqual(strength.snapshot(raised)["before"]["commit"], b)
 
     def test_r1_2_a_verified_noted_record_raised_again_by_a_failing_report_is_unstable(self):
         """Noted (a), gone from the judge (b: verified), raised by a failing report (c),

@@ -550,7 +550,7 @@ def contact_reach(image, origin, box, axis, sign, depth, bar, masks=()):
 
 
 def drawn_extent(at_image, after_image, origin, collider, window, solid_share, min_delta,
-                 masks=()):
+                 masks=(), normal=None):
     """What is drawn of an entity, measured from two frames: the pixels whose colour changed
     by at least `min_delta` and `solid_share` of the change inside its collider (90th
     percentile) once it moved away, connected to its collider - a soft glow or a faint trail
@@ -558,7 +558,10 @@ def drawn_extent(at_image, after_image, origin, collider, window, solid_share, m
     the change inside the collider, [x clipped, y clipped]), or (None, change, None) when
     nothing inside the collider changed by `min_delta`: nothing is drawn where it collides. An
     axis is clipped when the body reaches, at an end of it, a masked pixel (something else
-    drawn there), the window's edge or the frame's: its extent there is a lower bound."""
+    drawn there), the window's edge or the frame's: its extent there is a lower bound.
+    `normal` (a unit vector): the body's width along it instead - [width, None] and
+    [clipped, False] - across the direction the entity travels, where a trail or a stretch
+    along its travel is not the body."""
     x0, y0 = int(math.floor(window[0])), int(math.floor(window[1]))
     x1, y1 = int(math.ceil(window[2])), int(math.ceil(window[3]))
 
@@ -599,6 +602,13 @@ def drawn_extent(at_image, after_image, origin, collider, window, solid_share, m
     def blocked(x, y):
         return x < x0 or y < y0 or x > x1 or y > y1 or change(x, y) is None
 
+    if normal is not None:
+        proj = {p: p[0] * normal[0] + p[1] * normal[1] for p in seen}
+        low, high = min(proj.values()), max(proj.values())
+        cut = any(blocked(x + dx, y + dy) for (x, y), v in proj.items()
+                  if v <= low + 0.5 or v >= high - 0.5
+                  for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+        return [round(high - low + 1, 2), None], round(peak, 1), [cut, False]
     clipped = [any(blocked(x - 1, y) for x, y in seen if x == min(xs))
                or any(blocked(x + 1, y) for x, y in seen if x == max(xs)),
                any(blocked(x, y - 1) for x, y in seen if y == min(ys))
@@ -679,7 +689,9 @@ def _contact_class(turn, mover, box, window, after, pf, tolerance, min_speed, ro
     seen = {}
     for f in window:
         for o in f:
-            if o[0] != mover[0] and len(o) >= 7 and o[2] and o[1] != "ui":
+            # A composite's box changes as its parts go (a brick breaks): that is not motion.
+            if (o[0] != mover[0] and len(o) >= 7 and o[2] and o[1] != "ui"
+                    and not (len(o) > 8 and o[8] == "composite")):
                 seen.setdefault(o[0], []).append(_box(*o[3:7]))
     for oid, boxes in seen.items():
         moved = any(max(abs(b[0] - boxes[0][0]), abs(b[1] - boxes[0][1])) >= min_speed
@@ -688,12 +700,13 @@ def _contact_class(turn, mover, box, window, after, pf, tolerance, min_speed, ro
             return "moving surface", oid, None
     by, _gap = _explained(turn, surfaces, pf, tolerance, carriers)
     if by is None:
-        if any(len(o) > 8 and o[8] == "composite" and o[2] and o[0] != mover[0]
-               and _touches(box, _box(*o[3:7]), tolerance + speed)
-               for f in window[:-1] for o in f):
+        composite = next((o[0] for f in window[:-1] for o in f
+                          if len(o) > 8 and o[8] == "composite" and o[2] and o[0] != mover[0]
+                          and _touches(box, _box(*o[3:7]), tolerance + speed)), None)
+        if composite is not None:
             # At the edge of several things drawn as one box: a part of it (a brick the hit
-            # broke) may have been the surface, and a later frame cannot show it.
-            return "composite surface", None, None
+            # broke) may have been the surface, and a later frame cannot show it there.
+            return "composite surface", composite, None
         return None, None, "nothing reported"
     if by == "playfield":
         return None, by, "playfield"
@@ -705,11 +718,95 @@ def _contact_class(turn, mover, box, window, after, pf, tolerance, min_speed, ro
         return "composite surface", by, None
     was = dict(surfaces).get(by)
     now = after.get(by)
-    if now is None or was is None or max(abs(a - b) for a, b in zip(was, now)) > 1.0:
-        # A brick the hit broke, a surface since moved: the frame after cannot show it, and the
-        # probe's box is all there is (physics.undrawn_collision judges it).
+    if now is None or was is None:
+        # A brick the hit broke: the frame after cannot show it, and the probe's box is all
+        # there is (physics.undrawn_collision judges it).
         return "surface gone by the frame after", by, None
+    if max(abs(a - b) for a, b in zip(was, now)) > 1.0:
+        # A surface since moved: read where it went.
+        return "moving surface", by, None
     return None, by, "reported entity"
+
+
+def _entity_box(window, sid, last=-2):
+    """The drawn box of `sid` in the snapshot frame `last` of the window, else the nearest frame
+    before or after it that has it; None when none does."""
+    order = list(range(len(window)))
+    order.sort(key=lambda i: (abs(i - (len(window) + last if last < 0 else last)), -i))
+    for i in order:
+        for e in window[i]:
+            if len(e) >= 7 and e[0] == sid and e[2]:
+                return _box(*e[3:7])
+    return None
+
+
+def _carried_ok(turn, sid, window, roles, tolerance):
+    """Whether a moving surface `sid` is where the mover turned - on the side it was moving
+    toward (or around it), in a frame of the turn - and not another mover of the judged roles
+    (two balls passing need not have met). Only then is the contact carried with it."""
+    if any(e[0] == sid and len(e) > 1 and e[1] in roles for f in window for e in f):
+        return False
+    for f in window:
+        for e in f:
+            if e[0] == sid and len(e) >= 7 and e[2]:
+                if _explained(turn, [(sid, _box(*e[3:7]))], None, tolerance)[0] == sid:
+                    return True
+    return False
+
+
+def _shifted(box, dx, dy):
+    return (box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy)
+
+
+def _along_face(box, surface, axis):
+    """The mover's box slid along a surface's face (the other axis), a mover's width at a time,
+    every place it lies wholly across the surface - not where it hit (that part may be gone)."""
+    other = 1 - axis
+    width = box[other + 2] - box[other]
+    if width <= 0:
+        return []
+    out = []
+    for k in range(1, 64):
+        for d in (k * width, -k * width):
+            b = list(box)
+            b[other] += d
+            b[other + 2] += d
+            if b[other] >= surface[other] and b[other + 2] <= surface[other + 2]:
+                out.append(tuple(b))
+        if len(out) >= 8:
+            break
+    return out
+
+
+def _drawn_share(image, origin, box, region, bar, masks=()):
+    """The share of the pixels of `region` (CSS px, inside the frame, outside `masks`) whose
+    colour is at least `bar` from the median colour of `box` (where the mover was, now
+    background), or None when no pixel of either can be read."""
+    def pixels(b):
+        out = []
+        for y in range(int(math.floor(b[1])), int(math.ceil(b[3])) + 1):
+            for x in range(int(math.floor(b[0])), int(math.ceil(b[2])) + 1):
+                if not _inside_any(x, y, masks):
+                    c = _rgb(image, int(round(x - origin[0])), int(round(y - origin[1])))
+                    if c is not None:
+                        out.append(c)
+        return out
+    refs, seen = pixels(box), pixels(region)
+    if not refs or not seen:
+        return None
+    ref = tuple(statistics.median(c[i] for c in refs) for i in range(3))
+    return sum(1 for c in seen if _colour_distance(c, ref) >= bar) / len(seen)
+
+
+def _twin(later, was, exclude):
+    """The id of an entity drawn in the frame after at the box `was` (within 1 px) under
+    another id - the same surface reported anew - or None."""
+    if was is None:
+        return None
+    for sid, b in later.items():
+        if sid not in exclude and max(abs(a - c) for a, c in zip(b, was)) <= 1.0:
+            return sid
+    return None
 
 
 def _screen_edge(pf, viewport, turn, tolerance):
@@ -735,7 +832,13 @@ def _contact_surface(record, captures, frames_dir, bars, physics, project, stren
     min_speed = float(physics.get("min_speed_px", 1.0))
     roles = set(bars.get("roles") or physics.get("roles") or [])
     max_travel = float(bars.get("max_travel_px", 16))
+    composite_share = float(bars.get("composite_min_share", 0.01))
     contacts, undrawn, unverified, pinned = [], [], {}, {}
+    # Surfaces gone by the frame after, by id: a brick the hit broke is never hit again.
+    gone = {}
+    # Composites whose face showed nothing drawn at a contact (id: captures), and how much of
+    # each composite was drawn at most in any frame read.
+    unread_composites, composite_drawn = {}, {}
 
     def skip(why):
         unverified[why] = unverified.get(why, 0) + 1
@@ -767,30 +870,88 @@ def _contact_surface(record, captures, frames_dir, bars, physics, project, stren
         later = {s[0]: _box(*s[3:7]) for s in after.get("e") or [] if len(s) >= 7 and s[2]}
         # One contact can turn the mover on both axes: it is read as one, and a part it cannot
         # be read on (a surface gone, moving, a composite) leaves the whole contact unread.
-        classed = []
+        # The third frame, as many frames on again (a bot from 1.2.0): what is still drawn at
+        # the contact then is not a spark of the hit.
+        third = capture.get("later") or {}
+        third = third if third.get("still") and third.get("frames") else None
+        latest = ({s[0]: _box(*s[3:7]) for s in third["frames"][-1].get("e") or []
+                   if len(s) >= 7 and s[2]} if third else {})
+        # How each turn is read: the contact itself, or - at a surface a later frame cannot
+        # show where the mover met it - the surface where it is (K7 review MAJOR-2: a box
+        # reported where nothing is drawn is not left to the probe's word because it moves, is
+        # a composite or comes back under another id).
+        plans, unread = [], None
         for turn in turns:
             t = {"box": box, "axis": int(turn["axis"]),
                  "sign": 1 if (turn.get("sign") or 1) > 0 else -1,
                  "speed": float(turn.get("speed") or 0)}
             why, by, kind = _contact_class(t, mover, box, window, later, pf, tolerance, min_speed,
                                            roles)
-            classed.append((t, why, by, kind))
-        why = next((w for _t, w, _b, _k in classed if w), None)
-        if why:
-            skip(why)
+            if why is None:
+                plans.append((t, by, kind, [box], "contact"))
+                continue
+            if why == "moving surface" and by is not None and _carried_ok(t, by, window, roles,
+                                                                          tolerance):
+                was, now = _entity_box(window, by), later.get(by)
+                if was is not None and now is not None:
+                    # The contact carried with the surface to where it is in the frame after.
+                    plans.append((t, by, "moving surface", [_shifted(box, now[0] - was[0],
+                                                                     now[1] - was[1])], "carried"))
+                    continue
+            elif why == "composite surface" and by is not None:
+                face = later.get(by) or _entity_box(window, by)
+                places = _along_face(box, face, t["axis"]) if face is not None else []
+                if places:
+                    plans.append((t, by, "composite surface", places, "along its face"))
+                    continue
+            elif why == "surface gone by the frame after":
+                twin = _twin(later, _entity_box(window, by), {mover[0], by})
+                if twin is not None:
+                    plans.append((t, twin, "reported entity", [box], "contact"))
+                    continue
+                gone.setdefault(by, []).append(capture.get("n"))
+            unread = why
+            break
+        if unread:
+            skip(unread)
             continue
         image = _frame_pixels(os.path.join(frames_dir, f"{capture['after']['frame']}.png"),
                               pinned)
         if image is None:
             skip("frames")
             continue
+        third_image = (_frame_pixels(os.path.join(frames_dir, f"{third['frame']}.png"), pinned)
+                       if third else None)
+        # How much of each composite in view is drawn in this frame (its box inside the crop,
+        # against where the mover was): an honest composite draws its parts somewhere.
+        for e in after.get("e") or []:
+            if len(e) > 8 and e[8] == "composite" and e[2] and e[0] != mover[0]:
+                share = _drawn_share(image, origin, box, _box(*e[3:7]), min_edge,
+                                     [b for sid, b in later.items() if sid != e[0]])
+                if share is not None:
+                    composite_drawn[e[0]] = max(composite_drawn.get(e[0], 0.0), share)
         best = None
-        for t, _why, by, kind in classed:
+        for t, by, kind, places, how in plans:
             masks = [b for sid, b in later.items() if sid != by]
-            edge = contact_edge(image, origin, box, t["axis"], t["sign"], tolerance + t["speed"],
-                                masks)
-            if edge is not None and (best is None or edge > best[0]):
-                best = (edge, t, by, kind)
+            edges = [e for p in places
+                     if (e := contact_edge(image, origin, p, t["axis"], t["sign"],
+                                           tolerance + t["speed"], masks)) is not None]
+            if not edges:
+                continue
+            # Along a composite's face: drawn if any part of it near the contact is (the part
+            # the mover hit, and those around it, may have broken); a box no part of which is
+            # drawn is a surface the screen does not show.
+            edge = round(max(edges) if how == "along its face" else statistics.median(edges), 1)
+            if (third_image is not None and how == "contact"
+                    and (by in (None, "playfield") or latest.get(by) == later.get(by))):
+                # Still drawn as many frames on: a spark of the hit has faded by then.
+                again = contact_edge(third_image, origin, box, t["axis"], t["sign"],
+                                     tolerance + t["speed"],
+                                     [b for sid, b in latest.items() if sid != by])
+                if again is not None:
+                    edge = min(edge, again)
+            if best is None or edge > best[0]:
+                best = (edge, t, by, kind, how)
         masked = False
         if best is None:
             # Every line of the contact is under something reported in the frame after. A mask
@@ -798,21 +959,32 @@ def _contact_surface(record, captures, frames_dir, bars, physics, project, stren
             # contact at which nothing is drawn even there (the masking entity draws nothing
             # either) is a turn at nothing drawn. Anything drawn there is still never read as
             # the surface.
-            for t, _why, by, kind in classed:
-                edge = contact_edge(image, origin, box, t["axis"], t["sign"],
-                                    tolerance + t["speed"],
-                                    [b for sid, b in later.items() if sid != by], lifted=True)
+            for t, by, kind, places, how in plans:
+                edges = [e for p in places
+                         if (e := contact_edge(image, origin, p, t["axis"], t["sign"],
+                                               tolerance + t["speed"],
+                                               [b for sid, b in later.items() if sid != by],
+                                               lifted=True)) is not None]
+                edge = (round(max(edges) if how == "along its face"
+                              else statistics.median(edges), 1) if edges else None)
                 if edge is not None and (best is None or edge > best[0]):
-                    best = (edge, t, by, kind)
+                    best = (edge, t, by, kind, how)
             if best is None or best[0] >= min_edge:
                 skip("masked")
                 continue
             masked = True
-        edge, t, by, kind = best
+        edge, t, by, kind, how = best
+        if how == "along its face" and edge < min_edge:
+            # Nothing drawn along the composite's face near the contact: the bricks around the
+            # hit may have gone too. Left to the probe - but a composite drawn nowhere in any
+            # frame read is not passed (below).
+            unread_composites.setdefault(by, []).append(capture.get("n"))
+            skip("composite surface")
+            continue
         entry = {"capture": capture.get("n"), "unit": capture.get("unit_id"), "id": mover[0],
                  "moving": ("-" if t["sign"] < 0 else "+") + "xy"[t["axis"]],
                  "at": [round((box[0] + box[2]) / 2, 1), round((box[1] + box[3]) / 2, 1)],
-                 "explained_by": by, "surface": kind, "edge": edge, "masked": masked,
+                 "explained_by": by, "surface": kind, "read": how, "edge": edge, "masked": masked,
                  "collider": collider, "frame": capture["after"]["frame"]}
         if kind == "playfield" and _screen_edge(pf, capture.get("viewport"), t, tolerance):
             # The board's edge is the screen's: the player sees the mover turn at the edge of
@@ -823,7 +995,7 @@ def _contact_surface(record, captures, frames_dir, bars, physics, project, stren
             pass
         elif edge < min_edge:
             undrawn.append(entry)
-        elif collider and reaches is not None:
+        elif collider and reaches is not None and how == "contact":
             # Where the collider touched the drawn surface: physics.drawn_extent holds the
             # reported collider to it.
             touched = contact_reach(image, origin, box, t["axis"], t["sign"],
@@ -835,7 +1007,11 @@ def _contact_surface(record, captures, frames_dir, bars, physics, project, stren
                                 "moving": entry["moving"], "half": round(half, 1),
                                 "touched": round(touched, 1), "speed": round(t["speed"], 1),
                                 "ratio": round(half / (touched + t["speed"]), 2)})
-    measured = {"captures": len(captures), "verified": len(contacts), "undrawn": undrawn[:12],
+    reads = {}
+    for c in contacts:
+        reads[c["read"]] = reads.get(c["read"], 0) + 1
+    measured = {"captures": len(captures), "verified": len(contacts), "reads": reads,
+                "undrawn": undrawn[:12],
                 "edges": [c["edge"] for c in contacts], "unverified": unverified,
                 "window_ended": record.get("ended"), "passed_at_moving_or_composite":
                 record.get("passed"), "frame_gaps": record.get("frame_gaps"),
@@ -877,12 +1053,49 @@ def _contact_surface(record, captures, frames_dir, bars, physics, project, stren
             + " - a wall the simulation has and the screen does not",
             strength, measured=measured, expected=expected,
             frames=[u["frame"] for u in undrawn[:4]])
+    ghosts = {sid: ns for sid, ns in sorted(unread_composites.items())
+              if composite_drawn.get(sid, 0.0) < composite_share}
+    if ghosts:
+        # A composite the mover turned at, drawn nowhere in any frame read: a box reported as
+        # "several things drawn as one" with nothing drawn is not passed.
+        measured["composites_drawn_nowhere"] = ghosts
+        return _unmeasured("physics.contact_drawn", project, strength,
+                           "the mover turned at " + ", ".join(list(ghosts)[:3]) + ", reported as "
+                           "a composite, and no frame read shows anything drawn in its box",
+                           measured=measured, expected=expected)
+    returned = {sid: ns for sid, ns in sorted(gone.items()) if len(ns) >= 2}
+    if returned:
+        # A surface "gone by the frame after" that the mover meets again did not break on the
+        # hit: it is reported only where the mover is, and never read - not a pass.
+        measured["gone_and_met_again"] = returned
+        return _unmeasured("physics.contact_drawn", project, strength,
+                           "the mover turned again at " + ", ".join(list(returned)[:3])
+                           + ", a surface gone from every frame after it - one reported only "
+                           "where the mover is is never read on the pixels",
+                           measured=measured, expected=expected)
     return _measured_check(
         "physics.contact_drawn", project, True,
         f"all {len(contacts)} turns frozen on screen were at a drawn surface (colour step >= "
         f"{min_edge}"
         + (f"; {len(undrawn)} under it, fewer than {min_undrawn}" if undrawn else "") + ")",
         strength, measured=measured, expected=expected)
+
+
+def _across(frames, sid):
+    """The unit vector across the direction `sid` travelled into the last of the snapshot
+    `frames` (its collider's centre, else its box's), or None when it barely moved."""
+    centres = []
+    for f in frames[-2:]:
+        e = next((x for x in f.get("e") or [] if x[0] == sid), None)
+        if e is None:
+            return None
+        b, _ = _mover_box(e)
+        centres.append(((b[0] + b[2]) / 2, (b[1] + b[3]) / 2))
+    if len(centres) < 2:
+        return None
+    vx, vy = centres[1][0] - centres[0][0], centres[1][1] - centres[0][1]
+    speed = math.hypot(vx, vy)
+    return (-vy / speed, vx / speed) if speed >= 1.0 else None
 
 
 def _in_view(image, origin, box):
@@ -905,11 +1118,16 @@ def _contact_extent(captures, frames_dir, bars, physics, project, strength, reac
     min_delta = float(bars.get("min_delta", 24))
     margin = float(bars.get("window_colliders", 2))
     expected = {"drawn_to_collider": f"{lo} - {hi} per axis (pixels)",
-                "measured_on": "the pixels that changed between the frozen frame and the frame "
-                               "after the entity left, connected to its collider, at "
-                               f">= {share} of the change inside it; the collider is the probe's "
+                "measured_on": "the pixels that changed between the frame after the turn and "
+                               "the third frame (a record without one: the frozen frame and the "
+                               "frame after) once the entity left, connected to its collider, at "
+                               f">= {share} of the change inside it - with the third frame across "
+                               "the entity's travel, else per axis; the collider is the probe's "
                                "(self-reported)"}
     ratios, bounds, nothing, reported, unmoved, pinned = {}, {}, {}, 0, 0, {}
+    # Widths across the direction of travel (records with the third frame): ratio samples and
+    # lower bounds, per entity.
+    across, across_bounds = {}, {}
     unread_samples = 0
     # Entities whose collider was in view but every pixel of it under something else reported:
     # never read is not passed (a "trail" reported over a body hides it).
@@ -919,6 +1137,16 @@ def _contact_extent(captures, frames_dir, bars, physics, project, strength, reac
         if not got:
             continue
         frames, after, origin = got
+        third = capture.get("later") or {}
+        away = bool(third.get("still") and third.get("frames"))
+        if away:
+            # Away from the impact (K7 review MAJOR-4: a squash or a burst on the hit frame is
+            # not the body's size): the frame after the turn, against the third frame.
+            frames = capture["after"]["frames"]
+            after = third["frames"][-1]
+            first_frame, second_frame = capture["after"]["frame"], third["frame"]
+        else:
+            first_frame, second_frame = capture["at"]["frame"], capture["after"]["frame"]
         shown = frames[-1].get("e") or []
         later = {s[0]: _box(*s[3:7]) for s in after.get("e") or [] if len(s) >= 7 and s[2]}
         at_image = after_image = None
@@ -942,14 +1170,14 @@ def _contact_extent(captures, frames_dir, bars, physics, project, strength, reac
             masks = [_box(*o[3:7]) for o in shown if len(o) >= 7 and o[2] and o[0] != s[0]]
             masks += [b for sid, b in later.items() if sid != s[0]]
             if at_image is None:
-                at_image = _frame_pixels(
-                    os.path.join(frames_dir, f"{capture['at']['frame']}.png"), pinned)
-                after_image = _frame_pixels(
-                    os.path.join(frames_dir, f"{capture['after']['frame']}.png"), pinned)
+                at_image = _frame_pixels(os.path.join(frames_dir, f"{first_frame}.png"), pinned)
+                after_image = _frame_pixels(os.path.join(frames_dir, f"{second_frame}.png"),
+                                            pinned)
             if at_image is None or after_image is None:
                 break
+            normal = _across(frames, s[0]) if away else None
             extent, peak, clipped = drawn_extent(at_image, after_image, origin, cbox, window,
-                                                 share, min_delta, masks)
+                                                 share, min_delta, masks, normal)
             if extent is None:
                 if peak is None:
                     unread_samples += 1
@@ -957,6 +1185,16 @@ def _contact_extent(captures, frames_dir, bars, physics, project, strength, reac
                         masked[s[0]] = masked.get(s[0], 0) + 1
                 else:
                     nothing.setdefault(s[0], []).append(peak)
+                continue
+            if normal is not None:
+                # The collider's own extent across the same direction.
+                w, h = cbox[2] - cbox[0], cbox[3] - cbox[1]
+                if str(collider[0]) == "circle":
+                    size_n = math.hypot(w * normal[0], h * normal[1])
+                else:
+                    size_n = w * abs(normal[0]) + h * abs(normal[1])
+                (across_bounds if clipped[0] else across).setdefault(s[0], []).append(
+                    extent[0] / size_n)
                 continue
             ratio = (extent[0] / (cbox[2] - cbox[0]), extent[1] / (cbox[3] - cbox[1]))
             for axis in (0, 1):
@@ -976,6 +1214,7 @@ def _contact_extent(captures, frames_dir, bars, physics, project, strength, reac
     if contact:
         measured.update(collider_to_contact=contact, contact_reaches=(reaches or [])[:12])
     masked_out = sorted(eid for eid in masked if eid not in ratios and eid not in bounds
+                        and eid not in across and eid not in across_bounds
                         and eid not in nothing)
     if masked_out:
         measured["masked_out"] = masked_out
@@ -983,7 +1222,7 @@ def _contact_extent(captures, frames_dir, bars, physics, project, strength, reac
         return _unmeasured("physics.drawn_extent", project, strength,
                            "no frame was frozen in the contact window, so nothing drawn could be "
                            "held to a collider", measured=measured, expected=expected)
-    if not ratios and not bounds and not nothing and not over:
+    if not ratios and not bounds and not across and not across_bounds and not nothing and not over:
         if masked_out:
             return _unmeasured("physics.drawn_extent", project, strength,
                                "the collider of " + ", ".join(masked_out[:5]) + " was under "
@@ -999,28 +1238,50 @@ def _contact_extent(captures, frames_dir, bars, physics, project, strength, reac
                            measured=measured, expected=expected)
     # Per entity and axis: the median of the samples where the axis was seen whole; where it
     # never was, the median of its lower bounds, which can only show it too large.
-    per, lower = {}, {}
-    for eid in sorted(set(ratios) | set(bounds)):
+    per, lower, crossed, crossed_low = {}, {}, {}, {}
+    for eid in sorted(set(ratios) | set(bounds) | set(across) | set(across_bounds)):
         whole, part = ratios.get(eid, ([], [])), bounds.get(eid, ([], []))
         per[eid] = [round(statistics.median(whole[a]), 2) if whole[a] else None for a in (0, 1)]
         lower[eid] = [round(statistics.median(part[a]), 2) if part[a] and not whole[a] else None
                       for a in (0, 1)]
+        # Across the travel (the third frame's records): one more reading, held to the same bar.
+        a_whole, a_part = across.get(eid, []), across_bounds.get(eid, [])
+        crossed[eid] = round(statistics.median(a_whole), 2) if a_whole else None
+        crossed_low[eid] = (round(statistics.median(a_part), 2) if a_part and not a_whole
+                            else None)
     off = {eid: r for eid, r in per.items()
-           if any(v is not None and (v > hi or v < lo) for v in r)
-           or any(v is not None and v > hi for v in lower[eid])}
+           if any(v is not None and (v > hi or v < lo) for v in r + [crossed[eid]])
+           or any(v is not None and v > hi for v in lower[eid] + [crossed_low[eid]])}
     unread = sorted(eid for eid, r in per.items()
-                    if all(v is None for v in r) and eid not in off) + masked_out
+                    if all(v is None for v in r) and crossed[eid] is None
+                    and eid not in off) + masked_out
     measured.update(ratios=dict(sorted(per.items())[:20]),
                     lower_bounds={e: b for e, b in sorted(lower.items())[:20] if any(b)},
                     samples={e: [len(ratios.get(e, ([], []))[a]) for a in (0, 1)] for e in per},
                     out_of_bounds=sorted(off), nothing_drawn=dict(sorted(nothing.items())[:10]),
                     frames=dict(sorted(pinned.items())))
+    if any(v is not None for v in crossed.values()) or any(
+            v is not None for v in crossed_low.values()):
+        measured.update(across={e: v for e, v in crossed.items() if v is not None},
+                        across_lower_bounds={e: v for e, v in crossed_low.items() if v is not None},
+                        across_samples={e: len(v) for e, v in across.items()})
     if unread and not off and not nothing and not over:
         return _unmeasured("physics.drawn_extent", project, strength,
                            "the drawing of " + ", ".join(unread[:5]) + " was cut by something "
                            "else drawn on every axis in every frame", measured=measured,
                            expected=expected)
-    problems = ([f"{eid} drawn {r[0]}x{r[1]} its collider" for eid, r in sorted(off.items())[:5]]
+    def drawn(eid):
+        r, parts = per[eid], []
+        if any(v is not None for v in r):
+            parts.append(f"{r[0]}x{r[1]} its collider")
+        if crossed[eid] is not None:
+            parts.append(f"{crossed[eid]}x it across its travel")
+        cut = [v for v in lower[eid] + [crossed_low[eid]] if v is not None and v > hi]
+        if cut:
+            parts.append(f"at least {max(cut)}x it where its drawing was cut")
+        return f"{eid} drawn " + " and ".join(parts)
+
+    problems = ([drawn(eid) for eid in sorted(off)[:5]]
                 + [f"{eid}: no pixel inside its collider changed by {min_delta} when it left"
                    for eid in sorted(nothing)[:5]]
                 + [f"{eid}: collider reported {v}x where it touched the drawn surface it turned "
@@ -1030,8 +1291,7 @@ def _contact_extent(captures, frames_dir, bars, physics, project, strength, reac
         (f"what is drawn over the collider is {lo}-{hi} x it for {len(per)} entities "
          "(measured on the pixels)" if not problems
          else "drawn extent over collider out of bounds (pixels): " + "; ".join(problems)),
-        strength, measured=measured, expected=expected,
-        frames=sorted({c["at"]["frame"] for c in captures if _contact_frames(c)})[:4])
+        strength, measured=measured, expected=expected, frames=sorted(pinned)[:4])
 
 
 # -- naive.*: the build played by someone who is not perfect ---------------------------------

@@ -33,6 +33,27 @@ pinned by sha256 in each check. Bringing an artifact forward: none - a report fr
 has no contact record and gets neither check; a pinned 1.0.0 `play-realism.yaml` keeps a run
 on the old bars.
 
+**Measurement integrity: contact review r1** (K7 review of 3e8d25f, `play-realism.yaml` 1.2.0,
+`ReviewR1` and `RealRecordingsR2` in `scripts/tests/test_play_contact.py`). The bot's contact
+test freezes on turns at moving and composite surfaces too (marked `passing`) and keeps a third
+frame (`contact-<n>-later`); the no-mover exit waits six seconds of game time, not of the host's.
+`physics.contact_drawn` reads a surface a later frame cannot show where the mover met it where
+it is - a moving one carried to its place in the frame after, a composite along its face, a
+surface reported anew under another id as that surface - so a box reported where nothing is
+drawn no longer passes by moving 1 px a frame, being labelled a composite or changing its id;
+a surface gone that the mover meets again, or a composite drawn nowhere in any frame read
+(`contact.composite_min_share`), is unmeasured; with the third frame a spark of the hit no
+longer reads as a surface. `physics.drawn_extent` reads a body away from the impact (the frame
+after the turn against the third) and across its travel: a squash on the hit frame or a trail
+along the travel is not the body. Re-recorded on the same builds (`*-r2` fixtures): 894b4b8
+PASSes at 1.05-1.06 x (0.98-1.22 for any `solid_share` 0.3-0.5, was 1.03-1.2 at the impact),
+r1 96f5cea FAILs at 1.95-2.04 x as before, 68a12b7 at 2.32-2.33 x; every drawn contact 103-385,
+every undrawn 4.6-17.1. Also: `contact.max_frame_ms`, which could never fire on a bot record, is
+replaced by `contact.max_travel_px`; a playfield edge that is the viewport's own is a drawn
+edge; a design that declares a projectile the bot never saw is unmeasured, not unreported.
+Bringing an artifact forward: a record without the third frame is judged as before on the
+extent and the sparks; its turns at moving and composite surfaces were never frozen on.
+
 **Measurement integrity: five bypasses closed** (K7 bypass review, `play-realism.yaml` 1.2.0,
 `Bypasses` in `scripts/tests/test_play_contact.py`). A build could still pass the physics
 checks without fixing the game: a collider reported to match the drawing passed

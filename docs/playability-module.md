@@ -193,15 +193,19 @@ probe. The developer brief embeds the schema, so a developer knows how the build
   `min_speed_px` and `max_step_px`), every requestAnimationFrame callback is **held**: the
   canvas keeps the frame the snapshot describes, and the bot keeps a crop of it around the turn
   at one pixel per CSS px (`contact-<n>-at`), lets the game run `contact.after_frames` frames,
-  freezes it again and keeps the same crop (`contact-<n>-after`), in which the mover has left.
-  A turn at a surface that moved (a paddle) or at a composite (a row of bricks, whose hit part a
-  later frame cannot show) is not frozen on (`passed`); at most `contact.max_captures`, at least
-  `contact.gap_ms` of game time apart. When movers were in play and none was frozen on, the bot
-  asks for one pair of frames anyway (`kind: asked`), for the drawn extent. `contact.json`
-  records each capture's three snapshots around the turn, the event (the axes it turned on),
+  freezes it again and keeps the same crop (`contact-<n>-after`), in which the mover has left,
+  and as many frames on a third (`contact-<n>-later`, from play-realism 1.2.0): a spark of the
+  hit has faded by then, and the mover's drawing is read there away from the impact. A turn at
+  a surface that moved (a paddle) or at a composite (a row of bricks) is frozen on too, marked
+  `passing` and counted in `passed` (before 1.2.0 it was not frozen on: such a surface was left
+  to the probe's word); at most `contact.max_captures`, at least `contact.gap_ms` of game time
+  apart. The no-mover exit (`no <roles> in play`) waits six seconds of GAME time, not of the
+  host's. When movers were in play and none was frozen on, the bot asks for one set of frames
+  anyway (`kind: asked`), for the drawn extent. `contact.json` records each capture's three
+  snapshots around the turn and at each later frame, the event (the axes it turned on),
   whether the page was still frozen on the same frame after each shot, how many turns it saw
-  (`turns`, of them `passed`), the frames with a mover in play (`movers_seen`) and the page's
-  real frame pacing (`frame_gaps`). The crops are
+  (`turns`, of them `passed`), the frames with a mover in play (`movers_seen`), the game time
+  armed (`game_ms`) and the page's real frame pacing (`frame_gaps`). The crops are
   evidence of the physics checks only: they are left out of the report's `frames` (visual QA
   judges screens, not crops) and each check pins every crop it read by sha256
   (`measured.frames`). Its window is outside the time budget, like naive play's; the process
@@ -457,8 +461,8 @@ check (a degraded host never softens a failure).
 |---|---|
 | `physics.undrawn_collision` | (2D builds; a 3D build's screen positions are projections, so it is not judged there) every turn or stop of a projectile in the win test's per-frame samples happens at a drawn surface: the face of another visible entity on the side the mover was moving toward (in that frame or the one before - a brick the hit breaks), an edge of the probe's `playfield`, something the mover is inside, or a surface moving with it (a ball carried on a paddle), within `tolerance_px` plus the frame's travel, measured from the mover's `collider` when it reports one, else its drawn box. Without a `playfield`, a turn at nothing drawn fails only when a drawn entity still lies ahead of the mover; otherwise it is unmeasured |
 | `physics.collider_size` | every entity that reports a `collider` is drawn `min_drawn_to_collider`-`max_drawn_to_collider` x it on each axis (median over the frames), judged on its opaque `body` when the probe reports one (a solid disc inside a glow, declared `halo: true`), else on its whole drawn box. A halo without a body, an empty body or a body outside the drawn box fails: a collider is never passed with nothing drawn to hold it to. No collider reported: unmeasured |
-| `physics.contact_drawn` | (2D, contact frames) every frozen turn whose surface a later frame can show - a turn the probe explains by nothing, by its `playfield`, or by an entity still in place and not a composite - is at something DRAWN: in the frame after the mover left, along each line across the contact (the mover's span on the other axis), the largest colour distance between the band from the mover's centre to `tolerance_px` + its travel past its leading edge and the median colour of the quarter behind its centre (where it was, now background); the median over the lines is at least `contact.min_edge`. FAILs at `contact.min_undrawn` contacts under it, naming whether the probe reported a surface there (a box or edge the screen does not draw) or nothing. A turn at the board's edge where that edge is the viewport's own (the canvas fills the screen) is at a drawn edge (`surface: screen edge`). Turns at a moving surface, at a composite, at a surface gone by the frame after, or that travelled more than `contact.max_travel_px` in their frame (a loop on its own clock: the band would reach that far), are left to `physics.undrawn_collision` (counted in `measured.unverified`). A contact masked on every line by something reported in the frame after is read under the mask against the background behind it: nothing drawn there either is a turn at nothing drawn. Movers in play that never turned: PASS, nothing to verify (as `physics.undrawn_collision`) - unless the win test's samples show them turning (unmeasured). Turns seen and none it could read: unmeasured. No mover of the roles in play: not reported when the design declares none of `contact.roles` (`build_spec.assets[].role`), else unmeasured |
-| `physics.drawn_extent` | (2D, contact frames) every entity of `contact.extent_roles` that reports a `collider` is drawn `physics.min_drawn_to_collider`-`physics.max_drawn_to_collider` x it on each axis - the same bar as `physics.collider_size`, measured on the PIXELS: the pixels whose colour changed by at least `contact.min_delta` and `contact.solid_share` of the change inside the collider (90th percentile) between the frozen frame and the frame after the entity moved away, connected to the collider, other entities' boxes masked. Median per axis over the captures; an axis whose measured body reaches a mask or the crop's edge is a lower bound (it can show a body too large, never one small enough). Nothing inside the collider changed: FAIL. No collider reported: unmeasured |
+| `physics.contact_drawn` | (2D, contact frames) every frozen turn whose surface a later frame can show - a turn the probe explains by nothing, by its `playfield`, or by an entity still in place and not a composite - is at something DRAWN: in the frame after the mover left, along each line across the contact (the mover's span on the other axis), the largest colour distance between the band from the mover's centre to `tolerance_px` + its travel past its leading edge and the median colour of the quarter behind its centre (where it was, now background); the median over the lines is at least `contact.min_edge`. FAILs at `contact.min_undrawn` contacts under it, naming whether the probe reported a surface there (a box or edge the screen does not draw) or nothing. A turn at the board's edge where that edge is the viewport's own (the canvas fills the screen) is at a drawn edge (`surface: screen edge`). A turn at a surface a later frame cannot show where the mover met it is read where it is (play-realism 1.2.0, K7 review): at a moving surface the contact is carried with the surface to its place in the frame after (`read: carried`); at a composite, along its face, drawn if any part of it near the contact is (`read: along its face`); a surface gone by the frame after but reported anew under another id at the same place is that surface. With a third frame the contact is read on both frames and the lower reading counts (a spark of the hit has faded). Left to `physics.undrawn_collision` (counted in `measured.unverified`): a surface gone by the frame after (a brick the hit broke) - unmeasured instead when the mover meets it again (`measured.gone_and_met_again`); a composite with nothing drawn along its face near the contact - unmeasured instead when nothing is drawn in its box in any frame read (`measured.composites_drawn_nowhere`, `contact.composite_min_share`); a turn that travelled more than `contact.max_travel_px` in its frame (a loop on its own clock: the band would reach that far). A contact masked on every line by something reported in the frame after is read under the mask against the background behind it: nothing drawn there either is a turn at nothing drawn. Movers in play that never turned: PASS, nothing to verify (as `physics.undrawn_collision`) - unless the win test's samples show them turning (unmeasured). Turns seen and none it could read: unmeasured. No mover of the roles in play: not reported when the design declares none of `contact.roles` (`build_spec.assets[].role`), else unmeasured |
+| `physics.drawn_extent` | (2D, contact frames) every entity of `contact.extent_roles` that reports a `collider` is drawn `physics.min_drawn_to_collider`-`physics.max_drawn_to_collider` x it on each axis - the same bar as `physics.collider_size`, measured on the PIXELS: the pixels whose colour changed by at least `contact.min_delta` and `contact.solid_share` of the change inside the collider (90th percentile) between the frozen frame and the frame after the entity moved away, connected to the collider, other entities' boxes masked. Median per axis over the captures; an axis whose measured body reaches a mask or the crop's edge is a lower bound (it can show a body too large, never one small enough). With a third frame (play-realism 1.2.0) the body is read away from the impact - on the frame after the turn against the third frame - and across the entity's direction of travel there (`measured.across`; a trail or a stretch along the travel is not the body, a squash on the hit frame is not read), against the collider's own extent across the same direction; records without one are read on the frozen frame against the frame after. Nothing inside the collider changed: FAIL. No collider reported: unmeasured |
 | `naive.setbacks` | in the OPENING unit, the probe's `setbacks` rise at most `setbacks.max_per_min` a minute of jittered play (a FAIL needs `min_count`). Without `setbacks`, losses are a lower bound: a FAIL above the bar, unmeasured below it. Every unit's rate is reported |
 | `naive.drift` | the time-weighted mean of `track` `\|offset\| / half_width` under jittered play in the opening unit is at most `drift.max_mean_share`. No `track`: unmeasured on the dimensions `drift.dimensions` lists (3D), not judged elsewhere |
 | `naive.alignment` | the 90th percentile angle between `view.camera_forward` and `view.control_forward` is at most `alignment.max_p90_deg`. No `view`: unmeasured on `alignment.dimensions` (3D) |
@@ -516,10 +520,22 @@ What they cannot catch:
   collider reported smaller than the simulation's is believed. One reported LARGER is held to
   where it touched (`contact.max_collider_to_contact`): at a turn read as drawn, its half
   extent against the distance from its centre to the surface's first pixel plus its step;
-  honest readings 0.59-0.86, the real records with the collider scaled to pass the extent
-  1.17-1.97;
-- a wall the bot never touched in the window, and a wall touched only where its surface is a
-  composite or broke on the hit;
+  honest readings 0.48-0.92, the real records with the collider scaled to pass the extent
+  1.17-1.97. The step bounds that reading from above, so a collider reported up to about 1.5 x
+  the simulation's still passes both bars (96f5cea's scaled x1.6);
+- a wall the bot never touched in the window; a surface gone by the frame after (a brick the
+  hit broke) that the mover never meets again; a composite with nothing drawn along its face
+  near the contact while something is drawn elsewhere in its box (a ghost box made the union
+  of a real brick row and an invisible ceiling); a box that moves with a mover of the judged
+  roles (two balls passing are not read as a contact);
+- turns frozen on are capped (`contact.max_captures`) and a turn at a paddle or a brick row
+  now takes one of them: in the step's window (`contact.window_s`, on a loaded host a few
+  seconds of game time) fewer captures go to walls than before 1.2.0;
+- a spark of the hit still drawn in the frame after, on a record without the third frame (a
+  bot before 1.2.0): it reads as a surface;
+- a game that detects the harness (the wrapped requestAnimationFrame) and draws differently
+  while measured, and one drawing from timers or a worker (the freeze holds rAF callbacks only;
+  `still` is the hook's state, not the canvas's);
 - an undrawn wall that happens to coincide with a backdrop feature as strong as `min_edge`
   along the contact (a contrasting horizon exactly where the ceiling is);
 - a drawn surface whose colour equals the background's behind the mover (it reads undrawn; to a

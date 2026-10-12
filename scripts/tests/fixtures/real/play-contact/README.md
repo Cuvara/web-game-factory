@@ -70,3 +70,29 @@ beyond the conversions stated below.
 
 `drawn_extent` on the sets without a collider is unmeasured (`not-reported`), held as not passed
 at the release tier.
+
+## The `-r2` sets: the play-realism 1.2.0 bot (2026-10-12)
+
+Recorded again after the K7 review, with the same scratch builds, settings and harness patch,
+by the bot of this branch at the commit that adds these sets (`bot.spec.ts` sha256 `79fa7ac1...7c2c`,
+port 4200; `contact.json` carries
+`game_ms`): it freezes on turns at moving and composite surfaces too (marked `passing`), keeps a
+third frame `contact-<n>-later` as many frames after `-after`, crops `CONTACT_MARGIN` 5 x the
+mover's size (at least 120 px), and ends "no mover in play" on game time.
+
+- All 12 captures are kept. Every frame the judge LOADED is kept, cropped to the bounding box of
+  the pixels it read in any frame of the capture plus 2 px (a composite's drawn share, which
+  reads its whole box in view, is left out of the box; a frame loaded and never read is kept as
+  one pixel); the capture's clips moved to the crop. The builder (k7 scratch
+  `build_fixtures2.py`) replayed both checks on the full recording and on the fixture and
+  refused any difference but the frames' own hashes.
+
+| Set | Expected | Measured |
+|---|---|---|
+| `68a12b7-collider-r2/` (desktop, mobile) | contact_drawn FAIL, drawn_extent FAIL | 3 + 2 contacts at the undrawn ceiling (4.6-16.7); drawn 2.32-2.33 x its collider across its travel |
+| `cbac64e-collider-r2/` (desktop) | contact_drawn FAIL, drawn_extent FAIL | 2 contacts at the undrawn ceiling (16.2); drawn 1.74 x across its travel |
+| `96f5cea-collider-r2/` (desktop, mobile) | contact_drawn PASS, drawn_extent FAIL | every contact read drawn; r1's solid disc 1.95-2.04 x its collider across its travel |
+| `96f5cea-r2/` (desktop, mobile) | contact_drawn PASS | every contact read drawn, paddles where they went and brick rows along their face among them; no collider: drawn_extent unmeasured |
+| `894b4b8-collider-r2/` (desktop, mobile) | contact_drawn PASS, drawn_extent PASS | 1.05-1.06 x across its travel (0.98-1.22 for any `solid_share` 0.3-0.5); the collider against where it touched 0.66-0.92 |
+
+Every drawn contact on these sets read 103-385, every undrawn one 4.6-17.1.

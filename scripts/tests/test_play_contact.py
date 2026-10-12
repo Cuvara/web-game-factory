@@ -89,14 +89,23 @@ class Scene:
         self.cx, self.drawn, self.collider = cx, drawn, collider
         size = collider or drawn
         self.cy = top + size / 2
-        self.at, self.after = canvas(), canvas()
+        self.at, self.after, self.later = canvas(), canvas(), canvas()
         self.others = []
         self.after_others = []
+        self.later_others = None  # as in the frame after
+
+    # A bot from play-realism 1.2.0 keeps a third frame: where the ball is in it, and in the
+    # frame after (the extent is read on those two, inside the clip).
+    AFTER = (-40.0, 40.0)
+    LATER = (-100.0, 100.0)
+
+    def after_at(self):
+        return self.cx + self.AFTER[0], self.cy + self.AFTER[1]
 
     def turned_at(self):
         return ball(self.cx, self.cy, self.drawn, self.collider)
 
-    def capture(self, kind="reversal"):
+    def capture(self, kind="reversal", third=False):
         cy = self.cy
         frames = [
             {"t": 0.0, "e": [ball(self.cx - 4, cy + 6, self.drawn, self.collider)] + self.others, "pf": None},
@@ -105,16 +114,31 @@ class Scene:
         ]
         after = [{"t": 333.3, "e": [ball(self.cx + 60, cy + 90, self.drawn, self.collider)]
                   + (self.after_others if self.after_others is not None else []), "pf": None}]
-        for name, image in ((f"contact-{self.n}-at", self.at), (f"contact-{self.n}-after", self.after)):
+        images = [(f"contact-{self.n}-at", self.at), (f"contact-{self.n}-after", self.after)]
+        if third:
+            # Moving down-left at 3 px a frame away from the turn, at 1 px a frame per axis.
+            (ax, ay), (lx, ly) = self.after_at(), (self.cx + self.LATER[0], cy + self.LATER[1])
+            others = self.after_others if self.after_others is not None else []
+            later_others = self.later_others if self.later_others is not None else others
+            after = [{"t": 316.6, "e": [ball(ax + 2, ay - 2, self.drawn, self.collider)] + others, "pf": None},
+                     {"t": 333.3, "e": [ball(ax, ay, self.drawn, self.collider)] + others, "pf": None}]
+            later = [{"t": 650.0, "e": [ball(lx + 2, ly - 2, self.drawn, self.collider)] + later_others, "pf": None},
+                     {"t": 666.6, "e": [ball(lx, ly, self.drawn, self.collider)] + later_others, "pf": None}]
+            images.append((f"contact-{self.n}-later", self.later))
+        for name, image in images:
             with open(os.path.join(self.directory, name + ".png"), "wb") as handle:
                 handle.write(encode_png(image))
-        return {"n": self.n, "unit_id": "u1",
+        out = {"n": self.n, "unit_id": "u1",
                 "at": {"frame": f"contact-{self.n}-at", "still": True, "clip": dict(CLIP),
                        "event": {"kind": kind, "id": "ball",
                                  "turns": [{"axis": 1, "sign": -1, "speed": 6.0}]},
                        "frames": frames},
                 "after": {"frame": f"contact-{self.n}-after", "still": True, "clip": dict(CLIP),
                           "frames": after}}
+        if third:
+            out["later"] = {"frame": f"contact-{self.n}-later", "still": True, "clip": dict(CLIP),
+                            "frames": later}
+        return out
 
 
 def record(*captures, **kw):
@@ -208,14 +232,6 @@ class ContactDrawn(unittest.TestCase):
         result = judged(record(capture), self.dir, MVP)["physics.contact_drawn"]
         self.assertEqual(result["measured"]["unverified"], {"moving surface": 1}, result)
         self.assertEqual(result["status"], "WARNING")
-
-    def test_a_composite_row_is_left_to_the_probe(self):
-        s = self.scene()
-        row = entity("bricks", 300, 186, 200, 14, role="target", render="composite")
-        s.others, s.after_others = [row], [row]
-        result = judged(record(s.capture()), self.dir, MVP)["physics.contact_drawn"]
-        self.assertEqual(result["status"], "WARNING")
-        self.assertEqual(result["measured"]["unverified"], {"composite surface": 1})
 
     def test_something_passing_through_in_the_frame_after_is_not_read(self):
         s = self.scene()
@@ -777,6 +793,289 @@ class Bypasses(unittest.TestCase):
         for image in (s.at, s.after):
             paint(image, rect(300, 190, 500, 200), (220, 220, 230), alpha=0.08)
         self.assertEqual(judged(record(s.capture()), self.dir)["physics.contact_drawn"]["status"], "FAIL")
+
+
+class ReviewR1(unittest.TestCase):
+    """K7 review of 3e8d25f: surfaces a later frame cannot show where the mover met them are read
+    where they are (MAJOR-2), the third frame (`later`, a bot from play-realism 1.2.0) against
+    sparks (MINOR-4) and for the drawn extent away from the impact, across the travel (MAJOR-4),
+    a game whose turns are all at a moving paddle (MINOR-5). SYNTHETIC scenes, built here."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="wgf-review-")
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+
+    def drawn_wall(self, n):
+        s = Scene(self.dir, n=n)
+        for image in (s.at, s.after):
+            paint(image, rect(300, 190, 500, 200), (220, 220, 230))
+        return s.capture()
+
+    # -- MAJOR-2 ---------------------------------------------------------------------------
+
+    def test_a_reported_ceiling_that_moves_is_read_where_it_went(self):
+        # Probe P9: the box reported where the invisible ceiling is, jittering 1 px a frame. It
+        # is a moving surface: the contact is carried with it to where it is in the frame after.
+        s = Scene(self.dir, n=2)
+        capture = s.capture()
+        for i, f in enumerate(capture["at"]["frames"]):
+            f["e"].append(entity("ceiling", 300 + i, 190, 200, 10, role="target", render="primitive"))
+        capture["after"]["frames"][0]["e"].append(
+            entity("ceiling", 303, 190, 200, 10, role="target", render="primitive"))
+        result = judged(record(self.drawn_wall(1), capture), self.dir)["physics.contact_drawn"]
+        self.assertEqual(result["status"], "FAIL", result["summary"])
+        undrawn = result["measured"]["undrawn"][0]
+        self.assertEqual((undrawn["surface"], undrawn["read"]), ("moving surface", "carried"))
+
+    def test_a_paddle_is_read_where_it_went_and_a_paddle_only_game_passes(self):
+        # MINOR-5: a keep-it-up game turns only at its paddle. The paddle moved 60 px by the
+        # frame after; drawn there, the contact carried with it is at something drawn.
+        s = Scene(self.dir, top=200.0)
+        capture = s.capture()
+        top = s.cy - 6
+        for f, x in zip(capture["at"]["frames"], (360, 362, 364)):
+            f["e"].append(entity("paddle", x, top - 12, 80, 12, role="player"))
+        capture["after"]["frames"][0]["e"].append(entity("paddle", 424, top - 12, 80, 12, role="player"))
+        paint(s.after, rect(424, top - 12, 504, top), (90, 220, 120))
+        with open(os.path.join(self.dir, "contact-1-after.png"), "wb") as handle:
+            handle.write(encode_png(s.after))
+        result = judged(record(capture, turns=6, passed=6, movers_seen=500), self.dir, HELD)
+        contact = result["physics.contact_drawn"]
+        self.assertEqual(contact["status"], "PASS", contact["summary"])
+        self.assertEqual(contact["measured"]["verified"], 1)
+        # Not drawn where it went: a paddle the screen does not show.
+        s.after = canvas()
+        with open(os.path.join(self.dir, "contact-1-after.png"), "wb") as handle:
+            handle.write(encode_png(s.after))
+        self.assertEqual(judged(record(capture), self.dir)["physics.contact_drawn"]["status"], "FAIL")
+
+    def composite_row(self, drawn):
+        s = Scene(self.dir, n=2)
+        row = entity("bricks", 300, 186, 200, 14, role="target", render="composite")
+        s.others, s.after_others = [row], [row]
+        if drawn:
+            # The row drawn, but for the brick the hit broke (380-420).
+            for x0 in (300, 340, 420, 460):
+                paint(s.after, rect(x0 + 1, 186, x0 + 39, 200), (200, 80, 60))
+        return s.capture()
+
+    def test_a_composite_is_read_along_its_face(self):
+        # A row of bricks, the one hit gone: drawn along its face - a verified contact.
+        drawn = judged(record(self.drawn_wall(1), self.composite_row(True)), self.dir)
+        self.assertEqual(drawn["physics.contact_drawn"]["status"], "PASS", drawn["physics.contact_drawn"])
+        self.assertEqual(drawn["physics.contact_drawn"]["measured"]["verified"], 2)
+        # `render: composite` on an invisible ceiling: nothing drawn along its face, and nothing
+        # drawn in its box in any frame read - not passed (the bricks around a hit can all be
+        # gone, so it is not a measured FAIL either).
+        ghost = judged(record(self.drawn_wall(1), self.composite_row(False)), self.dir, HELD)
+        contact = ghost["physics.contact_drawn"]
+        self.assertEqual(contact["status"], "FAIL", contact["summary"])
+        self.assertEqual(contact["measured"]["unmeasured"], realism.UNREPORTED)
+        self.assertEqual(contact["measured"]["composites_drawn_nowhere"], {"bricks": [2]})
+        # A sparse composite: nothing along its face near the hit, its other parts drawn in its
+        # box - left to the probe, the other contact verified: PASS.
+        sparse = self.composite_row(False)
+        s = Scene(self.dir, n=2)
+        paint(s.after, rect(301, 120, 339, 134), (200, 80, 60))
+        row = entity("bricks", 300, 120, 200, 80, role="target", render="composite")
+        s.others, s.after_others = [row], [row]
+        sparse = s.capture()
+        result = judged(record(self.drawn_wall(1), sparse), self.dir)["physics.contact_drawn"]
+        self.assertEqual(result["status"], "PASS", result["summary"])
+        self.assertEqual(result["measured"]["unverified"], {"composite surface": 1})
+
+    def test_a_ceiling_reported_anew_under_another_id_is_read(self):
+        # Re-issuing the ceiling's id each frame made it "gone by the frame after": the box under
+        # another id in the same place is the same surface.
+        s = Scene(self.dir, n=2)
+        s.others = [entity("ceiling-1", 300, 190, 200, 10, role="target")]
+        s.after_others = [entity("ceiling-9", 300, 190, 200, 10, role="target")]
+        result = judged(record(self.drawn_wall(1), s.capture()), self.dir)["physics.contact_drawn"]
+        self.assertEqual(result["status"], "FAIL", result["summary"])
+        self.assertEqual(result["measured"]["undrawn"][0]["explained_by"], "ceiling-9")
+
+    def test_a_surface_gone_that_the_mover_meets_again_is_not_passed(self):
+        # Reported only while the mover is near it: gone from every frame after, met again. A
+        # brick the hit broke is never met again.
+        captures = [self.drawn_wall(1)]
+        for n in (2, 3):
+            s = Scene(self.dir, n=n)
+            s.others, s.after_others = [entity("ceiling", 300, 190, 200, 10, role="target")], []
+            captures.append(s.capture())
+        result = judged(record(*captures), self.dir, HELD)["physics.contact_drawn"]
+        self.assertEqual(result["status"], "FAIL", result["summary"])
+        self.assertEqual(result["measured"]["unmeasured"], realism.UNREPORTED)
+        self.assertEqual(result["measured"]["gone_and_met_again"], {"ceiling": [2, 3]})
+        # Met once, gone: a brick the hit broke - still left to the probe.
+        once = judged(record(*captures[:2]), self.dir)["physics.contact_drawn"]
+        self.assertEqual(once["status"], "PASS", once["summary"])
+
+    # -- MINOR-4 ---------------------------------------------------------------------------
+
+    def test_sparks_at_the_contact_have_faded_by_the_third_frame(self):
+        # Probe P3: a burst of sparks still on screen in the frame after, over an undrawn ceiling.
+        s = Scene(self.dir)
+        for dx in range(-8, 9, 2):
+            paint(s.after, disc(s.cx + dx, 196, 3), (255, 240, 180))
+        result = judged(record(s.capture(third=True)), self.dir)["physics.contact_drawn"]
+        self.assertEqual(result["status"], "FAIL", result["summary"])
+        # A drawn wall is still there in the third frame.
+        w = Scene(self.dir, n=2)
+        for image in (w.at, w.after, w.later):
+            paint(image, rect(300, 190, 500, 200), (220, 220, 230))
+        self.assertEqual(judged(record(w.capture(third=True)), self.dir)["physics.contact_drawn"]["status"],
+                         "PASS")
+        # PINNED: a record without the third frame (a bot before 1.2.0) reads the sparks as drawn.
+        self.assertEqual(judged(record(s.capture()), self.dir)["physics.contact_drawn"]["status"], "PASS")
+
+    # -- MAJOR-4 ---------------------------------------------------------------------------
+
+    def extent(self, draw, collider=12, drawn_box=20):
+        """The drawn extent of a ball drawn by `draw(image, cx, cy, s)` in the frame after the turn
+        (third-frame records: read there, against the third frame)."""
+        s = Scene(self.dir, drawn=drawn_box, collider=collider)
+        ax, ay = s.after_at()
+        draw(s.after, ax, ay, s)
+        return judged(record(s.capture(third=True)), self.dir)["physics.drawn_extent"]
+
+    def test_a_ball_its_collider_size_passes_away_from_the_impact(self):
+        result = self.extent(lambda image, x, y, s: paint(image, disc(x, y, 12), (240, 200, 40)))
+        self.assertEqual(result["status"], "PASS", result["summary"])
+        self.assertTrue(0.9 <= result["measured"]["across"]["ball"] <= 1.15, result["measured"])
+
+    def test_a_squash_on_the_hit_frame_is_not_the_body(self):
+        # Probe P6: squashed 1.35 x 0.75 on the frame of the hit, its collider's size after.
+        def draw(image, x, y, s):
+            paint(s.at, lambda px, py: ((px - s.cx) / 8.1) ** 2 + ((py - s.cy) / 4.5) ** 2 <= 1,
+                  (240, 200, 40))
+            paint(image, disc(x, y, 12), (240, 200, 40))
+        result = self.extent(draw)
+        self.assertEqual(result["status"], "PASS", result["summary"])
+
+    def test_a_trail_behind_the_ball_is_not_the_body(self):
+        # Probe P5: three 60 % ghosts behind it, along its travel (it moves down-left).
+        def draw(image, x, y, s):
+            for k in range(1, 4):
+                paint(image, disc(x + 3 * k, y - 3 * k, 12), (240, 200, 40), alpha=0.6)
+            paint(image, disc(x, y, 12), (240, 200, 40))
+        result = self.extent(draw)
+        self.assertEqual(result["status"], "PASS", result["summary"])
+
+    def test_a_ball_drawn_three_times_its_collider_still_fails_across_its_travel(self):
+        result = self.extent(lambda image, x, y, s: paint(image, disc(x, y, 36), (240, 200, 40)),
+                             drawn_box=40)
+        self.assertEqual(result["status"], "FAIL", result["summary"])
+        self.assertGreater(result["measured"]["across"]["ball"], RULES["physics"]["max_drawn_to_collider"])
+        self.assertIn("across its travel", result["summary"])
+
+    def test_a_ball_masked_in_one_capture_and_read_in_another_is_read(self):
+        # Under something reported in one capture's frame after, read across its travel in
+        # another: it was read - not "masked in every frame".
+        captures = []
+        for n, masked in ((1, True), (2, False)):
+            s = Scene(self.dir, n=n)
+            ax, ay = s.after_at()
+            paint(s.after, disc(ax, ay, 12), (240, 200, 40))
+            if masked:
+                s.after_others = [entity("trail", ax - 10, ay - 10, 20, 20, role="vfx")]
+                s.later_others = []
+            captures.append(s.capture(third=True))
+        result = judged(record(*captures), self.dir)["physics.drawn_extent"]
+        self.assertEqual(result["status"], "PASS", result["summary"])
+        self.assertNotIn("masked_out", result["measured"])
+
+    def test_a_ball_drawn_smaller_than_its_collider_fails_across_its_travel(self):
+        result = self.extent(lambda image, x, y, s: paint(image, disc(x, y, 8), (240, 200, 40)))
+        self.assertEqual(result["status"], "FAIL", result["summary"])
+        self.assertLess(result["measured"]["across"]["ball"], RULES["physics"]["min_drawn_to_collider"])
+
+
+class RealRecordingsR2(unittest.TestCase):
+    """REAL: the play-realism 1.2.0 bot's recordings of the same builds (`*-r2`, README.md there):
+    turns at moving and composite surfaces frozen on and read where the surface is, a third
+    frame, the drawn extent away from the impact and across the travel (K7 review)."""
+
+    def replay(self, name, project, rules=RULES, strength=RELEASE):
+        directory = os.path.join(REAL, name, project)
+        rec = real(os.path.join(name, project, "contact.json.gz"))
+        return {c["id"]: c for c in realism.judge_contacts({"contact": rec}, directory, D2, rules,
+                                                           project, strength)}
+
+    SETS = (("68a12b7-collider-r2", ("desktop", "mobile")), ("cbac64e-collider-r2", ("desktop",)),
+            ("96f5cea-collider-r2", ("desktop", "mobile")), ("96f5cea-r2", ("desktop", "mobile")),
+            ("894b4b8-collider-r2", ("desktop", "mobile")))
+
+    def test_the_bot_froze_on_passing_turns_and_kept_a_third_frame(self):
+        for name, projects in self.SETS:
+            for project in projects:
+                rec = real(os.path.join(name, project, "contact.json.gz"))
+                self.assertTrue(any(c["at"]["event"].get("passing") for c in rec["captures"]), name)
+                self.assertTrue(all(c.get("later") and c["later"]["still"] for c in rec["captures"]), name)
+                self.assertGreater(rec["game_ms"], 6000, name)
+
+    def test_the_regressed_builds_still_turn_at_the_undrawn_ceiling(self):
+        for name, projects in self.SETS[:2]:
+            for project in projects:
+                result = self.replay(name, project)["physics.contact_drawn"]
+                self.assertEqual(result["status"], "FAIL", (name, project, result["summary"]))
+                self.assertTrue(all(u["surface"] == "nothing reported" and u["moving"] == "-y"
+                                    for u in result["measured"]["undrawn"]), result["measured"]["undrawn"])
+
+    def test_the_accepted_builds_turn_only_at_drawn_surfaces_read_where_they_are(self):
+        reads = {}
+        for name, projects in self.SETS[2:]:
+            for project in projects:
+                result = self.replay(name, project)["physics.contact_drawn"]
+                self.assertEqual(result["status"], "PASS", (name, project, result["summary"]))
+                self.assertGreaterEqual(result["measured"]["verified"], 9, (name, project))
+                for how, n in result["measured"]["reads"].items():
+                    reads[how] = reads.get(how, 0) + n
+        # Paddles carried to where they went and brick rows read along their face are among the
+        # drawn contacts - before 1.2.0 neither was frozen on.
+        self.assertGreater(reads.get("carried", 0), 5, reads)
+        self.assertGreater(reads.get("along its face", 0), 5, reads)
+
+    def test_the_bar_separates_every_r2_reading(self):
+        drawn, undrawn = [], []
+        for name, projects in self.SETS:
+            for project in projects:
+                m = self.replay(name, project)["physics.contact_drawn"]["measured"]
+                undrawn += [u["edge"] for u in m["undrawn"]]
+                drawn += [e for e in m["edges"] if e >= RULES["contact"]["min_edge"]]
+        self.assertLess(max(undrawn), RULES["contact"]["min_edge"] / 2.5)
+        self.assertGreater(min(drawn), RULES["contact"]["min_edge"] * 2)
+
+    def test_drawn_extent_away_from_the_impact(self):
+        hi = RULES["physics"]["max_drawn_to_collider"]
+        for project in ("desktop", "mobile"):
+            # 894b4b8: the collider is the solid disc - PASS with a margin, whatever the share.
+            for share in (0.3, 0.4, 0.5):
+                rules = copy.deepcopy(RULES)
+                rules["contact"]["solid_share"] = share
+                result = self.replay("894b4b8-collider-r2", project, rules)["physics.drawn_extent"]
+                self.assertEqual(result["status"], "PASS", (project, share, result["summary"]))
+                self.assertTrue(all(0.95 <= v <= 1.23 for v in result["measured"]["across"].values()),
+                                result["measured"]["across"])
+            result = self.replay("894b4b8-collider-r2", project)["physics.drawn_extent"]
+            self.assertTrue(all(v <= 1.1 for v in result["measured"]["across"].values()), result["measured"])
+            # r1 96f5cea: its solid disc twice its collider, as the 1.1.0 recording read it.
+            r1 = self.replay("96f5cea-collider-r2", project)["physics.drawn_extent"]
+            self.assertEqual(r1["status"], "FAIL")
+            self.assertTrue(all(1.9 <= v <= 2.1 for v in r1["measured"]["across"].values()), r1["measured"])
+            # 68a12b7: the enlarged ball.
+            head = self.replay("68a12b7-collider-r2", project)["physics.drawn_extent"]
+            self.assertEqual(head["status"], "FAIL")
+            self.assertTrue(all(v > hi for v in head["measured"]["across"].values()), head["measured"])
+
+    def test_honest_colliders_stay_under_the_contact_bar(self):
+        for name, projects in self.SETS:
+            if "collider" not in name:
+                continue
+            for project in projects:
+                m = self.replay(name, project)["physics.drawn_extent"]["measured"]
+                self.assertTrue(m["collider_to_contact"], (name, project))
+                self.assertTrue(all(v < 0.95 for v in m["collider_to_contact"].values()),
+                                (name, project, m["collider_to_contact"]))
 
 
 class Generalizes(unittest.TestCase):

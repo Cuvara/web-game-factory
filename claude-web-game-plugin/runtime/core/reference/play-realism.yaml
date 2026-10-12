@@ -32,7 +32,9 @@
 # 1.2.0: a turn is seen across a hit-stop (`physics.hit_stop_frames`), and a collider is held
 # to where it touched the drawn surface it turned at (`contact.max_collider_to_contact`) - two
 # ways a build passed both checks unchanged (K7 bypass review, 2026-10-12); `contact.max_frame_ms`,
-# which could never fire on a bot record, is replaced by `contact.max_travel_px` (K7 review).
+# which could never fire on a bot record, is replaced by `contact.max_travel_px`; the bot
+# freezes on turns at moving and composite surfaces and keeps a third frame, read for sparks
+# and for the drawn extent away from the impact (`contact.composite_min_share`; K7 review).
 version: 1.2.0
 basis: measured-2
 
@@ -104,9 +106,12 @@ physics:
 contact:
   # The bot's contact test (bot.spec.ts) freezes the page on the frame that shows a mover of
   # `roles` just reversed, keeps a crop of it, lets `after_frames` frames run, and keeps the
-  # same crop again; realism.judge_contacts reads both. Where the mover was and its collider
-  # are the probe's (self-reported); what is drawn there is measured on the pixels. Judged on
-  # the `dimensions` whose screen positions are a board's, as physics is.
+  # same crop again, and (from 1.2.0) as many frames on a third; realism.judge_contacts reads
+  # them. Where the mover was and its collider are the probe's (self-reported); what is drawn
+  # there is measured on the pixels. Judged on the `dimensions` whose screen positions are a
+  # board's, as physics is. A turn at a moving surface or a composite is frozen on too (1.2.0;
+  # before, it was left to the probe's word, so a box reported where nothing is drawn passed by
+  # moving 1 px a frame or being labelled a composite - K7 review).
   dimensions: [2d]
   roles: [projectile]
   projects: [desktop, mobile]
@@ -138,9 +143,21 @@ contact:
   # 172-385 (r1 96f5cea, 68a12b7, cbac64e, 894b4b8); every undrawn ceiling 13-34 (33.5 where a
   # ceiling crosses the backdrop's hill line). 48 sits 1.4 x above the highest undrawn reading
   # and 3.6 x under the lowest drawn one. One contact under it FAILs: every reading under 34
-  # was a turn at nothing drawn.
+  # was a turn at nothing drawn. Re-recorded with the 1.2.0 bot (2026-10-12, `*-r2`): every
+  # drawn contact - walls, paddles read where they went, brick rows along their face - 103-385,
+  # every undrawn ceiling 4.6-17.1. A surface a later frame cannot show where the mover met it
+  # is read where it is (realism._contact_surface): a moving one carried to its place in the
+  # frame after, a composite along its face. With the third frame, the lower of the two
+  # readings counts (a spark of the hit has faded by then).
   min_edge: 48
   min_undrawn: 1
+  # A composite the mover turned at, whose face showed nothing drawn near the contact (the
+  # bricks around a hit can all be gone), is left to the probe - unless no frame read shows
+  # this share of its box drawn (colour step >= `min_edge` from where the mover was): then it is
+  # a box with nothing drawn in it, and the check is not passed (unmeasured). Calibration (the
+  # 1.2.0 recordings): every honest brick composite 0.106-0.995 of its box in view; a box with
+  # nothing drawn reads 0.
+  composite_min_share: 0.01
   # physics.drawn_extent: the entities held (a collider reported on any of them), and how their
   # solid drawing is told from a glow - the pixels whose colour changed by `min_delta` and by
   # `solid_share` of the change inside the collider (90th percentile) when the entity moved
@@ -151,6 +168,12 @@ contact:
   # out), 68a12b7 2.6-2.7 x across (the enlarged paper ball and its dart; its ink outline, 42 %
   # of the fill's change, is left out too - the fill alone still FAILs), 894b4b8 1.03-1.2 x
   # (r1's art, the collider grown to its solid disc).
+  # From 1.2.0 a record with the third frame is read AWAY from the impact - the frame after the
+  # turn against the third - and ACROSS the direction of travel there (K7 review MAJOR-4: every
+  # sample was at an impact, where a squash or a burst lives, and a trail along the travel was
+  # counted as body; 894b4b8, the collider set to its solid disc, read up to 1.2 x). Re-recorded
+  # (2026-10-12, `*-r2`): 894b4b8 1.05-1.06 x (0.98-1.22 for any `solid_share` 0.3-0.5), r1
+  # 96f5cea 1.95-2.04 x, 68a12b7 2.32-2.33 x, cbac64e 1.4-1.74 x.
   extent_roles: [player, projectile, threat, collectible, hazard]
   solid_share: 0.5
   min_delta: 24
@@ -163,10 +186,13 @@ contact:
   # exceed this bar (the 0.15 is a pixel or two of edge rounding on a small ball). A collider
   # reported to match a drawing the simulation does not use passes the pixel extent and fails
   # this. Calibration (real records, the collider reported by the harness patch): every honest
-  # turn 0.59-0.86 (68a12b7, 96f5cea desktop; 894b4b8 desktop and mobile); the same records
-  # with the ball's collider scaled about its centre as a gaming build would report it - x2.0
-  # (the drawn extent of 96f5cea then reads 1.0 x) 1.17-1.72, x2.3 / x2.6 (where 68a12b7 /
-  # 96f5cea pass the drawn extent alone) 1.43-1.97.
+  # turn 0.59-0.86 (68a12b7, 96f5cea desktop; 894b4b8 desktop and mobile), 0.48-0.92 on the
+  # 1.2.0 recordings; the same records with the ball's collider scaled about its centre as a
+  # gaming build would report it - x2.0 (the drawn extent of 96f5cea then reads 1.0 x)
+  # 1.17-1.72, x2.3 / x2.6 (where 68a12b7 / 96f5cea pass the drawn extent alone) 1.43-1.97.
+  # What it cannot see: the step bounds the reading from above, so a collider reported up to
+  # about 1.5 x the simulation's can pass both bars (96f5cea's scaled x1.6: 0.77-1.09 here,
+  # 1.22-1.26 x drawn across its travel) - the bar is not tightened to 1.0 on one game.
   max_collider_to_contact: 1.15
 
 # -- naive.*: the build played by someone who is not perfect ---------------------------------

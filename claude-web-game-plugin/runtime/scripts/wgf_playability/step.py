@@ -101,8 +101,8 @@ SUFFICIENCY_PATH = os.path.join(paths.REFERENCE, "content-sufficiency.yaml")
 BENCHMARK_PATH = os.path.join(paths.REFERENCE, "quality-benchmark.yaml")
 # Where the content data file of the commit played is kept, under the records directory, for
 # the content-sufficiency step (scripts/wgf_sufficiency) to measure the build that was played.
-# The contact test's frames (bot.spec.ts, `contact-<n>-at` / `-after`): crops of the screen
-# around a turn, not screens, so they are left out of the report's frames.
+# The contact test's frames (bot.spec.ts, `contact-<n>-at` / `-after` / `-later`): crops of the
+# screen around a turn, not screens, so they are left out of the report's frames.
 CONTACT_FRAME_PREFIX = "contact-"
 CONTENT_DATA = "public/content/units.json"
 CONTENT_COPY = os.path.join("content", "units.json")
@@ -591,8 +591,8 @@ class PlayabilityStep(WorkflowStep):
         """The contact test's CFG (core/reference/play-realism.yaml `contact`, with the mover
         rules of `physics`): on a build of a dimension it is judged on, the oracle plays for at
         most `window_s` on `projects`, its clock stepped `frame_ms` a frame, freezing the page on
-        each reversal of a mover of `roles` for a frame of it and another `after_frames` frames
-        later, at most `max_captures` times. Any other
+        each reversal of a mover of `roles` for a frame of it, another `after_frames` frames
+        later and a third as many after that, at most `max_captures` times. Any other
         build: not asked, with why."""
         contact = rules.get("contact") or {}
         bars = rules.get("physics") or {}

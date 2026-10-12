@@ -399,10 +399,10 @@ families:
     dimension: player_facing
     class: heuristic
     when: reported
-    checks: [play-realism:physics.undrawn_collision, play-realism:physics.collider_size]
+    checks: [play-realism:physics.undrawn_collision, play-realism:physics.collider_size, play-realism:physics.contact_drawn, play-realism:physics.drawn_extent]
     measures: No collision with something not drawn, and colliders the size of their sprites, on a 2D board with moving bodies.
-    method: The probe's bodies against the drawn frame.
-    limits: Only bodies the probe reports; a 3D camera's screen positions are not judged.
+    method: The probe's bodies against the drawn frame, and the pixels of frames frozen where a body turned.
+    limits: Only bodies the probe reports; where a body was and its collider are the game's own report; a 3D camera's screen positions are not judged.
     cannot_justify: That a hit or a miss feels fair.
   - id: visual-judge
     label: Visual judge

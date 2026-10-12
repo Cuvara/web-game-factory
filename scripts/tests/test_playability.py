@@ -2348,5 +2348,46 @@ class Scenarios(unittest.TestCase):
         self.assertEqual(ArtifactContracts()("playability-report", report), [])
 
 
+class ReportIdentity(unittest.TestCase):
+    """K7 #10: the greybox's and develop's playability reports minted the same artifact id
+    (`wgf:playability-report:<title>:<date>-<execution>`: each step counts its executions
+    from 1) - five pairs in the 2D run of 2026-10-05, six in the 3D run - so a ledger entry
+    naming a report by id could not say which one it was. The greybox phase's reports carry
+    the phase in their scope; the develop loop's ids are unchanged."""
+
+    CHECKS = [{"id": "idle.grace", "project": "desktop", "status": "PASS", "required": True,
+               "summary": "with no input for 10000 ms, play was not lost"}]
+
+    @staticmethod
+    def mint(step_id, params, execution=1):
+        from wgf_playability.step import PlayabilityStep as Step
+
+        class Log:
+            def __getattr__(self, name):
+                return lambda *a, **k: None
+
+        step = Step(types.SimpleNamespace(params=params, id=step_id))
+        step.clock = staticmethod(lambda: "2026-10-05T08:14:20Z")
+        result = step._finish(
+            types.SimpleNamespace(logger=Log(), execution=execution, current_step=step_id),
+            types.SimpleNamespace(refs={}), "demo", "b" * 40,
+            [dict(c) for c in ReportIdentity.CHECKS], [], {}, None,
+            [{"id": "desktop", "viewport": {"width": 1280, "height": 720}, "ran": True}])
+        report = result.artifacts[0].content
+        assert ArtifactContracts()("playability-report", report) == []
+        return report["provenance"]["artifact_id"]
+
+    def test_greybox_and_develop_playability_reports_have_distinct_ids(self):
+        for execution in (1, 2, 6):
+            greybox = self.mint("greybox-playability", {"phase": "greybox"}, execution)
+            develop = self.mint("playability", {}, execution)
+            self.assertNotEqual(greybox, develop)
+        # the develop loop's ids are what they were; the greybox's name its phase
+        self.assertEqual(self.mint("playability", {}, 3),
+                         "wgf:playability-report:demo:20261005-03")
+        self.assertEqual(self.mint("greybox-playability", {"phase": "greybox"}, 3),
+                         "wgf:playability-report:demo-greybox:20261005-03")
+
+
 if __name__ == "__main__":
     unittest.main()

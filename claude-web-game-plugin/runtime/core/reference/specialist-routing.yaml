@@ -32,9 +32,11 @@
 #        routed by its own id whatever dimension scores it. Play realism's checks
 #        (play-realism.yaml) in playability-report; qa-report `verification_checks`: a
 #        browser-QA defect (browser-qa.yaml) routed by the check it was made from.
-# 1.7.0: the baseline comparison's checks (baseline.*, core/reference/baseline-compare.yaml)
+# 1.7.0: `ledger.noted_on_pass` - a passing report's own findings at the listed severities
+#        are recorded in the ledger (noted), never routed and never holding the build.
+# 1.8.0: the baseline comparison's checks (baseline.*, core/reference/baseline-compare.yaml)
 #        in playability-report.
-version: 1.7.0
+version: 1.8.0
 
 # The quality dimensions, as the quality-finding schema enumerates them.
 dimensions: [content, level-design, difficulty, progression, gameplay, art-2d, environment-3d, lighting-material, ui, audio, feel, store-copy, platform, art-direction, performance, browser, compliance]
@@ -107,6 +109,15 @@ default_dimension: gameplay
 # `blocker`: the producer failed the build on it; `major`: a defect it saw beside them.
 ledger:
   blocking_severities: [blocker, major]
+  # A report that PASSES can still name findings of its own: a visual judge that passes a
+  # build lists what it saw beside the verdict (the 2026-10 3D run: visual-qa PASS with two
+  # major findings, never recorded). Per producer, the severities of such findings the
+  # ledger records as `noted`: detected and classified to their owner, never routed, and
+  # never holding the build - the producer passed it, and its verdict stands. A noted
+  # record is verified when a newer report of the producer no longer lists it, and becomes
+  # an ordinary finding when a failing report raises it (docs/specialist-routing.md).
+  noted_on_pass:
+    visual-qa-report: [blocker, major]
 
 # Route order across a build's groups. `design` first: a scope or content increase the
 # design must state changes what every other group would be built on, so the others are

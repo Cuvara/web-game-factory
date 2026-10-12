@@ -36,7 +36,8 @@ A measurement that may not count is refused with its rule and reason - never dro
                     promote cannot re-verify, a person's G4 decision
     duplicate       a hash-identical copy of a report or pair already counted: counted once
     no-repair       a measured failure the ledger never re-measured passing, or a repair
-                    the run's newest ledger has reopened since
+                    the run's newest ledger has reopened since; or a pass (verifying or a
+                    sample) by a report that still listed the finding beside its pass
 
 and what caps a pair at single-run: `unstable` (the ledger's verdicts for the check
 alternate - a pass, then a failure again; or a failure and a pass on one commit),
@@ -109,15 +110,51 @@ def _measurement(m):
             "frames": frames}
 
 
+# A history note starting with this is a PASSING report's listing of a noted record
+# (wgf_triage.lifecycle.NOTED_PREFIX): its detection is not a measured failure.
+NOTED = "noted:"
+# A history note starting with this says a PASSING report still listed an ordinary record
+# (wgf_triage.lifecycle, the noted pass): a pass at that report's seq is the judge still
+# naming the defect beside its verdict - never a measured repair, nor a repeat of one.
+LISTED = "listed by a passing"
+
+
+def _listed_seqs(history):
+    """The run-local seqs of the passing reports that still listed the finding."""
+    return {h.get("seq") for h in history or () if isinstance(h, dict)
+            and isinstance(h.get("seq"), int)
+            and str(h.get("note") or "").startswith(LISTED)}
+
+
+def _mark_listed(measurement, listed):
+    """`measurement` (a _measurement), marked `listed` when its report still listed the
+    finding."""
+    if isinstance(measurement, dict) and measurement.get("seq") in listed:
+        measurement["listed"] = True
+    return measurement
+
+
+def _failure(entry):
+    """Whether a ledger history entry is a measured failure of the finding: its detection
+    (unless a passing report's, noted) or its reopening."""
+    if not isinstance(entry, dict):
+        return False
+    status, note = entry.get("status"), str(entry.get("note") or "")
+    if note.startswith(NOTED):
+        return False
+    return status == "detected" or (status == "classified" and note.startswith("reopened"))
+
+
 def _outcomes(history):
     """[{"verdict": FAIL|PASS, "commit"}] the ledger's history records of the finding's own
-    measurements, in order: detected and reopened are failures, verified is a pass."""
+    measurements, in order: detected and reopened are failures, verified is a pass. A noted
+    detection - named by a report that PASSED - is neither."""
     out = []
     for entry in history or ():
         if not isinstance(entry, dict):
             continue
-        status, note = entry.get("status"), str(entry.get("note") or "")
-        if status == "detected" or (status == "classified" and note.startswith("reopened")):
+        status = entry.get("status")
+        if _failure(entry):
             out.append({"verdict": "FAIL", "commit": entry.get("build")})
         elif status == "verified":
             out.append({"verdict": "PASS", "commit": entry.get("build")})
@@ -136,10 +173,15 @@ def snapshot(record, ledger=None, classify=None):
     history = record.get("history") or []
     detected = next((h for h in history if isinstance(h, dict)
                      and h.get("status") == "detected"), {})
+    # The failure a verification is measured against: the detection - or, when a passing
+    # report detected it (noted), the first measured failure after it (the failing report
+    # that raised it); none when nothing ever failed it (a judge's silence is not a repair).
+    failed = detected if _failure(detected) else next(
+        (h for h in history if _failure(h)), {})
     before = verification.get("before") or record.get("failed_measurement") or (
-        {"artifact_id": detected.get("by"), "content_hash": detected.get("content_hash"),
-         "commit": detected.get("build"), "seq": detected.get("seq"), "status": "FAIL"}
-        if detected else None)
+        {"artifact_id": failed.get("by"), "content_hash": failed.get("content_hash"),
+         "commit": failed.get("build"), "seq": failed.get("seq"), "status": "FAIL"}
+        if failed else None)
     after = verification.get("after")
     if after is None and verification:
         after = {"artifact_id": verification.get("artifact_id"),
@@ -148,6 +190,7 @@ def snapshot(record, ledger=None, classify=None):
                  "seq": verification.get("seq"),
                  "status": ("PASS" if verification.get("verdict") == "passed"
                             else "FAIL" if verification.get("observed") == "fails" else None)}
+    listed = _listed_seqs(history)
     check, klass = (None, None)
     if classify is not None:
         check, klass = classify(source.get("producer"), source.get("check"))
@@ -156,10 +199,12 @@ def snapshot(record, ledger=None, classify=None):
             "check": check, "check_id": source.get("check"), "project": source.get("project"),
             "class": klass, "status": record.get("status"),
             "verdict": verification.get("verdict"),
-            "before": _measurement(before), "after": _measurement(after),
+            "before": _measurement(before),
+            "after": _mark_listed(_measurement(after), listed),
             "same_scenario": comparison.get("same_scenario"),
             "differences": list(comparison.get("differences") or []),
-            "samples": [_measurement(s) for s in verification.get("samples") or ()
+            "samples": [_mark_listed(_measurement(s), listed)
+                        for s in verification.get("samples") or ()
                         if isinstance(s, dict)],
             "detected": {"artifact_id": detected.get("by"),
                          "content_hash": detected.get("content_hash"),
@@ -289,6 +334,11 @@ def derive(sources, proposed=()):
                     "repair did not hold" + (f" ({why_unstable})" if why_unstable else ""),
                     after)
             continue
+        if after.get("listed"):
+            _refuse(refused, source, "no-repair", f"{snap.get('finding')}: the passing report "
+                    "that verified it still lists it - the judge still saw the defect beside "
+                    "its pass, not a repair", after)
+            continue
         if snap.get("verdict") != "passed" or before.get("status") != "FAIL" \
                 or after.get("status") != "PASS":
             _refuse(refused, source, "no-repair", f"{snap.get('finding')}: the ledger's "
@@ -348,6 +398,11 @@ def derive(sources, proposed=()):
             if sample.get("seq") == after.get("seq") and \
                     sample.get("content_hash") == after.get("content_hash"):
                 continue  # the verifying measurement itself, kept as the first sample
+            if sample.get("listed"):
+                _refuse(refused, source, "no-repair", f"{snap.get('finding')}: a later passing "
+                        "report that still lists it - the judge still saw the defect, not a "
+                        "repeat of the repair", sample)
+                continue
             if sample.get("commit") and sample.get("commit") == before.get("commit"):
                 _refuse(refused, source, "same-build", f"{snap.get('finding')}: a later pass on "
                         f"the commit it failed on ({_short(sample.get('commit'))}) - a re-play "
@@ -430,8 +485,8 @@ def derive(sources, proposed=()):
         why = (f"reproduced: {first['finding']} FAILED on {_short(first['before'])}, PASSED on "
                f"{_short(first['after'])} and passed again in {first['repeats']} later "
                f"independent measurement(s) ({first['class']}); only one context - validation "
-               "needs a second run, or a repair on other builds"
-               + (f" ({len(reproduced)} scenarios of one run and build are one context)"
+               "needs the repair reproduced on other builds"
+               + (f" ({len(reproduced)} measurements of the same builds are one context)"
                   if len(reproduced) > 1 else ""))
     elif counted:
         first = counted[0]

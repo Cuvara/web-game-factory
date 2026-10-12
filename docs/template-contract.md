@@ -34,7 +34,7 @@ template that predates them is now refused, which is exactly what a major means.
 **Contract 2.1.0** (Factory 2.8.0): CI never publishes a game to a portal - publication is the
 Factory's `publish` group, behind a person's G6 (`docs/publish-module.md`) - so
 `.github/workflows/publish.yml` and `scripts/publish/` are no longer required. A repository
-without them is accepted; the pinned template (v1.2.0) still ships both, and the drift test
+without them is accepted; the pinned template (v1.2.1) still ships both, and the drift test
 still passes against it because removing an assumption never breaks it. Also unversioned:
 `PLATFORM_REGISTRY` names the adapter registry `SOURCE_PATHS` already required, because its
 `KNOWN_PLATFORM_IDS` are now read - `workspace/config/template.lock.json` `platform_adapters`
@@ -58,10 +58,11 @@ by the template's naming convention: `packages/<engine without "js">-framework/`
 | Forwarded flags (`SCRIPT_FLAGS`) | `release:package --release --platform`; `release:manifest --release --version --kind --state` | release |
 | `pnpm exec` tools (`EXEC_TOOLS`) | `vitest`, `tsc` | sdk |
 | Node CLIs (`NODE_CLIS`) | `scripts/verify/collect-facts.mjs --platform --out`; `scripts/verify/evaluate-assertions.mjs --platform --facts --out` | verify (policy) |
+| Portal audits (`PORTAL_AUDITS_DIR`, `portal_audit_dir`) | a template's own audit of one platform's bundle, named as reference data (`core/reference/portal-sdks.yaml` `audit`: CLI, report, result id - at v1.2.0 `scripts/crazygames-audit.mjs`, `crazygames-audit.json`, `unexpected_dependencies`), run as `node <cli> --dir <bundle> --out build/portal-audits/<platform>`. Optional: used when the checkout ships the CLI (contract 2.1.0 log, Factory 2.8.0); `test_portal_sdks` holds the named CLI to the pin | verify (`platform.foreign-sdk:<id>`, beside the Factory's own scan) |
 | Build target (`build_target`) | one bundle per build; it boots game.config.yaml's first `required` platform, else its first (`src/core/config.ts` `primaryPlatform`, `scripts/build/game-config-plugin.ts`); no `build:platforms` | verify (`platform.build-target:<id>`, and which platform is built last), release (one bundle: packages only the target) |
 | Per-platform builds (`GAME_CONFIG_ENV`, `PLATFORM_BUILDS_DIR`, `platform_dist_dir`, `platform_build_config`, `platform_build_record`, `PLATFORM_BUILDS_INDEX`) | `WGF_GAME_CONFIG=<path>` makes `vite build`, `collect-facts`, `release:package` and `release:manifest` read that config instead of game.config.yaml; the Factory writes `build/platforms/<id>/{game.config.json,dist/,build.json}` and `build/platforms/index.json` under the git-ignored `/build/` | verify (one build per platform, facts per bundle), release (`release:package --platform <id>` per bundle) |
 | Contract 2 (`CONTRACT_MARKER`, `template_contract_of`, `SCRIPT_BUILD_PLATFORMS`, `builds_per_platform`) | `package.json` `wgf.template.contract` (absent: 1) and a `build:platforms` script: the repository builds its platforms itself into the same layout. Recognized when present, required nowhere | verify, release |
-| Outputs (`OUTPUTS`) | template-named: `build/runtime-facts.json`, `build/sdk-conformance.json`, `build/facts/<platform>.json`, `release/<id>/{packages.json,checksums.txt,manifest.json}`. Factory-named: `build/assertions/<platform>.json`, `build/verification/gameplay-session.json`, `build/verification/playwright-e2e.json` | verify, sdk, release |
+| Outputs (`OUTPUTS`) | template-named: `build/runtime-facts.json`, `build/sdk-conformance.json`, `build/facts/<platform>.json`, `release/<id>/{packages.json,checksums.txt,manifest.json}`. Factory-named: `build/portal-audits/<platform>/<report>` (the directory the Factory's `--out`, the report's name the audit's own), `build/assertions/<platform>.json`, `build/verification/gameplay-session.json`, `build/verification/playwright-e2e.json` | verify, sdk, release |
 | `game.config.yaml` | `game.id`, `game.version`, `engine.type` ∈ `ENGINES`, `platforms[]` `{id, profile, role}`, `monetization.ad_kinds`, `build.command`, `build.output` (default `dist`), `verification.mobile_test` | init, verify, release, develop |
 | Test projects | Playwright `desktop`, `mobile`, `verify`; Vitest `unit`, `integration`, `sdk` | verify (gameplay, runtime facts), sdk |
 | `@aspect` tags (`ASPECTS`) | `boot`, `loading`, `start`, `input`, `core-loop`, `progression`, `game-over`, `restart`, `pause-resume`, `responsive` | verify (gameplay), the developer brief |
@@ -150,7 +151,7 @@ schema; a build without one is played as before, and the check that needs it is
 
 | Field | For | Read by |
 |---|---|---|
-| `entities[].collider` `{shape: rect\|circle, x, y, w, h}` | the body the simulation collides, projected to the screen beside the drawn box | `physics.undrawn_collision`, `physics.collider_size` |
+| `entities[].collider` `{shape: rect\|circle, x, y, w, h}` | the body the simulation collides, projected to the screen beside the drawn box | `physics.undrawn_collision`, `physics.collider_size`, and on the pixels of the contact frames `physics.contact_drawn` (where the turn was) and `physics.drawn_extent` (what is drawn over it; unmeasured without it). Neither 2026-10 validation game reports it yet: the game-side follow-up is a probe that does (the 9-line harness patch in `scripts/tests/fixtures/real/play-contact/README.md` is one) |
 | `entities[].body` `{x, y, w, h}`, `entities[].halo` | the opaque drawn body inside a glow or halo (`halo: true` is declared with the body) | `physics.collider_size` (judged on the body when reported) |
 | `playfield` `{x, y, w, h}` | a 2D board: the drawn bounds whose edges stop what moves | `physics.undrawn_collision` |
 | `track` `{offset, half_width}` | a path game: the player's signed offset from the centre line, and half the width there | `naive.drift` |

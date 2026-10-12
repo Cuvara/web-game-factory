@@ -63,7 +63,7 @@ browser QA for boot, runtime, visibility and the context menu, UI for layout, au
 sound, the performance engineer for timings and weight, gameplay for the session's outcomes.
 A defect no table entry names keeps its id and goes to the generalist, as before.
 
-The baseline comparison (specialist-routing 1.7.0, [baseline-comparison.md](baseline-comparison.md))
+The baseline comparison (specialist-routing 1.8.0, [baseline-comparison.md](baseline-comparison.md))
 routes a candidate made worse than the build a person accepted: `baseline.` to the level
 designer (layouts, extents, pars, clear times), `units_kept` and `unit_kinds` to content,
 `difficulty_order` and `clear_rate` to difficulty, `tuning` and `entity_size` to gameplay and
@@ -154,6 +154,8 @@ re-entry. The step:
    one build, and the next pending group is routed. Otherwise the step normalizes the current
    build's failing reports and the G4 decision that sent the build back. It drops findings
    routed `assets` by a report that the assets step has run after, because that work is done.
+   A passing report's own blocker and major findings are recorded in the ledger as `noted`
+   and never routed ([below](#a-passing-reports-own-findings-noted)).
 3. **Groups by owner, in order.** `design` comes first and alone: the other groups are
    `deferred`, and the gates measure the rebuilt game again. Then `assets` (one group), then
    each develop specialist. A group whose label the step's `on:` does not map is `held`, with
@@ -341,8 +343,10 @@ a fix whose build then fails the check is held `regressed` - a repair held back,
 broken build passed (independent review r2, finding 2).
 
 Every history entry an artifact caused names it by `by` (the artifact id) and, where known,
-its `content_hash` and run-local `seq`: greybox and develop playability reports can share an
-artifact id, and only the hash and seq say which one detected or verified a finding.
+its `content_hash` and run-local `seq`: greybox and develop playability reports of a run
+before the greybox's ids carried their phase (`wgf:playability-report:<title>-greybox:...`,
+K7) share artifact ids, and only the hash and seq say which one detected or verified a
+finding there.
 
 Tests: `scripts/tests/test_triage.py` `ScenarioVerification` - the repair verified with both
 measurements, a newer bot still verifying with the comparison called weaker, each way of
@@ -363,6 +367,84 @@ person's G4 finding waits for G4 (`ledger.awaiting`). Release advances the ledge
 on the newest reports and G4's decision, and refuses (`open-findings`) while any is open.
 Verified is enough there: the release step's other refusals already hold every report to the
 build it ships. A minor finding never holds a build.
+
+### A passing report's own findings: noted
+
+A report can PASS and still name findings of its own: the visual judge lists what it saw
+beside its verdict. In the 2026-10 3D run, visual-qa v3 passed the build with two MAJOR
+findings - the objective banner covers the goal, the marble loses contrast on dusk worlds -
+and the triage that read it recorded neither, because only failing reports were normalized
+(retro H12). `core/reference/specialist-routing.yaml` 1.7.0 `ledger.noted_on_pass` lists,
+per producer, the severities of such findings the ledger records (`visual-qa-report:
+[blocker, major]`). Each one is:
+
+- **recorded**, `detected` and `classified` to its owner like any finding, with a `noted`
+  block (quality-finding record, triage-report 1.4.0 / quality-report 1.6.0): the report,
+  its seq and hash, its verdict and why it is recorded; the triage-report lists them in
+  `noted`;
+- **never routed** - no triage assigns it, so no specialist visit is spent on what the gate
+  did not send back;
+- **never holding the build** - `ledger.blocking` leaves noted records out, so the quality
+  gate's `open`/`awaiting`, its verdict and release's `open-findings` refusal are exactly
+  what they were. The gate's own judgement of the same findings is unchanged: where a tier
+  holds a build on them, it is the quality floor that does (`floor.visual_major_findings` at
+  the release tier), not the ledger.
+
+It stays open while the producer's newest report still lists it (a later passing report
+listing it again is a history note), is verified (no fix recorded) when a newer report of
+the producer no longer lists it, and becomes an ordinary finding when the producer's newest
+report FAILS it - on every path that advances the ledger, so the quality gate and release
+(`ledger.remeasure`, which normalize no findings of their own) hold the build on it before
+any triage has read the failing report: `noted` is removed, an open record gets a
+`reopened: raised by a failing report ...` entry and a done one is reopened as any done
+record is, and the next triage routes it with that report's findings. A record that is not
+noted - raised earlier by a failing report - keeps the status a passing report's verdict
+leaves it in (a passing report re-measures it as any does), and its history says that report
+still listed it and what the status is. Minor findings of a passing report are not recorded:
+a minor never holds a build. The quality gate and release record noted findings too when they
+advance the ledger, so a passing report no triage reads is not lost.
+
+**A noted detection is not a measured failure** (K6.4). Its `detected` entry's note starts
+`noted:`, and so does the entry of a passing report listing it again after its verification;
+neither is counted as a FAIL by the ledger's memory of its checks (`lifecycle._recorded`, which
+baselines and regressions read) or by evidence strength (`wgf_knowledge.strength`: the
+outcomes history, and the `before` a verification is measured against). The first failure of a
+noted record is the failing report that raised it (`reopened`), so a lesson's FAIL->PASS pair
+is that report's commit to the fix's, never the passing report's; a noted record verified only
+because the judge stopped listing it has no measured failure at all and its strength is
+refused `no-repair` - a judge's silence is not a repair. A noted record that was verified, then
+raised by a failing report, keeps the flip (pass, then failure) in its outcomes, and
+the `unstable` cap holds. When a failing report raises a noted record of a producer that lists
+its checks, the failure the record keeps (`failed_measurement`) is that report's measurement,
+never the passing report's it was detected with.
+
+**A pass that still lists the finding is not a repair** (K6.4, evidence-strength 1.3.0). An
+ordinary record a passing report verifies - or adds a sample to - while still listing it at a
+severity `noted_on_pass` names keeps the status that verdict gives it: the producer's pass
+stands, and no gate outcome changes (holding it open would change what the quality gate and
+release decide, which a passing report never does). Its history says that report still listed
+it (`listed by a passing ...`, at the report's seq), and evidence strength refuses that pass
+`no-repair`, as the verification or as a sample: the judge still saw the defect.
+
+Known limitations (review r3, not changed):
+
+- The ledger's own memory of each check (`lifecycle._recorded`, `_regressed`) still reads a record verified while a
+  passing report listed it as a pass; this errs strict - a later failure of it can hold another fix `regressed`,
+  never verify one.
+- A record verified by a pass that no longer lists it, then listed again by later passing reports, keeps its
+  verifying pass: those samples are refused, but it stays `single-run` rather than being treated as reopened.
+- Only the severities `ledger.noted_on_pass` names (blocker, major) write the `listed by a passing` note: a pass
+  that lists the finding at minor still counts as a repair.
+- Ledgers written before triage-report 1.4.0 carry no `listed by a passing` notes, so their passes are not refused.
+
+Tests: `scripts/tests/test_triage.py` `PassingReportFindings` - the REAL 3D visual-qa v3
+(PASS, 3f394e2) replayed through the REAL triage v12 it was read by, on all of its real
+inputs (`fixtures/real/triage-hygiene`): the two majors recorded noted with the run's own
+route, groups and findings, and the same ledger and blocking set as without the rule; and,
+over fixture reports, the record staying open while listed, verified when gone, promoted by
+a failing report, held by the quality gate's remeasure without blocking it - and (review r1)
+raised by a failing report on the quality gate's path, open or done, and never counted as a
+measured failure by the ledger or by evidence strength.
 
 ### What the specialist brief carries
 

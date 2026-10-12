@@ -493,7 +493,7 @@ lessons:
     category: gameplay
     domain: game-feel
     classification: REQUIRED
-    revision: 1
+    revision: 2
     principle: >-
       What the simulation collides with is what the screen draws, because a body turning at
       nothing reads to a player as an invisible wall.
@@ -511,17 +511,24 @@ lessons:
     status: partial
     lifecycle: active
     introduced: {version: 2.8.0, date: 2026-10-07}
-    checks: [play-realism:physics.undrawn_collision, play-realism:physics.collider_size, gate-gaming:play-area-change, gate-gaming:sprite-size-without-collider]
+    checks: [play-realism:physics.undrawn_collision, play-realism:physics.collider_size, play-realism:physics.contact_drawn, play-realism:physics.drawn_extent, gate-gaming:play-area-change, gate-gaming:sprite-size-without-collider]
     tests:
       catches:
         - scripts/tests/test_play_realism.py::test_L11_the_regressed_2d_head_turns_at_an_undrawn_ceiling
         - scripts/tests/test_play_realism.py::test_a_sprite_enlarged_with_the_collider_unchanged_still_fails
         - scripts/tests/test_play_realism.py::test_a_collider_is_never_passed_without_a_drawn_body
         - scripts/tests/test_review_gaming.py::test_a_play_area_value_in_a_layout_is_flagged_whatever_its_name
+        - scripts/tests/test_play_contact.py::test_H2_the_ceiling_commit_turns_the_ball_where_nothing_is_drawn
+        - scripts/tests/test_play_contact.py::test_H3_the_enlarged_ball_is_drawn_far_larger_than_its_collider
+        - scripts/tests/test_play_contact.py::test_H3_a_body_reported_the_collider_size_passes_the_probe_check_and_fails_the_pixels
+        - scripts/tests/test_play_contact.py::test_a_surface_the_probe_reports_but_the_screen_does_not_draw_fails
       passes:
         - scripts/tests/test_play_realism.py::test_L11_the_accepted_2d_build_never_turns_at_nothing
-      generalizes: []
-    gap: a 2D build's turns are judged at runtime against what is drawn, and a reported collider against its drawn body; a 3D build's screen-space turns are not judged (a camera moves), so there only the code-diff heuristic holds it.
+        - scripts/tests/test_play_contact.py::test_H2_the_accepted_build_turns_only_at_drawn_surfaces
+        - scripts/tests/test_play_contact.py::test_H3_the_collider_grown_to_the_disc_passes_on_its_pixels
+      generalizes:
+        - scripts/tests/test_play_contact.py::test_a_patrol_turning_at_a_drawn_pillar_passes_and_at_nothing_fails
+    gap: a 2D build's turns are judged at runtime against what is drawn - on the probe's boxes and, at the turns the bot freezes on, on the pixels - and a reported collider against its drawn body, reported and measured; where the mover was and its collider stay the game's own report, and a build that reports no collider is unmeasured on its drawn extent. A 3D build's screen-space turns are not judged (a camera moves), so there only the code-diff heuristic holds it.
 
   - id: L12
     title: A run adopting an accepted game rewrote it

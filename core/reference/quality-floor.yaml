@@ -665,8 +665,8 @@ universal:
   - id: floor.physics_drawn
     dimension: gameplay
     scorecard: feel
-    metric: share of the physics-vs-drawing checks that pass - every turn at a drawn surface, the drawn body the size of the collider
-    evaluate: {kind: checks, report: playability-report, checks: [physics.undrawn_collision, physics.collider_size], required_only: passed, applies: reported}
+    metric: share of the physics-vs-drawing checks that pass - every turn at a drawn surface, the drawn body the size of the collider, both as the probe reports them and as the pixels show them
+    evaluate: {kind: checks, report: playability-report, checks: [physics.undrawn_collision, physics.collider_size, physics.contact_drawn, physics.drawn_extent], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
     severity: {release: blocker}

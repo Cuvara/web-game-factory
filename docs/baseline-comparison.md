@@ -12,7 +12,7 @@ what got worse beyond a stated tolerance. It is deterministic and uses no AI jud
 | Reference data | `core/reference/baseline-compare.yaml` (1.0.0), pinned by new-game 18 |
 | Report | `playability-report` 1.5.0: the `baseline.*` checks and `baseline_comparison` |
 | Check tiers | `core/reference/check-tiers.yaml` 1.4.0, source `baseline-compare` |
-| Routing | `core/reference/specialist-routing.yaml` 1.7.0 (`baseline.` prefixes) |
+| Routing | `core/reference/specialist-routing.yaml` 1.8.0 (`baseline.` prefixes) |
 | Quality gate | `core/reference/quality-floor.yaml` 1.3.0 `floor.accepted_baseline` (content, blocker) |
 | Assessment | `core/reference/quality-assessment.yaml` 1.1.0 families `accepted-content`, `accepted-on-screen`, `accepted-play`, `accepted-timing` |
 | Lesson | L8 (`core/reference/lessons.yaml`) |
@@ -138,7 +138,7 @@ a pass, and says why:
 
 ## Findings and routing
 
-Triage reads the checks like every playability check (specialist-routing 1.7.0): `baseline.`
+Triage reads the checks like every playability check (specialist-routing 1.8.0): `baseline.`
 to level design; `units_kept` and `unit_kinds` to content; `difficulty_order` and `clear_rate`
 to difficulty; `tuning` and `entity_size` to gameplay; `responsiveness` to the performance
 engineer. The quality gate's `floor.accepted_baseline` (content dimension, blocker at mvp and

@@ -55,6 +55,8 @@ __all__ = [
     "EXEC_VITEST", "EXEC_TSC", "EXEC_TOOLS",
     # node CLIs
     "COLLECT_FACTS", "EVALUATE_ASSERTIONS", "NODE_CLIS",
+    # where a template's own portal audit is asked to write (core/reference/portal-sdks.yaml)
+    "PORTAL_AUDITS_DIR", "portal_audit_dir",
     # outputs
     "RUNTIME_FACTS", "SDK_CONFORMANCE_REPORT", "FACTS_DIR", "ASSERTIONS_DIR",
     "GAMEPLAY_SESSION", "PLAYWRIGHT_E2E_REPORT", "RELEASE_ROOT", "RELEASE_PACKAGES",
@@ -98,11 +100,16 @@ CONTRACT_LOG = (
                        "required, because its KNOWN_PLATFORM_IDS is now read (the template "
                        "lock's platform_adapters, held equal to it): no entry changed what a "
                        "repository must contain"),
+    ("2.1.0", "2.8.0", "PORTAL_AUDITS_DIR: the verify step runs a template's own portal "
+                       "audit, when the checkout ships the CLI core/reference/portal-sdks.yaml "
+                       "names for a platform, with --dir <bundle> --out "
+                       "build/portal-audits/<platform> (platform.foreign-sdk:<id>, beside the "
+                       "Factory's own scan); a repository without it is accepted"),
 )
 # contract_digest() of the entries CONTRACT_LOG's last line describes. A change to any entry
 # fails test_template_contract until it is recorded: bump CONTRACT_VERSION if acceptance
 # changed (above), add a CONTRACT_LOG line either way, then update this.
-CONTRACT_DIGEST = "sha256:328b112aa6ccb166cd17d6e364b3e9e507978e424dbc5804ecb9bc629259fba6"
+CONTRACT_DIGEST = "sha256:b67cc2d3b317adfdcdab0e4eda6738d5d13aad1f6607012d1ff1f72a30cb2765"
 
 # -- engines ----------------------------------------------------------------------------------
 
@@ -326,6 +333,18 @@ NODE_CLIS = {
     EVALUATE_ASSERTIONS: ("--platform", "--facts", "--out"),
 }
 
+# Where the verify step asks a template's own portal audit to write (`--out`). Which audit
+# a platform has - its CLI, report and result id - is reference data, not kernel code:
+# core/reference/portal-sdks.yaml `audit` (wgflib.portal_sdks). Optional: a checkout without
+# the CLI is judged by the Factory's own scan alone.
+PORTAL_AUDITS_DIR = "build/portal-audits"
+
+
+def portal_audit_dir(platform_id):
+    """build/portal-audits/<id>: where the Factory asks a template audit to write."""
+    return f"{PORTAL_AUDITS_DIR}/{platform_id}"
+
+
 # -- outputs: files written in the checkout -----------------------------------------------------
 
 RUNTIME_FACTS = "build/runtime-facts.json"
@@ -359,6 +378,10 @@ OUTPUTS = {
     PLATFORM_BUILDS_DIR + "/<platform>/build.json": ("the verify step, per platform", "factory"),
     PLATFORM_BUILDS_INDEX: ("the verify step", "factory"),
     PLAYWRIGHT_E2E_REPORT: (SCRIPT_TEST_E2E, "factory"),
+    # The directory is the Factory's (--out); the report's name is the audit's own, named
+    # with its CLI in core/reference/portal-sdks.yaml.
+    PORTAL_AUDITS_DIR + "/<platform>/<report>": ("a template portal audit, per "
+                                                 "core/reference/portal-sdks.yaml", "factory"),
 }
 
 

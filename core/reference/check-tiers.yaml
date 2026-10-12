@@ -300,12 +300,12 @@ sources:
       not_applicable: {field: measured.unmeasured, values: [no-accepted-build]}
       covered: {field: measured.gate, values: [advisory, clear-rate-failed]}
       not_reported:
-        - checks: [physics.undrawn_collision, physics.collider_size]
+        - checks: [physics.undrawn_collision, physics.collider_size, physics.contact_drawn, physics.drawn_extent]
           verdict: [PASS, FAIL]
           ran: runtime.
           render: [3d]
           why: judged on a 2D board only - a 3D build's screen positions are a moving camera's
-        - checks: [physics.undrawn_collision, physics.collider_size]
+        - checks: [physics.undrawn_collision, physics.collider_size, physics.contact_drawn, physics.drawn_extent]
           verdict: [PASS, FAIL]
           ran: runtime.
           render: [2d]
@@ -330,6 +330,8 @@ sources:
     checks:
       physics.undrawn_collision: hard
       physics.collider_size: quality
+      physics.contact_drawn: hard
+      physics.drawn_extent: quality
       naive.setbacks: quality
       naive.drift: quality
       naive.alignment: quality

@@ -162,6 +162,24 @@ const CFG = JSON.parse(fs.readFileSync(process.env.WGF_PLAY_CONFIG as string, "u
   risk_attempts?: number;
   risk_attempt_ms?: number;
   risk_ms?: number;
+  // Contact frames (play-realism.yaml `contact`): on a 2D build, the oracle plays for
+  // at most contact_ms on contact_projects, and each reversal of a mover of contact_roles
+  // (at contact_min_speed px a frame, jumps over contact_max_step ignored, at least
+  // contact_gap_ms apart) freezes the page for a frame of it, then another contact_after_frames
+  // frames later, and again as many after that; at most contact_max of them. Each frame's timestamp is stepped by
+  // contact_frame_ms. contact_applies false: not recorded, with why.
+  contact_applies?: boolean;
+  contact_reason?: string;
+  contact_projects?: string[];
+  contact_roles?: string[];
+  contact_ms?: number;
+  contact_max?: number;
+  contact_gap_ms?: number;
+  contact_min_speed?: number;
+  contact_max_step?: number;
+  contact_tolerance?: number;
+  contact_after_frames?: number;
+  contact_frame_ms?: number;
 };
 const URL = "/?wgf-probe=1";
 
@@ -1173,6 +1191,410 @@ test("win: the oracle plays well", async ({ page }, info) => {
   }
   await finish(page, info, "win", { ...started, reached, inputs, series: series.filter((_, i) => i % 5 === 0 || i === series.length - 1),
                                    sampled, ...watch.record(), frames }, health);
+});
+
+// -- Contact: frozen frames where a mover turns ------------------------------------------------
+//
+// The physics checks above read only what the probe says: a turn is "at a drawn surface" when
+// a reported box is there, and a collider is "drawn its size" when the reported body is. A
+// build can satisfy both without drawing anything (a playfield edge or an entity box reported
+// where nothing is painted; a body declared the collider's size inside a much larger sprite).
+// This test keeps the PIXELS: on a 2D build (CFG.contact_applies) the oracle plays, and the
+// moment a mover of CFG.contact_roles reverses, the page is frozen on the frame that shows it -
+// every requestAnimationFrame callback the page asks for is held, so the canvas keeps the frame
+// the snapshot describes - and the bot keeps that frame (`contact-<n>-at`), lets the game run
+// CFG.contact_after_frames frames, freezes it again and keeps a second frame
+// (`contact-<n>-after`), in which the mover has left the place it turned at, and as many frames
+// later a third (`contact-<n>-later`): what is still drawn at the contact then is not a spark of
+// the hit, and the mover is read away from the impact. Python
+// (realism.judge_contacts) reads the surface the mover turned at, and the mover's drawn
+// extent, off those two frames. The freeze holds the page's own callbacks only: nothing the
+// game computes is changed, and a frame it never drew is never shown.
+//
+// The page's clock is stepped: each frame's callbacks get a timestamp CFG.contact_frame_ms
+// after the last frame's, whatever the host took to draw it (`clock: frame-stepped`). A loop
+// that takes its delta from the frame's timestamp - the template's fixed-step loop does - then
+// moves one step per frame drawn, so a turn is seen where it happened even on a loaded host
+// (measured: 3-7 frames a second on the shared Windows host, 2026-10-10, where a ball moved
+// 30-40 px between frames). Game time runs slower than real time in this test only; timers on
+// the wall clock (setTimeout) and the input's own timing are untouched.
+
+// Installed before the page's scripts: requestAnimationFrame is wrapped so the bot can hold
+// every callback (the page freezes on the frame it last drew). At the start of each frame -
+// before the page's callbacks run, so the snapshot describes the frame on screen - the probe
+// is read and every mover's centre (its collider, else its drawn box) compared with the two
+// frames before: a reversal (a velocity sign change at min_speed on an axis) freezes the page,
+// with the last three snapshots kept for the bot. A turn at a surface that moved or is a
+// composite is frozen on too, marked `passing` (and counted in `passed`): the judge reads such a
+// surface where it is, not where the mover met it. A stop is not frozen on (the win test's
+// samples still judge it by the probe).
+function installContact(cfg: { roles: string[]; min_speed: number; max_step: number; gap_ms: number; tolerance: number;
+                               frame_ms: number }): void {
+  type Ent = [string, string, number, number, number, number, number, string | null, string | null,
+              [string, number, number, number, number] | null, [number, number, number, number] | null, boolean | null];
+  const w = window as unknown as Record<string, unknown>;
+  const raf = window.requestAnimationFrame.bind(window);
+  const pending = new Map<number, FrameRequestCallback>();
+  let held: number[] = [];
+  let next = 1;
+  const st = {
+    frozen: false, freezeIn: -1, armed: false, event: null as unknown, frames: [] as { t: number; e: Ent[]; pf: unknown }[],
+    lastAt: -1e9, seen: 0, movers: 0, passed: 0, turns: 0, gaps: [0, 0, 0, 0], prevReal: -1,
+    // Game time (the stepped clock) since the bot armed the hook: the bot's waits are on it, so
+    // a slow host does not end the window early.
+    armedT: -1, lastT: -1,
+  };
+  const tracks = new Map<string, { t: number; c: [number, number] }[]>();
+  // The stepped clock: the real timestamp of the frame being run, and the one handed out.
+  let real = -1;
+  let stepped = -1;
+  const clock = (t: number): number => {
+    if (t !== real) {
+      stepped = stepped < 0 ? t : stepped + cfg.frame_ms;
+      real = t;
+    }
+    return stepped;
+  };
+  let checked = -1;
+  const read = (): { e: Ent[]; pf: unknown; state: string } | null => {
+    const play = (w.__wgf__ as { play?: { snapshot(): { state: string; entities: Record<string, unknown>[]; playfield?: unknown } } } | undefined)?.play;
+    if (!play || typeof play.snapshot !== "function") return null;
+    try {
+      const s = play.snapshot();
+      const e = (s.entities ?? []).map((x) => {
+        const c = x.collider as { shape: string; x: number; y: number; w: number; h: number } | undefined;
+        const b = x.body as { x: number; y: number; w: number; h: number } | undefined;
+        return [x.id, x.role, x.visible ? 1 : 0, x.x, x.y, x.w, x.h, (x.asset as string) ?? null, (x.render as string) ?? null,
+                c ? [c.shape, c.x, c.y, c.w, c.h] : null, b ? [b.x, b.y, b.w, b.h] : null,
+                typeof x.halo === "boolean" ? x.halo : null] as Ent;
+      });
+      return { e, pf: s.playfield ?? null, state: s.state };
+    } catch {
+      return null;
+    }
+  };
+  // Whether the mover `id`, in the frame it turned (the one before the last read), touches -
+  // within the tolerance and its travel - a visible composite in that frame, or an entity that
+  // moved across the three frames around the turn in any of them (a paddle that moved under the
+  // ball inside the step that turned it shows under it only in the frame after).
+  const atPassing = (id: string, speed: number): boolean => {
+    const n = st.frames.length;
+    if (n < 2) return false;
+    const now = st.frames[n - 2].e;
+    const mover = now.find((e) => e[0] === id);
+    if (!mover) return false;
+    const m = mover[9] ? [mover[9][1], mover[9][2], mover[9][3], mover[9][4]] : [mover[3], mover[4], mover[5], mover[6]];
+    const tol = cfg.tolerance + speed;
+    const touches = (o: Ent): boolean =>
+      !(m[0] - tol > o[3] + o[5] || o[3] - tol > m[0] + m[2] || m[1] - tol > o[4] + o[6] || o[4] - tol > m[1] + m[3]);
+    for (const o of now) {
+      if (o[0] !== id && o[1] !== "ui" && o[2] && o[8] === "composite" && touches(o)) return true;
+    }
+    const boxes = new Map<string, Ent[]>();
+    for (const f of st.frames) {
+      for (const o of f.e) if (o[0] !== id && o[1] !== "ui" && o[2]) boxes.set(o[0], [...(boxes.get(o[0]) ?? []), o]);
+    }
+    for (const list of boxes.values()) {
+      const moved = list.some((o) => Math.max(Math.abs(o[3] - list[0][3]), Math.abs(o[4] - list[0][4])) >= cfg.min_speed);
+      if (moved && list.some(touches)) return true;
+    }
+    return false;
+  };
+  const check = (t: number, real: number): void => {
+    if (t === checked) return;
+    checked = t;
+    if (!st.armed && st.freezeIn < 0) return;
+    if (st.armed && st.armedT < 0) st.armedT = t;
+    st.lastT = t;
+    // The page's own pacing while armed (real time): gaps of <= 20, 40, 100 ms and longer.
+    if (st.prevReal >= 0) {
+      const gap = real - st.prevReal;
+      st.gaps[gap <= 20 ? 0 : gap <= 40 ? 1 : gap <= 100 ? 2 : 3] += 1;
+    }
+    st.prevReal = real;
+    const s = read();
+    if (!s) return;
+    st.frames.push({ t, e: s.e, pf: s.pf });
+    if (st.frames.length > 3) st.frames.shift();
+    if (st.freezeIn >= 0) {
+      if (st.freezeIn > 0) {
+        st.freezeIn -= 1;
+        return;
+      }
+      st.freezeIn = -1;
+      st.frozen = true;
+      st.event = { kind: "asked" };
+      return;
+    }
+    if (s.state !== "playing") {
+      tracks.clear();
+      return;
+    }
+    let movers = 0;
+    for (const x of s.e) {
+      if (!cfg.roles.includes(x[1]) || !x[2] || x[8] === "composite") continue;
+      movers += 1;
+      const box = x[9] ? [x[9][1], x[9][2], x[9][3], x[9][4]] : [x[3], x[4], x[5], x[6]];
+      const c: [number, number] = [box[0] + box[2] / 2, box[1] + box[3] / 2];
+      const track = tracks.get(x[0]) ?? [];
+      track.push({ t, c });
+      if (track.length > 3) track.shift();
+      tracks.set(x[0], track);
+      if (track.length < 3 || t - st.lastAt < cfg.gap_ms) continue;
+      const [a, b, n] = track;
+      const v1 = [b.c[0] - a.c[0], b.c[1] - a.c[1]];
+      const v2 = [n.c[0] - b.c[0], n.c[1] - b.c[1]];
+      if (Math.hypot(v1[0], v1[1]) > cfg.max_step || Math.hypot(v2[0], v2[1]) > cfg.max_step) continue;
+      const turns = [0, 1].filter((axis) => Math.abs(v1[axis]) >= cfg.min_speed && Math.abs(v2[axis]) >= cfg.min_speed
+                                            && v1[axis] * v2[axis] < 0)
+                           .map((axis) => ({ axis, sign: v1[axis] > 0 ? 1 : -1, speed: Math.abs(v1[axis]) }));
+      if (!turns.length) continue;
+      st.turns += 1;
+      st.lastAt = t;
+      // A turn at something that moves (a paddle) or at several things drawn as one box (a row
+      // of bricks, whose hit part a later frame cannot show): frozen on as well, marked, so a
+      // surface reported there is read where it is (an undrawn wall reported as a moving or
+      // composite box is not left to the probe's word).
+      const passing = atPassing(x[0], Math.max(...turns.map((u) => u.speed)));
+      if (passing) st.passed += 1;
+      st.frozen = true;
+      st.event = passing ? { kind: "reversal", id: x[0], turns, passing: true } : { kind: "reversal", id: x[0], turns };
+      return;
+    }
+    st.movers = Math.max(st.movers, movers);
+    if (movers) st.seen += 1;
+  };
+  window.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+    const id = next++;
+    pending.set(id, cb);
+    const run = (t: number): void => {
+      if (!pending.has(id)) return;
+      const now = clock(t);
+      if (!st.frozen) check(now, t);
+      if (st.frozen) {
+        held.push(id);
+        return;
+      }
+      pending.delete(id);
+      cb(now);
+    };
+    raf(run);
+    return id;
+  };
+  window.cancelAnimationFrame = (id: number): void => {
+    pending.delete(id);
+  };
+  w.__wgf_contact__ = {
+    state: () => ({ frozen: st.frozen, event: st.event, frames: st.frames, seen: st.seen, movers: st.movers,
+                    passed: st.passed, turns: st.turns, gaps: st.gaps,
+                    gameMs: st.armedT < 0 ? 0 : st.lastT - st.armedT }),
+    arm: (on: boolean) => {
+      st.armed = on;
+      if (on) st.armedT = -1;
+    },
+    freezeAfter: (frames: number) => { st.freezeIn = Math.max(0, frames); },
+    thaw: () => {
+      st.frozen = false;
+      st.freezeIn = -1;
+      st.prevReal = -1;
+      tracks.clear();
+      st.event = null;
+      const ids = held;
+      held = [];
+      for (const id of ids) {
+        raf((t) => {
+          const cb = pending.get(id);
+          if (!cb) return;
+          pending.delete(id);
+          cb(clock(t));
+        });
+      }
+    },
+  };
+}
+
+type ContactState = { frozen: boolean; event: Record<string, unknown> | null; frames: { t: number; e: unknown[]; pf: unknown }[];
+                      seen: number; movers: number; passed: number; turns: number; gaps: number[]; gameMs: number };
+
+// The frame `after_frames` frames on from a thawed page, kept with the same crop as `id`, or null.
+async function frozenAfter(page: Page, project: string, id: string, frames: string[], clip: Clip | null): Promise<Record<string, unknown> | null> {
+  await contactCall(page, "freezeAfter", CFG.contact_after_frames ?? 18);
+  let shot: Record<string, unknown> | null = null;
+  for (let i = 0; i < 400 && !shot; i += 1) {
+    await page.waitForTimeout(25);
+    if ((await contactState(page))?.frozen) shot = await frozenShot(page, project, id, frames, clip);
+  }
+  await contactCall(page, "thaw");
+  return shot;
+}
+
+async function contactState(page: Page): Promise<ContactState | null> {
+  return page.evaluate(() => {
+    const c = (window as unknown as { __wgf_contact__?: { state(): unknown } }).__wgf_contact__;
+    return c ? (c.state() as ContactState) : null;
+  });
+}
+
+async function contactCall(page: Page, name: "freezeAfter" | "thaw" | "arm", value: boolean | number = true): Promise<void> {
+  await page.evaluate(({ n, v }) => {
+    const c = (window as unknown as { __wgf_contact__?: Record<string, (a?: boolean | number) => void> }).__wgf_contact__;
+    c?.[n]?.(v);
+  }, { n: name, v: value });
+}
+
+// The frozen frame now: the snapshots the page kept, the frame, and whether the page was still
+// frozen on the same frame after the shot (a frame kept while the page moved is never judged).
+// The frame is the region `clip` around the place the mover turned, at one pixel per CSS px
+// (the snapshots' unit, whatever the device's pixel ratio), and the same region for the frame
+// after it, so the two can be compared pixel for pixel.
+type Clip = { x: number; y: number; width: number; height: number };
+async function frozenShot(page: Page, project: string, id: string, frames: string[], clip: Clip | null): Promise<Record<string, unknown> | null> {
+  const before = await contactState(page);
+  if (!before?.frozen) return null;
+  await page.screenshot({ path: path.join(dir(project), "frames", `${id}.png`), scale: "css", ...(clip ? { clip } : {}) });
+  frames.push(id);
+  const after = await contactState(page);
+  const same = Boolean(after?.frozen) && JSON.stringify(after?.frames?.at(-1)) === JSON.stringify(before.frames.at(-1));
+  return { frame: id, event: before.event, frames: before.frames, still: same, clip };
+}
+
+// The region kept around a turn: the mover's drawn box at the frame it turned, grown by
+// CONTACT_MARGIN times its larger side (at least CONTACT_MIN_PX) on every side, inside the
+// viewport - wide enough that the mover, read for its drawn extent in the frame after (0.3 s
+// of game time on), is still inside it with its window around it.
+const CONTACT_MARGIN = 5;
+const CONTACT_MIN_PX = 120;
+function contactClip(c: ContactState, viewport: { width: number; height: number } | null, last = false): Clip | null {
+  const id = (c.event as { id?: string } | null)?.id;
+  const at = last ? 1 : 2;
+  const turned = c.frames.length >= at ? (c.frames[c.frames.length - at].e as unknown[][]) : [];
+  const m = turned.find((e) => e[0] === id) as number[] | undefined;
+  if (!m || !viewport) return null;
+  const [x, y, w, h] = [m[3], m[4], m[5], m[6]];
+  const pad = Math.max(CONTACT_MIN_PX, CONTACT_MARGIN * Math.max(w, h));
+  const x0 = Math.max(0, Math.floor(x - pad)), y0 = Math.max(0, Math.floor(y - pad));
+  const x1 = Math.min(viewport.width, Math.ceil(x + w + pad)), y1 = Math.min(viewport.height, Math.ceil(y + h + pad));
+  return x1 > x0 && y1 > y0 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
+}
+
+test("contact: frozen frames where a mover turns", async ({ page }, info) => {
+  const project = info.project.name;
+  if (!CFG.contact_applies || !(CFG.contact_projects ?? []).includes(project)) {
+    write(project, "contact", { applies: false, reason: CFG.contact_applies ? `runs on ${(CFG.contact_projects ?? []).join(", ")} only`
+                                                                            : CFG.contact_reason ?? "not asked" });
+    return;
+  }
+  test.setTimeout((CFG.contact_ms ?? 0) + CFG.start_timeout_ms + 60_000);
+  await page.addInitScript(installContact, {
+    roles: CFG.contact_roles ?? [], min_speed: CFG.contact_min_speed ?? 1, max_step: CFG.contact_max_step ?? 120,
+    gap_ms: CFG.contact_gap_ms ?? 400, tolerance: CFG.contact_tolerance ?? 6, frame_ms: CFG.contact_frame_ms ?? 1000 / 60,
+  });
+  const frames: string[] = [];
+  const watch = new Watch(page, project, frames);
+  const touch = Boolean(info.project.use.hasTouch);
+  const started = await start(page, touch, watch);
+  const captures: Record<string, unknown>[] = [];
+  let ended: string = "window";
+  let passed = 0;
+  let gaps: number[] | null = null;
+  let turns = 0;
+  let seen = 0;
+  let gameMs: number | null = null;
+  let retries = 0;
+  if (started.playingMs === null) {
+    ended = "play never began";
+  } else {
+    await contactCall(page, "arm", true);
+    const t0 = Date.now();
+    while (Date.now() - t0 < (CFG.contact_ms ?? 0)) {
+      if (captures.length >= (CFG.contact_max ?? 0)) {
+        ended = "captures";
+        break;
+      }
+      const c = await contactState(page);
+      if (!c) {
+        ended = "no contact hook";
+        break;
+      }
+      if (c.frozen && (c.event as { kind?: string } | null)?.kind === "asked") {
+        // A freeze asked for after the mover left, answered late: no turn to keep.
+        await contactCall(page, "thaw");
+        continue;
+      }
+      if (c.frozen) {
+        const n = captures.length + 1;
+        const clip = contactClip(c, page.viewportSize());
+        const at = await frozenShot(page, project, `contact-${n}-at`, frames, clip);
+        await contactCall(page, "thaw");
+        const after = await frozenAfter(page, project, `contact-${n}-after`, frames, clip);
+        const later = after ? await frozenAfter(page, project, `contact-${n}-later`, frames, clip) : null;
+        const s = await snap(page);
+        captures.push({ n, at_ms: Date.now() - t0, unit_id: s?.content?.unit_id ?? null, at, after, later,
+                        viewport: [page.viewportSize()?.width ?? null, page.viewportSize()?.height ?? null] });
+        continue;
+      }
+      // Six seconds of GAME time with no mover in play (the window's real time can be a tenth
+      // of its game time on a loaded host).
+      if (c.gameMs > 6000 && c.movers === 0) {
+        ended = `no ${(CFG.contact_roles ?? []).join("/")} in play`;
+        break;
+      }
+      const s = watch.saw(await snap(page));
+      if (!s) break;
+      if (s.state === "won" || s.state === "lost") {
+        if (retries >= 3) {
+          ended = s.state;
+          break;
+        }
+        retries += 1;
+        await page.waitForTimeout(800);
+        await retry(page, watch.saw(await snap(page)), touch);
+        await page.waitForTimeout(600);
+        continue;
+      }
+      if (s.oracle) {
+        await act(page, s.oracle, touch);
+        await page.waitForTimeout(60);
+      } else {
+        await page.waitForTimeout(20);
+      }
+    }
+    // No turn frozen on, but movers in play: one pair of frames asked for anyway (`kind:
+    // asked`), so what is drawn over a collider can still be measured.
+    const now = await contactState(page);
+    if (!captures.length && (now?.seen ?? 0) > 0) {
+      await contactCall(page, "freezeAfter", 0);
+      let at: Record<string, unknown> | null = null;
+      for (let i = 0; i < 400 && !at; i += 1) {
+        await page.waitForTimeout(25);
+        const c = await contactState(page);
+        if (c?.frozen) at = await frozenShot(page, project, "contact-1-at", frames, contactClip(
+          { ...c, event: { id: ((c.frames.at(-1)?.e ?? []) as unknown[][]).find((e) => (CFG.contact_roles ?? []).includes(e[1] as string))?.[0] } } as ContactState,
+          page.viewportSize(), true));
+      }
+      await contactCall(page, "thaw");
+      if (at) {
+        const after = await frozenAfter(page, project, "contact-1-after", frames, at.clip as Clip | null);
+        const later = after ? await frozenAfter(page, project, "contact-1-later", frames, at.clip as Clip | null) : null;
+        captures.push({ n: 1, at_ms: null, unit_id: null, at, after, later,
+                        viewport: [page.viewportSize()?.width ?? null, page.viewportSize()?.height ?? null] });
+      }
+    }
+    await contactCall(page, "arm", false);
+    const last = await contactState(page);
+    passed = last?.passed ?? 0;
+    turns = last?.turns ?? 0;
+    seen = last?.seen ?? 0;
+    gaps = last?.gaps ?? null;
+    gameMs = last?.gameMs ?? null;
+  }
+  // `turns`: reversals of a mover seen while armed; `passed`: those at a moving or composite
+  // surface (frozen on too, marked `passing`); `movers_seen`: frames with a mover of contact_roles in play;
+  // `frame_gaps`: the page's frames while armed, by the real gap before each (<= 20, <= 40,
+  // <= 100 ms, longer); `clock`: each frame's timestamp was stepped by contact_frame_ms.
+  write(project, "contact", { applies: true, clock: "frame-stepped", frame_ms: CFG.contact_frame_ms ?? 1000 / 60, ...started,
+                              ended, captures, turns, passed, movers_seen: seen, frame_gaps: gaps, game_ms: gameMs,
+                              ...watch.record(), frames });
 });
 
 test("lose and restart: the anti-oracle plays badly, then retries", async ({ page }, info) => {

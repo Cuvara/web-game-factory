@@ -97,7 +97,7 @@ VIEWPORTS = _viewports()
 PROJECTS = tuple(v[:3] for v in VIEWPORTS)
 # The bot's records per viewport (bot.spec.ts): <out>/<project>/<name>.json.
 RECORDS = ("first-session", "act", "win", "lose", "pause", "traverse", "persist", "session",
-           "ramp", "showcase", "survey", "naive", "risk")
+           "ramp", "showcase", "survey", "naive", "risk", "contact")
 # How the survey is run (`survey`), and which entity roles carry a kind (`probe`): read by
 # the content-sufficiency step too, which counts what the survey recorded.
 SUFFICIENCY_PATH = os.path.join(paths.REFERENCE, "content-sufficiency.yaml")
@@ -105,6 +105,9 @@ SUFFICIENCY_PATH = os.path.join(paths.REFERENCE, "content-sufficiency.yaml")
 BENCHMARK_PATH = os.path.join(paths.REFERENCE, "quality-benchmark.yaml")
 # Where the content data file of the commit played is kept, under the records directory, for
 # the content-sufficiency step (scripts/wgf_sufficiency) to measure the build that was played.
+# The contact test's frames (bot.spec.ts, `contact-<n>-at` / `-after` / `-later`): crops of the
+# screen around a turn, not screens, so they are left out of the report's frames.
+CONTACT_FRAME_PREFIX = "contact-"
 CONTENT_DATA = "public/content/units.json"
 CONTENT_COPY = os.path.join("content", "units.json")
 _NO_BROWSER = ("Executable doesn't exist", "browserType.launch", "playwright install")
@@ -306,6 +309,7 @@ class PlayabilityStep(WorkflowStep):
             settings.update(self._naive_settings(design, realism_rules, scope_tiers,
                                                  accepted is not None or comparing))
             settings.update(self._risk_settings(design, realism_rules, self.params, scope_tiers))
+            settings.update(self._contact_settings(design, realism_rules))
             if comparing:
                 # Both builds are played with these settings: the accepted units surveyed and
                 # sampled by naive play, each as often as a clear rate is compared.
@@ -349,6 +353,9 @@ class PlayabilityStep(WorkflowStep):
                         realism.judge(records, design, realism_rules, project, strength,
                                       self._built_units(design, scope_tiers), accepted),
                         records, rules.get("environment") or {}, unmeasured_held)
+                    # The same physics read off the pixels of the contact frames.
+                    checks += realism.judge_contacts(records, frames_dir, design, realism_rules,
+                                                     project, strength)
                 frames += self._frames(frames_dir, project, context.run_dir)
             # The level geometry the played commit declares: once per build, not per viewport.
             checks += self._layout_checks(out, design, realism_rules, strength, scope_tiers)
@@ -425,6 +432,17 @@ class PlayabilityStep(WorkflowStep):
         is in play, or None when it stays an unmeasured WARNING: the run's quality tier (else
         the design's) against core/reference/quality-policy.yaml rule 5."""
         return PlayabilityStep._unmeasured_held(context, design, "content.variety")
+
+    @staticmethod
+    def _report_scope(title_id, params):
+        """The scope of the report's artifact id: the title, and the phase the step plays
+        (`with: {phase: greybox}`) when it names one. Each step counts its executions from
+        1, so the greybox's and develop's reports of one day minted the same id before the
+        phase was part of it (five pairs in the 2D run of 2026-10-05, six in the 3D run).
+        The develop loop's ids are unchanged."""
+        phase = "".join(c if c.isalnum() else "-"
+                        for c in str((params or {}).get("phase") or "").lower()).strip("-")
+        return f"{title_id}-{phase}" if phase else title_id
 
     @staticmethod
     def _built_tiers(context, design, params):
@@ -610,6 +628,35 @@ class PlayabilityStep(WorkflowStep):
         }
 
     @staticmethod
+    def _contact_settings(design, rules):
+        """The contact test's CFG (core/reference/play-realism.yaml `contact`, with the mover
+        rules of `physics`): on a build of a dimension it is judged on, the oracle plays for at
+        most `window_s` on `projects`, its clock stepped `frame_ms` a frame, freezing the page on
+        each reversal of a mover of `roles` for a frame of it, another `after_frames` frames
+        later and a third as many after that, at most `max_captures` times. Any other
+        build: not asked, with why."""
+        contact = rules.get("contact") or {}
+        bars = rules.get("physics") or {}
+        dimension = realism._dimension(design)
+        applies = dimension in [str(d).lower() for d in contact.get("dimensions") or []]
+        return {
+            "contact_applies": applies,
+            "contact_reason": (None if applies else
+                               f"a {dimension} build's screen positions are projections; contact "
+                               "frames are read on " + ", ".join(contact.get("dimensions") or [])),
+            "contact_projects": list(contact.get("projects") or []) if applies else [],
+            "contact_roles": list(contact.get("roles") or bars.get("roles") or []),
+            "contact_ms": int((contact.get("window_s") or 0) * 1000) if applies else 0,
+            "contact_max": int(contact.get("max_captures") or 0),
+            "contact_after_frames": int(contact.get("after_frames") or 0),
+            "contact_frame_ms": float(contact.get("frame_ms") or 1000 / 60),
+            "contact_gap_ms": int(contact.get("gap_ms") or 0),
+            "contact_min_speed": float(bars.get("min_speed_px") or 1.0),
+            "contact_max_step": float(bars.get("max_step_px") or 120),
+            "contact_tolerance": float(bars.get("tolerance_px") or 6),
+        }
+
+    @staticmethod
     def _risk_settings(design, rules, params, scope_tiers=None):
         """The risk test's CFG (play-realism.yaml `risk`), only with `with: risk: true`: the
         units it plays - spread across the authored units the build carries, else play from
@@ -654,7 +701,11 @@ class PlayabilityStep(WorkflowStep):
         risk = (len(settings.get("risk_projects") or [])
                 * (settings.get("risk_ms", 0) / 1000.0 + attempts * (start + 2) + 60)
                 if attempts else 0)
-        return naive + risk
+        # The contact test: its window and a start, on each viewport it runs on.
+        contact = (len(settings.get("contact_projects") or [])
+                   * (settings.get("contact_ms", 0) / 1000.0 + start + 60)
+                   if settings.get("contact_applies") else 0)
+        return naive + risk + contact
 
     @staticmethod
     def _built_units(design, scope_tiers=None):
@@ -998,6 +1049,11 @@ class PlayabilityStep(WorkflowStep):
         for name in sorted(os.listdir(frames_dir)):
             if not name.endswith(".png"):
                 continue
+            if name.startswith(CONTACT_FRAME_PREFIX):
+                # The contact test's frozen crops are evidence of the physics checks, which
+                # pin each frame they read by sha256 (realism.judge_contacts); they are not
+                # screens for visual QA to judge.
+                continue
             path = os.path.join(frames_dir, name)
             entry = {"id": name[:-4], "project": project,
                      "path": os.path.relpath(path, run_dir).replace(os.sep, "/"),
@@ -1042,7 +1098,8 @@ class PlayabilityStep(WorkflowStep):
                                            if f"{c['project']}:{c['id']}" in unmeasured})[:3]))
         verdict = "BLOCKED" if blocked else ("FAIL" if failed else "PASS")
         now = self.clock()
-        artifact_id = provenance.artifact_id("playability-report", title_id, now,
+        artifact_id = provenance.artifact_id("playability-report",
+                                             self._report_scope(title_id, self.params), now,
                                              getattr(context, "execution", 1))
         report = {
             "provenance": provenance.build(

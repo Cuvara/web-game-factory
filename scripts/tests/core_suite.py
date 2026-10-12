@@ -25,7 +25,9 @@ SUITE = {
     "VERIFY": ["test_core_verify"],
     "RELEASE": ["test_core_release", "test_publish_module", "test_publish_registry",
                 "test_publish_observe", "test_publish_executor", "test_publish_step",
-                "test_publish_adaptive", "test_publish_campaign", "test_publish_portals"],
+                "test_publish_adaptive", "test_publish_campaign", "test_publish_portals",
+                # 2.8.0: no package carries another portal's SDK or lacks its own.
+                "test_portal_sdks"],
     # An intentionally bad game cannot pass new-game: six genres held to one floor, eleven
     # degradations each detected, blocking and routed, recovery, anti-gaming (WS-13,
     # docs/quality-consistency-tests.md). K6.3: the assessment - design validity, runtime

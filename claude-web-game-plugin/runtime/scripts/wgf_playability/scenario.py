@@ -44,6 +44,9 @@ SOURCES = dict(analysis.EVIDENCE, **{
     "progression.persists": ("persist",),
     "depth.session_length": ("session",),
     "naive.clear_rate": ("naive",),
+    # Read off the contact test's frozen frames (realism.judge_contacts).
+    "physics.contact_drawn": ("contact",),
+    "physics.drawn_extent": ("contact",),
     # The baseline comparison (baseline.py): the candidate's records it reads; the accepted
     # build's are in the report's baseline_comparison.
     "baseline.units_kept": ("survey", "naive", "traverse"),
@@ -78,6 +81,7 @@ POLICIES = {
     "survey": "unit-link",
     "naive": "naive",
     "risk": "declared-policy",
+    "contact": "oracle-frozen-at-turns",
 }
 MAX_ACTIONS = 80
 MAX_FRAMES = 16

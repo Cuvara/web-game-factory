@@ -240,13 +240,68 @@ class ContactDrawn(unittest.TestCase):
         self.assertEqual(result["status"], "WARNING")
         self.assertEqual(result["measured"]["unmeasured"], realism.UNREPORTED)
 
-    def test_frames_too_far_apart_are_not_read(self):
-        s = self.scene()
+    def test_a_bounce_off_the_screen_edge_is_at_a_drawn_edge(self):
+        # K7 review MINOR-1: the canvas fills the viewport, the board's top IS the screen's top
+        # (the clip is clamped to it): nothing past it is in any frame. The player sees the ball
+        # turn at the edge of the screen - verified, not a turn at nothing drawn.
+        s = self.scene(top=100.0)
         capture = s.capture()
-        for i, f in enumerate(capture["at"]["frames"]):
-            f["t"] = 200.0 * i
+        capture["at"]["clip"]["y"] = capture["after"]["clip"]["y"] = 0
+        for part in ("at", "after"):
+            for f in capture[part]["frames"]:
+                for e in f["e"]:
+                    e[4] -= 100
+                    if e[9]:
+                        e[9][2] -= 100
+                f["pf"] = {"x": 0, "y": 0, "w": 1280, "h": 720}
+        capture["viewport"] = [1280, 720]
+        result = judged(record(capture), self.dir)["physics.contact_drawn"]
+        self.assertEqual(result["status"], "PASS", result["summary"])
+        self.assertEqual(result["measured"]["verified"], 1)
+        # The same board 40 px below the screen's top (letterboxed): its edge is not the
+        # screen's, nothing is drawn there, and it FAILs - as it does with no viewport recorded.
+        for part in ("at", "after"):
+            for f in capture[part]["frames"]:
+                for e in f["e"]:
+                    e[4] += 40
+                    if e[9]:
+                        e[9][2] += 40
+                f["pf"] = {"x": 0, "y": 40, "w": 1280, "h": 680}
+        self.assertEqual(judged(record(capture), self.dir)["physics.contact_drawn"]["status"], "FAIL")
+        for part in ("at", "after"):
+            for f in capture[part]["frames"]:
+                for e in f["e"]:
+                    e[4] -= 40
+                    if e[9]:
+                        e[9][2] -= 40
+                f["pf"] = {"x": 0, "y": 0, "w": 1280, "h": 720}
+        del capture["viewport"]
+        self.assertEqual(judged(record(capture), self.dir)["physics.contact_drawn"]["status"], "FAIL")
+
+    def test_a_turn_that_travelled_too_far_in_its_frame_is_not_read(self):
+        # A loop on its own clock on a slow host: 30 px a frame. The band past its leading edge
+        # would reach whatever is drawn that far beyond an undrawn wall.
+        s = self.scene()
+        paint(s.after, rect(300, 170, 500, 176), (220, 220, 230))  # drawn 24-30 px beyond
+        capture = s.capture()
+        capture["at"]["event"]["turns"][0]["speed"] = 30.0
         result = judged(record(capture), self.dir, MVP)["physics.contact_drawn"]
-        self.assertEqual(result["measured"]["unverified"], {"frames too far apart": 1})
+        self.assertEqual(result["measured"]["unverified"], {"travelled too far in a frame": 1})
+        self.assertEqual(result["status"], "WARNING")
+        # At the bar's travel it is read, and the wall that far beyond is not reached.
+        capture["at"]["event"]["turns"][0]["speed"] = RULES["contact"]["max_travel_px"]
+        self.assertEqual(judged(record(capture), self.dir)["physics.contact_drawn"]["status"], "FAIL")
+
+    def test_frame_timestamps_of_a_bot_record_are_stepped_and_cannot_show_the_pace(self):
+        # REAL: the bot keeps the STEPPED timestamps (frame_ms apart by construction) while the
+        # page's real pacing was often slower than 40 ms - which is why the reading is guarded
+        # on the mover's travel, not on the frames' timestamps (K7 review, MAJOR-1).
+        for build in ("96f5cea", "68a12b7", "cbac64e"):
+            rec = real(os.path.join(build, "desktop", "contact.json.gz"))
+            for c in rec["captures"]:
+                ts = [f["t"] for f in c["at"]["frames"]]
+                self.assertTrue(all(abs((b - a) - rec["frame_ms"]) < 0.01 for a, b in zip(ts, ts[1:])), ts)
+            self.assertGreater(sum(rec["frame_gaps"][2:]), 100, build)
 
     def test_no_turn_frozen_is_unmeasured_never_passed(self):
         result = judged(record(ended="window"), self.dir, HELD)
@@ -278,6 +333,14 @@ class ContactDrawn(unittest.TestCase):
 
     def test_nothing_of_the_judged_roles_in_play_is_not_judged(self):
         self.assertEqual(judged(record(ended="no projectile in play"), self.dir), {})
+        # ... unless the design declares one: the bot not seeing it is not "none to judge"
+        # (K7 review MAJOR-3: a ball that appears late, or one the probe does not report).
+        ball_design = {"engine": {"dimension": "2d"},
+                       "build_spec": {"assets": [{"id": "ball", "role": "projectile"}]}}
+        declared = judged(record(ended="no projectile in play"), self.dir, HELD, design=ball_design)
+        self.assertEqual({c["status"] for c in declared.values()}, {"FAIL"})
+        self.assertEqual({c["measured"]["unmeasured"] for c in declared.values()}, {realism.UNREPORTED})
+        self.assertEqual(set(declared), {"physics.contact_drawn", "physics.drawn_extent"})
         # A page the contact hook never reached is not "nothing in play": unmeasured.
         lost = judged(record(ended="no contact hook"), self.dir, MVP)
         self.assertEqual({c["status"] for c in lost.values()}, {"WARNING"})
@@ -326,6 +389,68 @@ class DrawnExtent(unittest.TestCase):
         result = self.ratio(lambda image, cx, cy: paint(image, disc(cx + 30, cy, 14), (240, 200, 40)))
         self.assertEqual(result["status"], "FAIL", result)
         self.assertIn("ball", result["measured"]["nothing_drawn"])
+
+    def test_a_body_drawn_smaller_than_its_collider_fails(self):
+        # Below physics.min_drawn_to_collider a hit lands on nothing drawn.
+        result = self.ratio(lambda image, cx, cy: paint(image, disc(cx, cy, 8), (240, 200, 40)))
+        self.assertEqual(result["status"], "FAIL", result)
+        self.assertTrue(any(r < RULES["physics"]["min_drawn_to_collider"]
+                            for r in result["measured"]["ratios"]["ball"]), result)
+
+    def scene_with(self, draw, others_at=(), others_after=(), collider=12, drawn_box=40):
+        """A ball frozen at a turn, drawn by `draw(image, cx, cy)`, with other entities reported
+        in the frozen frame and the frame after (each [entity, colour or None])."""
+        s = Scene(self.dir, drawn=drawn_box, collider=collider)
+        capture = s.capture()
+        frozen = capture["at"]["frames"][-1]["e"]
+        box = realism._box(*frozen[0][9][1:5])
+        cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        draw(s.at, cx, cy)
+        for frame, image, others in ((frozen, s.at, others_at),
+                                     (capture["after"]["frames"][-1]["e"], s.after, others_after)):
+            for make, colour in others:
+                e = make(cx, cy)
+                frame.append(e)
+                if colour:
+                    paint(image, rect(e[3], e[4], e[3] + e[5], e[4] + e[6]), colour)
+        for name, image in (("contact-1-at", s.at), ("contact-1-after", s.after)):
+            with open(os.path.join(self.dir, name + ".png"), "wb") as handle:
+                handle.write(encode_png(image))
+        return judged(record(capture), self.dir)["physics.drawn_extent"]
+
+    def test_a_body_cut_by_the_window_on_every_axis_is_held_by_its_lower_bound(self):
+        # A ball drawn five times its collider reaches the window's edge on both axes: each axis
+        # is only a lower bound - and a lower bound over the bar FAILs.
+        result = self.scene_with(lambda image, cx, cy: paint(image, disc(cx, cy, 60), (240, 200, 40)))
+        self.assertEqual(result["status"], "FAIL", result)
+        self.assertEqual(result["measured"]["ratios"]["ball"], [None, None])
+        self.assertTrue(all(v > RULES["physics"]["max_drawn_to_collider"]
+                            for v in result["measured"]["lower_bounds"]["ball"]), result)
+
+    def test_a_body_cut_by_a_mask_is_never_held_too_small_on_that_axis(self):
+        # A brick reported over the right half of a ball drawn about its collider: across x the
+        # ball reads half its width, but cut - a lower bound, which can show a body too large,
+        # never one too small. Its height is read whole.
+        brick = (lambda cx, cy: entity("brick", cx, cy - 20, 20, 40, role="target"), None)
+        result = self.scene_with(lambda image, cx, cy: paint(image, disc(cx, cy, 14), (240, 200, 40)),
+                                 others_at=[brick])
+        self.assertEqual(result["status"], "PASS", result)
+        x, y = result["measured"]["ratios"]["ball"]
+        self.assertIsNone(x)
+        self.assertTrue(1.0 <= y <= 1.3, result)
+
+    def test_an_entity_that_did_not_move_away_is_not_read(self):
+        # A paddle with a collider, drawn its size, still in place in the frame after: nothing
+        # changed where it collides, which says nothing about what is drawn there.
+        def paddle(cx, cy):
+            return entity("paddle", cx - 40, cy + 30, 40, 10, role="player",
+                          collider=["rect", cx - 40, cy + 30, 40, 10])
+        result = self.scene_with(lambda image, cx, cy: paint(image, disc(cx, cy, 14), (240, 200, 40)),
+                                 others_at=[(paddle, (90, 220, 120))],
+                                 others_after=[(paddle, (90, 220, 120))])
+        self.assertEqual(result["status"], "PASS", result)
+        self.assertEqual(result["measured"]["not_moved_away"], 1)
+        self.assertNotIn("paddle", result["measured"]["nothing_drawn"])
 
     def test_no_collider_reported_is_unmeasured_never_passed(self):
         result = self.ratio(lambda image, cx, cy: paint(image, disc(cx, cy, 14), (240, 200, 40)),
@@ -570,7 +695,8 @@ class Bypasses(unittest.TestCase):
             self.assertEqual(extent["status"], "FAIL", (build, extent["summary"]))
             self.assertIn("where it touched", extent["summary"])
             reach = extent["measured"]["collider_to_contact"]
-            self.assertTrue(all(v > RULES["contact"]["max_collider_to_contact"] for v in reach.values()), reach)
+            bar = RULES["contact"]["max_collider_to_contact"]
+            self.assertTrue(all(v > bar for v in reach.values()), reach)
         # The honest records stay under the bar (894b4b8 PASSes, test_H3_the_collider_grown_...).
         for build, project in (("894b4b8-collider", "desktop"), ("894b4b8-collider", "mobile"),
                                ("96f5cea-collider", "desktop"), ("68a12b7-collider", "desktop")):
@@ -621,8 +747,29 @@ class Bypasses(unittest.TestCase):
         self.assertIn("win test", result["summary"])
         # Samples with no turn either: still no contact to verify.
         still = record(ended="window", turns=0, passed=0, movers_seen=240)
-        still["win"] = {"sampled": {"frames": [[entity("ball", 394, 200, 12, 12)]] * 5, "viewport": [1280, 720]}}
+        still["win"] = {"sampled": {"frames": [[entity("ball", 394, 200, 12, 12)]] * 5,
+                                    "viewport": [1280, 720]}}
         self.assertEqual(judged(still, self.dir, HELD)["physics.contact_drawn"]["status"], "PASS")
+
+    def test_a_reported_ui_box_over_the_contact_cannot_mask_an_undrawn_wall(self):
+        # K7 review MINOR-3 (probe P4): a HUD strip reported over the band, drawn nowhere there.
+        s = Scene(self.dir, n=2)
+        s.after_others = [entity("hud", 300, 150, 200, 56, role="ui", render="primitive")]
+        result = judged(record(self.drawn_wall(1), s.capture()), self.dir)["physics.contact_drawn"]
+        self.assertEqual(result["status"], "FAIL", result["summary"])
+        self.assertEqual(result["measured"]["unverified"], {})
+
+    def test_a_low_contrast_wall_reads_undrawn_a_known_limitation(self):
+        # K7 review MINOR-2, PINNED (not a bypass - a false positive the docs list): a wall
+        # drawn at a 20-35 colour distance from the backdrop (26 here; visible on a monitor) is
+        # under min_edge 48 and FAILs as a turn at nothing drawn. The bar was calibrated on one
+        # game (undrawn 13-34, drawn 172-385); a second game's palette is what it lacks.
+        s = Scene(self.dir)
+        for image in (s.at, s.after):
+            paint(image, rect(300, 186, 500, 200), (50, 60, 90))
+        result = judged(record(s.capture()), self.dir)["physics.contact_drawn"]
+        self.assertEqual(result["status"], "FAIL", result["summary"])
+        self.assertTrue(20 < result["measured"]["undrawn"][0]["edge"] < RULES["contact"]["min_edge"], result)
 
     def test_a_faint_wall_is_not_a_drawn_wall(self):
         # Not a bypass: a wall drawn at 8 % opacity reads as the background it is blended into.

@@ -52,8 +52,8 @@ from wgflib.yamllite import load_file
 from .analysis import _check
 
 __all__ = ["RULES_PATH", "UNREPORTED", "Strength", "load_rules", "strength_for", "judge",
-           "judge_layouts", "judge_runtime", "judge_contacts", "contact_edge", "drawn_extent", "turns", "layout_length", "naive_units",
-           "clear_rates", "compare_clear_rates", "path_layouts", "grid_rows", "resolve"]
+           "judge_layouts", "judge_runtime", "judge_contacts", "contact_edge", "contact_reach",
+           "drawn_extent", "turns", "layout_length", "naive_units", "clear_rates", "compare_clear_rates", "path_layouts", "grid_rows", "resolve"]
 
 RULES_PATH = os.path.join(paths.REFERENCE, "play-realism.yaml")
 # `measured.unmeasured` of a check whose data the build does not report (never a pass).
@@ -457,19 +457,13 @@ def _inside_any(x, y, boxes):
     return any(b[0] <= x <= b[2] and b[1] <= y <= b[3] for b in boxes)
 
 
-def _contact_frames(capture, max_frame_ms=None):
+def _contact_frames(capture):
     """(frames at the turn: [before, turned, frozen], the after snapshot, the clip origin) of a
-    capture both of whose frames were kept on a page still frozen - and, with `max_frame_ms`,
-    whose frames around the turn were at most that far apart; else None."""
+    capture both of whose frames were kept on a page still frozen; else None."""
     at, after = capture.get("at") or {}, capture.get("after") or {}
     frames = at.get("frames") or []
     if (not at.get("still") or not after.get("still") or len(frames) < 2
             or not (after.get("frames") or [])):
-        return None
-    times = [f.get("t") for f in frames]
-    if max_frame_ms is not None and (
-            not all(isinstance(t, (int, float)) for t in times)
-            or any(b - a > max_frame_ms for a, b in zip(times, times[1:]))):
         return None
     clip = at.get("clip") or {}
     return frames, after["frames"][-1], (float(clip.get("x") or 0), float(clip.get("y") or 0))
@@ -631,9 +625,21 @@ def judge_contacts(records, frames_dir, design, rules, project, strength=None):
     roles = set(bars.get("roles") or physics.get("roles") or [])
     ended = str(record.get("ended") or "")
     if not captures and ended.startswith("no ") and ended.endswith(" in play"):
-        # No mover of the judged roles was ever in play: nothing turns, nothing to judge
-        # (as physics.undrawn_collision, which reports nothing either).
-        return []
+        declared = sorted({str(a.get("role")) for a in
+                           ((design or {}).get("build_spec") or {}).get("assets") or []
+                           if isinstance(a, dict) and a.get("role") in roles})
+        if not declared:
+            # No mover of the judged roles was ever in play, and the design declares none:
+            # nothing turns, nothing to judge (as physics.undrawn_collision reports nothing).
+            return []
+        # The design declares one and the bot saw none in play: not shown that there was
+        # nothing to verify (a body that appears late, one the probe does not report).
+        why = (f"the contact test ended '{ended}', but the design declares a "
+               f"{'/'.join(declared)}: nothing was read")
+        return [_unmeasured("physics.contact_drawn", project, strength, why,
+                            measured={"window_ended": ended}),
+                _unmeasured("physics.drawn_extent", project, strength, why,
+                            measured={"window_ended": ended})]
     # The reversals the win test's per-frame samples show (the probe's, as
     # physics.undrawn_collision reads them): a contact test that froze on none of them has not
     # shown that there was nothing to verify.
@@ -706,6 +712,18 @@ def _contact_class(turn, mover, box, window, after, pf, tolerance, min_speed, ro
     return None, by, "reported entity"
 
 
+def _screen_edge(pf, viewport, turn, tolerance):
+    """Whether the playfield's edge the mover turned at is the viewport's own edge."""
+    if pf is None or not isinstance(viewport, (list, tuple)) or len(viewport) < 2:
+        return False
+    axis, size = turn["axis"], viewport[turn["axis"]]
+    if not isinstance(size, (int, float)):
+        return False
+    if turn["sign"] > 0:
+        return pf[axis + 2] >= size - tolerance
+    return pf[axis] <= tolerance
+
+
 def _contact_surface(record, captures, frames_dir, bars, physics, project, strength, expected,
                      probe_turns=0, reaches=None):
     """physics.contact_drawn. `probe_turns`: reversals in the win test's samples; `reaches`
@@ -716,21 +734,26 @@ def _contact_surface(record, captures, frames_dir, bars, physics, project, stren
     tolerance = float(physics.get("tolerance_px", 6))
     min_speed = float(physics.get("min_speed_px", 1.0))
     roles = set(bars.get("roles") or physics.get("roles") or [])
-    max_frame_ms = float(bars.get("max_frame_ms", 40))
+    max_travel = float(bars.get("max_travel_px", 16))
     contacts, undrawn, unverified, pinned = [], [], {}, {}
 
     def skip(why):
         unverified[why] = unverified.get(why, 0) + 1
 
     for capture in captures:
-        got = _contact_frames(capture, max_frame_ms)
+        got = _contact_frames(capture)
         event = (capture.get("at") or {}).get("event") or {}
         turns = _contact_turns(event)
         if event.get("kind") != "reversal":
             # A pair of frames asked for with no turn (for the drawn extent): no contact.
             continue
         if not got or not turns:
-            skip("frames too far apart" if _contact_frames(capture) and not got else "frames")
+            skip("frames")
+            continue
+        if any(float(t.get("speed") or 0) > max_travel for t in turns):
+            # A step this long (a loop on its own clock, on a slow host) reaches far past the
+            # leading edge: the band could read something drawn beyond an undrawn wall.
+            skip("travelled too far in a frame")
             continue
         frames, after, origin = got
         mover = next((s for s in frames[-2].get("e") or [] if s[0] == event.get("id")), None)
@@ -791,8 +814,14 @@ def _contact_surface(record, captures, frames_dir, bars, physics, project, stren
                  "at": [round((box[0] + box[2]) / 2, 1), round((box[1] + box[3]) / 2, 1)],
                  "explained_by": by, "surface": kind, "edge": edge, "masked": masked,
                  "collider": collider, "frame": capture["after"]["frame"]}
+        if kind == "playfield" and _screen_edge(pf, capture.get("viewport"), t, tolerance):
+            # The board's edge is the screen's: the player sees the mover turn at the edge of
+            # the screen, and nothing past it is in any frame to read.
+            entry["surface"] = "screen edge"
         contacts.append(entry)
-        if edge < min_edge:
+        if entry["surface"] == "screen edge":
+            pass
+        elif edge < min_edge:
             undrawn.append(entry)
         elif collider and reaches is not None:
             # Where the collider touched the drawn surface: physics.drawn_extent holds the
@@ -809,7 +838,8 @@ def _contact_surface(record, captures, frames_dir, bars, physics, project, stren
     measured = {"captures": len(captures), "verified": len(contacts), "undrawn": undrawn[:12],
                 "edges": [c["edge"] for c in contacts], "unverified": unverified,
                 "window_ended": record.get("ended"), "passed_at_moving_or_composite":
-                record.get("passed"), "frame_gaps": record.get("frame_gaps"), "frames": dict(sorted(pinned.items()))}
+                record.get("passed"), "frame_gaps": record.get("frame_gaps"),
+                "frames": dict(sorted(pinned.items()))}
     reversals = sum(1 for c in captures
                     if ((c.get("at") or {}).get("event") or {}).get("kind") == "reversal")
     if (not reversals and record.get("turns") == 0 and (record.get("movers_seen") or 0) > 0
@@ -873,7 +903,7 @@ def _contact_extent(captures, frames_dir, bars, physics, project, strength, reac
     lo = float(physics.get("min_drawn_to_collider", 0.77))
     share = float(bars.get("solid_share", 0.5))
     min_delta = float(bars.get("min_delta", 24))
-    margin = float(bars.get("window_colliders", 4))
+    margin = float(bars.get("window_colliders", 2))
     expected = {"drawn_to_collider": f"{lo} - {hi} per axis (pixels)",
                 "measured_on": "the pixels that changed between the frozen frame and the frame "
                                "after the entity left, connected to its collider, at "

@@ -31,7 +31,8 @@
 # satisfied by reporting a surface or a body that is not drawn).
 # 1.2.0: a turn is seen across a hit-stop (`physics.hit_stop_frames`), and a collider is held
 # to where it touched the drawn surface it turned at (`contact.max_collider_to_contact`) - two
-# ways a build passed both checks unchanged (K7 bypass review, 2026-10-12).
+# ways a build passed both checks unchanged (K7 bypass review, 2026-10-12); `contact.max_frame_ms`,
+# which could never fire on a bot record, is replaced by `contact.max_travel_px` (K7 review).
 version: 1.2.0
 basis: measured-2
 
@@ -117,12 +118,18 @@ contact:
   # The page's clock is stepped by `frame_ms` each frame drawn, so a loop that takes its delta
   # from the frame's timestamp moves one step per frame however slowly the host draws
   # (measured 3-7 frames a second on the shared Windows host, 2026-10-10). `after_frames`:
-  # 0.3 s of game time for the mover to leave the place it turned. A capture whose frames
-  # around the turn are further apart than `max_frame_ms` (a clock that was not stepped) is
-  # not read.
+  # 0.3 s of game time for the mover to leave the place it turned.
+  # A loop that reads its own clock (performance.now) instead of the frame's timestamp is not
+  # stepped: on a slow host it moves tens of px a frame. The bot records the stepped
+  # timestamps, so their gaps cannot show it (1.1.0's `max_frame_ms` could never fire on a
+  # bot record - K7 review); what the reading depends on is the mover's travel in the frame
+  # it turned, which sets how far past its leading edge the band reaches. A turn that
+  # travelled more than `max_travel_px` in that frame is not read (counted unverified):
+  # every real turn recorded travelled 1.0-4.2 px (2026-10-10, stepped), the unstepped host
+  # pace 30-40 px.
   frame_ms: 16.667
   after_frames: 18
-  max_frame_ms: 40
+  max_travel_px: 16
   # physics.contact_drawn: in the frame after, along each line across the contact, the largest
   # colour distance (RGB, 0-441) from the mover's centre to `physics.tolerance_px` + its travel
   # past its leading edge, against the median colour of the quarter behind its centre (where it

@@ -29,7 +29,10 @@
 # 1.1.0: `contact` - physics.contact_drawn and physics.drawn_extent, the same two questions read
 # off the pixels of frames frozen where a mover turned (the probe-reported checks can be
 # satisfied by reporting a surface or a body that is not drawn).
-version: 1.1.0
+# 1.2.0: a turn is seen across a hit-stop (`physics.hit_stop_frames`), and a collider is held
+# to where it touched the drawn surface it turned at (`contact.max_collider_to_contact`) - two
+# ways a build passed both checks unchanged (K7 bypass review, 2026-10-12).
+version: 1.2.0
 basis: measured-2
 
 # Which quality tiers (quality-benchmark.yaml `tiers[].id`) a measured FAIL of a check here
@@ -57,6 +60,13 @@ physics:
   stop_frames: 3
   # A jump larger than this between two frames is a respawn or a reset, not a turn.
   max_step_px: 120
+  # A hit-stop: a mover that barely moves (under `min_speed_px`) for up to this many frames
+  # between moving one way and moving back still turned there - the turn is judged where it
+  # stalled. Without it a single still frame at each bounce (a hit-stop, or a loop that skips
+  # the move on the frame it reflects) hid every turn from both physics checks and the
+  # contact test (synthetic: scripts/tests/test_play_contact.py Bypasses). 6 frames is 100 ms
+  # at 60 fps, the long end of a hit-stop; a longer one is a stop (`stop_frames`).
+  hit_stop_frames: 6
   # A turn is explained when the mover's collider (else its drawn box) reaches a drawn
   # surface - another visible entity's drawn box in the frame of the turn or the one before
   # (a brick the hit breaks), or an edge of the probe's playfield - on the side it was moving
@@ -138,6 +148,19 @@ contact:
   solid_share: 0.5
   min_delta: 24
   window_colliders: 2
+  # physics.drawn_extent also holds the reported collider to where it touched: at a turn read
+  # as drawn, on a mover that reports a collider, the distance from its centre to the first
+  # pixel of the surface (colour step >= `min_edge`, the median over the lines) plus the
+  # distance it travelled that frame bounds what collides from above, so an honest collider's
+  # half extent on that axis is at most 1.0 x it; the median over an entity's turns may not
+  # exceed this bar (the 0.15 is a pixel or two of edge rounding on a small ball). A collider
+  # reported to match a drawing the simulation does not use passes the pixel extent and fails
+  # this. Calibration (real records, the collider reported by the harness patch): every honest
+  # turn 0.59-0.86 (68a12b7, 96f5cea desktop; 894b4b8 desktop and mobile); the same records
+  # with the ball's collider scaled about its centre as a gaming build would report it - x2.0
+  # (the drawn extent of 96f5cea then reads 1.0 x) 1.17-1.72, x2.3 / x2.6 (where 68a12b7 /
+  # 96f5cea pass the drawn extent alone) 1.43-1.97.
+  max_collider_to_contact: 1.15
 
 # -- naive.*: the build played by someone who is not perfect ---------------------------------
 naive:

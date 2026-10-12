@@ -33,6 +33,19 @@ pinned by sha256 in each check. Bringing an artifact forward: none - a report fr
 has no contact record and gets neither check; a pinned 1.0.0 `play-realism.yaml` keeps a run
 on the old bars.
 
+**Measurement integrity: five bypasses closed** (K7 bypass review, `play-realism.yaml` 1.2.0,
+`Bypasses` in `scripts/tests/test_play_contact.py`). A build could still pass the physics
+checks without fixing the game: a collider reported to match the drawing passed
+`physics.drawn_extent` (now held to where it touched the drawn surface it turned at,
+`contact.max_collider_to_contact` 1.15 - honest 0.59-0.86, gamed 1.17-1.97 on the real records);
+an entity reported over a contact in the frame after masked an undrawn wall into
+"unverified" (now read under the mask: nothing drawn even there FAILs); an entity masked in
+every frame dropped out of the extent (now unmeasured); a one-frame hit-stop at each bounce hid
+every turn from `physics.undrawn_collision` and the bot (`physics.hit_stop_frames` 6); and a
+contact test that froze on no turn PASSed while the win test's samples showed turns (now
+unmeasured). Bringing an artifact forward: a report judged under 1.1.0 keeps its verdicts; a
+re-judged one can only lose a PASS.
+
 **K6 review r1 fixes** (docs/specialist-routing.md, docs/knowledge-enforcement.md). The
 ledger no longer verifies a split finding (`.../develop`, `.../assets`) whose check still
 FAILs its part in a BLOCKED report: the check is split again by the same rule, `unmeasured`

@@ -499,10 +499,25 @@ states), 894b4b8 1.03-1.2 x (r1's art with the collider grown to the solid disc)
 r1 build FAILs `physics.drawn_extent` too: it held the same bar `physics.collider_size` already
 fails it on once a collider is reported, and 894b4b8 is the build that cleared it.
 
+Closed by the bypass review (2026-10-12, `Bypasses` in `scripts/tests/test_play_contact.py`,
+each failing on the code before its fix): an entity reported over the contact in the frame
+after masked it out of the reading (a mask hides what is drawn under it, never that nothing is:
+read under the mask against the background behind it, nothing drawn is a turn at nothing
+drawn); an entity whose collider was masked in every frame dropped out of the drawn extent
+(now unmeasured, named in `measured.masked_out`); a collider reported larger than the
+simulation's (above); a hit-stop - up to `physics.hit_stop_frames` still frames at a bounce -
+hid the turn from `physics.undrawn_collision` and from the bot (a turn is now seen across the
+stall); and a contact test that froze on no turn PASSed although the win test's samples show
+the mover turning (now unmeasured).
+
 What they cannot catch:
 
 - a collider the probe does not report: `physics.drawn_extent` is unmeasured, never a pass; a
-  collider reported smaller or larger than the simulation's is believed;
+  collider reported smaller than the simulation's is believed. One reported LARGER is held to
+  where it touched (`contact.max_collider_to_contact`): at a turn read as drawn, its half
+  extent against the distance from its centre to the surface's first pixel plus its step;
+  honest readings 0.59-0.86, the real records with the collider scaled to pass the extent
+  1.17-1.97;
 - a wall the bot never touched in the window, and a wall touched only where its surface is a
   composite or broke on the hit;
 - an undrawn wall that happens to coincide with a backdrop feature as strong as `min_edge`

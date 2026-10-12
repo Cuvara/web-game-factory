@@ -487,6 +487,151 @@ class RealRecordings(unittest.TestCase):
         self.assertEqual([c["status"] for c in pixels if c["id"] == "physics.drawn_extent"], ["FAIL"])
 
 
+class Bypasses(unittest.TestCase):
+    """Ways a build could pass physics.contact_drawn / physics.drawn_extent without drawing what
+    it collides with (K7 bypass review, 2026-10-12). SYNTHETIC scenes are built here; the REAL
+    ones edit a recorded record the way a gaming build would report it."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="wgf-bypass-")
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+
+    def drawn_wall(self, n):
+        s = Scene(self.dir, n=n)
+        for image in (s.at, s.after):
+            paint(image, rect(300, 190, 500, 200), (220, 220, 230))
+        return s.capture()
+
+    def test_an_entity_reported_over_the_contact_in_the_frame_after_cannot_hide_an_undrawn_wall(self):
+        # A "dust" entity reported over the turn from the frame after on, drawn nowhere: its box
+        # masks every line of the contact. A mask hides what is drawn under it, never that
+        # nothing is: read without it, nothing is drawn there either.
+        s = Scene(self.dir, n=2)
+        s.after_others = [entity("dust", 380, 175, 40, 45, role="vfx")]
+        result = judged(record(self.drawn_wall(1), s.capture()), self.dir)["physics.contact_drawn"]
+        self.assertEqual(result["status"], "FAIL", result["summary"])
+        self.assertEqual([u["capture"] for u in result["measured"]["undrawn"]], [2])
+        self.assertTrue(result["measured"]["undrawn"][0]["masked"])
+        # Something drawn over it (a capsule passing) is still never read as the wall.
+        drawn = Scene(self.dir, n=3)
+        drawn.after_others = [entity("capsule", 380, 175, 40, 45, role="collectible")]
+        paint(drawn.after, rect(380, 175, 420, 220), (250, 250, 250))
+        covered = judged(record(self.drawn_wall(1), drawn.capture()), self.dir)["physics.contact_drawn"]
+        self.assertEqual(covered["measured"]["unverified"], {"masked": 1}, covered)
+        self.assertEqual(covered["measured"]["verified"], 1)
+
+    def test_an_entity_masked_in_every_frame_is_not_dropped_from_the_drawn_extent(self):
+        # The ball, drawn three times its collider, under a "trail" entity reported over it
+        # (drawn nowhere) in the frozen frame; a paddle drawn its collider's size beside it. The
+        # ball is never read - unmeasured, never passed on the paddle alone.
+        s = Scene(self.dir, drawn=40, collider=12)
+        capture = s.capture()
+        frozen = capture["at"]["frames"][-1]["e"]
+        box = realism._box(*frozen[0][9][1:5])
+        cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        paint(s.at, disc(cx, cy, 36), (240, 200, 40))
+        frozen.append(entity("trail", cx - 10, cy - 10, 20, 20, role="vfx"))
+        frozen.append(entity("paddle", 330, 250, 20, 10, role="player", collider=["rect", 330, 250, 20, 10]))
+        paint(s.at, rect(330, 250, 350, 260), (90, 220, 120))
+        capture["after"]["frames"][-1]["e"].append(
+            entity("paddle", 430, 250, 20, 10, role="player", collider=["rect", 430, 250, 20, 10]))
+        paint(s.after, rect(430, 250, 450, 260), (90, 220, 120))
+        for name, image in (("contact-1-at", s.at), ("contact-1-after", s.after)):
+            with open(os.path.join(self.dir, name + ".png"), "wb") as handle:
+                handle.write(encode_png(image))
+        result = judged(record(capture), self.dir, HELD)["physics.drawn_extent"]
+        self.assertEqual(result["status"], "FAIL", result)
+        self.assertEqual(result["measured"]["unmeasured"], realism.UNREPORTED)
+        self.assertEqual(result["measured"]["masked_out"], ["ball"])
+        self.assertIn("ball", result["summary"])
+
+    @staticmethod
+    def scaled(build, project, k):
+        """The REAL record with every ball's reported collider scaled by `k` about its centre -
+        the probe edited, the simulation not."""
+        rec = real(os.path.join(build, project, "contact.json.gz"))
+        for capture in rec["captures"]:
+            for part in ("at", "after"):
+                for f in (capture.get(part) or {}).get("frames") or []:
+                    for s in f["e"]:
+                        if s[0].startswith("ball") and s[9]:
+                            shape, x, y, w, h = s[9]
+                            s[9] = [shape, x + w / 2 - k * w / 2, y + h / 2 - k * h / 2, k * w, k * h]
+        return rec
+
+    def test_a_collider_reported_to_match_the_drawing_is_held_to_where_it_touched(self):
+        # REAL records, the collider scaled to where the drawn extent alone passes (or, x2.0 on
+        # 96f5cea, reads 1.0 x).
+        for build, k in (("68a12b7-collider", 2.3), ("96f5cea-collider", 2.6), ("96f5cea-collider", 2.0)):
+            rec = self.scaled(build, "desktop", k)
+            result = {c["id"]: c for c in realism.judge_contacts(
+                {"contact": rec}, os.path.join(REAL, build, "desktop"), D2, RULES, "desktop", RELEASE)}
+            extent = result["physics.drawn_extent"]
+            self.assertEqual(extent["status"], "FAIL", (build, extent["summary"]))
+            self.assertIn("where it touched", extent["summary"])
+            reach = extent["measured"]["collider_to_contact"]
+            self.assertTrue(all(v > RULES["contact"]["max_collider_to_contact"] for v in reach.values()), reach)
+        # The honest records stay under the bar (894b4b8 PASSes, test_H3_the_collider_grown_...).
+        for build, project in (("894b4b8-collider", "desktop"), ("894b4b8-collider", "mobile"),
+                               ("96f5cea-collider", "desktop"), ("68a12b7-collider", "desktop")):
+            m = self.replay_measured(build, project)
+            self.assertTrue(m["collider_to_contact"], (build, project))
+            self.assertTrue(all(v < 0.9 for v in m["collider_to_contact"].values()), (build, project, m))
+
+    def replay_measured(self, build, project):
+        directory = os.path.join(REAL, build, project)
+        rec = real(os.path.join(build, project, "contact.json.gz"))
+        return {c["id"]: c for c in realism.judge_contacts({"contact": rec}, directory, D2, RULES, project,
+                                                           RELEASE)}["physics.drawn_extent"]["measured"]
+
+    @staticmethod
+    def bouncing(stall):
+        """Per-frame samples of a ball bouncing between a drawn floor and a turn at y 200, where
+        nothing is drawn (the bricks lie ahead of it, at 100-120); `stall` still frames at each
+        turn at the top (a hit-stop)."""
+        frames, y, v = [], 260.0, -5.0
+        bricks = entity("bricks", 300, 100, 200, 20, role="target")
+        floor = entity("floor", 300, 266, 200, 10, role="environment")
+        for _ in range(60):
+            here = entity("ball", 394, y - 6, 12, 12, collider=["circle", 394, y - 6, 12, 12])
+            frames.append([here, list(bricks), list(floor)])
+            if y <= 200 and v < 0:
+                v = -v
+                frames += [[list(here), list(bricks), list(floor)] for _ in range(stall)]
+            y += v
+            if y >= 260 and v > 0:
+                v = -v
+        return frames
+
+    def test_a_hit_stop_at_each_bounce_does_not_hide_the_turn(self):
+        for stall in (0, 1, 2, 5):
+            win = {"win": {"sampled": {"frames": self.bouncing(stall), "viewport": [1280, 720]}}}
+            got = [c for c in realism.judge(win, D2, RULES, "desktop", RELEASE)
+                   if c["id"] == "physics.undrawn_collision"][0]
+            self.assertEqual(got["status"], "FAIL", (stall, got["summary"]))
+
+    def test_no_turn_frozen_is_not_passed_when_the_probe_samples_show_turns(self):
+        # The contact test saw no turn (a hit-stop the bot's three-frame track cannot see), the
+        # win test's samples did: there was a contact to verify, so it is unmeasured.
+        records = record(ended="window", turns=0, passed=0, movers_seen=240)
+        records["win"] = {"sampled": {"frames": self.bouncing(1), "viewport": [1280, 720]}}
+        result = judged(records, self.dir, HELD)["physics.contact_drawn"]
+        self.assertEqual(result["status"], "FAIL", result["summary"])
+        self.assertEqual(result["measured"]["unmeasured"], realism.UNREPORTED)
+        self.assertIn("win test", result["summary"])
+        # Samples with no turn either: still no contact to verify.
+        still = record(ended="window", turns=0, passed=0, movers_seen=240)
+        still["win"] = {"sampled": {"frames": [[entity("ball", 394, 200, 12, 12)]] * 5, "viewport": [1280, 720]}}
+        self.assertEqual(judged(still, self.dir, HELD)["physics.contact_drawn"]["status"], "PASS")
+
+    def test_a_faint_wall_is_not_a_drawn_wall(self):
+        # Not a bypass: a wall drawn at 8 % opacity reads as the background it is blended into.
+        s = Scene(self.dir)
+        for image in (s.at, s.after):
+            paint(image, rect(300, 190, 500, 200), (220, 220, 230), alpha=0.08)
+        self.assertEqual(judged(record(s.capture()), self.dir)["physics.contact_drawn"]["status"], "FAIL")
+
+
 class Generalizes(unittest.TestCase):
     """SYNTHETIC (built here, not recorded): another shape and family - a block patrolling a
     ledge (a hazard with a rect collider, turning on x) - is read the same way. No second real

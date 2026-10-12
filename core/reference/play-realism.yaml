@@ -34,7 +34,8 @@
 # ways a build passed both checks unchanged (K7 bypass review, 2026-10-12); `contact.max_frame_ms`,
 # which could never fire on a bot record, is replaced by `contact.max_travel_px`; the bot
 # freezes on turns at moving and composite surfaces and keeps a third frame, read for sparks
-# and for the drawn extent away from the impact (`contact.composite_min_share`; K7 review).
+# and for the drawn extent away from the impact (`contact.composite_min_share`,
+# `contact.along_share`; K7 review).
 version: 1.2.0
 basis: measured-2
 
@@ -156,7 +157,10 @@ contact:
   # this share of its box drawn (colour step >= `min_edge` from where the mover was): then it is
   # a box with nothing drawn in it, and the check is not passed (unmeasured). Calibration (the
   # 1.2.0 recordings): every honest brick composite 0.106-0.995 of its box in view; a box with
-  # nothing drawn reads 0.
+  # nothing drawn reads 0. The same share is asked of the face it was hit on (a strip of its box
+  # along that face, a mover deep, in view) in some frame read: a drawn row bundled with an
+  # undrawn face into one box is not passed either (K7 review round 2). The one honest reading,
+  # a brick row whose bricks along the hit face were mostly gone (894b4b8 mobile), 0.034.
   composite_min_share: 0.01
   # physics.drawn_extent: the entities held (a collider reported on any of them), and how their
   # solid drawing is told from a glow - the pixels whose colour changed by `min_delta` and by
@@ -174,6 +178,17 @@ contact:
   # counted as body; 894b4b8, the collider set to its solid disc, read up to 1.2 x). Re-recorded
   # (2026-10-12, `*-r2`): 894b4b8 1.05-1.06 x (0.98-1.22 for any `solid_share` 0.3-0.5), r1
   # 96f5cea 1.95-2.04 x, 68a12b7 2.32-2.33 x, cbac64e 1.4-1.74 x.
+  # Along the travel the body is read on its OPAQUE pixels only - changed by at least
+  # `along_share` of the change inside the collider, connected to it - and held to the upper
+  # bar (`max_drawn_to_collider`) only: a solid tail or a sprite drawn long along its motion
+  # (a comet, a dart) FAILs, a fading motion trail does not (K7 review round 2: without it a
+  # solid 30 px tail passed). A shaded body reads shorter than it is on its opaque pixels
+  # (lenient, never a false FAIL). Calibration: synthetic (scripts/tests/test_play_contact.py
+  # ReviewR1) - a solid comet 3.03 x at every share 0.8-0.95, three 60 % ghosts behind a
+  # collider-sized ball 1.73 / 1.38 / 1.03 x at 0.8 / 0.9 / 0.95 (they blend to 94 % where they
+  # overlap); real `*-r2`: 894b4b8 0.73-0.77 x, r1 96f5cea 1.43-1.45 x, 68a12b7 0.78-1.33 x,
+  # cbac64e 0.98 x. A trail dense enough to blend past 95 % reads as body.
+  along_share: 0.95
   extent_roles: [player, projectile, threat, collectible, hazard]
   solid_share: 0.5
   min_delta: 24
@@ -182,17 +197,20 @@ contact:
   # as drawn, on a mover that reports a collider, the distance from its centre to the first
   # pixel of the surface (colour step >= `min_edge`, the median over the lines) plus the
   # distance it travelled that frame bounds what collides from above, so an honest collider's
-  # half extent on that axis is at most 1.0 x it; the median over an entity's turns may not
-  # exceed this bar (the 0.15 is a pixel or two of edge rounding on a small ball). A collider
+  # half extent on that axis is at most 1.0 x it; at no turn of an entity may it exceed this bar
+  # (the 0.15 is a pixel or two of edge rounding on a small ball; the largest over its turns, not
+  # the median, from K7 review round 2). A collider
   # reported to match a drawing the simulation does not use passes the pixel extent and fails
   # this. Calibration (real records, the collider reported by the harness patch): every honest
   # turn 0.59-0.86 (68a12b7, 96f5cea desktop; 894b4b8 desktop and mobile), 0.48-0.92 on the
   # 1.2.0 recordings; the same records with the ball's collider scaled about its centre as a
   # gaming build would report it - x2.0 (the drawn extent of 96f5cea then reads 1.0 x)
   # 1.17-1.72, x2.3 / x2.6 (where 68a12b7 / 96f5cea pass the drawn extent alone) 1.43-1.97.
-  # What it cannot see: the step bounds the reading from above, so a collider reported up to
-  # about 1.5 x the simulation's can pass both bars (96f5cea's scaled x1.6: 0.77-1.09 here,
-  # 1.22-1.26 x drawn across its travel) - the bar is not tightened to 1.0 on one game.
+  # On the `*-r2` recordings, the largest over an entity's turns: honest 0.48-0.92; scaled to
+  # where the drawn extent passes - 96f5cea x1.6 1.09 (desktop) / 1.44 (mobile), x1.7 1.16,
+  # cbac64e x1.5-1.7 1.12-1.27. What it cannot see: the step bounds the reading from above, so
+  # a collider reported up to about 1.5 x the simulation's can still pass both bars (96f5cea
+  # x1.6 desktop, cbac64e x1.5) - the bar is not tightened to 1.0 on one game (honest 0.92).
   max_collider_to_contact: 1.15
 
 # -- naive.*: the build played by someone who is not perfect ---------------------------------

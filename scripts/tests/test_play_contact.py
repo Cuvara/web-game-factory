@@ -720,6 +720,19 @@ class Bypasses(unittest.TestCase):
             self.assertTrue(m["collider_to_contact"], (build, project))
             self.assertTrue(all(v < 0.9 for v in m["collider_to_contact"].values()), (build, project, m))
 
+    def test_one_turn_over_the_contact_bar_is_enough(self):
+        # REAL r2 record, cbac64e's collider scaled x1.6: its drawn extent passes (1.0 x across),
+        # its median turn reads 1.09 - under the bar - and its largest 1.2 (K7 review round 2).
+        rec = self.scaled("cbac64e-collider-r2", "desktop", 1.6)
+        result = {c["id"]: c for c in realism.judge_contacts(
+            {"contact": rec}, os.path.join(REAL, "cbac64e-collider-r2", "desktop"), D2, RULES,
+            "desktop", RELEASE)}["physics.drawn_extent"]
+        self.assertEqual(result["status"], "FAIL", result["summary"])
+        ratios = [r["ratio"] for r in result["measured"]["contact_reaches"]]
+        self.assertLess(sorted(ratios)[len(ratios) // 2], RULES["contact"]["max_collider_to_contact"])
+        self.assertGreater(result["measured"]["collider_to_contact"]["ball-1"],
+                           RULES["contact"]["max_collider_to_contact"])
+
     def replay_measured(self, build, project):
         directory = os.path.join(REAL, build, project)
         rec = real(os.path.join(build, project, "contact.json.gz"))
@@ -872,17 +885,27 @@ class ReviewR1(unittest.TestCase):
         self.assertEqual(contact["status"], "FAIL", contact["summary"])
         self.assertEqual(contact["measured"]["unmeasured"], realism.UNREPORTED)
         self.assertEqual(contact["measured"]["composites_drawn_nowhere"], {"bricks": [2]})
-        # A sparse composite: nothing along its face near the hit, its other parts drawn in its
-        # box - left to the probe, the other contact verified: PASS.
-        sparse = self.composite_row(False)
+        # A sparse composite: nothing along its face near the hit, one brick still on that face
+        # further along (the bricks around the hit gone) - left to the probe, the other contact
+        # verified: PASS.
         s = Scene(self.dir, n=2)
-        paint(s.after, rect(301, 120, 339, 134), (200, 80, 60))
+        paint(s.after, rect(301, 186, 339, 200), (200, 80, 60))
         row = entity("bricks", 300, 120, 200, 80, role="target", render="composite")
         s.others, s.after_others = [row], [row]
-        sparse = s.capture()
-        result = judged(record(self.drawn_wall(1), sparse), self.dir)["physics.contact_drawn"]
+        result = judged(record(self.drawn_wall(1), s.capture()), self.dir)["physics.contact_drawn"]
         self.assertEqual(result["status"], "PASS", result["summary"])
         self.assertEqual(result["measured"]["unverified"], {"composite surface": 1})
+        self.assertGreater(result["measured"]["composite_face_drawn"]["bricks"], 0.01)
+        # K7 review round 2, probe P11: a drawn brick row bundled into one composite box with an
+        # undrawn face (the ceiling the mover turns at): its box holds something drawn, the face
+        # it was hit on nothing in any frame read - not passed (unmeasured).
+        s = Scene(self.dir, n=3)
+        paint(s.after, rect(301, 120, 499, 134), (200, 80, 60))
+        s.others, s.after_others = [row], [row]
+        bundled = judged(record(self.drawn_wall(1), s.capture()), self.dir, HELD)["physics.contact_drawn"]
+        self.assertEqual(bundled["status"], "FAIL", bundled["summary"])
+        self.assertEqual(bundled["measured"]["unmeasured"], realism.UNREPORTED)
+        self.assertEqual(bundled["measured"]["composites_drawn_nowhere"], {"bricks": [3]})
 
     def test_a_ceiling_reported_anew_under_another_id_is_read(self):
         # Re-issuing the ceiling's id each frame made it "gone by the frame after": the box under
@@ -960,6 +983,45 @@ class ReviewR1(unittest.TestCase):
             paint(image, disc(x, y, 12), (240, 200, 40))
         result = self.extent(draw)
         self.assertEqual(result["status"], "PASS", result["summary"])
+
+    def test_a_solid_tail_along_the_travel_is_the_body(self):
+        # K7 review round 2, probe P10: a 12 px ball with a SOLID 12 px wide tail about 30 px long
+        # behind it, its collider 12. Across its travel it is its collider's size; along it, on
+        # its opaque pixels, three times - FAIL (3e8d25f FAILed it at the impact).
+        def draw(image, x, y, s):
+            for k in range(25):
+                paint(image, disc(x + k * 0.707, y - k * 0.707, 12), (240, 200, 40))
+        result = self.extent(draw)
+        self.assertEqual(result["status"], "FAIL", result["summary"])
+        self.assertLess(result["measured"]["across"]["ball"], 1.15)
+        self.assertGreater(result["measured"]["along"]["ball"], 2.5)
+        self.assertIn("along its travel", result["summary"])
+
+    def test_a_trail_reads_shorter_than_the_bar_along_the_travel(self):
+        # The fading trail of probe P5 is under the opaque share along the travel.
+        def draw(image, x, y, s):
+            for k in range(1, 4):
+                paint(image, disc(x + 3 * k, y - 3 * k, 12), (240, 200, 40), alpha=0.6)
+            paint(image, disc(x, y, 12), (240, 200, 40))
+        result = self.extent(draw)
+        self.assertLessEqual(result["measured"]["along"]["ball"], 1.1, result["measured"])
+
+    def test_a_ball_cut_on_both_sides_across_its_travel_is_held_by_its_lower_bound(self):
+        # N19: a body six times its collider ACROSS its travel (its collider's size along it)
+        # reaches the window across: its width there is a lower bound, and a lower bound over
+        # the bar FAILs. It travels down-left; across is the up-left to down-right diagonal.
+        def draw(image, x, y, s):
+            def inside(px, py):
+                a = ((px - x) + (py - y)) / 1.4142   # across the travel
+                b = (-(px - x) + (py - y)) / 1.4142  # along it
+                return (a / 40.0) ** 2 + (b / 6.0) ** 2 <= 1
+            paint(image, inside, (240, 200, 40))
+        result = self.extent(draw, drawn_box=64)
+        self.assertEqual(result["status"], "FAIL", result["summary"])
+        self.assertNotIn("ball", result["measured"].get("across", {}))
+        self.assertLessEqual(result["measured"]["along"]["ball"], 1.3, result["measured"])
+        self.assertGreater(result["measured"]["across_lower_bounds"]["ball"],
+                           RULES["physics"]["max_drawn_to_collider"])
 
     def test_a_ball_drawn_three_times_its_collider_still_fails_across_its_travel(self):
         result = self.extent(lambda image, x, y, s: paint(image, disc(x, y, 36), (240, 200, 40)),

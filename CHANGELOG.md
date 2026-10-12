@@ -33,6 +33,16 @@ pinned by sha256 in each check. Bringing an artifact forward: none - a report fr
 has no contact record and gets neither check; a pinned 1.0.0 `play-realism.yaml` keeps a run
 on the old bars.
 
+**Measurement integrity: contact review r2** (K7 review round 2 of e46e2c4,
+`play-realism.yaml` 1.2.0). `physics.drawn_extent` judges the length along the travel again -
+on the opaque pixels only (`contact.along_share` 0.95), upper bar only: a solid tail 3.03 x FAILs
+as it did on 3e8d25f, a fading trail (1.03 x) and a squash still PASS; real `*-r2` 894b4b8 0.73-0.77
+x. A composite whose hit face is drawn nowhere in any frame read is unmeasured even when
+its box holds something drawn (`measured.composite_face_drawn`; the only honest real reading
+0.034). The collider against where it touched is the largest over an entity's turns, not the
+median (honest 0.48-0.92; cbac64e scaled x1.6 now FAILs). Bringing an artifact forward: none -
+a re-judged report can only lose a PASS.
+
 **Measurement integrity: contact review r1** (K7 review of 3e8d25f, `play-realism.yaml` 1.2.0,
 `ReviewR1` and `RealRecordingsR2` in `scripts/tests/test_play_contact.py`). The bot's contact
 test freezes on turns at moving and composite surfaces too (marked `passing`) and keeps a third

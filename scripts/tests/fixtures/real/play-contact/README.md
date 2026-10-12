@@ -81,8 +81,8 @@ third frame `contact-<n>-later` as many frames after `-after`, crops `CONTACT_MA
 mover's size (at least 120 px), and ends "no mover in play" on game time.
 
 - All 12 captures are kept. Every frame the judge LOADED is kept, cropped to the bounding box of
-  the pixels it read in any frame of the capture plus 2 px (a composite's drawn share, which
-  reads its whole box in view, is left out of the box; a frame loaded and never read is kept as
+  the pixels it read in any frame of the capture plus 2 px (a composite's drawn share over its
+  whole box in view is left out of the box - the share of the face it was hit on is kept; a frame loaded and never read is kept as
   one pixel); the capture's clips moved to the crop. The builder (k7 scratch
   `build_fixtures2.py`) replayed both checks on the full recording and on the fixture and
   refused any difference but the frames' own hashes.

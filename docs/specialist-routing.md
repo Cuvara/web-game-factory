@@ -418,6 +418,17 @@ release decide, which a passing report never does). Its history says that report
 it (`listed by a passing ...`, at the report's seq), and evidence strength refuses that pass
 `no-repair`, as the verification or as a sample: the judge still saw the defect.
 
+Known limitations (review r3, not changed):
+
+- The ledger's own memory of each check (`lifecycle._recorded`, `_regressed`) still reads a record verified while a
+  passing report listed it as a pass; this errs strict - a later failure of it can hold another fix `regressed`,
+  never verify one.
+- A record verified by a pass that no longer lists it, then listed again by later passing reports, keeps its
+  verifying pass: those samples are refused, but it stays `single-run` rather than being treated as reopened.
+- Only the severities `ledger.noted_on_pass` names (blocker, major) write the `listed by a passing` note: a pass
+  that lists the finding at minor still counts as a repair.
+- Ledgers written before triage-report 1.4.0 carry no `listed by a passing` notes, so their passes are not refused.
+
 Tests: `scripts/tests/test_triage.py` `PassingReportFindings` - the REAL 3D visual-qa v3
 (PASS, 3f394e2) replayed through the REAL triage v12 it was read by, on all of its real
 inputs (`fixtures/real/triage-hygiene`): the two majors recorded noted with the run's own

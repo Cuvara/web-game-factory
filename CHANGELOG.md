@@ -32,8 +32,11 @@ still lists the finding beside its pass - verifying it, or as a later sample - i
 `no-repair` by evidence strength (core/reference/evidence-strength.yaml 1.3.0; review r2,
 pre-existing: such passes made a still-listed finding `reproduced`); the ledger's status for it
 is unchanged - the producer's pass stands. A noted record of a check-listing producer raised by
-a failing report keeps that report's measurement as its failure (review r2, latent). Bringing
-an artifact forward: none - existing ledgers stay valid; a run's next triage or quality gate records what
+a failing report keeps that report's measurement as its failure (review r2, latent). Known
+limitations (review r3, docs/specialist-routing.md): the ledger's `_recorded`/`_regressed` still
+read a verified-while-listed record as a pass (errs strict); a record listed again after a clean
+verification stays `single-run`, not reopened; a listing at minor writes no note and still counts;
+ledgers older than this change carry no notes. Bringing an artifact forward: none - existing ledgers stay valid; a run's next triage or quality gate records what
 its newest passing reports name.
 
 **Greybox playability reports carry their phase in their id** (K7 #10). The greybox's and

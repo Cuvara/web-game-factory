@@ -2271,6 +2271,17 @@ class PassingReportFindings(unittest.TestCase):
         self.assertEqual((kept["commit"], kept["seq"], kept["status"],
                           kept["artifact_id"]), (b, 14, "FAIL", "playability-report-14"))
         self.assertEqual(strength.snapshot(raised)["before"]["commit"], b)
+        # a failing report that fails the finding but does not list its check (review r3
+        # G2, mutation N6): the passing report's measurement is dropped, never kept as the
+        # failure - `before` is the failing report's `reopened` entry
+        other = report(b, 14, "FAIL")
+        other["checks"][0]["id"] = "core.other"
+        raised = advance(first, other, 14, {fid}, {})[0]
+        self.assertNotIn("noted", raised)
+        self.assertNotIn("failed_measurement", raised)
+        before = strength.snapshot(raised)["before"]
+        self.assertEqual((before["commit"], before["seq"], before["status"],
+                          before["artifact_id"]), (b, 14, "FAIL", "playability-report-14"))
 
     def test_r1_2_a_verified_noted_record_raised_again_by_a_failing_report_is_unstable(self):
         """Noted (a), gone from the judge (b: verified), raised by a failing report (c),

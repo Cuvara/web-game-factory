@@ -661,6 +661,23 @@ class Bypasses(unittest.TestCase):
         self.assertEqual(covered["measured"]["unverified"], {"masked": 1}, covered)
         self.assertEqual(covered["measured"]["verified"], 1)
 
+    def test_an_entity_masked_in_every_frame_alone_is_named_as_masked(self):
+        # N13: the only entity with a collider, under a "trail" reported over it in the frozen
+        # frame: unmeasured, and the report says it was masked - not that nothing moved away.
+        s = Scene(self.dir, drawn=40, collider=12)
+        capture = s.capture()
+        frozen = capture["at"]["frames"][-1]["e"]
+        box = realism._box(*frozen[0][9][1:5])
+        cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        paint(s.at, disc(cx, cy, 36), (240, 200, 40))
+        frozen.append(entity("trail", cx - 10, cy - 10, 20, 20, role="vfx"))
+        with open(os.path.join(self.dir, "contact-1-at.png"), "wb") as handle:
+            handle.write(encode_png(s.at))
+        result = judged(record(capture), self.dir, HELD)["physics.drawn_extent"]
+        self.assertEqual(result["measured"]["unmeasured"], realism.UNREPORTED)
+        self.assertEqual(result["measured"]["masked_out"], ["ball"])
+        self.assertIn("under something else reported", result["summary"])
+
     def test_an_entity_masked_in_every_frame_is_not_dropped_from_the_drawn_extent(self):
         # The ball, drawn three times its collider, under a "trail" entity reported over it
         # (drawn nowhere) in the frozen frame; a paddle drawn its collider's size beside it. The

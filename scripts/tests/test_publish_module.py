@@ -214,6 +214,7 @@ class PublishCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
         self.addCleanup(redact.forget)
         self.game = GameRepository(self.scratch)
+        self.prepare_bundle(self.game)
         self.evidence = self.game.evidence()
         instance = release_step(repo_dir=self.game.root)
         instance.environ = self.game.environ(())
@@ -233,6 +234,9 @@ class PublishCase(unittest.TestCase):
         self.listing = listing_placeholders()
 
     # -- fixtures ---------------------------------------------------------------------------
+
+    def prepare_bundle(self, game):
+        """A subclass changes the built bundle here, before it is verified and released."""
 
     def write_campaign(self, text=None, platform_id="generic-web", **kw):
         """The campaign the release shipped (campaign_fixture): of the manifest's commit,

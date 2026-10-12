@@ -41,6 +41,13 @@ looked at a rendered frame or played the game. This step does both.
 | FAILED, route `fail` | a required check failed: back to develop, whose brief leads with *Fix first: what the build did when it was played* (each failed check and the frames that show it) |
 | BLOCKED | the step could not establish a result: no experience contract in the design, no checkout, the commit would not install or build, the browser would not start - or, with no check failed, a required check could not be measured: every attempt of its recording ran on a degraded host (`environment-degraded`), or the unit content.variety's negative rests on was cut short (`sample-cut`). Nothing about the game is claimed; resume on a quieter host |
 
+The report's artifact id is `wgf:playability-report:<title>:<yyyymmdd>-<nn>`, `nn` the
+step's execution count. A step that names a phase (`greybox-playability`, `with: {phase:
+greybox}`) puts it in the scope - `wgf:playability-report:<title>-greybox:...` - because
+each step counts its executions from 1: before, the greybox's and develop's reports of one
+day shared ids (five pairs in the 2D run of 2026-10-05, six in the 3D run). Older reports
+keep their ids; the ledger tells them apart by content hash and run-local seq.
+
 The route budgets `greybox-playability.fail: 2` (on greybox) and `playability.fail: 2` (on
 develop) bound the loops. The third unplayable build blocks the run for a person, like the
 other loops (`max_visits_by_route`,

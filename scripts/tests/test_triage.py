@@ -1778,5 +1778,546 @@ class BaselineAcrossReports(unittest.TestCase):
                       record["baseline"][self.PQ]["passing"])
 
 
+REAL_TRIAGE_V12 = os.path.join(HERE, "fixtures", "real", "triage-hygiene", "triage-v12-3d.json.gz")
+NOTED_OFF_ROUTING = None
+
+
+def _routing_without_noted(tmp):
+    """The shipped routing data with `ledger.noted_on_pass` removed: the ledger as it was
+    before passing reports' findings were recorded (the control the fix is compared with)."""
+    with open(os.path.join(paths.REFERENCE, "specialist-routing.yaml"), encoding="utf-8") as h:
+        text = h.read()
+    head, sep, tail = text.partition("  noted_on_pass:\n")
+    assert sep, "specialist-routing.yaml has no ledger.noted_on_pass"
+    rest = tail.split("\n")
+    while rest and rest[0].startswith("    "):
+        rest.pop(0)
+    path = os.path.join(tmp, "specialist-routing.yaml")
+    with open(path, "w", encoding="utf-8", newline="\n") as h:
+        h.write(head + "\n".join(rest))
+    return path
+
+
+class _RealInputs:
+    """The real inputs of one triage, each with its real run-local seq and content hash."""
+
+    def __init__(self, entries):
+        self.docs = {k: v["content"] for k, v in entries.items()}
+        self.refs = {k: types.SimpleNamespace(id=v["content"]["provenance"]["artifact_id"],
+                                              type=k, seq=v["seq"],
+                                              content_hash=v["content_hash"])
+                     for k, v in entries.items()}
+
+    def __contains__(self, k):
+        return k in self.docs
+
+    def load(self, k):
+        return self.docs[k]
+
+
+class PassingReportFindings(unittest.TestCase):
+    """K7 #4 (retro H12): a report that PASSES can still name blocker or major findings of
+    its own. The 3D run's visual-qa v3 passed the build with two MAJOR findings (the
+    objective banner covers the goal; the marble loses contrast on dusk worlds), and the
+    triage that read it (triage-report v12) recorded neither: only failing reports were
+    normalized. specialist-routing 1.7.0 `ledger.noted_on_pass`: they are recorded in the
+    ledger as `noted` - detected and classified to their owner, never routed, never holding
+    the build (the producer passed it: no gate verdict or release decision changes)."""
+
+    BANNER = "visual-qa-report:finding:banner-covers-goal"
+    CONTRAST = "visual-qa-report:finding:marble-low-contrast-storm"
+    STUDS = "visual-qa-report:finding:marble-beads-read-as-studs"
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="wgf-noted-")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    @staticmethod
+    def bundle():
+        import gzip
+        with gzip.open(REAL_TRIAGE_V12, "rb") as handle:
+            return json.loads(handle.read().decode("utf-8"))
+
+    def replay(self, bundle, routing_path=None):
+        """Triage v12 of the real 3D run again, on its real inputs, at a fixed clock."""
+        context = types.SimpleNamespace(entered_by=bundle["real_triage_v12"]["entered_by"],
+                                        run_dir=self.tmp, logger=Log(), execution=12,
+                                        visit=12, project_id="sky-marble")
+        step = TriageStep(types.SimpleNamespace(id="triage", params={}, on=dict(ON)))
+        step.clock = staticmethod(lambda: "2026-10-05T14:19:18Z")
+        if routing_path:
+            step.routing_path = routing_path
+        result = step.execute(_RealInputs(bundle["inputs"]), context)
+        for artifact in result.artifacts:
+            self.assertEqual(ArtifactContracts()("triage-report", artifact.content), [])
+        return result
+
+    def test_the_real_passing_visual_qa_majors_are_recorded_noted_never_routed(self):
+        """REAL: visual-qa-report v3 of the 3D run (verdict PASS, 3f394e2) replayed through
+        the triage that read it (v12, entered by content-sufficiency.develop)."""
+        bundle = self.bundle()
+        vqa = bundle["inputs"]["visual-qa-report"]["content"]
+        self.assertEqual(vqa["verdict"], "PASS")
+        self.assertEqual(vqa["provenance"]["artifact_id"],
+                         "wgf:visual-qa-report:sky-marble:20261005-03")
+        real = bundle["real_triage_v12"]
+        # what the run recorded: neither major anywhere in its ledger
+        self.assertNotIn(self.BANNER, real["lifecycle_ids"])
+        self.assertNotIn(self.CONTRAST, real["lifecycle_ids"])
+
+        result = self.replay(bundle)
+        report = result.artifacts[0].content
+        # the route and what is routed are the run's own
+        self.assertEqual(result.route, real["selected"]["label"])
+        self.assertEqual(report["verdict"], real["verdict"])
+        self.assertEqual([f["id"] for f in report["findings"]],
+                         [f["id"] for f in real["findings"]])
+        records = {r["id"]: r for r in report["lifecycle"]}
+        for fid, word in ((self.BANNER, "composition"), (self.CONTRAST, "lighting")):
+            owner = ROUTING.owner(ROUTING.resolve_word(word, "3d"))
+            record = records.get(fid)
+            self.assertIsNotNone(record, f"{fid} is not in the ledger")
+            self.assertEqual(record["severity"], "major")
+            self.assertEqual(record["status"], "classified")
+            self.assertEqual(record["owner"], owner)
+            self.assertEqual(record["noted"]["verdict"], "PASS")
+            self.assertEqual(record["noted"]["artifact_id"],
+                             "wgf:visual-qa-report:sky-marble:20261005-03")
+            self.assertEqual(record["noted"]["seq"], 72)
+            self.assertEqual(record["build"]["commit"], vqa["commit"])
+            self.assertEqual([h["status"] for h in record["history"]][:2],
+                             ["detected", "classified"])
+            self.assertNotIn(fid, {f for g in report["groups"] for f in g["findings"]})
+        # a minor finding of a passing report is not recorded (minors never hold a build)
+        self.assertNotIn(self.STUDS, records)
+        self.assertEqual(sorted(n["finding"] for n in report["noted"]),
+                         sorted([self.BANNER, self.CONTRAST]))
+
+    def test_noted_on_pass_names_known_producers_and_severities(self):
+        self.assertEqual(ROUTING.problems(), [])
+        data = json.loads(json.dumps(ROUTING.data))
+        data["ledger"]["noted_on_pass"] = {"no-such-report": ["major"],
+                                           "visual-qa-report": ["fatal"]}
+        problems = Routing(data, {"roles": ROUTING.roles}).problems()
+        self.assertTrue(any("no-such-report" in p for p in problems), problems)
+        self.assertTrue(any("'fatal'" in p for p in problems), problems)
+
+    def test_the_real_replay_changes_no_gate_outcome(self):
+        """REAL: with and without `noted_on_pass`, the same route, groups and held findings,
+        the same ledger apart from the noted records, and the same blocking set - what the
+        quality gate is BLOCKED on and release refuses."""
+        from wgf_triage import ledger as ledgers
+        bundle = self.bundle()
+        on = self.replay(bundle).artifacts[0].content
+        off_routing = _routing_without_noted(self.tmp)
+        off_result = self.replay(bundle, routing_path=off_routing)
+        off = off_result.artifacts[0].content
+        for key in ("verdict", "selected", "groups", "pending", "deferred", "held", "findings",
+                    "ledger"):
+            self.assertEqual(on[key], off[key], key)
+        noted = {r["id"] for r in on["lifecycle"] if r.get("noted")}
+        self.assertEqual(noted, {self.BANNER, self.CONTRAST})
+        self.assertEqual([r for r in on["lifecycle"] if r["id"] not in noted],
+                         off["lifecycle"])
+        self.assertNotIn("noted", off)
+        self.assertEqual(
+            [r["id"] for r in ledgers.blocking(on["lifecycle"], ROUTING)],
+            [r["id"] for r in ledgers.blocking(off["lifecycle"], ROUTING)])
+
+    # -- the noted record's lifecycle (FIXTURE reports) ------------------------------------
+
+    def vqa(self, commit, seq, *, banner=True, verdict="PASS", blocker=False):
+        findings = ([{"id": "banner-covers-goal", "severity": "major",
+                      "category": "composition", "frame": None, "route": "develop",
+                      "summary": "the objective banner covers the goal"}] if banner else [])
+        if blocker:
+            findings.append({"id": "black-ground", "severity": "blocker",
+                             "category": "readability", "frame": None, "route": "develop",
+                             "summary": "the ground renders black"})
+        report = visual_qa(scores={"environment": 4}, findings=findings,
+                           failed=["finding:black-ground"] if blocker else [],
+                           verdict=verdict)
+        report["commit"] = commit
+        report["provenance"] = {"artifact_id": f"visual-qa-report-{seq}",
+                                "content_hash": "sha256:" + f"{seq:02d}" * 32}
+        return report
+
+    @staticmethod
+    def proto(commit, iteration, specialist=None):
+        body = {"title_id": "demo", "iteration": iteration,
+                "provenance": {"artifact_id": f"prototype-report-demo-{iteration}"},
+                "build_ref": {"commit_sha": commit}}
+        if specialist:
+            body["specialist"] = specialist
+        return body
+
+    @staticmethod
+    def records(result):
+        return {r["id"]: r for r in result.artifacts[0].content["lifecycle"]}
+
+    def test_a_noted_finding_stays_open_while_listed_and_is_verified_when_gone(self):
+        a, b, c = "a" * 40, "b" * 40, "c" * 40
+        docs = {"game-design": DESIGN_3D, "prototype-report": self.proto(a, 1),
+                "visual-qa-report": self.vqa(a, 8)}
+        seqs = {"prototype-report": 5, "visual-qa-report": 8}
+        first = run_triage(docs, seqs=seqs, entered=None)
+        self.assertIsNone(first.route)  # nothing failed: the first pass is unchanged
+        record = self.records(first)[self.BANNER]
+        self.assertEqual((record["status"], record["noted"]["seq"]), ("classified", 8))
+        self.assertEqual(first.artifacts[0].content["verdict"], "clear")
+        # the next build, the judge still lists it on a passing report: not verified
+        docs.update({"triage-report": first.artifacts[0].content,
+                     "prototype-report": self.proto(b, 2),
+                     "visual-qa-report": self.vqa(b, 14)})
+        seqs.update({"triage-report": 9, "prototype-report": 11, "visual-qa-report": 14})
+        second = run_triage(docs, seqs=seqs, entered=None)
+        record = self.records(second)[self.BANNER]
+        self.assertEqual(record["status"], "classified")
+        self.assertEqual(record["noted"]["seq"], 14)
+        self.assertEqual(record["build"]["commit"], b)
+        self.assertIn("listed again", record["history"][-1]["note"])
+        # never verified while the judge still lists it: no `verified` (or `closed`) entry,
+        # no passing verification (review r2 F3)
+        self.assertEqual([h for h in record["history"] if h["status"] in ("verified",
+                                                                         "closed")], [])
+        self.assertIsNone(record["verification"])
+        # a newer build the judge no longer lists it on: verified, with no fix recorded
+        docs.update({"triage-report": second.artifacts[0].content,
+                     "prototype-report": self.proto(c, 3),
+                     "visual-qa-report": self.vqa(c, 18, banner=False)})
+        seqs.update({"triage-report": 15, "prototype-report": 16, "visual-qa-report": 18})
+        third = run_triage(docs, seqs=seqs, entered=None)
+        record = self.records(third)[self.BANNER]
+        self.assertIn(record["status"], ("verified", "closed"))
+        self.assertEqual(record["verification"]["seq"], 18)
+
+    def test_a_failing_report_raising_it_makes_it_an_ordinary_routed_finding(self):
+        a, b = "a" * 40, "b" * 40
+        docs = {"game-design": DESIGN_3D, "prototype-report": self.proto(a, 1),
+                "visual-qa-report": self.vqa(a, 8)}
+        seqs = {"prototype-report": 5, "visual-qa-report": 8}
+        first = run_triage(docs, seqs=seqs, entered=None)
+        docs.update({"triage-report": first.artifacts[0].content,
+                     "prototype-report": self.proto(b, 2),
+                     "visual-qa-report": self.vqa(b, 14, verdict="FAIL", blocker=True)})
+        seqs.update({"triage-report": 9, "prototype-report": 11, "visual-qa-report": 14})
+        second = run_triage(docs, seqs=seqs)
+        record = self.records(second)[self.BANNER]
+        self.assertNotIn("noted", record)
+        self.assertEqual(record["status"], "assigned")
+        self.assertIn(self.BANNER, second.artifacts[0].content["selected"]["findings"])
+        self.assertTrue(any("failing report" in str(h.get("note")) for h in record["history"]))
+
+    def test_the_quality_gate_holds_a_noted_record_still_listed_and_is_not_blocked_by_it(self):
+        from wgf_triage import ledger as ledgers
+        a, b = "a" * 40, "b" * 40
+        docs = {"game-design": DESIGN_3D, "prototype-report": self.proto(a, 1),
+                "visual-qa-report": self.vqa(a, 8)}
+        seqs = {"prototype-report": 5, "visual-qa-report": 8}
+        first = run_triage(docs, seqs=seqs, entered=None)
+        docs.update({"triage-report": first.artifacts[0].content,
+                     "prototype-report": self.proto(b, 2),
+                     "visual-qa-report": self.vqa(b, 14)})
+        seqs.update({"triage-report": 9, "prototype-report": 11, "visual-qa-report": 14})
+        inputs = Inputs(docs, seqs)
+        lifecycle = ledgers.remeasure(inputs.refs, inputs.load, at="2026-10-10T00:00:00Z",
+                                      by="quality-report-x", routing=ROUTING)
+        record = {r["id"]: r for r in lifecycle}[self.BANNER]
+        self.assertEqual(record["status"], "classified")
+        self.assertTrue(record.get("noted"))
+        self.assertEqual(ledgers.blocking(lifecycle, ROUTING), [])
+
+    def test_an_ordinary_finding_listed_by_a_passing_report_keeps_its_status_and_is_noted(self):
+        """A major the judge raised on a FAIL report, listed again on the next PASS report:
+        its status is what it was without this rule (no verdict changes); its history
+        says the passing report still listed it."""
+        a, b = "a" * 40, "b" * 40
+        docs = {"game-design": DESIGN_3D, "prototype-report": self.proto(a, 1),
+                "visual-qa-report": self.vqa(a, 8, verdict="FAIL", blocker=True)}
+        seqs = {"prototype-report": 5, "visual-qa-report": 8}
+        first = run_triage(docs, seqs=seqs)
+        docs.update({"triage-report": first.artifacts[0].content,
+                     "prototype-report": self.proto(b, 2),
+                     "visual-qa-report": self.vqa(b, 14)})
+        seqs.update({"triage-report": 9, "prototype-report": 11, "visual-qa-report": 14})
+        on = self.records(run_triage(docs, seqs=seqs, entered=None))[self.BANNER]
+        step_off = _routing_without_noted(self.tmp)
+        context = types.SimpleNamespace(entered_by=None, run_dir=None, logger=Log(),
+                                        execution=1, visit=1, project_id="demo")
+        step = TriageStep(types.SimpleNamespace(id="triage", params={}, on=dict(ON)))
+        step.routing_path = step_off
+        off = {r["id"]: r for r in step.execute(Inputs(docs, seqs), context)
+               .artifacts[0].content["lifecycle"]}[self.BANNER]
+        self.assertNotIn("noted", on)
+        self.assertEqual(on["status"], off["status"])
+        self.assertTrue(any("passing" in str(h.get("note")) for h in on["history"]))
+        # what its history says of its status is true (review r1 minor 3): the passing
+        # report verified it in this same advance, so "unchanged" would be false
+        listed = [h for h in on["history"] if str(h.get("note") or "").startswith(
+            "listed by a passing")]
+        self.assertEqual(len(listed), 1)
+        self.assertNotIn("unchanged", listed[0]["note"])
+        self.assertIn(on["status"], listed[0]["note"])
+
+    # -- review r1: the quality gate / release path, and evidence strength (FIXTURE) -------
+
+    def noted_then(self, *later):
+        """A noted record (visual-qa PASS at seq 8 lists the banner), then each of `later`
+        - (vqa report, seq, "triage" | "remeasure") - advancing the ledger in turn. Returns
+        every ledger, newest last."""
+        from wgf_triage import ledger as ledgers
+        a = "a" * 40
+        docs = {"game-design": DESIGN_3D, "prototype-report": self.proto(a, 1),
+                "visual-qa-report": self.vqa(a, 8)}
+        seqs = {"prototype-report": 5, "visual-qa-report": 8}
+        ledgers_seen = [run_triage(docs, seqs=seqs, entered=None).artifacts[0].content]
+        for report, seq, how in later:
+            docs.update({"triage-report": {"lifecycle": ledgers_seen[-1][-1]}
+                         if isinstance(ledgers_seen[-1], list) else ledgers_seen[-1],
+                         "visual-qa-report": report})
+            seqs.update({"triage-report": seq - 1, "visual-qa-report": seq})
+            if how == "triage":
+                content = run_triage(docs, seqs=seqs).artifacts[0].content
+                ledgers_seen.append(content)
+            else:
+                inputs = Inputs(docs, seqs)
+                lifecycle = ledgers.remeasure(inputs.refs, inputs.load,
+                                              at="2026-10-12T00:00:00Z",
+                                              by=f"quality-report-{seq}", routing=ROUTING)
+                ledgers_seen.append({"lifecycle": lifecycle, "provenance": {}})
+        return ledgers_seen
+
+    def banner(self, ledger):
+        return {r["id"]: r for r in ledger["lifecycle"]}[self.BANNER]
+
+    def test_r1_1_a_failing_report_read_by_the_quality_gate_unnotes_an_open_noted_record(self):
+        """A failing visual-qa raises the open noted banner; the quality gate (current=[])
+        advances the ledger before any triage: the record holds the build."""
+        from wgf_triage import ledger as ledgers
+        last = self.noted_then((self.vqa("b" * 40, 14, verdict="FAIL", blocker=True), 14,
+                                "remeasure"))[-1]
+        record = self.banner(last)
+        self.assertNotIn("noted", record)
+        self.assertIn(self.BANNER, [r["id"] for r in ledgers.blocking(last["lifecycle"],
+                                                                      ROUTING)])
+
+    def test_r1_1_a_failing_report_read_by_the_quality_gate_reopens_a_done_noted_record(self):
+        from wgf_triage import ledger as ledgers
+        steps = self.noted_then(
+            (self.vqa("b" * 40, 14, banner=False), 14, "triage"),
+            (self.vqa("c" * 40, 18, verdict="FAIL", blocker=True), 18, "remeasure"))
+        self.assertIn(self.banner(steps[1])["status"], ("verified", "closed"))
+        record = self.banner(steps[-1])
+        self.assertNotIn("noted", record)
+        self.assertEqual(record["status"], "classified")
+        self.assertIn(self.BANNER, [r["id"] for r in ledgers.blocking(steps[-1]["lifecycle"],
+                                                                      ROUTING)])
+
+    def test_r1_2_a_noted_detection_is_never_a_measured_failure(self):
+        """K6.4: what a PASSING report named is not a FAIL measurement - not in the
+        ledger's outcomes, not as the `before` of a verification of judge silence."""
+        from wgf_knowledge import strength
+        steps = self.noted_then((self.vqa("b" * 40, 14, banner=False), 14, "triage"),
+                                (self.vqa("c" * 40, 18), 18, "triage"))
+        verified = self.banner(steps[1])
+        snap = strength.snapshot(verified)
+        self.assertEqual([o["verdict"] for o in snap["outcomes"]], ["PASS"])
+        self.assertIsNone(snap["before"])
+        found = strength.derive([{"basis": "measured", "run": "r", "report_hash": "x",
+                                  "finding": self.BANNER, "commit": "a" * 40,
+                                  "remeasurement": snap}])
+        self.assertEqual(found["strength"], "hypothesis")
+        self.assertEqual({r["rule"] for r in found["refused"]}, {"no-repair"})
+        # listed again by a PASSING report after its verification: still no failure
+        again = strength.snapshot(self.banner(steps[2]))
+        self.assertNotIn("FAIL", [o["verdict"] for o in again["outcomes"]])
+
+    def test_r1_2_the_failing_report_that_raises_a_noted_record_is_its_failure(self):
+        """Promoted by a failing report (commit b, seq 14), fixed (c), verified (seq 18):
+        the FAIL->PASS pair is b -> c, never the passing report's commit a."""
+        from wgf_knowledge import strength
+        b, c = "b" * 40, "c" * 40
+        steps = self.noted_then((self.vqa(b, 14, verdict="FAIL", blocker=True), 14, "triage"))
+        promoted = self.banner(steps[-1])
+        self.assertEqual(promoted["status"], "assigned")
+        owner = promoted["owner"]
+        from wgf_triage import ledger as ledgers
+        docs = {"game-design": DESIGN_3D, "triage-report": steps[-1],
+                "prototype-report": self.proto(c, 3, {"role": owner,
+                                                      "findings": [self.BANNER]}),
+                "visual-qa-report": self.vqa(c, 18, banner=False)}
+        seqs = {"triage-report": 15, "prototype-report": 16, "visual-qa-report": 18}
+        inputs = Inputs(docs, seqs)
+        lifecycle = ledgers.remeasure(inputs.refs, inputs.load, at="2026-10-12T00:00:00Z",
+                                      by="quality-report-19", routing=ROUTING)
+        record = {r["id"]: r for r in lifecycle}[self.BANNER]
+        self.assertIn(record["status"], ("verified", "closed"))
+        snap = strength.snapshot(record)
+        self.assertEqual([(o["verdict"], o["commit"]) for o in snap["outcomes"]],
+                         [("FAIL", b), ("PASS", c)])
+        self.assertEqual((snap["before"]["commit"], snap["before"]["status"],
+                          snap["before"]["seq"]), (b, "FAIL", 14))
+
+    def test_r1_2_the_ledger_records_the_raising_report_not_the_noted_listing_as_a_failure(self):
+        """The ledger's own memory of each check (lifecycle._recorded, which baselines and
+        regressions read) holds what the reports measured: nothing failed while the banner
+        was only noted; the failing report that raised it did, at its seq."""
+        from wgf_triage import lifecycle
+        steps = self.noted_then((self.vqa("b" * 40, 14, verdict="FAIL", blocker=True), 14,
+                                 "triage"))
+        key = self.BANNER
+        self.assertNotIn(key, lifecycle._recorded(steps[0]["lifecycle"],
+                                                  "visual-qa-report", None))
+        self.assertEqual(lifecycle._recorded(steps[-1]["lifecycle"], "visual-qa-report",
+                                             None).get(key), (14, "FAIL"))
+
+    def ordinary_then_passes(self, listed):
+        """The banner raised by a FAILING visual-qa (b, seq 14), then three PASSING reports
+        (c, d, e), each listing it at major or not (`listed`, one flag per report, or one
+        for all). The newest ledger."""
+        flags = listed if isinstance(listed, tuple) else (listed,) * 3
+        docs = {"game-design": DESIGN_3D, "prototype-report": self.proto("b" * 40, 1),
+                "visual-qa-report": self.vqa("b" * 40, 14, verdict="FAIL", blocker=True)}
+        seqs = {"prototype-report": 13, "visual-qa-report": 14}
+        ledger = run_triage(docs, seqs=seqs).artifacts[0].content
+        for i, (c, s) in enumerate((("c", 18), ("d", 22), ("e", 26))):
+            docs.update({"triage-report": ledger, "prototype-report": self.proto(c * 40, i + 2),
+                         "visual-qa-report": self.vqa(c * 40, s, banner=flags[i])})
+            seqs.update({"triage-report": s - 2, "prototype-report": s - 1,
+                         "visual-qa-report": s})
+            ledger = run_triage(docs, seqs=seqs, entered=None).artifacts[0].content
+        return ledger
+
+    def test_r2_f1_a_pass_that_still_lists_the_finding_is_no_repair(self):
+        """Review r2 F1 (pre-existing on 29d22de, the reviewer's p_base.py): an ordinary
+        finding still listed at major by the passing reports after it is verified, and
+        closed, by them - its ledger status is the producer's verdict's (no gate changes),
+        but K6.4 strength refuses each such pass: the judge still saw the defect."""
+        from wgf_knowledge import strength
+        record = self.banner(self.ordinary_then_passes(listed=True))
+        self.assertIn(record["status"], ("verified", "closed"))  # the gate outcome stands
+        snap = strength.snapshot(record)
+        snap["class"] = "ai-judged"
+        self.assertTrue(snap["after"]["listed"])
+        self.assertTrue(all(s.get("listed") for s in snap["samples"]))
+        found = strength.derive([{"basis": "measured", "run": "r", "report_hash": "x",
+                                  "finding": self.BANNER, "commit": "b" * 40,
+                                  "remeasurement": snap}])
+        self.assertEqual(found["strength"], "hypothesis")
+        self.assertEqual({r["rule"] for r in found["refused"]}, {"no-repair"})
+        self.assertIn("still lists it", found["refused"][0]["reason"])
+        # verified by a pass that no longer lists it (c), then listed again by the next
+        # passing reports (d, e): those samples are refused, so it is not reproduced
+        later = strength.snapshot(self.banner(self.ordinary_then_passes(
+            listed=(False, True, True))))
+        later["class"] = "ai-judged"
+        self.assertNotIn("listed", later["after"])
+        found = strength.derive([{"basis": "measured", "run": "r", "report_hash": "x",
+                                  "finding": self.BANNER, "commit": "b" * 40,
+                                  "remeasurement": later}])
+        self.assertEqual(found["strength"], "single-run")
+        self.assertEqual([r["rule"] for r in found["refused"]], ["no-repair", "no-repair"])
+        # the control: the same passes, no longer listing it, reproduce the repair
+        control = strength.snapshot(self.banner(self.ordinary_then_passes(listed=False)))
+        control["class"] = "ai-judged"
+        self.assertNotIn("listed", control["after"])
+        self.assertEqual(strength.derive([{"basis": "measured", "run": "r",
+                                           "report_hash": "x", "finding": self.BANNER,
+                                           "commit": "b" * 40,
+                                           "remeasurement": control}])["strength"],
+                         "reproduced")
+
+    def test_r2_f2_a_checked_producer_raised_from_noted_keeps_the_failing_measurement(self):
+        """Review r2 F2 (latent: only visual-qa is noted_on_pass today, and it lists no
+        checks). With a FIXTURE routing that notes playability's own findings on a pass, a
+        noted record carries the PASSING report's measurement of its check; raised by a
+        failing report on the quality gate's path (current=[]), the failure kept is the
+        failing report's - the `before` K6.4 measures a repair against."""
+        from wgf_knowledge import strength
+        from wgf_triage import ledger as ledgers, lifecycle
+        data = json.loads(json.dumps(ROUTING.data))
+        data["ledger"]["noted_on_pass"]["playability-report"] = ["blocker", "major"]
+        routing = Routing(data, {"roles": ROUTING.roles})
+        self.assertEqual(routing.problems(), [])
+        a, b = "a" * 40, "b" * 40
+
+        def report(commit, seq, verdict):
+            body = playability(("core.loop", {}), verdict=verdict)
+            body["commit"] = commit
+            body["provenance"] = {"artifact_id": f"playability-report-{seq}",
+                                  "content_hash": "sha256:" + f"{seq:02d}" * 32}
+            return body
+
+        def advance(previous, body, seq, failing, noted):
+            return lifecycle.advance(
+                previous, at="2026-10-12T00:00:00Z", current=[],
+                failing={"playability-report": failing}, seqs={"playability-report": seq},
+                reports={"playability-report": body}, proto=None, proto_seq=None,
+                decision=None, decision_seq=-1, human_ids=set(), selected=None,
+                triage_id=f"t-{seq}", routing_version=routing.version,
+                build_of=lambda kind: {"commit": body["commit"], "digest": None},
+                routing=routing, noted=noted)
+
+        passing = report(a, 8, "PASS")
+        noted = ledgers.noted_reports({"playability-report": passing}, {}, routing,
+                                      dimension_3d=False, commit=a, verification=None)
+        fid = noted["playability-report"][0]["id"]
+        first = advance([], passing, 8, set(), noted)
+        self.assertTrue(first[0].get("noted"))
+        self.assertEqual(first[0]["failed_measurement"]["commit"], a)
+        raised = advance(first, report(b, 14, "FAIL"), 14, {fid}, {})[0]
+        self.assertNotIn("noted", raised)
+        kept = raised["failed_measurement"]
+        self.assertEqual((kept["commit"], kept["seq"], kept["status"],
+                          kept["artifact_id"]), (b, 14, "FAIL", "playability-report-14"))
+        self.assertEqual(strength.snapshot(raised)["before"]["commit"], b)
+        # a failing report that fails the finding but does not list its check (review r3
+        # G2, mutation N6): the passing report's measurement is dropped, never kept as the
+        # failure - `before` is the failing report's `reopened` entry
+        other = report(b, 14, "FAIL")
+        other["checks"][0]["id"] = "core.other"
+        raised = advance(first, other, 14, {fid}, {})[0]
+        self.assertNotIn("noted", raised)
+        self.assertNotIn("failed_measurement", raised)
+        before = strength.snapshot(raised)["before"]
+        self.assertEqual((before["commit"], before["seq"], before["status"],
+                          before["artifact_id"]), (b, 14, "FAIL", "playability-report-14"))
+
+    def test_r1_2_a_verified_noted_record_raised_again_by_a_failing_report_is_unstable(self):
+        """Noted (a), gone from the judge (b: verified), raised by a failing report (c),
+        fixed and verified (d): the pass on b and the failure on c are a flip, and K6.4's
+        `unstable` cap holds - on the triage path and on the quality gate's."""
+        from wgf_knowledge import strength
+        from wgf_triage import ledger as ledgers
+        for how in ("triage", "remeasure"):
+            with self.subTest(path=how):
+                steps = self.noted_then(
+                    (self.vqa("b" * 40, 14, banner=False), 14, "triage"),
+                    (self.vqa("c" * 40, 18, verdict="FAIL", blocker=True), 18, how))
+                owner = self.banner(steps[-1])["owner"]
+                docs = {"game-design": DESIGN_3D, "triage-report": steps[-1],
+                        "prototype-report": self.proto("d" * 40, 4, {
+                            "role": owner, "findings": [self.BANNER]}),
+                        "visual-qa-report": self.vqa("d" * 40, 22, banner=False)}
+                if how == "remeasure":  # the next triage assigns it, then the fix
+                    first = run_triage({**docs, "prototype-report": self.proto("c" * 40, 3),
+                                        "visual-qa-report": self.vqa(
+                                            "c" * 40, 18, verdict="FAIL", blocker=True)},
+                                       seqs={"triage-report": 19, "prototype-report": 17,
+                                             "visual-qa-report": 18})
+                    docs["triage-report"] = first.artifacts[0].content
+                seqs = {"triage-report": 20, "prototype-report": 21, "visual-qa-report": 22}
+                inputs = Inputs(docs, seqs)
+                lifecycle = ledgers.remeasure(inputs.refs, inputs.load,
+                                              at="2026-10-12T00:00:00Z",
+                                              by="quality-report-23", routing=ROUTING)
+                record = {r["id"]: r for r in lifecycle}[self.BANNER]
+                self.assertIn(record["status"], ("verified", "closed"))
+                snap = strength.snapshot(record)
+                self.assertEqual([o["verdict"] for o in snap["outcomes"]],
+                                 ["PASS", "FAIL", "PASS"])
+                self.assertIsNotNone(strength._unstable(snap))
+
+
 if __name__ == "__main__":
     unittest.main()

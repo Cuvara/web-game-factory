@@ -169,13 +169,13 @@ class Levels(Base):
         """Review r1 finding 4 (was test_reproduced_on_desktop_and_mobile_is_validated):
         desktop and mobile of the same run, failing on A and passing on B and C, are two
         viewports of one repair measured by one bot - not two independent contexts. A
-        validated context differs in run or commit; this is reproduced."""
+        validated context differs in the commits measured; this is reproduced."""
         rounds = self.rounds([(A, ll.blind()), (B, ll.well()), (C, ll.well())])
         self.put("run-v", rounds, [[ll.candidate(ll.OBJECTIVE)],
                                    [ll.candidate(ll.OBJECTIVE_MOBILE)]])
         record = self.one("run-v")
         self.assertEqual(record["strength"], "reproduced", record["strength_why"])
-        self.assertIn("one run and build", record["strength_why"])
+        self.assertIn("of the same builds are one context", record["strength_why"])
 
     def test_desktop_and_mobile_in_two_runs_are_validated(self):
         first = self.rounds([(A, ll.blind()), (B, ll.well()), (C, ll.well())])
@@ -492,6 +492,25 @@ class ReviewProbe(unittest.TestCase):
         out = strength.derive([self.src("desktop", replay=C),
                                self.src("mobile", run="run-2", commits=(C, D), replay=E)])
         self.assertEqual(out["strength"], "validated", out["why"])
+
+    @staticmethod
+    def unknown_before(src):
+        snap = src["remeasurement"]
+        snap["before"]["commit"] = snap["detected"]["commit"] = src["commit"] = None
+        return src
+
+    def test_e_an_unknown_commit_leaves_the_run_to_tell_contexts_apart(self):
+        """Review r3 finding 2: where a failing commit is unknown, the builds cannot show the
+        two runs are the same repair, so the run separates them; one run's two viewports
+        stay one context."""
+        two_runs = strength.derive([
+            self.unknown_before(self.src("desktop", replay=C)),
+            self.unknown_before(self.src("desktop", run="run-2", replay=C))])
+        self.assertEqual(two_runs["strength"], "validated", two_runs["why"])
+        one_run = strength.derive([
+            self.unknown_before(self.src("desktop", replay=C)),
+            self.unknown_before(self.src("mobile", replay=C))])
+        self.assertEqual(one_run["strength"], "reproduced", one_run["why"])
 
     def test_d_two_runs_of_the_identical_builds_are_one_context(self):
         """Review r2 finding 3: a second run that replays the very same failing and passing

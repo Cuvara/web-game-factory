@@ -77,6 +77,88 @@ contact test that froze on no turn PASSed while the win test's samples showed tu
 unmeasured). Bringing an artifact forward: a report judged under 1.1.0 keeps its verdicts; a
 re-judged one can only lose a PASS.
 
+**A passing report's own findings are recorded, never routed** (K7 #4, retro H12;
+`core/reference/specialist-routing.yaml` 1.7.0 `ledger.noted_on_pass`, triage-report 1.4.0,
+quality-report 1.6.0, quality-finding record `noted`; docs/specialist-routing.md "A passing
+report's own findings: noted"). The 3D run's visual-qa v3 passed the build with two MAJOR
+findings and the triage that read it recorded neither: only failing reports were normalized.
+A gate report that PASSES now has its own findings at the listed severities
+(`visual-qa-report: [blocker, major]`) recorded in the run's ledger as `noted` - detected and
+classified to their owner, listed in the triage-report's `noted` - never routed and never
+holding the build: `ledger.blocking` leaves them out, so no gate verdict, the quality gate's
+`open`/`awaiting` and release's `open-findings` refusal are unchanged (tested on the real
+triage v12 replayed with and without the rule). A noted record stays open while the
+producer's newest report lists it, is verified when a newer report no longer does, and
+becomes an ordinary finding when the producer's newest report fails it - on the quality gate's
+and release's path too (review r1: a noted record a failing report raised stayed noted and
+non-blocking there, open or reopened). A noted detection is never a measured failure: its
+history entry says `noted:`, the ledger's memory of its checks and evidence strength skip it,
+and the failing report that raises it (`reopened`) is its first failure - the `before` of a
+lesson's FAIL->PASS pair and a flip for the `unstable` cap (review r1: the promotion was not
+counted, and the passing report's commit was taken as the failure). A pass by a report that
+still lists the finding beside its pass - verifying it, or as a later sample - is refused
+`no-repair` by evidence strength (core/reference/evidence-strength.yaml 1.3.0; review r2,
+pre-existing: such passes made a still-listed finding `reproduced`); the ledger's status for it
+is unchanged - the producer's pass stands. A noted record of a check-listing producer raised by
+a failing report keeps that report's measurement as its failure (review r2, latent). Known
+limitations (review r3, docs/specialist-routing.md): the ledger's `_recorded`/`_regressed` still
+read a verified-while-listed record as a pass (errs strict); a record listed again after a clean
+verification stays `single-run`, not reopened; a listing at minor writes no note and still counts;
+ledgers older than this change carry no notes. Bringing an artifact forward: none - existing ledgers stay valid; a run's next triage or quality gate records what
+its newest passing reports name.
+
+**Greybox playability reports carry their phase in their id** (K7 #10). The greybox's and
+develop's playability reports minted the same artifact id
+(`wgf:playability-report:<title>:<date>-<execution>`, each step counting from 1): five pairs
+in the 2D run of 2026-10-05, six in the 3D run. A playability step that names a phase
+(`with: {phase: greybox}`) now puts it in the id's scope (`<title>-greybox`); the develop
+loop's ids are unchanged. Bringing an artifact forward: none - old ids stay valid (the
+ledger already tells them apart by content hash and seq). prototype-report ids collide the
+same way (greybox and develop both mint `prototype-report`); not changed here.
+
+**Platform preflight: portal SDKs measured in each bundle** (docs/verification-module.md
+"Portal SDKs in a bundle", docs/publish-module.md, docs/platform-targets-2026-10.md "Portal
+SDKs in each bundle"). The Factory never looked at which portal SDKs a platform's bundle
+carries: real per-platform builds of both validation candidates (2D 0db72b6, 3D 43c08e2) on
+the pinned template v1.2.0 carry Poki, Yandex, CrazyGames, Y8, GameDistribution and
+GameMonetize code in every bundle, the template's own `crazygames-audit.mjs` FAILs their
+crazygames bundles on `unexpected_dependencies`, and verify passed them; and `y8_sdk_present`
+held for a Y8 bundle that loads no Y8 SDK, because on contract 1 `collect-facts.mjs` echoes
+the platform id into `package.platform_sdk`. Now `core/reference/portal-sdks.yaml` 1.0.0 (new;
+a file of its own, not a profile field: a bundle is judged against every other portal's
+identifiers, a game pins only its targets' profiles, and a profile bump would force every
+pinned title to re-plan) says how each portal's SDK is recognised in built files and which
+page script CrazyGames and Y8 load; `scripts/wgflib/portal_sdks.py` scans a bundle directory
+or a package archive with it. Verify adds `platform.foreign-sdk:<id>` (the Factory scan, plus
+the template's CrazyGames audit when the checkout ships it - named in the reference's
+`audit`, so the kernel names no portal; template contract 2.1.0 log `PORTAL_AUDITS_DIR`,
+acceptance unchanged) and `platform.sdk-loaded:<id>` (Y8 without
+`WGF_Y8_APP_ID`: BLOCKED for a person, create-before-build), both **not required**: on the
+pin every bundle carries every adapter, so a required check would fail every verification,
+the golden runs' included; a FAIL makes that platform `not-ready`. On contract 1
+`policy.assertions:<id>` no longer counts profile assertions on `package.platform_sdk`
+(recorded as `not_counted`). platform-validate adds the guards `portal_sdk_isolated` and
+`portal_sdk_loaded` on the package archive itself, so every portal package on the current pin
+is BLOCKED there; moving the pin to a template whose build carries one adapter (the
+unreviewed backport `backport/1.2.0-platform-sdk` does, measured) clears it. check-integrity
+holds the reference's keys to the platform profiles. Regression input is real and minimised:
+`scripts/tests/fixtures/portal-sdks/sky-marble-43c08e2.json` (`test_portal_sdks`, RELEASE).
+Preflight review fixes: a package archive is scanned whole (a file beside its single
+top-level folder was skipped), a bundle directory's `node_modules/` is scanned (the package
+zips it), a bundle or package with no text file to read is never isolated (FAIL / RED), and
+`portal_sdk_loaded` grants the create-only exemption only while no issued id is in the
+registry or the build's config. Final review fixes: a platform without a portal-sdks.yaml entry is an
+error in check-integrity and UNKNOWN on `portal_sdk_loaded` (undescribed is not SDK-less); a
+checkout shipping the template audit that reports nothing makes `platform.foreign-sdk`
+BLOCKED, and `portal_sdk_isolated` UNKNOWN on that verify verdict; a loader inside an
+HTML comment is not loaded; the scan's limits and the Y8
+create-before-build consequences on the current pin are documented.
+Docs: platform-targets-2026-10.md (the current runs replace the workflow-v7 runs in "Exact
+commands"; Y-3: both games cancel the context menu since 27c49f0 / ff7f451; gap 4 now seen),
+platform-sdk-verification.md (adapters at the pin, profile status on 2026-10-10). Bringing an
+artifact forward: none - a verification-report without the new checks still validates;
+platform-validate re-run on an existing release reads the package itself.
+
 **K6 review r1 fixes** (docs/specialist-routing.md, docs/knowledge-enforcement.md). The
 ledger no longer verifies a split finding (`.../develop`, `.../assets`) whose check still
 FAILs its part in a BLOCKED report: the check is split again by the same rule, `unmeasured`
@@ -102,14 +184,14 @@ evidence the CLI shows for a waiting checkpoint (`status --json` `pending.eviden
 it.
 
 **Validated learning: a lesson's evidence strength, derived from the ledger** (K6.4,
-`core/reference/evidence-strength.yaml` 1.1.0, candidate store 1.1.0, `evidence.yaml` 2.1.0,
+`core/reference/evidence-strength.yaml` 1.2.0, candidate store 1.1.0, `evidence.yaml` 2.1.0,
 [docs/knowledge-enforcement.md](docs/knowledge-enforcement.md) "Evidence strength"). `wgf
 knowledge ingest` now records, for every lesson candidate, how far the measurements behind it
 were repeated - `hypothesis` (no measured repair), `single-run` (one FAIL->PASS pair),
 `reproduced` (the pass repeated in a later independent report on a later commit than the
 one that passed, on a check that does not alternate verdicts, by a class that is not only the
-game's probe), `validated` (reproduced in two contexts differing in run or commit - desktop and
-mobile of one run and build are one context) - derived from each source's re-measurement in its run's finding ledger
+game's probe), `validated` (reproduced in two contexts differing in the commits measured - desktop and
+mobile of one run and build, or two runs of the identical commits, are one context) - derived from each source's re-measurement in its run's finding ledger
 (K6.2 before/after/samples, content hashes, history) and the check's measurement class (K6.3),
 with why (`strength_why`), the checks marked `unstable`, and every measurement refused with its
 rule and reason (`refused_evidence`): the detecting report counted again, the lesson's own
@@ -220,6 +302,15 @@ labelled `golden-loop`). The playability bot now captures `retry-dead` when a re
 returns to play, and `restart.works` cites the lose recording's result and retry frames
 (before, it cited none). Nothing to bring forward: an existing playability-report stays
 valid; a new one's `restart.works` may carry `frames`.
+
+**Template pin: web-game-template v1.2.1** (`workspace/config/template.lock.json`: `v1.2.1`,
+`4b74b08`, was `v1.2.0`, `b106261`). Template contract unchanged (1); `platform_adapters` and
+`golden_ports` unchanged. 1.2.1 fixes the platform SDK on the 1.2 line: a build carries only
+its own portal's adapter and SDK (a v1.2.0 build carried every portal's, which the CrazyGames
+audit fails), Yandex rewarded video counts as shown without `onClose(wasShown)`, a Y8
+frequency-capped break is not an ad shown, and generic-web stays in every build. A game
+created from v1.2.0 keeps its pin; bringing one forward is applying the template's 1.2.1
+patches in the game repository. Both golden runs pass on the new pin in CI.
 
 **Cross-session quality transfer, and the first transferred principle (L29)** (lessons
 2.1.0, check-tiers 1.3.0, design-consistency-rules 2.4.1, content-sufficiency 1.6.0,

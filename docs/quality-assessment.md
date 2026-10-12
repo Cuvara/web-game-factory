@@ -73,7 +73,10 @@ severities: [blocker, major]}`: every blocker or major finding the judge raised 
 player-facing quality - **whatever the report's verdict**, a MAJOR finding of a PASS report
 included - with its id, severity, summary and the report's verdict, and shown at G4 as
 `! unresolved major finding ... on a PASS visual-qa-report`. Listed, never deciding: the
-release decision and every threshold are unchanged.
+release decision and every threshold are unchanged. The run's finding ledger records the
+same findings as `noted` (specialist-routing 1.7.0 `ledger.noted_on_pass`,
+[specialist-routing.md](specialist-routing.md#a-passing-reports-own-findings-noted)):
+classified to their owner, never routed, never holding the build.
 
 ## The person
 

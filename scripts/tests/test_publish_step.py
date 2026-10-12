@@ -550,6 +550,42 @@ class CreateBeforeBuild(MultiCase):
         record = next(a.content for a in result.artifacts if a.content["platform_id"] == pid)
         return next(g for g in record["guards"] if g["guard"] == "platform_ids_present")
 
+    def sdk_loaded(self, pid="y8"):
+        """platform-validate's portal_sdk_loaded on `pid`'s package (the fixture bundles load
+        no portal SDK script)."""
+        instance = PlatformValidateStep(StepDefinition(
+            {"id": "platform-validate", "type": "platform-validate",
+             "inputs": ["release-manifest", "verification-report", "scaffold-record"],
+             "outputs": ["platform-publication"], "with": {"repo_dir": self.game.root}},
+            retry=None, max_visits=None))
+        instance.environ = self.env
+        result = instance.execute(Inputs({"release-manifest": self.manifest,
+                                          "verification-report": self.evidence["verification-report"],
+                                          "scaffold-record": self.evidence["scaffold-record"]}),
+                                  self.context("platform-validate", self.config))
+        record = next(a.content for a in result.artifacts if a.content["platform_id"] == pid)
+        return next(g for g in record["guards"] if g["guard"] == "portal_sdk_loaded")
+
+    def test_an_sdk_less_y8_package_is_pending_only_while_no_id_exists_anywhere(self):
+        # No id anywhere: the visit only creates the game, so the SDK-less package passes
+        # this guard as pending (the real Y8 profile still makes it HUMAN_REQUIRED: its
+        # automation terms are unverified).
+        pending = self.sdk_loaded()
+        self.assertEqual(pending["verdict"], "GREEN", pending)
+        self.assertIn("uploads nothing", pending["reason"])
+        # The build already carries ids the portal issued (the registry lost them): the game
+        # exists, and this package runs without the Y8 SDK - never pending.
+        text = GAME_CONFIG.replace(
+            "{ id: y8, profile: y8@1.3.0, role: required }",
+            "{ id: y8, profile: y8@1.3.0, role: required, game_id: y8-4711, app_id: app-0042 }")
+        self.assertNotEqual(text, GAME_CONFIG)
+        self.game.commit("game.config.yaml", text, "sdk: portal ids")
+        self.draft()
+        self.assertIsNone(self.registry().get("y8"))
+        refused = self.sdk_loaded()
+        self.assertEqual(refused["verdict"], "RED", refused)
+        self.assertIn("never uploaded", refused["reason"])
+
     def test_a_portal_without_issued_ids_is_green(self):
         self.assertEqual(self.guard("yandex")["verdict"], "GREEN")
         self.assertEqual(self.guard("y8")["verdict"], "GREEN")  # not issued yet

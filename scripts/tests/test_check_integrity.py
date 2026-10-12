@@ -182,7 +182,8 @@ class PlatformCheckTest(unittest.TestCase):
             for check in ("load_artifacts", "load_roles", "check_machines", "check_workflows",
                           "check_bindings", "check_binding_workflows", "check_charters",
                           "check_templates",
-                          "check_platforms", "check_provider_independence",
+                          "check_platforms", "check_portal_sdks",
+                          "check_provider_independence",
                           "check_no_readme_only_dirs", "check_plugin_version",
                           "check_plugin_runtime", "check_template_pin"):
                 setattr(self.ci, check, mock.Mock(return_value=set()))
@@ -233,6 +234,47 @@ class RequiredForGatesTest(unittest.TestCase):
         self.assertEqual(len(self.module.ERRORS), 2)
         self.assertTrue(any("alpha" in e and "G2" in e for e in self.module.ERRORS))
         self.assertTrue(any("beta" in e and "G3" in e for e in self.module.ERRORS))
+
+
+class PortalSdksTest(unittest.TestCase):
+    """core/reference/portal-sdks.yaml names only platforms with a profile, and every
+    signature compiles: the verify step and platform-validate scan bundles with it."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix="wgf-integrity-sdks-")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.cwd = os.getcwd()
+        os.chdir(self.base)
+        self.addCleanup(os.chdir, self.cwd)
+        self.module = load_check_integrity()
+        self.module.ERRORS.clear()
+        self.module.NOTES.clear()
+
+    def reference(self, text):
+        write(os.path.join(self.base, "core", "reference", "portal-sdks.yaml"), text)
+
+    def test_the_shipped_reference_passes(self):
+        with open(os.path.join(SCRIPTS, "..", "core", "reference", "portal-sdks.yaml"),
+                  encoding="utf-8") as handle:
+            self.reference(handle.read())
+        profiles = {name[:-5] for name in os.listdir(os.path.join(
+            SCRIPTS, "..", "core", "reference", "platforms")) if name.endswith(".yaml")}
+        self.module.check_portal_sdks(profiles)
+        self.assertEqual(self.module.ERRORS, [])
+
+    def test_an_unknown_portal_a_bad_pattern_and_a_bad_loader_are_errors(self):
+        self.reference("version: 1.0.0\nportals:\n"
+                       "  alpha:\n    signatures:\n      - {id: a, pattern: '([a'}\n"
+                       "    loader: {script: 'http://insecure.example/sdk.js'}\n"
+                       "  ghost:\n    signatures: []\n")
+        self.module.check_portal_sdks({"alpha", "beta"})
+        self.assertEqual(len(self.module.ERRORS), 4, self.module.ERRORS)
+        self.assertTrue(any("ghost" in e for e in self.module.ERRORS))
+        self.assertTrue(any("invalid pattern" in e for e in self.module.ERRORS))
+        self.assertTrue(any("https" in e for e in self.module.ERRORS))
+        # A profile without an entry is undescribed, not SDK-less: an error, never a note
+        # (final review MAJOR-1; generic-web and gamevui declare `signatures: []`).
+        self.assertTrue(any("'beta'" in e for e in self.module.ERRORS), self.module.ERRORS)
 
 
 class PluginVersionTest(unittest.TestCase):

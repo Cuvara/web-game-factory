@@ -369,8 +369,9 @@ def check_platforms():
 
 def check_portal_sdks(profiles):
     """core/reference/portal-sdks.yaml (wgflib.portal_sdks): every key a platform profile,
-    every signature a valid pattern with an id, every loader a script URL. A profile without
-    an entry is a note: its SDK is simply not recognised in a bundle yet."""
+    every signature a valid pattern with an id, every loader a script URL, and every profile
+    an entry - one without is undescribed, not SDK-less (a portal with no SDK says
+    `signatures: []`), and platform-validate cannot judge its package."""
     path = os.path.join("core", "reference", "portal-sdks.yaml")
     sys.path.insert(0, "scripts")
     try:
@@ -406,8 +407,8 @@ def check_portal_sdks(profiles):
                                          for k in ("cli", "report", "check")):
             ERRORS.append(f"{path}: {pid}: audit needs cli, report and check")
     for pid in sorted(set(profiles) - set(portals)):
-        NOTES.append(f"{path}: no entry for platform '{pid}': its SDK is not recognised in a "
-                     "bundle")
+        ERRORS.append(f"{path}: no entry for platform '{pid}': say how its SDK is recognised "
+                      "in a bundle, or `signatures: []` when the portal has none")
 
 
 def check_template_adapters(directory, profiles):

@@ -268,11 +268,13 @@ class PortalSdksTest(unittest.TestCase):
                        "    loader: {script: 'http://insecure.example/sdk.js'}\n"
                        "  ghost:\n    signatures: []\n")
         self.module.check_portal_sdks({"alpha", "beta"})
-        self.assertEqual(len(self.module.ERRORS), 3, self.module.ERRORS)
+        self.assertEqual(len(self.module.ERRORS), 4, self.module.ERRORS)
         self.assertTrue(any("ghost" in e for e in self.module.ERRORS))
         self.assertTrue(any("invalid pattern" in e for e in self.module.ERRORS))
         self.assertTrue(any("https" in e for e in self.module.ERRORS))
-        self.assertTrue(any("'beta'" in n for n in self.module.NOTES))
+        # A profile without an entry is undescribed, not SDK-less: an error, never a note
+        # (final review MAJOR-1; generic-web and gamevui declare `signatures: []`).
+        self.assertTrue(any("'beta'" in e for e in self.module.ERRORS), self.module.ERRORS)
 
 
 class PluginVersionTest(unittest.TestCase):

@@ -307,6 +307,9 @@ def _foreign_sdk(session, pid, bundle, reference, scan, common):
                                             "portals": scan.portals()}),
                 _reference_evidence(reference)] + audit_evidence
     ran_by = "Factory scan" + (f" and the template's {audit.get('cli')}" if ran else "")
+    # The checkout ships the audit the reference names, and it decided nothing (no report, or
+    # no result): the Factory scan alone lacks the audit's own list, so it is no PASS.
+    undecided = bool(reference.audit(pid)) and not ran and bool(audit_evidence)
     if found or audit_failure:
         problems = []
         if found:
@@ -319,6 +322,12 @@ def _foreign_sdk(session, pid, bundle, reference, scan, common):
                              + " (platform-validate: portal_sdk_isolated). The pinned template "
                                "builds every adapter into every bundle; a template build "
                                "carrying only the selected adapter clears it")
+    if undecided:
+        return Check(cid, title=FOREIGN_TITLE, status=BLOCKED, evidence=evidence, **common,
+                     message=f"the template's {audit.get('cli')} is in the checkout but "
+                             f"reported no {audit.get('check')} for {bundle}/: its verdict is "
+                             f"missing, and the Factory scan alone ({scan.files} text file(s), "
+                             f"no other portal found) does not replace it")
     return Check(cid, title=FOREIGN_TITLE, status=PASS, evidence=evidence, **common,
                  message=f"no other portal's SDK in {bundle}/ ({ran_by}, {scan.files} text "
                          f"file(s))")

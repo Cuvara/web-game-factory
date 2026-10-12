@@ -158,6 +158,7 @@ def foreign(scan, platform_id):
 
 
 _SCRIPT = re.compile(r"<script\b[^>]*\bsrc\s*=\s*([\"'])(?P<src>[^\"']+)\1", re.I)
+_COMMENT = re.compile(r"<!--.*?-->", re.S)
 
 
 def loader_status(scan, platform_id):
@@ -171,7 +172,8 @@ def loader_status(scan, platform_id):
     needs = [str(n) for n in loader.get("needs") or []]
     if scan.index_html is None:
         return script, None, needs
-    sources = [m.group("src") for m in _SCRIPT.finditer(scan.index_html)]
+    # A script inside an HTML comment is not loaded.
+    sources = [m.group("src") for m in _SCRIPT.finditer(_COMMENT.sub("", scan.index_html))]
     return script, script in sources, needs
 
 
@@ -221,6 +223,11 @@ def loaded_guard(platform_id, scan, ids_pending=False):
     if scan is None:
         return pub.unknown(f"{platform_id}: the package was not read, so whether it loads the "
                            f"{platform_id} SDK is not established")
+    if platform_id not in scan.reference.portals:
+        # Undescribed is not SDK-less: generic-web and gamevui say `signatures: []`.
+        return pub.unknown(f"{platform_id}: {scan.reference.label} has no entry for "
+                           f"{platform_id}, so what its SDK looks like in a package is not "
+                           f"established; add one to core/reference/portal-sdks.yaml")
     script, loaded, needs = loader_status(scan, platform_id)
     if script is not None:
         if loaded:

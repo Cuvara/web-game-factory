@@ -25,8 +25,8 @@ SCRIPTS = os.path.dirname(HERE)
 sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, HERE)
 
-from test_verification import (FakeRunner, VerificationCase, fixture,  # noqa: E402
-                               honoring_build, ok)
+from test_verification import (FIXTURES, FakeRunner, VerificationCase,  # noqa: E402
+                               failing, fixture, honoring_build, ok, read_json)
 from wgflib import portal_sdks  # noqa: E402
 from wgflib.workflow import StepOutcome  # noqa: E402
 
@@ -229,6 +229,23 @@ class Guards(Scanner):
         loaded = portal_sdks.loaded_guard("y8", self.zip_of("43c08e2+backport-y8-with-ids"))
         self.assertIs(loaded.value, True)
 
+    def test_a_platform_the_reference_does_not_describe_is_unknown_never_green(self):
+        # A profile added without a portal-sdks.yaml entry is undescribed, not SDK-less:
+        # generic-web and gamevui declare `signatures: []` on purpose (final review MAJOR-1).
+        scan = self.zip_of("43c08e2+backport-yandex")
+        undescribed = portal_sdks.loaded_guard("new-portal", scan)
+        self.assertIsNone(undescribed.value, undescribed.reason)
+        self.assertIn("no entry", undescribed.reason)
+        self.assertIs(portal_sdks.loaded_guard("gamevui", scan).value, True)
+        self.assertIs(portal_sdks.loaded_guard("generic-web", scan).value, True)
+
+    def test_a_commented_out_loader_is_not_loaded(self):
+        scan = portal_sdks.Scan(self.reference, "fixture")
+        scan.add("index.html", '<html><head><!-- <script src="https://sdk.crazygames.com/'
+                               'crazygames-sdk-v3.js"></script> --></head></html>')
+        self.assertIs(portal_sdks.loader_status(scan, "crazygames")[1], False)
+        self.assertIs(portal_sdks.loaded_guard("crazygames", scan).value, False)
+
     def test_a_package_without_its_own_portals_code_is_red(self):
         # The backported yandex bundle, presented as a crazygames package: no CrazyGames SDK.
         result = portal_sdks.loaded_guard("yandex", self.zip_of("43c08e2+backport-crazygames"))
@@ -332,7 +349,7 @@ class Verify(VerificationCase):
         anchor = "  - { id: generic-web, profile: generic-web@1.1.0, role: required }"
         self.write("game.config.yaml", text.replace(anchor, anchor + "\n  " + entry))
 
-    def run_verify(self, pid, variant, audit=None, label=None):
+    def run_verify(self, pid, variant, audit=None, label=None, fail_own=False):
         """Verify a [generic-web, <pid>] game whose <pid> bundle is the real one (variant
         `43c08e2` or `43c08e2+backport`); generic-web's is the backported yandex bundle with
         the yandex code left out, i.e. no portal SDK at all."""
@@ -350,6 +367,8 @@ class Verify(VerificationCase):
             with open(os.path.join(cwd, *env["WGF_GAME_CONFIG"].split("/")),
                       encoding="utf-8") as handle:
                 chosen = json.load(handle)["platforms"][0]["id"]
+            if fail_own and chosen == pid:
+                return failing("vite: build failed")
             if chosen == pid:
                 with open(os.path.join(cwd, "dist", "index.html"), encoding="utf-8") as handle:
                     index = handle.read()
@@ -421,6 +440,68 @@ class Verify(VerificationCase):
         self.assertEqual(check["status"], "FAIL", check["message"])
         self.assertIn("scripts/crazygames-audit.mjs", check["message"])
         self.assertIn("gamepix", check["message"])
+
+    def test_a_present_template_audit_that_decides_nothing_never_passes(self):
+        # The checkout ships the audit the reference names and it writes no report: the
+        # Factory scan alone lacks the audit's own list, so the check is no PASS (MINOR-2).
+        def silent(command, cwd, env):
+            return ok()
+        _, report, _ = self.run_verify("crazygames", "43c08e2+backport", audit=silent)
+        check = self.check(report, "platform.foreign-sdk:crazygames")
+        self.assertEqual(check["status"], "BLOCKED", check["message"])
+        self.assertIn("scripts/crazygames-audit.mjs", check["message"])
+        # A Factory scan that already finds other portals still FAILs.
+        _, report, _ = self.run_verify("crazygames", "43c08e2", audit=silent)
+        self.assertEqual(self.check(report, "platform.foreign-sdk:crazygames")["status"],
+                         "FAIL")
+
+    def test_a_failed_platform_build_blocks_both_checks(self):
+        # Contract 1: a platform build that fails fails build.build, so nothing is scanned.
+        _, report, _ = self.run_verify("crazygames", "43c08e2", fail_own=True)
+        for cid in ("platform.foreign-sdk:crazygames", "platform.sdk-loaded:crazygames"):
+            check = self.check(report, cid)
+            self.assertEqual(check["status"], "BLOCKED", (cid, check["message"]))
+
+    def test_a_platform_whose_own_build_is_missing_never_scans_the_shared_dist(self):
+        # Contract 2: the repository builds its platforms itself; crazygames' own bundle is
+        # missing while the ordinary build passed. Its checks are BLOCKED on
+        # build.platform:crazygames - never a verdict on dist/, which is another bundle
+        # (here the real v1.2.0 crazygames one, carrying five other portals) (MINOR-1).
+        package = read_json(self.repo, "package.json")
+        package["wgf"] = {"template": {"version": "1.3.0", "contract": 2}}
+        package.setdefault("scripts", {})["build:platforms"] = "node scripts/build/x.mjs"
+        self.write("package.json", json.dumps(package))
+        self.add_platform("- { id: crazygames, profile: crazygames@1.3.0, role: optional }")
+        sdk = fixture("inputs/sdk-report.json")
+        sdk["platforms"].append(dict(sdk["platforms"][0], platform_id="crazygames",
+                                     profile_version="1.3.0"))
+
+        def build(command, cwd, env):
+            result = FakeRunner.build(command, cwd, env)
+            materialise(BUNDLES["43c08e2-crazygames"], os.path.join(cwd, "dist"),
+                        keep_index=open(os.path.join(cwd, "dist", "index.html"),
+                                        encoding="utf-8").read())
+            return result
+
+        def build_platforms(command, cwd, env):
+            from wgf_verification.platform_builds import digest_tree
+            rel = "build/platforms/generic-web/dist"
+            shutil.copytree(os.path.join(FIXTURES, "bundle"), os.path.join(cwd, *rel.split("/")),
+                            dirs_exist_ok=True)
+            with open(os.path.join(cwd, "build", "platforms", "index.json"), "w") as handle:
+                json.dump({"platforms": [{"id": "generic-web", "dir": rel,
+                                          "dist_digest": digest_tree(cwd, rel)[0]}]}, handle)
+            return ok()
+        runner = FakeRunner({"pnpm build": build, "run build:platforms": build_platforms,
+                             "evaluate-assertions": lambda c, cwd, env: FakeRunner.evaluate(
+                                 c, cwd, env, results=fixture("assertions-generic-web.json"))})
+        _, report, _ = self.verify(runner=runner, inputs=self.inputs(**{"sdk-report": sdk}))
+        self.assertEqual(self.check(report, "build.bundle")["status"], "PASS")
+        self.assertNotEqual(self.check(report, "build.platform:crazygames")["status"], "PASS")
+        for cid in ("platform.foreign-sdk:crazygames", "platform.sdk-loaded:crazygames"):
+            check = self.check(report, cid)
+            self.assertEqual(check["status"], "BLOCKED", (cid, check["message"]))
+            self.assertIn("build.platform:crazygames", check["message"])
 
     def test_the_real_sdk_less_y8_bundle_is_blocked_for_a_person(self):
         result, report, _ = self.run_verify("y8", "43c08e2+backport")

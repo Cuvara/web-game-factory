@@ -304,10 +304,20 @@ not Y8-specific (`scripts/wgf_publish/identity.py`):
    the quality floor (core/reference/quality-policy.yaml, rule 1) refuses submit: the
    checks it rests on passed the old one. A later submit visit with nothing changed - a
    person's `submit` after an upload, the next platform, `--track` - is not refused
-   (scripts/tests/test_quality_inheritance.py `SubmitReentry`).
+   (scripts/tests/test_quality_inheritance.py `SubmitReentry`). On the pinned template
+   (contract 1) game.config.yaml is not where the Y8 loader comes from: the build injects
+   the Y8 SDK script only when it is given `WGF_Y8_APP_ID` in its environment, so that
+   variable must be in `factory.agents.game_env_passthrough` for the rebuilt package to
+   load the SDK.
 3. `platform-validate`'s guard `platform_ids_present` is RED for a build that lacks an id
    the registry holds, or carries another value; GREEN before the game exists (the submit
-   visit uploads nothing then) and for every portal without issued ids.
+   visit uploads nothing then) and for every portal without issued ids. Since 2.8.0
+   `portal_sdk_loaded` is also RED for the rebuilt package once the ids exist, unless its
+   `index.html` loads the Y8 SDK - the write into game.config.yaml alone does not upload.
+   And `portal_sdk_isolated` has no create-only exemption: on the current pin (v1.2.0, every
+   adapter in every bundle) it is RED for the Y8 package too, so even the create-only first
+   visit is refused, and Y8's ids cannot be obtained through the Factory until the pin moves
+   to a template whose build carries one adapter.
 
 ### Outcomes
 

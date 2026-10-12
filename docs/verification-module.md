@@ -178,7 +178,9 @@ the script its `index.html` must load (CrazyGames always; Y8 only when the build
   for the platform (the reference's `audit`: `scripts/crazygames-audit.mjs` for
   crazygames), it runs too (`--dir <bundle> --out build/portal-audits/<id>`) and its
   `unexpected_dependencies` FAIL fails the check; the message says which ran ("Factory scan"
-  or "Factory scan and the template's scripts/crazygames-audit.mjs").
+  or "Factory scan and the template's scripts/crazygames-audit.mjs"). A checkout that ships
+  the audit while it reports no `unexpected_dependencies` makes the check BLOCKED, not a
+  PASS on the Factory scan alone (which lacks the audit's ad-network list).
 - `platform.sdk-loaded:<id>` - only for a platform the reference gives a loader: PASS when
   `index.html` loads it; FAIL when it does not; **BLOCKED** when the loader needs ids a
   portal issues only when a person creates the game (Y8: create-before-build,
@@ -196,6 +198,22 @@ route to a developer, who cannot change template code. So each is reported on it
 a FAIL makes that platform `not-ready` in `platform_readiness` (a BLOCKED one `unverified`)
 without failing the verdict, and **platform-validate refuses to publish the package**
 (guards `portal_sdk_isolated`, `portal_sdk_loaded`), per platform, before anything uploads.
+Both are BLOCKED while their platform's own bundle is not built (`build.bundle`, or
+`build.platform:<id>` where platforms are built one by one): the ordinary output directory is
+then another platform's bundle, and is never scanned in its place.
+
+**Limits of the scan**, known and accepted. It is text matching, like the template's own
+audit, whose list the first five signatures are: a portal named in a shipped comment, string
+or source map counts; a short case-insensitive pattern (`gdsdk`) can match base64 in a source
+map's `mappings` or an inlined data URI (one hit in 40 MB of random base64 in the final
+review's probe) - a word-bounded form would part from the template's audit, so it stays.
+Only text files are read (`.gz`/`.br` copies and `.wasm` are not). A script inside an HTML
+comment is not loaded; a loader URL with a query string reads as not loaded (fail-closed).
+Verify checks a portal's own SDK only through its loader; for a signature-only portal
+(Yandex, Poki, ...) that its SDK is present is platform-validate's `portal_sdk_loaded`. A
+platform without an entry in `core/reference/portal-sdks.yaml` is an error in
+check-integrity, and UNKNOWN on `portal_sdk_loaded` - undescribed is not SDK-less.
+
 What clears the foreign-SDK finding is a template whose build carries only the selected
 adapter (the unreviewed backport `backport/1.2.0-platform-sdk` does: the same builds then
 PASS), reached by moving the template pin - a person's decision, with both golden runs.

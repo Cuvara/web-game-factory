@@ -1023,6 +1023,46 @@ class ReviewR1(unittest.TestCase):
         result = self.extent(draw)
         self.assertLessEqual(result["measured"]["along"]["ball"], 1.1, result["measured"])
 
+    @staticmethod
+    def behind(x, y, d):
+        """The point `d` px behind a ball moving down-left (up-right of it)."""
+        return x + d * 0.7071, y - d * 0.7071
+
+    def test_a_solid_tail_cut_by_the_window_is_held_by_its_lower_bound_along_the_travel(self):
+        # K7 review round 3, A3: a solid tail 40 px long reaches the window along the travel in
+        # every sample - its length there is only a lower bound, and a lower bound over the bar
+        # FAILs. Across, the body is its collider's size (the tail's end touches the window
+        # there too, so that reading is a lower bound under the bar: only the length trips it).
+        def draw(image, x, y, s):
+            for k in range(57):
+                paint(image, disc(*self.behind(x, y, k * 0.7071), 12), (240, 200, 40))
+        result = self.extent(draw)
+        self.assertEqual(result["status"], "FAIL", result["summary"])
+        self.assertNotIn("ball", result["measured"].get("along", {}))
+        self.assertGreater(result["measured"]["along_lower_bounds"]["ball"],
+                           RULES["physics"]["max_drawn_to_collider"])
+        self.assertLessEqual(result["measured"]["across_lower_bounds"]["ball"],
+                             RULES["physics"]["max_drawn_to_collider"])
+
+    def test_opaque_pixels_not_joined_to_the_body_by_opaque_pixels_are_not_its_length(self):
+        # K7 review round 3, A7: behind a ball drawn its collider's size, a 60 % trail 16 px long,
+        # and at its end an opaque spark (reported as nothing). The spark is joined to the body
+        # only through the translucent trail: it is not the body's length along the travel.
+        def draw(image, x, y, s):
+            def bridge(px, py):
+                # Within 6 px of the segment from the centre to 16 px behind it, outside the ball.
+                t = ((px - x) * 0.7071 - (py - y) * 0.7071)
+                if not 0 <= t <= 16:
+                    return False
+                cx, cy = self.behind(x, y, t)
+                return (px - cx) ** 2 + (py - cy) ** 2 <= 36 and (px - x) ** 2 + (py - y) ** 2 > 36
+            paint(image, bridge, (240, 200, 40), alpha=0.6)
+            paint(image, disc(*self.behind(x, y, 20), 8), (240, 200, 40))
+            paint(image, disc(x, y, 12), (240, 200, 40))
+        result = self.extent(draw)
+        self.assertEqual(result["status"], "PASS", result["summary"])
+        self.assertLessEqual(result["measured"]["along"]["ball"], 1.15, result["measured"])
+
     def test_a_ball_cut_on_both_sides_across_its_travel_is_held_by_its_lower_bound(self):
         # N19: a body six times its collider ACROSS its travel (its collider's size along it)
         # reaches the window across: its width there is a lower bound, and a lower bound over

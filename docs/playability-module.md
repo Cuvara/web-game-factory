@@ -531,6 +531,18 @@ What they cannot catch:
   row, whose hit face is drawn nowhere, is unmeasured: `measured.composite_face_drawn`); a box
   that moves with a mover of the judged roles (two balls passing are not read as a contact);
 - a trail dense enough to blend past `contact.along_share` reads as body along the travel;
+  and the other way round (K7 review round 3, P12), a body drawn long along its motion at
+  80-94 % opacity - a shaded dart, a comet with a slightly translucent tail - is not held along
+  the travel: only its opaque pixels count there (a uniform 0.8 or 0.9 tail three times the
+  body reads 1.03 x and PASSes; at 0.97 it FAILs at 3.03 x; 3e8d25f FAILed all three). Lenient
+  by design, so that a blended motion trail (P5, 94 % where its ghosts overlap) is not the body;
+- OPEN RISK, to watch in the first live run (K7 review round 3, P13): an HONEST composite whose
+  face it was hit on is drawn nowhere in any frame read - its bricks near the hit broken and
+  the rest of that face outside the crop - reads 0.0 on `measured.composite_face_drawn`: the
+  check is unmeasured, which holds the build at release. The only honest real reading so far is
+  0.034 (894b4b8 mobile) against `contact.composite_min_share` 0.01. Candidate fixes, not made:
+  read the face strip on the whole viewport rather than the crop, or apply the face rule only
+  when the same composite is skipped at two or more captures;
 - turns frozen on are capped (`contact.max_captures`) and a turn at a paddle or a brick row
   now takes one of them: in the step's window (`contact.window_s`, on a loaded host a few
   seconds of game time) fewer captures go to walls than before 1.2.0;

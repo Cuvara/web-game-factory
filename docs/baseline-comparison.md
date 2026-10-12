@@ -273,6 +273,11 @@ The current candidates, as measured (not tuned to pass; `test_K7_the_2d_candidat
   accepted 3D build against itself, the start bar 0.6 s from the worst repeat, and neither has
   been shown to catch a real regression; their false-FAIL rate on a shared host is unknown.
   More repeats per build are needed before `baseline.responsiveness` is trusted at release.
+- **A `not-reported` item is a required FAIL at release, so chance absences can fail a build.**
+  Examples: a role the win test happened not to draw on the candidate, a naive policy cut below
+  `min_runs` by the time budget, or an action the act test did not press. Any of these holds the
+  candidate even when nothing got worse. The accepted builds against their own repeats show none
+  of this, but it has not been measured in a live run; watch it in the first runs.
 - `baseline.clear_rate` reads play-realism's `clear_rate.min_drop` as its minimum *rise* (one
   band both ways; reported as `max_rise` in `expected`).
 - Waivers (`accepted_changes`) are read from the project's config on every visit; they are not

@@ -475,6 +475,56 @@ class WhatTheCandidateStopsDeclaring(unittest.TestCase):
                                         naive_run("steady", "b", "b", False, 25000)]))
         self.assertEqual(checks(a, c)["baseline.clear_time"]["status"], "FAIL")
 
+    # Review round 2, nit 1: one assertion per "not reported" branch.
+
+    def assert_not_reported(self, check, unit_id, quantity):
+        self.assertEqual((check["status"], check["required"]), ("FAIL", True), check["summary"])
+        self.assertEqual(check["measured"]["unmeasured"], baseline.UNREPORTED)
+        self.assertIn((unit_id, quantity, baseline.UNREPORTED),
+                      [(i.get("unit"), i.get("quantity"), i["verdict"])
+                       for i in check["measured"]["items"]])
+
+    def test_a_unit_laid_out_as_another_kind_fails_its_extent(self):
+        # A path course re-laid as a grid: its extent is measured in other units - a change.
+        units = copy.deepcopy(ACCEPTED_UNITS)
+        units[0]["layout"] = {"rows": ["#########", "#########"], "par_s": 30}
+        got = checks(profile(), profile(units))["baseline.unit_extent"]
+        self.assertEqual(got["status"], "FAIL")
+        self.assertIn(("a", "extent"), regressed(got))
+
+    def test_kinds_a_surveyed_unit_no_longer_names_are_not_reported(self):
+        bare = visit("a", [])
+        bare.update(content_entities=5, unkinded=5)
+        a = profile(recs=records(survey=[visit("a", ["spike"])]))
+        c = profile(recs=records(survey=[bare]))
+        self.assert_not_reported(checks(a, c)["baseline.unit_kinds"], "a", "kinds")
+
+    def test_a_naive_policy_the_candidate_did_not_play_is_not_reported(self):
+        a = profile(recs=records(naive=[naive_run("steady", None, "a", True, 20000)]))
+        c = profile(recs=records(naive=[naive_run("jitter", None, "a", True, 20000)]))
+        self.assert_not_reported(checks(a, c)["baseline.clear_time"], "opening", "naive.steady")
+
+    def test_an_oracle_unit_the_candidate_survey_could_not_enter_is_not_reported(self):
+        a = profile(recs=records(survey=[visit("b", ["x"], won_ms=8000)]))
+        c = profile(recs=records(survey=[{"asked": "b", "entered": False}]))
+        self.assert_not_reported(checks(a, c)["baseline.clear_time"], "b", "oracle")
+
+    def test_a_clear_rate_run_fewer_times_than_the_minimum_is_not_reported(self):
+        runs = REALISM["clear_rate"]["min_runs"]
+        a = profile(recs=records(naive=[naive_run("jitter", "b", "b", True, 9000)
+                                        for _ in range(runs)]))
+        c = profile(recs=records(naive=[naive_run("jitter", "b", "b", True, 9000)
+                                        for _ in range(runs - 1)]))
+        self.assert_not_reported(checks(a, c)["baseline.clear_rate"], "b", "naive.jitter")
+
+    def test_a_start_the_candidate_did_not_measure_is_not_reported(self):
+        self.assert_not_reported(checks(profile(), profile(recs=records(start=None)))[
+            "baseline.responsiveness"], "*", "start_ms")
+
+    def test_a_frame_rate_the_candidate_did_not_measure_is_not_reported(self):
+        self.assert_not_reported(checks(profile(), profile(recs=records(fps_frames=0)))[
+            "baseline.responsiveness"], "*", "fps")
+
     def test_a_declared_unit_the_survey_could_not_enter_is_not_kept(self):
         # P6: still in units.json, asked for by the survey and not entered - while the
         # accepted build's survey entered it.

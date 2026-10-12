@@ -206,6 +206,21 @@ class TheChecks(unittest.TestCase):
         self.assertEqual(checks(profile(), profile(within))["baseline.difficulty_order"]["status"],
                          "PASS")
 
+    def test_a_difficulty_moved_by_exactly_the_tolerance_is_within_it(self):
+        # Real (K7, 3D 43c08e2 against c340631): hairpin-rise's speed 0.87 -> 0.82 moved by
+        # the tolerance (0.05), not beyond it - in floating point 0.87 - 0.82 is
+        # 0.050000000000000044, which read as beyond.
+        self.assertEqual(TOL, 0.05)
+        a = profile([unit("x", 1, path_layout(100), None, {"speed": 0.87}),
+                     unit("y", 2, path_layout(100), None, {"speed": 0.84})])
+        c = profile([unit("x", 1, path_layout(100), None, {"speed": 0.82}),
+                     unit("y", 2, path_layout(100), None, {"speed": 0.84})])
+        got = checks(a, c)["baseline.difficulty_order"]
+        self.assertEqual(got["status"], "PASS", got["summary"])
+        beyond = profile([unit("x", 1, path_layout(100), None, {"speed": 0.81}),
+                          unit("y", 2, path_layout(100), None, {"speed": 0.84})])
+        self.assertIn(("x", "speed"), regressed(checks(a, beyond)["baseline.difficulty_order"]))
+
     def test_drawn_kinds_changed_fail(self):
         a = profile(recs=records(survey=[visit("a", ["spike"]), visit("b", ["spike", "gem"])]))
         c = profile(recs=records(survey=[visit("a", ["spike"]), visit("b", ["spike"])]))
@@ -846,14 +861,16 @@ class TheRealGames(unittest.TestCase):
         self.assertEqual(verdicts, {"naive.steady": ("kept", 0.831),
                                     "naive.jitter": ("undetermined", None)})
         # Declared: the twelve accepted courses kept verbatim, their extents, pars and tuning -
-        # and hairpin-rise's declared difficulty moved, out of order with switchbacks.
+        # and hairpin-rise's declared precision moved 0.73 -> 0.89. Its speed (0.87 -> 0.82)
+        # and its order against switchbacks and the-gauntlet (0.84 each) moved by exactly the
+        # tolerance: within it, not regressions.
         got = real_checks("3d-c340631-accepted-courses-data", "3d-43c08e2-data")
         for cid in ("baseline.units_kept", "baseline.unit_content", "baseline.unit_extent",
                     "baseline.tuning"):
             self.assertEqual(got[cid]["status"], "PASS", cid)
         order = got["baseline.difficulty_order"]
         self.assertEqual(order["status"], "FAIL")
-        self.assertIn(("hairpin-rise", "precision"), regressed(order))
+        self.assertEqual(regressed(order), [("hairpin-rise", "precision")])
 
 
 if __name__ == "__main__":

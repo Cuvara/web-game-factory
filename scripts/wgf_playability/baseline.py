@@ -100,6 +100,13 @@ def _number(value):
             else None)
 
 
+def _beyond(delta, tolerance):
+    """Whether a difference is beyond a tolerance, read at the precision the values are
+    stated in: 0.87 - 0.82 is 0.050000000000000044 in floating point, and a move of exactly
+    the tolerance is within it."""
+    return round(delta, 9) > tolerance
+
+
 # -- which build was accepted ------------------------------------------------------------------
 
 def accepted_of(design):
@@ -801,7 +808,7 @@ def compare(accepted, candidate, rules=None, realism_rules=None, changes=None, s
         for uid in both:
             av = float(difficulty(a_units[uid])[axis])
             cv = float(difficulty(c_units[uid])[axis])
-            if abs(cv - av) > tol_d:
+            if _beyond(abs(cv - av), tol_d):
                 items.append(_item("regressed", f"{uid}: difficulty.{axis} {av} -> {cv}",
                                    changes, "baseline.difficulty_order", uid, axis,
                                    accepted=av, candidate=cv))
@@ -810,7 +817,8 @@ def compare(accepted, candidate, rules=None, realism_rules=None, changes=None, s
             for second in both[i + 1:]:
                 a1, a2 = (float(difficulty(a_units[u])[axis]) for u in (first, second))
                 c1, c2 = (float(difficulty(c_units[u])[axis]) for u in (first, second))
-                if (a2 - a1 > tol_d and c1 - c2 > tol_d) or (a1 - a2 > tol_d and c2 - c1 > tol_d):
+                if ((_beyond(a2 - a1, tol_d) and _beyond(c1 - c2, tol_d))
+                        or (_beyond(a1 - a2, tol_d) and _beyond(c2 - c1, tol_d))):
                     inverted.append([first, second])
         items.append(_item("regressed" if inverted else "kept",
                            f"difficulty.{axis}: {len(inverted)} pair(s) of accepted units now in "

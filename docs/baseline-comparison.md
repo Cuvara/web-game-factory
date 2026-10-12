@@ -226,10 +226,16 @@ The current candidates, as measured (not tuned to pass; `test_K7_the_2d_candidat
   PASS, except `baseline.clear_time`: a WARNING, because under jittered input neither build
   cleared the opening course in its 25 s run (undetermined beside the kept steady clear). The
   accepted 3D build against its own repeat reads the same WARNING. Against the accepted courses as data (c340631): all twelve courses, their layouts,
-  extents, pars and tuning kept - and `baseline.difficulty_order` FAILS: hairpin-rise's declared
-  `difficulty.precision` 0.73 -> 0.89 and `speed` 0.87 -> 0.82: on precision it was below
-  switchbacks and the-gauntlet (0.81 each) and is now above them (0.84 each) - two pairs of
-  accepted courses in the opposite order.
+  extents, pars and tuning kept - and `baseline.difficulty_order` FAILS on one item:
+  hairpin-rise's declared `difficulty.precision` 0.73 -> 0.89 (beyond the 0.05 tolerance). Its
+  `speed` 0.87 -> 0.82 and its precision against switchbacks and the-gauntlet (0.81 each on
+  c340631, 0.84 each now: 0.05 apart) moved by exactly the tolerance, which is within it. An
+  earlier version of this comparison read those three as regressions - in floating point
+  0.87 - 0.82 is 0.050000000000000044 - and reported "two pairs in the opposite order"; the
+  difference is now read at the values' own precision
+  (`test_a_difficulty_moved_by_exactly_the_tolerance_is_within_it`). The course itself is
+  unchanged; 43c08e2's values are computed from the built course
+  (`tests/unit/helpers/difficulty.ts`, game commit 742f643), c340631's were stated by hand.
 
 ## What it does not claim
 

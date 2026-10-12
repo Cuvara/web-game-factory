@@ -49,7 +49,10 @@ being compared. A waiver of a unit-scoped check names its unit (`*` only with a 
 Also: the knowledge and pinning tests follow L8's promotion and new-game 18's pin (both failed
 on 43c4554). Bringing an artifact forward: none; a run's next playability visit applies it.
 The real 3D measurements now read `baseline.clear_time` WARNING (jittered play cleared the
-opening course on neither build).
+opening course on neither build). A difficulty moved by exactly the tolerance is within it
+(read at the values' precision: 0.87 - 0.82 was 0.050000000000000044): 3D 43c08e2 against
+c340631 still fails `baseline.difficulty_order`, on hairpin-rise's precision 0.73 -> 0.89
+only - its speed and the two "reordered" pairs were that rounding.
 
 **K6 review r1 fixes** (docs/specialist-routing.md, docs/knowledge-enforcement.md). The
 ledger no longer verifies a split finding (`.../develop`, `.../assets`) whose check still

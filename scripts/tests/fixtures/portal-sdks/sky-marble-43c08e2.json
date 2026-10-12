@@ -1,0 +1,2368 @@
+{
+ "_fixture": "REAL DATA, MINIMISED. Per-platform builds of sky-marble (val-3d) commit 43c08e2f6b92e0d20e74d9376e72b7f474365596 on pinned web-game-template v1.2.0 (b106261, contract 1), built 2026-10-10 in scratch detached worktrees with the Factory's per-platform build (WGF_GAME_CONFIG=build/platforms/<id>/game.config.json, pnpm build), WGF_Y8_APP_ID unset. 'backport' = the same commit with C:/Users/duycu/wgf-runs/backport-patches 0001-0003 applied (scratch only; template branch backport/1.2.0-platform-sdk 50a27cf). 'backport+ids' = the backport y8 build given placeholder WGF_Y8_APP_ID=wgf-scratch-app (not a real Y8 id). Kept: every bundle file's path, size and sha256; index.html's <script> tags verbatim; +-40 characters around each portal signature match (core/reference/portal-sdks.yaml 1.0.0). The template's own crazygames-audit on the as-is crazygames bundle: FAIL unexpected_dependencies (poki-sdk, yandex-games-sdk, gamedistribution, gamemonetize); on the backport: PASS.",
+ "game_commit": "43c08e2f6b92e0d20e74d9376e72b7f474365596",
+ "template": {
+  "ref": "v1.2.0",
+  "commit": "b1062619457f427bac91b45f6a96762f256a945a"
+ },
+ "backport_patches": {
+  "0001-fix-platform-sdk-a-build-carries-only-the-selected-p.patch": "sha256:e8d724b8cc378a20b3c8f8738cc344f53ba939dd7b75ececb0d4b3ad860bed92",
+  "0002-fix-yandex-rewarded-video-counts-as-shown-without-on.patch": "sha256:89e4274715ad42625f8977eeef96d5668c1a3e057e8f00d91066d7647b0707d7",
+  "0003-fix-y8-only-beforeAd-proves-an-ad-appeared.patch": "sha256:dacbd1609894af828bfc612af172bddd14b7366ed0233e49fa75d39c4c320e21"
+ },
+ "bundles": [
+  {
+   "label": "43c08e2-yandex",
+   "platform_id": "yandex",
+   "variant": "as-is",
+   "source_dir": "sm/build/platforms/yandex/dist",
+   "files": [
+    {
+     "path": "index.html",
+     "bytes": 1776,
+     "sha256": "0c84b98b303ef1c8235f0a11c8cf50d8dea0614f40aaf824950297b70f391bb6"
+    },
+    {
+     "path": "assets/.gitkeep",
+     "bytes": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+     "path": "assets/assets.json",
+     "bytes": 15589,
+     "sha256": "f01e407f346f0ec527154bb778b8169a6757f9a52b3e4f169e746754871e8f9b"
+    },
+    {
+     "path": "assets/index-BGXFRVgP.js",
+     "bytes": 174474,
+     "sha256": "4b929c7a6d24b5054addd8c3417a1bf33013b2db4c450de2ded8ebf0fdeb75dd"
+    },
+    {
+     "path": "assets/index-BGXFRVgP.js.map",
+     "bytes": 810944,
+     "sha256": "652a01803e6189d8a40bfbebd94761ac3bc183d90c236b0dca00da4134c71ba3"
+    },
+    {
+     "path": "assets/index-C1n50otn.js",
+     "bytes": 1805,
+     "sha256": "1d23666bbddb345a6f74583a381b52f6378b2534aa471a051f2da974ed49e9ea"
+    },
+    {
+     "path": "assets/index-C1n50otn.js.map",
+     "bytes": 6852,
+     "sha256": "ce05d55107b041235e851b6caf72fb9d6c3872c6e7c6b037e8369f905bdc9341"
+    },
+    {
+     "path": "assets/index-D9PvocR4.css",
+     "bytes": 15860,
+     "sha256": "a8110d3d4ac08d1dc73ad3ea73f348b84a6ed30f397c9ddd33c0928d6658095b"
+    },
+    {
+     "path": "assets/three.module-Cxb409r3.js",
+     "bytes": 560135,
+     "sha256": "abd8796a9690fcf5daa21f459bfbdb4732d8c51f99a5e20b4d9e4b0a2221c452"
+    },
+    {
+     "path": "assets/three.module-Cxb409r3.js.map",
+     "bytes": 2068952,
+     "sha256": "d66d409d4a16512df3ad8be74fc70bf0482ff368dbee7ccc631271dab0311187"
+    },
+    {
+     "path": "assets/world-view-Cy6k6uOx.js",
+     "bytes": 100811,
+     "sha256": "fed7c01c5189b50b62b18e78e1eec667da39f5e38c8803129984a4d6b5807e59"
+    },
+    {
+     "path": "assets/world-view-Cy6k6uOx.js.map",
+     "bytes": 436733,
+     "sha256": "a493beea9ddc258842f6760b0b8f769faba3f76b50547b0953d41a7506fe2eee"
+    },
+    {
+     "path": "assets/audio/music-sky.ogg",
+     "bytes": 853230,
+     "sha256": "4e8b868fbca3a5a3cb95b22b106b0df1667b5e19d5046d94255fb764091ce090"
+    },
+    {
+     "path": "assets/audio/sfx-bump.wav",
+     "bytes": 29130,
+     "sha256": "6d83229431e716334149ba1a51c988a854c8367d74d6891b213305fbca11ffc8"
+    },
+    {
+     "path": "assets/audio/sfx-bumper.wav",
+     "bytes": 22094,
+     "sha256": "62eba3bf92f54be7048850b6830e5fe20982ba33a62c70c18406831b2cebcfe6"
+    },
+    {
+     "path": "assets/audio/sfx-checkpoint.wav",
+     "bytes": 22094,
+     "sha256": "c07e7225f96fae789da3376ab0a8fca1bec9ba107e15940f688b528c0e465637"
+    },
+    {
+     "path": "assets/audio/sfx-fall.wav",
+     "bytes": 29110,
+     "sha256": "13abef12ed9e055737487b9fd273dda5180ae3246f3014a8a9331dc4a4edc99c"
+    },
+    {
+     "path": "assets/audio/sfx-gem.wav",
+     "bytes": 30428,
+     "sha256": "1b4f0d6eb67cdbfe73cd2f2b3bd06c7065d484cad135d025f79a1d0e51524b68"
+    },
+    {
+     "path": "assets/audio/sfx-roll.wav",
+     "bytes": 176444,
+     "sha256": "1124c1835a8d1f1974a9b4ab50814253e7b6af2c7284df5750fa5b0cc288a950"
+    },
+    {
+     "path": "assets/audio/sfx-star.wav",
+     "bytes": 30428,
+     "sha256": "954150b7e8a535083013052ed40a18aadfc04f85545a291c18d1cb76e8a069ab"
+    },
+    {
+     "path": "assets/audio/ui-fanfare.wav",
+     "bytes": 170708,
+     "sha256": "981261e4cf44ce1644fbebcf0828f29312f7eebce8874415b8b3afd5ad23ba67"
+    },
+    {
+     "path": "assets/audio/ui-tap.wav",
+     "bytes": 10920,
+     "sha256": "06a0e982af975d6db9e95eb713c422bae2446e255d10b935d157e93848731636"
+    },
+    {
+     "path": "assets/backgrounds/skybox.svg",
+     "bytes": 2566,
+     "sha256": "02a79e8832162446c18cb063b6d3b6f66d1996dc676079ad61fad7faa2f18c96"
+    },
+    {
+     "path": "assets/environments/cloud-layers-1.glb",
+     "bytes": 63788,
+     "sha256": "24a73295fc3e45a68d168720e61b5a95b3ea16da6a2bc0ec56c6d72008ee64cf"
+    },
+    {
+     "path": "assets/environments/island-kit-1.glb",
+     "bytes": 97464,
+     "sha256": "ebed02414edcfe321f6315d986c99c4d9625dc5cc3db3ff171a81bc446778d29"
+    },
+    {
+     "path": "assets/environments/moving-platform.glb",
+     "bytes": 107396,
+     "sha256": "9a23f45181866fa873690d0375d872f9ce43c87b40f38ca9a5967e83f4b144d3"
+    },
+    {
+     "path": "assets/fonts/LICENSE-commissioner.txt",
+     "bytes": 4395,
+     "sha256": "4a7d88c77b4bc39ff84f2e058ba8f015636c50ce33588a86d9da97defe519933"
+    },
+    {
+     "path": "assets/fonts/LICENSE-playfair-display.txt",
+     "bytes": 4449,
+     "sha256": "566be814f8e96e93dfa16101331557eb6b5467e9e03f627c0910fe93ca12300e"
+    },
+    {
+     "path": "assets/fonts/fonts-1.woff2",
+     "bytes": 58376,
+     "sha256": "9fee76848535ac4b02ad29c648b673a7c03a4c0e02faf6c22304863cc392e21f"
+    },
+    {
+     "path": "assets/fonts/fonts-2.woff2",
+     "bytes": 98036,
+     "sha256": "d9c441d3600789a0a84f29f47e3690ae0f4a5eab3cb3034ee4771cef8128209a"
+    },
+    {
+     "path": "assets/icons/icons-1.svg",
+     "bytes": 1916,
+     "sha256": "4899eb1d822fdbb8564a54ff97092aaa5e1b93752a5a235bf66de8760a5024f9"
+    },
+    {
+     "path": "assets/icons/icons-2.svg",
+     "bytes": 1872,
+     "sha256": "2288d82374197da742a742573f555f937c7618515c6b0d9f58120638d9756fa0"
+    },
+    {
+     "path": "assets/icons/icons-3.svg",
+     "bytes": 2729,
+     "sha256": "f8885f8d72aaba7b77bc24ad9d814b564d29baeff1e49624bbafa8918e3b801a"
+    },
+    {
+     "path": "assets/icons/icons-4.svg",
+     "bytes": 2270,
+     "sha256": "c7df310db958b7f1b8c5f12ef39b2a1ec16bca2089d8e87301bc36e2bb892c8a"
+    },
+    {
+     "path": "assets/icons/icons-5.svg",
+     "bytes": 2271,
+     "sha256": "6a4f67108177b4d8b918ebc191117ed87747ec9d57f24ec9a355d0e273a1f8c0"
+    },
+    {
+     "path": "assets/icons/icons-6.svg",
+     "bytes": 3930,
+     "sha256": "5df48a037affa41ecbb95bc2a775dfe55c9a39e29f90a579ece29ca2e0848bb2"
+    },
+    {
+     "path": "assets/icons/icons-7.svg",
+     "bytes": 1764,
+     "sha256": "55649e1d2fc9984264813d341fb8e28bb3f6866c82b0fafe158d48ea46d77915"
+    },
+    {
+     "path": "assets/icons/icons-8.svg",
+     "bytes": 2247,
+     "sha256": "c6f368f6eedc29f85a87bc315abb395a4d97edec33474041d8f375667b9c4b58"
+    },
+    {
+     "path": "assets/icons/icons-9.svg",
+     "bytes": 2232,
+     "sha256": "10ecffd8d3eccc7fba3f508e41c8af792caae2fb2483ba231ff2f7dddfe0b96e"
+    },
+    {
+     "path": "assets/models/bumper.glb",
+     "bytes": 65304,
+     "sha256": "9ecb14726df822f8d31dc59127466f43ef388c660e62069190dbf9ce07576744"
+    },
+    {
+     "path": "assets/models/checkpoint.glb",
+     "bytes": 67508,
+     "sha256": "8c936e67eb022e2aae91fc478b68e762cf2ac1bd93351f8eb9b3a24068d92f8f"
+    },
+    {
+     "path": "assets/models/gem.glb",
+     "bytes": 6424,
+     "sha256": "d7efc94c690a86f1dcb57d3ea4bca02e33dfd4c248244cef423089f782cf5f09"
+    },
+    {
+     "path": "assets/models/goal-gate.glb",
+     "bytes": 119988,
+     "sha256": "7a0c6c51ae2157335de11ec33b51e50d6e19540a5ba005e9506f5b4e013bd371"
+    },
+    {
+     "path": "assets/models/low-wall.glb",
+     "bytes": 34248,
+     "sha256": "60d3d4fc73655d1551a563eb532a334b998328f35bd4d20262e9cb24ba6877bc"
+    },
+    {
+     "path": "assets/models/marble.glb",
+     "bytes": 23476,
+     "sha256": "116aa959ae7817bd176ac9b3b90f631361cb11054e5714f4032480fe28c750ac"
+    },
+    {
+     "path": "assets/ui/drag-hint.svg",
+     "bytes": 1706,
+     "sha256": "5656ee6eb93172bccf78b50494412d14f5d8fd2073f0e5de5ea69d7ae20c016a"
+    },
+    {
+     "path": "assets/ui/ui-kit.svg",
+     "bytes": 9823,
+     "sha256": "552d284f8ccfd9bfbf4356b632842f4c7af55bf46f8636ddc1e0fe51b598b265"
+    },
+    {
+     "path": "assets/ui/wordmark.svg",
+     "bytes": 1296,
+     "sha256": "524e32b5251a6873dc960aad5a99c63fa239cf21c171cb616c7b57e4478d3206"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-1.svg",
+     "bytes": 5320,
+     "sha256": "949c94039f6a22b6c1ca61f38fb178d0ee6878e091427c896b93ab7baabb6719"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-2.svg",
+     "bytes": 5767,
+     "sha256": "f303b7ec5b56677b3a48677431dd24a7c72883255d28e9fe7dad451fbfcdeb26"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-3.svg",
+     "bytes": 5431,
+     "sha256": "97a3fbe2e5440d4427823068e87aec465d7c2bdcad72aa7c1674fa1424b1f6af"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-4.svg",
+     "bytes": 4272,
+     "sha256": "34bb618428a49d457600ab8fc8a35d6c217cf14e064b2dc10274afdcab37d9f8"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-5.svg",
+     "bytes": 1820,
+     "sha256": "950848152857d513e20aa641cf918f92111f0269bfa715804c9dde7270ba4d46"
+    },
+    {
+     "path": "content/units.json",
+     "bytes": 58587,
+     "sha256": "9bc9dcd2e1d20f1ce462a47c56b06754133f7f31e9cf53f1ef1f185be18e6f2d"
+    },
+    {
+     "path": "locales/en.json",
+     "bytes": 2041,
+     "sha256": "4ee400525e9a6da287ce2ee35322606c92832be9ffd27c65ae5132ad03ef38a7"
+    },
+    {
+     "path": "locales/ru.json",
+     "bytes": 2851,
+     "sha256": "c2f52a90b638223d95e58b84e626da87bab0e85c4b5d72d0d91af65d194b978f"
+    },
+    {
+     "path": "metadata/.gitkeep",
+     "bytes": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ],
+   "index_html_scripts": [
+    "<script type=\"module\" crossorigin src=\"./assets/index-BGXFRVgP.js\">"
+   ],
+   "excerpts": [
+    {
+     "file": "assets/index-BGXFRVgP.js",
+     "portal": "poki",
+     "signature": "poki-sdk",
+     "text": ",Jn,ud,Jh,ql,il,rl,fr;const om=\"https://game-cdn.poki.com/scripts/v2/poki-sdk.js\",Zh={ads:[\"inter"
+    },
+    {
+     "file": "assets/index-BGXFRVgP.js",
+     "portal": "yandex",
+     "signature": "yandex-games-sdk",
+     "text": "2e4;function pm(s,t){const e=globalThis.YaGames;return e?Promise.resolve(e):typeof docu"
+    },
+    {
+     "file": "assets/index-BGXFRVgP.js",
+     "portal": "crazygames",
+     "signature": "crazygames-sdk",
+     "text": "\")?\"not-ready\":null)};const La=\"https://sdk.crazygames.com/crazygames-sdk-v3.js\";function Nl(s){re"
+    },
+    {
+     "file": "assets/index-BGXFRVgP.js",
+     "portal": "y8",
+     "signature": "y8-sdk",
+     "text": "gameId:a},warnings:r}}const nl=\"https://cdn.y8.com/minimal-sdk/2-0/y8.min.js\",al=\"y8sdk.ready\",ym=\"sav"
+    },
+    {
+     "file": "assets/index-BGXFRVgP.js",
+     "portal": "gamedistribution",
+     "signature": "gamedistribution",
+     "text": "a()}),\"f\")};const Ef=\"https://html5.api.gamedistribution.com/main.min.js\",Rh=\"gamedistribution-jssdk"
+    },
+    {
+     "file": "assets/index-BGXFRVgP.js",
+     "portal": "gamemonetize",
+     "signature": "gamemonetize",
+     "text": "Yh,sr,Qo,Nh,Uh,cd;const Uf=\"https://api.gamemonetize.com/sdk.js\",jh=\"gamemonetize-sdk\",Bh={ads:["
+    },
+    {
+     "file": "assets/index-BGXFRVgP.js.map",
+     "portal": "poki",
+     "signature": "poki-sdk",
+     "text": "\\nexport const POKI_SDK_URL = \\\"https://game-cdn.poki.com/scripts/v2/poki-sdk.js\\\";\\nexport const"
+    },
+    {
+     "file": "assets/index-BGXFRVgP.js.map",
+     "portal": "yandex",
+     "signature": "yandex-games-sdk",
+     "text": "tMs) {\\n    const existing = globalThis.YaGames;\\n    if (existing)\\n        return Pro"
+    },
+    {
+     "file": "assets/index-BGXFRVgP.js.map",
+     "portal": "crazygames",
+     "signature": "crazygames-sdk",
+     "text": "rt const CRAZYGAMES_SDK_URL = \\\"https://sdk.crazygames.com/crazygames-sdk-v3.js\\\";\\nexport functio"
+    },
+    {
+     "file": "assets/index-BGXFRVgP.js.map",
+     "portal": "y8",
+     "signature": "y8-sdk",
+     "text": "*/\\nexport const Y8_SDK_URL = \\\"https://cdn.y8.com/minimal-sdk/2-0/y8.min.js\\\";\\n/** Dispatched on `wi"
+    },
+    {
+     "file": "assets/index-BGXFRVgP.js.map",
+     "portal": "gamedistribution",
+     "signature": "gamedistribution",
+     "text": "DistributionSdk\",\"url\",\"script\",\"currentGdsdk\",\"first\",\"requireGdsdk\",\"sdk\",\"readHost"
+    },
+    {
+     "file": "assets/index-BGXFRVgP.js.map",
+     "portal": "gamemonetize",
+     "signature": "gamemonetize",
+     "text": "form.js.map\",\"// GameMonetize — https://gamemonetize.com/sdk\\n//\\n// Written against GameMonetiz"
+    }
+   ]
+  },
+  {
+   "label": "43c08e2-crazygames",
+   "platform_id": "crazygames",
+   "variant": "as-is",
+   "source_dir": "sm/build/platforms/crazygames/dist",
+   "files": [
+    {
+     "path": "index.html",
+     "bytes": 1853,
+     "sha256": "f77d5f80be382c753aca281c4e2f2d9a545226847efabe8432c3db154bb72c85"
+    },
+    {
+     "path": "assets/.gitkeep",
+     "bytes": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+     "path": "assets/assets.json",
+     "bytes": 15589,
+     "sha256": "f01e407f346f0ec527154bb778b8169a6757f9a52b3e4f169e746754871e8f9b"
+    },
+    {
+     "path": "assets/index-C1n50otn.js",
+     "bytes": 1805,
+     "sha256": "1d23666bbddb345a6f74583a381b52f6378b2534aa471a051f2da974ed49e9ea"
+    },
+    {
+     "path": "assets/index-C1n50otn.js.map",
+     "bytes": 6852,
+     "sha256": "ce05d55107b041235e851b6caf72fb9d6c3872c6e7c6b037e8369f905bdc9341"
+    },
+    {
+     "path": "assets/index-D9PvocR4.css",
+     "bytes": 15860,
+     "sha256": "a8110d3d4ac08d1dc73ad3ea73f348b84a6ed30f397c9ddd33c0928d6658095b"
+    },
+    {
+     "path": "assets/index-DHr-ojU0.js",
+     "bytes": 174482,
+     "sha256": "bb5bd17aaa7fbf2d020614c77c35b8255089e7b87914c2727a801e6f44a54106"
+    },
+    {
+     "path": "assets/index-DHr-ojU0.js.map",
+     "bytes": 810944,
+     "sha256": "7a2cbef924781def0639fd4829da15e978a2a8028f160bdf6029f3f80828d5b2"
+    },
+    {
+     "path": "assets/three.module-Cxb409r3.js",
+     "bytes": 560135,
+     "sha256": "abd8796a9690fcf5daa21f459bfbdb4732d8c51f99a5e20b4d9e4b0a2221c452"
+    },
+    {
+     "path": "assets/three.module-Cxb409r3.js.map",
+     "bytes": 2068952,
+     "sha256": "d66d409d4a16512df3ad8be74fc70bf0482ff368dbee7ccc631271dab0311187"
+    },
+    {
+     "path": "assets/world-view-DqBbZH38.js",
+     "bytes": 100811,
+     "sha256": "f1a3c102ba84851ddcbb8daed50f4897046e9da2ed3e7b72b895cc03ddc7278e"
+    },
+    {
+     "path": "assets/world-view-DqBbZH38.js.map",
+     "bytes": 436733,
+     "sha256": "2688d5a8ab91e0058f08b83925249a78c886d654ced2a2c9f4e4df192ce2a761"
+    },
+    {
+     "path": "assets/audio/music-sky.ogg",
+     "bytes": 853230,
+     "sha256": "4e8b868fbca3a5a3cb95b22b106b0df1667b5e19d5046d94255fb764091ce090"
+    },
+    {
+     "path": "assets/audio/sfx-bump.wav",
+     "bytes": 29130,
+     "sha256": "6d83229431e716334149ba1a51c988a854c8367d74d6891b213305fbca11ffc8"
+    },
+    {
+     "path": "assets/audio/sfx-bumper.wav",
+     "bytes": 22094,
+     "sha256": "62eba3bf92f54be7048850b6830e5fe20982ba33a62c70c18406831b2cebcfe6"
+    },
+    {
+     "path": "assets/audio/sfx-checkpoint.wav",
+     "bytes": 22094,
+     "sha256": "c07e7225f96fae789da3376ab0a8fca1bec9ba107e15940f688b528c0e465637"
+    },
+    {
+     "path": "assets/audio/sfx-fall.wav",
+     "bytes": 29110,
+     "sha256": "13abef12ed9e055737487b9fd273dda5180ae3246f3014a8a9331dc4a4edc99c"
+    },
+    {
+     "path": "assets/audio/sfx-gem.wav",
+     "bytes": 30428,
+     "sha256": "1b4f0d6eb67cdbfe73cd2f2b3bd06c7065d484cad135d025f79a1d0e51524b68"
+    },
+    {
+     "path": "assets/audio/sfx-roll.wav",
+     "bytes": 176444,
+     "sha256": "1124c1835a8d1f1974a9b4ab50814253e7b6af2c7284df5750fa5b0cc288a950"
+    },
+    {
+     "path": "assets/audio/sfx-star.wav",
+     "bytes": 30428,
+     "sha256": "954150b7e8a535083013052ed40a18aadfc04f85545a291c18d1cb76e8a069ab"
+    },
+    {
+     "path": "assets/audio/ui-fanfare.wav",
+     "bytes": 170708,
+     "sha256": "981261e4cf44ce1644fbebcf0828f29312f7eebce8874415b8b3afd5ad23ba67"
+    },
+    {
+     "path": "assets/audio/ui-tap.wav",
+     "bytes": 10920,
+     "sha256": "06a0e982af975d6db9e95eb713c422bae2446e255d10b935d157e93848731636"
+    },
+    {
+     "path": "assets/backgrounds/skybox.svg",
+     "bytes": 2566,
+     "sha256": "02a79e8832162446c18cb063b6d3b6f66d1996dc676079ad61fad7faa2f18c96"
+    },
+    {
+     "path": "assets/environments/cloud-layers-1.glb",
+     "bytes": 63788,
+     "sha256": "24a73295fc3e45a68d168720e61b5a95b3ea16da6a2bc0ec56c6d72008ee64cf"
+    },
+    {
+     "path": "assets/environments/island-kit-1.glb",
+     "bytes": 97464,
+     "sha256": "ebed02414edcfe321f6315d986c99c4d9625dc5cc3db3ff171a81bc446778d29"
+    },
+    {
+     "path": "assets/environments/moving-platform.glb",
+     "bytes": 107396,
+     "sha256": "9a23f45181866fa873690d0375d872f9ce43c87b40f38ca9a5967e83f4b144d3"
+    },
+    {
+     "path": "assets/fonts/LICENSE-commissioner.txt",
+     "bytes": 4395,
+     "sha256": "4a7d88c77b4bc39ff84f2e058ba8f015636c50ce33588a86d9da97defe519933"
+    },
+    {
+     "path": "assets/fonts/LICENSE-playfair-display.txt",
+     "bytes": 4449,
+     "sha256": "566be814f8e96e93dfa16101331557eb6b5467e9e03f627c0910fe93ca12300e"
+    },
+    {
+     "path": "assets/fonts/fonts-1.woff2",
+     "bytes": 58376,
+     "sha256": "9fee76848535ac4b02ad29c648b673a7c03a4c0e02faf6c22304863cc392e21f"
+    },
+    {
+     "path": "assets/fonts/fonts-2.woff2",
+     "bytes": 98036,
+     "sha256": "d9c441d3600789a0a84f29f47e3690ae0f4a5eab3cb3034ee4771cef8128209a"
+    },
+    {
+     "path": "assets/icons/icons-1.svg",
+     "bytes": 1916,
+     "sha256": "4899eb1d822fdbb8564a54ff97092aaa5e1b93752a5a235bf66de8760a5024f9"
+    },
+    {
+     "path": "assets/icons/icons-2.svg",
+     "bytes": 1872,
+     "sha256": "2288d82374197da742a742573f555f937c7618515c6b0d9f58120638d9756fa0"
+    },
+    {
+     "path": "assets/icons/icons-3.svg",
+     "bytes": 2729,
+     "sha256": "f8885f8d72aaba7b77bc24ad9d814b564d29baeff1e49624bbafa8918e3b801a"
+    },
+    {
+     "path": "assets/icons/icons-4.svg",
+     "bytes": 2270,
+     "sha256": "c7df310db958b7f1b8c5f12ef39b2a1ec16bca2089d8e87301bc36e2bb892c8a"
+    },
+    {
+     "path": "assets/icons/icons-5.svg",
+     "bytes": 2271,
+     "sha256": "6a4f67108177b4d8b918ebc191117ed87747ec9d57f24ec9a355d0e273a1f8c0"
+    },
+    {
+     "path": "assets/icons/icons-6.svg",
+     "bytes": 3930,
+     "sha256": "5df48a037affa41ecbb95bc2a775dfe55c9a39e29f90a579ece29ca2e0848bb2"
+    },
+    {
+     "path": "assets/icons/icons-7.svg",
+     "bytes": 1764,
+     "sha256": "55649e1d2fc9984264813d341fb8e28bb3f6866c82b0fafe158d48ea46d77915"
+    },
+    {
+     "path": "assets/icons/icons-8.svg",
+     "bytes": 2247,
+     "sha256": "c6f368f6eedc29f85a87bc315abb395a4d97edec33474041d8f375667b9c4b58"
+    },
+    {
+     "path": "assets/icons/icons-9.svg",
+     "bytes": 2232,
+     "sha256": "10ecffd8d3eccc7fba3f508e41c8af792caae2fb2483ba231ff2f7dddfe0b96e"
+    },
+    {
+     "path": "assets/models/bumper.glb",
+     "bytes": 65304,
+     "sha256": "9ecb14726df822f8d31dc59127466f43ef388c660e62069190dbf9ce07576744"
+    },
+    {
+     "path": "assets/models/checkpoint.glb",
+     "bytes": 67508,
+     "sha256": "8c936e67eb022e2aae91fc478b68e762cf2ac1bd93351f8eb9b3a24068d92f8f"
+    },
+    {
+     "path": "assets/models/gem.glb",
+     "bytes": 6424,
+     "sha256": "d7efc94c690a86f1dcb57d3ea4bca02e33dfd4c248244cef423089f782cf5f09"
+    },
+    {
+     "path": "assets/models/goal-gate.glb",
+     "bytes": 119988,
+     "sha256": "7a0c6c51ae2157335de11ec33b51e50d6e19540a5ba005e9506f5b4e013bd371"
+    },
+    {
+     "path": "assets/models/low-wall.glb",
+     "bytes": 34248,
+     "sha256": "60d3d4fc73655d1551a563eb532a334b998328f35bd4d20262e9cb24ba6877bc"
+    },
+    {
+     "path": "assets/models/marble.glb",
+     "bytes": 23476,
+     "sha256": "116aa959ae7817bd176ac9b3b90f631361cb11054e5714f4032480fe28c750ac"
+    },
+    {
+     "path": "assets/ui/drag-hint.svg",
+     "bytes": 1706,
+     "sha256": "5656ee6eb93172bccf78b50494412d14f5d8fd2073f0e5de5ea69d7ae20c016a"
+    },
+    {
+     "path": "assets/ui/ui-kit.svg",
+     "bytes": 9823,
+     "sha256": "552d284f8ccfd9bfbf4356b632842f4c7af55bf46f8636ddc1e0fe51b598b265"
+    },
+    {
+     "path": "assets/ui/wordmark.svg",
+     "bytes": 1296,
+     "sha256": "524e32b5251a6873dc960aad5a99c63fa239cf21c171cb616c7b57e4478d3206"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-1.svg",
+     "bytes": 5320,
+     "sha256": "949c94039f6a22b6c1ca61f38fb178d0ee6878e091427c896b93ab7baabb6719"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-2.svg",
+     "bytes": 5767,
+     "sha256": "f303b7ec5b56677b3a48677431dd24a7c72883255d28e9fe7dad451fbfcdeb26"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-3.svg",
+     "bytes": 5431,
+     "sha256": "97a3fbe2e5440d4427823068e87aec465d7c2bdcad72aa7c1674fa1424b1f6af"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-4.svg",
+     "bytes": 4272,
+     "sha256": "34bb618428a49d457600ab8fc8a35d6c217cf14e064b2dc10274afdcab37d9f8"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-5.svg",
+     "bytes": 1820,
+     "sha256": "950848152857d513e20aa641cf918f92111f0269bfa715804c9dde7270ba4d46"
+    },
+    {
+     "path": "content/units.json",
+     "bytes": 58587,
+     "sha256": "9bc9dcd2e1d20f1ce462a47c56b06754133f7f31e9cf53f1ef1f185be18e6f2d"
+    },
+    {
+     "path": "locales/en.json",
+     "bytes": 2041,
+     "sha256": "4ee400525e9a6da287ce2ee35322606c92832be9ffd27c65ae5132ad03ef38a7"
+    },
+    {
+     "path": "locales/ru.json",
+     "bytes": 2851,
+     "sha256": "c2f52a90b638223d95e58b84e626da87bab0e85c4b5d72d0d91af65d194b978f"
+    },
+    {
+     "path": "metadata/.gitkeep",
+     "bytes": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ],
+   "index_html_scripts": [
+    "<script src=\"https://sdk.crazygames.com/crazygames-sdk-v3.js\">",
+    "<script type=\"module\" crossorigin src=\"./assets/index-DHr-ojU0.js\">"
+   ],
+   "excerpts": [
+    {
+     "file": "assets/index-DHr-ojU0.js",
+     "portal": "poki",
+     "signature": "poki-sdk",
+     "text": ",Jn,ud,Jh,ql,il,rl,fr;const om=\"https://game-cdn.poki.com/scripts/v2/poki-sdk.js\",Zh={ads:[\"inter"
+    },
+    {
+     "file": "assets/index-DHr-ojU0.js",
+     "portal": "yandex",
+     "signature": "yandex-games-sdk",
+     "text": "2e4;function pm(s,t){const e=globalThis.YaGames;return e?Promise.resolve(e):typeof docu"
+    },
+    {
+     "file": "assets/index-DHr-ojU0.js",
+     "portal": "crazygames",
+     "signature": "crazygames-sdk",
+     "text": "\")?\"not-ready\":null)};const La=\"https://sdk.crazygames.com/crazygames-sdk-v3.js\";function Nl(s){re"
+    },
+    {
+     "file": "assets/index-DHr-ojU0.js",
+     "portal": "y8",
+     "signature": "y8-sdk",
+     "text": "gameId:a},warnings:r}}const nl=\"https://cdn.y8.com/minimal-sdk/2-0/y8.min.js\",al=\"y8sdk.ready\",ym=\"sav"
+    },
+    {
+     "file": "assets/index-DHr-ojU0.js",
+     "portal": "gamedistribution",
+     "signature": "gamedistribution",
+     "text": "a()}),\"f\")};const Ef=\"https://html5.api.gamedistribution.com/main.min.js\",Rh=\"gamedistribution-jssdk"
+    },
+    {
+     "file": "assets/index-DHr-ojU0.js",
+     "portal": "gamemonetize",
+     "signature": "gamemonetize",
+     "text": "Yh,sr,Qo,Nh,Uh,cd;const Uf=\"https://api.gamemonetize.com/sdk.js\",jh=\"gamemonetize-sdk\",Bh={ads:["
+    },
+    {
+     "file": "assets/index-DHr-ojU0.js.map",
+     "portal": "poki",
+     "signature": "poki-sdk",
+     "text": "\\nexport const POKI_SDK_URL = \\\"https://game-cdn.poki.com/scripts/v2/poki-sdk.js\\\";\\nexport const"
+    },
+    {
+     "file": "assets/index-DHr-ojU0.js.map",
+     "portal": "yandex",
+     "signature": "yandex-games-sdk",
+     "text": "tMs) {\\n    const existing = globalThis.YaGames;\\n    if (existing)\\n        return Pro"
+    },
+    {
+     "file": "assets/index-DHr-ojU0.js.map",
+     "portal": "crazygames",
+     "signature": "crazygames-sdk",
+     "text": "rt const CRAZYGAMES_SDK_URL = \\\"https://sdk.crazygames.com/crazygames-sdk-v3.js\\\";\\nexport functio"
+    },
+    {
+     "file": "assets/index-DHr-ojU0.js.map",
+     "portal": "y8",
+     "signature": "y8-sdk",
+     "text": "*/\\nexport const Y8_SDK_URL = \\\"https://cdn.y8.com/minimal-sdk/2-0/y8.min.js\\\";\\n/** Dispatched on `wi"
+    },
+    {
+     "file": "assets/index-DHr-ojU0.js.map",
+     "portal": "gamedistribution",
+     "signature": "gamedistribution",
+     "text": "DistributionSdk\",\"url\",\"script\",\"currentGdsdk\",\"first\",\"requireGdsdk\",\"sdk\",\"readHost"
+    },
+    {
+     "file": "assets/index-DHr-ojU0.js.map",
+     "portal": "gamemonetize",
+     "signature": "gamemonetize",
+     "text": "form.js.map\",\"// GameMonetize — https://gamemonetize.com/sdk\\n//\\n// Written against GameMonetiz"
+    }
+   ]
+  },
+  {
+   "label": "43c08e2-y8",
+   "platform_id": "y8",
+   "variant": "as-is",
+   "source_dir": "sm/build/platforms/y8/dist",
+   "files": [
+    {
+     "path": "index.html",
+     "bytes": 1776,
+     "sha256": "318fed978adaae76a409ce6fc8613e24f62a57ae189977e535e0001a5cf6e28e"
+    },
+    {
+     "path": "assets/.gitkeep",
+     "bytes": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+     "path": "assets/assets.json",
+     "bytes": 15589,
+     "sha256": "f01e407f346f0ec527154bb778b8169a6757f9a52b3e4f169e746754871e8f9b"
+    },
+    {
+     "path": "assets/index-C1n50otn.js",
+     "bytes": 1805,
+     "sha256": "1d23666bbddb345a6f74583a381b52f6378b2534aa471a051f2da974ed49e9ea"
+    },
+    {
+     "path": "assets/index-C1n50otn.js.map",
+     "bytes": 6852,
+     "sha256": "ce05d55107b041235e851b6caf72fb9d6c3872c6e7c6b037e8369f905bdc9341"
+    },
+    {
+     "path": "assets/index-D9PvocR4.css",
+     "bytes": 15860,
+     "sha256": "a8110d3d4ac08d1dc73ad3ea73f348b84a6ed30f397c9ddd33c0928d6658095b"
+    },
+    {
+     "path": "assets/index-jS1rvJlS.js",
+     "bytes": 174466,
+     "sha256": "eaf3f7525a88acb31a7cf255218c4c40c326d1e7022556995089d300afedb5bf"
+    },
+    {
+     "path": "assets/index-jS1rvJlS.js.map",
+     "bytes": 810944,
+     "sha256": "d5722dd9b8cc2869067436973931780691c74828ae67b4978cd884d426ac4ebc"
+    },
+    {
+     "path": "assets/three.module-Cxb409r3.js",
+     "bytes": 560135,
+     "sha256": "abd8796a9690fcf5daa21f459bfbdb4732d8c51f99a5e20b4d9e4b0a2221c452"
+    },
+    {
+     "path": "assets/three.module-Cxb409r3.js.map",
+     "bytes": 2068952,
+     "sha256": "d66d409d4a16512df3ad8be74fc70bf0482ff368dbee7ccc631271dab0311187"
+    },
+    {
+     "path": "assets/world-view-BuEpg1-z.js",
+     "bytes": 100811,
+     "sha256": "acb37dd10938c218ec1074151a82730cb0c7739e6be240c52b00a12517a7c53f"
+    },
+    {
+     "path": "assets/world-view-BuEpg1-z.js.map",
+     "bytes": 436733,
+     "sha256": "c3cc35a5c0cfc833b965c61a544c972fa36345d7af7de2ae8e34b0372a3f02c1"
+    },
+    {
+     "path": "assets/audio/music-sky.ogg",
+     "bytes": 853230,
+     "sha256": "4e8b868fbca3a5a3cb95b22b106b0df1667b5e19d5046d94255fb764091ce090"
+    },
+    {
+     "path": "assets/audio/sfx-bump.wav",
+     "bytes": 29130,
+     "sha256": "6d83229431e716334149ba1a51c988a854c8367d74d6891b213305fbca11ffc8"
+    },
+    {
+     "path": "assets/audio/sfx-bumper.wav",
+     "bytes": 22094,
+     "sha256": "62eba3bf92f54be7048850b6830e5fe20982ba33a62c70c18406831b2cebcfe6"
+    },
+    {
+     "path": "assets/audio/sfx-checkpoint.wav",
+     "bytes": 22094,
+     "sha256": "c07e7225f96fae789da3376ab0a8fca1bec9ba107e15940f688b528c0e465637"
+    },
+    {
+     "path": "assets/audio/sfx-fall.wav",
+     "bytes": 29110,
+     "sha256": "13abef12ed9e055737487b9fd273dda5180ae3246f3014a8a9331dc4a4edc99c"
+    },
+    {
+     "path": "assets/audio/sfx-gem.wav",
+     "bytes": 30428,
+     "sha256": "1b4f0d6eb67cdbfe73cd2f2b3bd06c7065d484cad135d025f79a1d0e51524b68"
+    },
+    {
+     "path": "assets/audio/sfx-roll.wav",
+     "bytes": 176444,
+     "sha256": "1124c1835a8d1f1974a9b4ab50814253e7b6af2c7284df5750fa5b0cc288a950"
+    },
+    {
+     "path": "assets/audio/sfx-star.wav",
+     "bytes": 30428,
+     "sha256": "954150b7e8a535083013052ed40a18aadfc04f85545a291c18d1cb76e8a069ab"
+    },
+    {
+     "path": "assets/audio/ui-fanfare.wav",
+     "bytes": 170708,
+     "sha256": "981261e4cf44ce1644fbebcf0828f29312f7eebce8874415b8b3afd5ad23ba67"
+    },
+    {
+     "path": "assets/audio/ui-tap.wav",
+     "bytes": 10920,
+     "sha256": "06a0e982af975d6db9e95eb713c422bae2446e255d10b935d157e93848731636"
+    },
+    {
+     "path": "assets/backgrounds/skybox.svg",
+     "bytes": 2566,
+     "sha256": "02a79e8832162446c18cb063b6d3b6f66d1996dc676079ad61fad7faa2f18c96"
+    },
+    {
+     "path": "assets/environments/cloud-layers-1.glb",
+     "bytes": 63788,
+     "sha256": "24a73295fc3e45a68d168720e61b5a95b3ea16da6a2bc0ec56c6d72008ee64cf"
+    },
+    {
+     "path": "assets/environments/island-kit-1.glb",
+     "bytes": 97464,
+     "sha256": "ebed02414edcfe321f6315d986c99c4d9625dc5cc3db3ff171a81bc446778d29"
+    },
+    {
+     "path": "assets/environments/moving-platform.glb",
+     "bytes": 107396,
+     "sha256": "9a23f45181866fa873690d0375d872f9ce43c87b40f38ca9a5967e83f4b144d3"
+    },
+    {
+     "path": "assets/fonts/LICENSE-commissioner.txt",
+     "bytes": 4395,
+     "sha256": "4a7d88c77b4bc39ff84f2e058ba8f015636c50ce33588a86d9da97defe519933"
+    },
+    {
+     "path": "assets/fonts/LICENSE-playfair-display.txt",
+     "bytes": 4449,
+     "sha256": "566be814f8e96e93dfa16101331557eb6b5467e9e03f627c0910fe93ca12300e"
+    },
+    {
+     "path": "assets/fonts/fonts-1.woff2",
+     "bytes": 58376,
+     "sha256": "9fee76848535ac4b02ad29c648b673a7c03a4c0e02faf6c22304863cc392e21f"
+    },
+    {
+     "path": "assets/fonts/fonts-2.woff2",
+     "bytes": 98036,
+     "sha256": "d9c441d3600789a0a84f29f47e3690ae0f4a5eab3cb3034ee4771cef8128209a"
+    },
+    {
+     "path": "assets/icons/icons-1.svg",
+     "bytes": 1916,
+     "sha256": "4899eb1d822fdbb8564a54ff97092aaa5e1b93752a5a235bf66de8760a5024f9"
+    },
+    {
+     "path": "assets/icons/icons-2.svg",
+     "bytes": 1872,
+     "sha256": "2288d82374197da742a742573f555f937c7618515c6b0d9f58120638d9756fa0"
+    },
+    {
+     "path": "assets/icons/icons-3.svg",
+     "bytes": 2729,
+     "sha256": "f8885f8d72aaba7b77bc24ad9d814b564d29baeff1e49624bbafa8918e3b801a"
+    },
+    {
+     "path": "assets/icons/icons-4.svg",
+     "bytes": 2270,
+     "sha256": "c7df310db958b7f1b8c5f12ef39b2a1ec16bca2089d8e87301bc36e2bb892c8a"
+    },
+    {
+     "path": "assets/icons/icons-5.svg",
+     "bytes": 2271,
+     "sha256": "6a4f67108177b4d8b918ebc191117ed87747ec9d57f24ec9a355d0e273a1f8c0"
+    },
+    {
+     "path": "assets/icons/icons-6.svg",
+     "bytes": 3930,
+     "sha256": "5df48a037affa41ecbb95bc2a775dfe55c9a39e29f90a579ece29ca2e0848bb2"
+    },
+    {
+     "path": "assets/icons/icons-7.svg",
+     "bytes": 1764,
+     "sha256": "55649e1d2fc9984264813d341fb8e28bb3f6866c82b0fafe158d48ea46d77915"
+    },
+    {
+     "path": "assets/icons/icons-8.svg",
+     "bytes": 2247,
+     "sha256": "c6f368f6eedc29f85a87bc315abb395a4d97edec33474041d8f375667b9c4b58"
+    },
+    {
+     "path": "assets/icons/icons-9.svg",
+     "bytes": 2232,
+     "sha256": "10ecffd8d3eccc7fba3f508e41c8af792caae2fb2483ba231ff2f7dddfe0b96e"
+    },
+    {
+     "path": "assets/models/bumper.glb",
+     "bytes": 65304,
+     "sha256": "9ecb14726df822f8d31dc59127466f43ef388c660e62069190dbf9ce07576744"
+    },
+    {
+     "path": "assets/models/checkpoint.glb",
+     "bytes": 67508,
+     "sha256": "8c936e67eb022e2aae91fc478b68e762cf2ac1bd93351f8eb9b3a24068d92f8f"
+    },
+    {
+     "path": "assets/models/gem.glb",
+     "bytes": 6424,
+     "sha256": "d7efc94c690a86f1dcb57d3ea4bca02e33dfd4c248244cef423089f782cf5f09"
+    },
+    {
+     "path": "assets/models/goal-gate.glb",
+     "bytes": 119988,
+     "sha256": "7a0c6c51ae2157335de11ec33b51e50d6e19540a5ba005e9506f5b4e013bd371"
+    },
+    {
+     "path": "assets/models/low-wall.glb",
+     "bytes": 34248,
+     "sha256": "60d3d4fc73655d1551a563eb532a334b998328f35bd4d20262e9cb24ba6877bc"
+    },
+    {
+     "path": "assets/models/marble.glb",
+     "bytes": 23476,
+     "sha256": "116aa959ae7817bd176ac9b3b90f631361cb11054e5714f4032480fe28c750ac"
+    },
+    {
+     "path": "assets/ui/drag-hint.svg",
+     "bytes": 1706,
+     "sha256": "5656ee6eb93172bccf78b50494412d14f5d8fd2073f0e5de5ea69d7ae20c016a"
+    },
+    {
+     "path": "assets/ui/ui-kit.svg",
+     "bytes": 9823,
+     "sha256": "552d284f8ccfd9bfbf4356b632842f4c7af55bf46f8636ddc1e0fe51b598b265"
+    },
+    {
+     "path": "assets/ui/wordmark.svg",
+     "bytes": 1296,
+     "sha256": "524e32b5251a6873dc960aad5a99c63fa239cf21c171cb616c7b57e4478d3206"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-1.svg",
+     "bytes": 5320,
+     "sha256": "949c94039f6a22b6c1ca61f38fb178d0ee6878e091427c896b93ab7baabb6719"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-2.svg",
+     "bytes": 5767,
+     "sha256": "f303b7ec5b56677b3a48677431dd24a7c72883255d28e9fe7dad451fbfcdeb26"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-3.svg",
+     "bytes": 5431,
+     "sha256": "97a3fbe2e5440d4427823068e87aec465d7c2bdcad72aa7c1674fa1424b1f6af"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-4.svg",
+     "bytes": 4272,
+     "sha256": "34bb618428a49d457600ab8fc8a35d6c217cf14e064b2dc10274afdcab37d9f8"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-5.svg",
+     "bytes": 1820,
+     "sha256": "950848152857d513e20aa641cf918f92111f0269bfa715804c9dde7270ba4d46"
+    },
+    {
+     "path": "content/units.json",
+     "bytes": 58587,
+     "sha256": "9bc9dcd2e1d20f1ce462a47c56b06754133f7f31e9cf53f1ef1f185be18e6f2d"
+    },
+    {
+     "path": "locales/en.json",
+     "bytes": 2041,
+     "sha256": "4ee400525e9a6da287ce2ee35322606c92832be9ffd27c65ae5132ad03ef38a7"
+    },
+    {
+     "path": "locales/ru.json",
+     "bytes": 2851,
+     "sha256": "c2f52a90b638223d95e58b84e626da87bab0e85c4b5d72d0d91af65d194b978f"
+    },
+    {
+     "path": "metadata/.gitkeep",
+     "bytes": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ],
+   "index_html_scripts": [
+    "<script type=\"module\" crossorigin src=\"./assets/index-jS1rvJlS.js\">"
+   ],
+   "excerpts": [
+    {
+     "file": "assets/index-jS1rvJlS.js",
+     "portal": "poki",
+     "signature": "poki-sdk",
+     "text": ",Jn,ud,Jh,ql,il,rl,fr;const om=\"https://game-cdn.poki.com/scripts/v2/poki-sdk.js\",Zh={ads:[\"inter"
+    },
+    {
+     "file": "assets/index-jS1rvJlS.js",
+     "portal": "yandex",
+     "signature": "yandex-games-sdk",
+     "text": "2e4;function pm(s,t){const e=globalThis.YaGames;return e?Promise.resolve(e):typeof docu"
+    },
+    {
+     "file": "assets/index-jS1rvJlS.js",
+     "portal": "crazygames",
+     "signature": "crazygames-sdk",
+     "text": "\")?\"not-ready\":null)};const La=\"https://sdk.crazygames.com/crazygames-sdk-v3.js\";function Nl(s){re"
+    },
+    {
+     "file": "assets/index-jS1rvJlS.js",
+     "portal": "y8",
+     "signature": "y8-sdk",
+     "text": "gameId:a},warnings:r}}const nl=\"https://cdn.y8.com/minimal-sdk/2-0/y8.min.js\",al=\"y8sdk.ready\",ym=\"sav"
+    },
+    {
+     "file": "assets/index-jS1rvJlS.js",
+     "portal": "gamedistribution",
+     "signature": "gamedistribution",
+     "text": "a()}),\"f\")};const Ef=\"https://html5.api.gamedistribution.com/main.min.js\",Rh=\"gamedistribution-jssdk"
+    },
+    {
+     "file": "assets/index-jS1rvJlS.js",
+     "portal": "gamemonetize",
+     "signature": "gamemonetize",
+     "text": "Yh,sr,Qo,Nh,Uh,cd;const Uf=\"https://api.gamemonetize.com/sdk.js\",jh=\"gamemonetize-sdk\",Bh={ads:["
+    },
+    {
+     "file": "assets/index-jS1rvJlS.js.map",
+     "portal": "poki",
+     "signature": "poki-sdk",
+     "text": "\\nexport const POKI_SDK_URL = \\\"https://game-cdn.poki.com/scripts/v2/poki-sdk.js\\\";\\nexport const"
+    },
+    {
+     "file": "assets/index-jS1rvJlS.js.map",
+     "portal": "yandex",
+     "signature": "yandex-games-sdk",
+     "text": "tMs) {\\n    const existing = globalThis.YaGames;\\n    if (existing)\\n        return Pro"
+    },
+    {
+     "file": "assets/index-jS1rvJlS.js.map",
+     "portal": "crazygames",
+     "signature": "crazygames-sdk",
+     "text": "rt const CRAZYGAMES_SDK_URL = \\\"https://sdk.crazygames.com/crazygames-sdk-v3.js\\\";\\nexport functio"
+    },
+    {
+     "file": "assets/index-jS1rvJlS.js.map",
+     "portal": "y8",
+     "signature": "y8-sdk",
+     "text": "*/\\nexport const Y8_SDK_URL = \\\"https://cdn.y8.com/minimal-sdk/2-0/y8.min.js\\\";\\n/** Dispatched on `wi"
+    },
+    {
+     "file": "assets/index-jS1rvJlS.js.map",
+     "portal": "gamedistribution",
+     "signature": "gamedistribution",
+     "text": "DistributionSdk\",\"url\",\"script\",\"currentGdsdk\",\"first\",\"requireGdsdk\",\"sdk\",\"readHost"
+    },
+    {
+     "file": "assets/index-jS1rvJlS.js.map",
+     "portal": "gamemonetize",
+     "signature": "gamemonetize",
+     "text": "form.js.map\",\"// GameMonetize — https://gamemonetize.com/sdk\\n//\\n// Written against GameMonetiz"
+    }
+   ]
+  },
+  {
+   "label": "43c08e2+backport-yandex",
+   "platform_id": "yandex",
+   "variant": "backport",
+   "source_dir": "sm-bp/build/platforms/yandex/dist",
+   "files": [
+    {
+     "path": "index.html",
+     "bytes": 1776,
+     "sha256": "52d87b74e6655c938dfb7157ca39344174ad7168aa64a5108c77cdb6b01ba3c6"
+    },
+    {
+     "path": "assets/.gitkeep",
+     "bytes": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+     "path": "assets/assets.json",
+     "bytes": 15589,
+     "sha256": "f01e407f346f0ec527154bb778b8169a6757f9a52b3e4f169e746754871e8f9b"
+    },
+    {
+     "path": "assets/index-C1n50otn.js",
+     "bytes": 1805,
+     "sha256": "1d23666bbddb345a6f74583a381b52f6378b2534aa471a051f2da974ed49e9ea"
+    },
+    {
+     "path": "assets/index-C1n50otn.js.map",
+     "bytes": 6852,
+     "sha256": "ce05d55107b041235e851b6caf72fb9d6c3872c6e7c6b037e8369f905bdc9341"
+    },
+    {
+     "path": "assets/index-Cgk4BOwP.js",
+     "bytes": 125654,
+     "sha256": "4db3965e0679c9f3bcb7d05346426050538814bc7851fa1df18a15d5fc867533"
+    },
+    {
+     "path": "assets/index-Cgk4BOwP.js.map",
+     "bytes": 553482,
+     "sha256": "8f3f0ef2beb7f975ff58cdce701ee01e333abd7f1c4baa4d76e6d1a832d50361"
+    },
+    {
+     "path": "assets/index-D9PvocR4.css",
+     "bytes": 15860,
+     "sha256": "a8110d3d4ac08d1dc73ad3ea73f348b84a6ed30f397c9ddd33c0928d6658095b"
+    },
+    {
+     "path": "assets/three.module-Cxb409r3.js",
+     "bytes": 560135,
+     "sha256": "abd8796a9690fcf5daa21f459bfbdb4732d8c51f99a5e20b4d9e4b0a2221c452"
+    },
+    {
+     "path": "assets/three.module-Cxb409r3.js.map",
+     "bytes": 2068952,
+     "sha256": "d66d409d4a16512df3ad8be74fc70bf0482ff368dbee7ccc631271dab0311187"
+    },
+    {
+     "path": "assets/world-view-Ddvg1WkB.js",
+     "bytes": 100811,
+     "sha256": "8016080a82a47b929772287bc2e45038efdec7b4da22fa2832c9bd5f2f440016"
+    },
+    {
+     "path": "assets/world-view-Ddvg1WkB.js.map",
+     "bytes": 436733,
+     "sha256": "724914d746692cf23dce32b75468451f0b3e4e3a8981cb971928e8d08c6d2a6f"
+    },
+    {
+     "path": "assets/audio/music-sky.ogg",
+     "bytes": 853230,
+     "sha256": "4e8b868fbca3a5a3cb95b22b106b0df1667b5e19d5046d94255fb764091ce090"
+    },
+    {
+     "path": "assets/audio/sfx-bump.wav",
+     "bytes": 29130,
+     "sha256": "6d83229431e716334149ba1a51c988a854c8367d74d6891b213305fbca11ffc8"
+    },
+    {
+     "path": "assets/audio/sfx-bumper.wav",
+     "bytes": 22094,
+     "sha256": "62eba3bf92f54be7048850b6830e5fe20982ba33a62c70c18406831b2cebcfe6"
+    },
+    {
+     "path": "assets/audio/sfx-checkpoint.wav",
+     "bytes": 22094,
+     "sha256": "c07e7225f96fae789da3376ab0a8fca1bec9ba107e15940f688b528c0e465637"
+    },
+    {
+     "path": "assets/audio/sfx-fall.wav",
+     "bytes": 29110,
+     "sha256": "13abef12ed9e055737487b9fd273dda5180ae3246f3014a8a9331dc4a4edc99c"
+    },
+    {
+     "path": "assets/audio/sfx-gem.wav",
+     "bytes": 30428,
+     "sha256": "1b4f0d6eb67cdbfe73cd2f2b3bd06c7065d484cad135d025f79a1d0e51524b68"
+    },
+    {
+     "path": "assets/audio/sfx-roll.wav",
+     "bytes": 176444,
+     "sha256": "1124c1835a8d1f1974a9b4ab50814253e7b6af2c7284df5750fa5b0cc288a950"
+    },
+    {
+     "path": "assets/audio/sfx-star.wav",
+     "bytes": 30428,
+     "sha256": "954150b7e8a535083013052ed40a18aadfc04f85545a291c18d1cb76e8a069ab"
+    },
+    {
+     "path": "assets/audio/ui-fanfare.wav",
+     "bytes": 170708,
+     "sha256": "981261e4cf44ce1644fbebcf0828f29312f7eebce8874415b8b3afd5ad23ba67"
+    },
+    {
+     "path": "assets/audio/ui-tap.wav",
+     "bytes": 10920,
+     "sha256": "06a0e982af975d6db9e95eb713c422bae2446e255d10b935d157e93848731636"
+    },
+    {
+     "path": "assets/backgrounds/skybox.svg",
+     "bytes": 2566,
+     "sha256": "02a79e8832162446c18cb063b6d3b6f66d1996dc676079ad61fad7faa2f18c96"
+    },
+    {
+     "path": "assets/environments/cloud-layers-1.glb",
+     "bytes": 63788,
+     "sha256": "24a73295fc3e45a68d168720e61b5a95b3ea16da6a2bc0ec56c6d72008ee64cf"
+    },
+    {
+     "path": "assets/environments/island-kit-1.glb",
+     "bytes": 97464,
+     "sha256": "ebed02414edcfe321f6315d986c99c4d9625dc5cc3db3ff171a81bc446778d29"
+    },
+    {
+     "path": "assets/environments/moving-platform.glb",
+     "bytes": 107396,
+     "sha256": "9a23f45181866fa873690d0375d872f9ce43c87b40f38ca9a5967e83f4b144d3"
+    },
+    {
+     "path": "assets/fonts/LICENSE-commissioner.txt",
+     "bytes": 4395,
+     "sha256": "4a7d88c77b4bc39ff84f2e058ba8f015636c50ce33588a86d9da97defe519933"
+    },
+    {
+     "path": "assets/fonts/LICENSE-playfair-display.txt",
+     "bytes": 4449,
+     "sha256": "566be814f8e96e93dfa16101331557eb6b5467e9e03f627c0910fe93ca12300e"
+    },
+    {
+     "path": "assets/fonts/fonts-1.woff2",
+     "bytes": 58376,
+     "sha256": "9fee76848535ac4b02ad29c648b673a7c03a4c0e02faf6c22304863cc392e21f"
+    },
+    {
+     "path": "assets/fonts/fonts-2.woff2",
+     "bytes": 98036,
+     "sha256": "d9c441d3600789a0a84f29f47e3690ae0f4a5eab3cb3034ee4771cef8128209a"
+    },
+    {
+     "path": "assets/icons/icons-1.svg",
+     "bytes": 1916,
+     "sha256": "4899eb1d822fdbb8564a54ff97092aaa5e1b93752a5a235bf66de8760a5024f9"
+    },
+    {
+     "path": "assets/icons/icons-2.svg",
+     "bytes": 1872,
+     "sha256": "2288d82374197da742a742573f555f937c7618515c6b0d9f58120638d9756fa0"
+    },
+    {
+     "path": "assets/icons/icons-3.svg",
+     "bytes": 2729,
+     "sha256": "f8885f8d72aaba7b77bc24ad9d814b564d29baeff1e49624bbafa8918e3b801a"
+    },
+    {
+     "path": "assets/icons/icons-4.svg",
+     "bytes": 2270,
+     "sha256": "c7df310db958b7f1b8c5f12ef39b2a1ec16bca2089d8e87301bc36e2bb892c8a"
+    },
+    {
+     "path": "assets/icons/icons-5.svg",
+     "bytes": 2271,
+     "sha256": "6a4f67108177b4d8b918ebc191117ed87747ec9d57f24ec9a355d0e273a1f8c0"
+    },
+    {
+     "path": "assets/icons/icons-6.svg",
+     "bytes": 3930,
+     "sha256": "5df48a037affa41ecbb95bc2a775dfe55c9a39e29f90a579ece29ca2e0848bb2"
+    },
+    {
+     "path": "assets/icons/icons-7.svg",
+     "bytes": 1764,
+     "sha256": "55649e1d2fc9984264813d341fb8e28bb3f6866c82b0fafe158d48ea46d77915"
+    },
+    {
+     "path": "assets/icons/icons-8.svg",
+     "bytes": 2247,
+     "sha256": "c6f368f6eedc29f85a87bc315abb395a4d97edec33474041d8f375667b9c4b58"
+    },
+    {
+     "path": "assets/icons/icons-9.svg",
+     "bytes": 2232,
+     "sha256": "10ecffd8d3eccc7fba3f508e41c8af792caae2fb2483ba231ff2f7dddfe0b96e"
+    },
+    {
+     "path": "assets/models/bumper.glb",
+     "bytes": 65304,
+     "sha256": "9ecb14726df822f8d31dc59127466f43ef388c660e62069190dbf9ce07576744"
+    },
+    {
+     "path": "assets/models/checkpoint.glb",
+     "bytes": 67508,
+     "sha256": "8c936e67eb022e2aae91fc478b68e762cf2ac1bd93351f8eb9b3a24068d92f8f"
+    },
+    {
+     "path": "assets/models/gem.glb",
+     "bytes": 6424,
+     "sha256": "d7efc94c690a86f1dcb57d3ea4bca02e33dfd4c248244cef423089f782cf5f09"
+    },
+    {
+     "path": "assets/models/goal-gate.glb",
+     "bytes": 119988,
+     "sha256": "7a0c6c51ae2157335de11ec33b51e50d6e19540a5ba005e9506f5b4e013bd371"
+    },
+    {
+     "path": "assets/models/low-wall.glb",
+     "bytes": 34248,
+     "sha256": "60d3d4fc73655d1551a563eb532a334b998328f35bd4d20262e9cb24ba6877bc"
+    },
+    {
+     "path": "assets/models/marble.glb",
+     "bytes": 23476,
+     "sha256": "116aa959ae7817bd176ac9b3b90f631361cb11054e5714f4032480fe28c750ac"
+    },
+    {
+     "path": "assets/ui/drag-hint.svg",
+     "bytes": 1706,
+     "sha256": "5656ee6eb93172bccf78b50494412d14f5d8fd2073f0e5de5ea69d7ae20c016a"
+    },
+    {
+     "path": "assets/ui/ui-kit.svg",
+     "bytes": 9823,
+     "sha256": "552d284f8ccfd9bfbf4356b632842f4c7af55bf46f8636ddc1e0fe51b598b265"
+    },
+    {
+     "path": "assets/ui/wordmark.svg",
+     "bytes": 1296,
+     "sha256": "524e32b5251a6873dc960aad5a99c63fa239cf21c171cb616c7b57e4478d3206"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-1.svg",
+     "bytes": 5320,
+     "sha256": "949c94039f6a22b6c1ca61f38fb178d0ee6878e091427c896b93ab7baabb6719"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-2.svg",
+     "bytes": 5767,
+     "sha256": "f303b7ec5b56677b3a48677431dd24a7c72883255d28e9fe7dad451fbfcdeb26"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-3.svg",
+     "bytes": 5431,
+     "sha256": "97a3fbe2e5440d4427823068e87aec465d7c2bdcad72aa7c1674fa1424b1f6af"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-4.svg",
+     "bytes": 4272,
+     "sha256": "34bb618428a49d457600ab8fc8a35d6c217cf14e064b2dc10274afdcab37d9f8"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-5.svg",
+     "bytes": 1820,
+     "sha256": "950848152857d513e20aa641cf918f92111f0269bfa715804c9dde7270ba4d46"
+    },
+    {
+     "path": "content/units.json",
+     "bytes": 58587,
+     "sha256": "9bc9dcd2e1d20f1ce462a47c56b06754133f7f31e9cf53f1ef1f185be18e6f2d"
+    },
+    {
+     "path": "locales/en.json",
+     "bytes": 2041,
+     "sha256": "4ee400525e9a6da287ce2ee35322606c92832be9ffd27c65ae5132ad03ef38a7"
+    },
+    {
+     "path": "locales/ru.json",
+     "bytes": 2851,
+     "sha256": "c2f52a90b638223d95e58b84e626da87bab0e85c4b5d72d0d91af65d194b978f"
+    },
+    {
+     "path": "metadata/.gitkeep",
+     "bytes": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ],
+   "index_html_scripts": [
+    "<script type=\"module\" crossorigin src=\"./assets/index-Cgk4BOwP.js\">"
+   ],
+   "excerpts": [
+    {
+     "file": "assets/index-Cgk4BOwP.js",
+     "portal": "yandex",
+     "signature": "yandex-games-sdk",
+     "text": "2e4;function Yh(s,t){const e=globalThis.YaGames;return e?Promise.resolve(e):typeof docu"
+    },
+    {
+     "file": "assets/index-Cgk4BOwP.js.map",
+     "portal": "yandex",
+     "signature": "yandex-games-sdk",
+     "text": "tMs) {\\n    const existing = globalThis.YaGames;\\n    if (existing)\\n        return Pro"
+    }
+   ]
+  },
+  {
+   "label": "43c08e2+backport-crazygames",
+   "platform_id": "crazygames",
+   "variant": "backport",
+   "source_dir": "sm-bp/build/platforms/crazygames/dist",
+   "files": [
+    {
+     "path": "index.html",
+     "bytes": 1853,
+     "sha256": "03e318fb9503de187a617f79543f8146eb261d7e8468f3813d6ad3603fc3de7c"
+    },
+    {
+     "path": "assets/.gitkeep",
+     "bytes": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+     "path": "assets/assets.json",
+     "bytes": 15589,
+     "sha256": "f01e407f346f0ec527154bb778b8169a6757f9a52b3e4f169e746754871e8f9b"
+    },
+    {
+     "path": "assets/index-C1n50otn.js",
+     "bytes": 1805,
+     "sha256": "1d23666bbddb345a6f74583a381b52f6378b2534aa471a051f2da974ed49e9ea"
+    },
+    {
+     "path": "assets/index-C1n50otn.js.map",
+     "bytes": 6852,
+     "sha256": "ce05d55107b041235e851b6caf72fb9d6c3872c6e7c6b037e8369f905bdc9341"
+    },
+    {
+     "path": "assets/index-CXMKlhZk.js",
+     "bytes": 122954,
+     "sha256": "6d78b9816a45c98808ebaa431a6da164dc5fe96434af062f81cd6907faf30754"
+    },
+    {
+     "path": "assets/index-CXMKlhZk.js.map",
+     "bytes": 540656,
+     "sha256": "781b62145b5e64299a288e9d46022382dba125dcd90ed1b7e6050e0609619e91"
+    },
+    {
+     "path": "assets/index-D9PvocR4.css",
+     "bytes": 15860,
+     "sha256": "a8110d3d4ac08d1dc73ad3ea73f348b84a6ed30f397c9ddd33c0928d6658095b"
+    },
+    {
+     "path": "assets/three.module-Cxb409r3.js",
+     "bytes": 560135,
+     "sha256": "abd8796a9690fcf5daa21f459bfbdb4732d8c51f99a5e20b4d9e4b0a2221c452"
+    },
+    {
+     "path": "assets/three.module-Cxb409r3.js.map",
+     "bytes": 2068952,
+     "sha256": "d66d409d4a16512df3ad8be74fc70bf0482ff368dbee7ccc631271dab0311187"
+    },
+    {
+     "path": "assets/world-view-C5G3acHU.js",
+     "bytes": 100811,
+     "sha256": "46a4f7849ad4270e6d3bcd5f58f5ac697cb70b492ea790884ee0476f9179bfde"
+    },
+    {
+     "path": "assets/world-view-C5G3acHU.js.map",
+     "bytes": 436733,
+     "sha256": "8a4f21b3527be323564960081d365dd812bbcf478e696e5cffc9a432043b3e93"
+    },
+    {
+     "path": "assets/audio/music-sky.ogg",
+     "bytes": 853230,
+     "sha256": "4e8b868fbca3a5a3cb95b22b106b0df1667b5e19d5046d94255fb764091ce090"
+    },
+    {
+     "path": "assets/audio/sfx-bump.wav",
+     "bytes": 29130,
+     "sha256": "6d83229431e716334149ba1a51c988a854c8367d74d6891b213305fbca11ffc8"
+    },
+    {
+     "path": "assets/audio/sfx-bumper.wav",
+     "bytes": 22094,
+     "sha256": "62eba3bf92f54be7048850b6830e5fe20982ba33a62c70c18406831b2cebcfe6"
+    },
+    {
+     "path": "assets/audio/sfx-checkpoint.wav",
+     "bytes": 22094,
+     "sha256": "c07e7225f96fae789da3376ab0a8fca1bec9ba107e15940f688b528c0e465637"
+    },
+    {
+     "path": "assets/audio/sfx-fall.wav",
+     "bytes": 29110,
+     "sha256": "13abef12ed9e055737487b9fd273dda5180ae3246f3014a8a9331dc4a4edc99c"
+    },
+    {
+     "path": "assets/audio/sfx-gem.wav",
+     "bytes": 30428,
+     "sha256": "1b4f0d6eb67cdbfe73cd2f2b3bd06c7065d484cad135d025f79a1d0e51524b68"
+    },
+    {
+     "path": "assets/audio/sfx-roll.wav",
+     "bytes": 176444,
+     "sha256": "1124c1835a8d1f1974a9b4ab50814253e7b6af2c7284df5750fa5b0cc288a950"
+    },
+    {
+     "path": "assets/audio/sfx-star.wav",
+     "bytes": 30428,
+     "sha256": "954150b7e8a535083013052ed40a18aadfc04f85545a291c18d1cb76e8a069ab"
+    },
+    {
+     "path": "assets/audio/ui-fanfare.wav",
+     "bytes": 170708,
+     "sha256": "981261e4cf44ce1644fbebcf0828f29312f7eebce8874415b8b3afd5ad23ba67"
+    },
+    {
+     "path": "assets/audio/ui-tap.wav",
+     "bytes": 10920,
+     "sha256": "06a0e982af975d6db9e95eb713c422bae2446e255d10b935d157e93848731636"
+    },
+    {
+     "path": "assets/backgrounds/skybox.svg",
+     "bytes": 2566,
+     "sha256": "02a79e8832162446c18cb063b6d3b6f66d1996dc676079ad61fad7faa2f18c96"
+    },
+    {
+     "path": "assets/environments/cloud-layers-1.glb",
+     "bytes": 63788,
+     "sha256": "24a73295fc3e45a68d168720e61b5a95b3ea16da6a2bc0ec56c6d72008ee64cf"
+    },
+    {
+     "path": "assets/environments/island-kit-1.glb",
+     "bytes": 97464,
+     "sha256": "ebed02414edcfe321f6315d986c99c4d9625dc5cc3db3ff171a81bc446778d29"
+    },
+    {
+     "path": "assets/environments/moving-platform.glb",
+     "bytes": 107396,
+     "sha256": "9a23f45181866fa873690d0375d872f9ce43c87b40f38ca9a5967e83f4b144d3"
+    },
+    {
+     "path": "assets/fonts/LICENSE-commissioner.txt",
+     "bytes": 4395,
+     "sha256": "4a7d88c77b4bc39ff84f2e058ba8f015636c50ce33588a86d9da97defe519933"
+    },
+    {
+     "path": "assets/fonts/LICENSE-playfair-display.txt",
+     "bytes": 4449,
+     "sha256": "566be814f8e96e93dfa16101331557eb6b5467e9e03f627c0910fe93ca12300e"
+    },
+    {
+     "path": "assets/fonts/fonts-1.woff2",
+     "bytes": 58376,
+     "sha256": "9fee76848535ac4b02ad29c648b673a7c03a4c0e02faf6c22304863cc392e21f"
+    },
+    {
+     "path": "assets/fonts/fonts-2.woff2",
+     "bytes": 98036,
+     "sha256": "d9c441d3600789a0a84f29f47e3690ae0f4a5eab3cb3034ee4771cef8128209a"
+    },
+    {
+     "path": "assets/icons/icons-1.svg",
+     "bytes": 1916,
+     "sha256": "4899eb1d822fdbb8564a54ff97092aaa5e1b93752a5a235bf66de8760a5024f9"
+    },
+    {
+     "path": "assets/icons/icons-2.svg",
+     "bytes": 1872,
+     "sha256": "2288d82374197da742a742573f555f937c7618515c6b0d9f58120638d9756fa0"
+    },
+    {
+     "path": "assets/icons/icons-3.svg",
+     "bytes": 2729,
+     "sha256": "f8885f8d72aaba7b77bc24ad9d814b564d29baeff1e49624bbafa8918e3b801a"
+    },
+    {
+     "path": "assets/icons/icons-4.svg",
+     "bytes": 2270,
+     "sha256": "c7df310db958b7f1b8c5f12ef39b2a1ec16bca2089d8e87301bc36e2bb892c8a"
+    },
+    {
+     "path": "assets/icons/icons-5.svg",
+     "bytes": 2271,
+     "sha256": "6a4f67108177b4d8b918ebc191117ed87747ec9d57f24ec9a355d0e273a1f8c0"
+    },
+    {
+     "path": "assets/icons/icons-6.svg",
+     "bytes": 3930,
+     "sha256": "5df48a037affa41ecbb95bc2a775dfe55c9a39e29f90a579ece29ca2e0848bb2"
+    },
+    {
+     "path": "assets/icons/icons-7.svg",
+     "bytes": 1764,
+     "sha256": "55649e1d2fc9984264813d341fb8e28bb3f6866c82b0fafe158d48ea46d77915"
+    },
+    {
+     "path": "assets/icons/icons-8.svg",
+     "bytes": 2247,
+     "sha256": "c6f368f6eedc29f85a87bc315abb395a4d97edec33474041d8f375667b9c4b58"
+    },
+    {
+     "path": "assets/icons/icons-9.svg",
+     "bytes": 2232,
+     "sha256": "10ecffd8d3eccc7fba3f508e41c8af792caae2fb2483ba231ff2f7dddfe0b96e"
+    },
+    {
+     "path": "assets/models/bumper.glb",
+     "bytes": 65304,
+     "sha256": "9ecb14726df822f8d31dc59127466f43ef388c660e62069190dbf9ce07576744"
+    },
+    {
+     "path": "assets/models/checkpoint.glb",
+     "bytes": 67508,
+     "sha256": "8c936e67eb022e2aae91fc478b68e762cf2ac1bd93351f8eb9b3a24068d92f8f"
+    },
+    {
+     "path": "assets/models/gem.glb",
+     "bytes": 6424,
+     "sha256": "d7efc94c690a86f1dcb57d3ea4bca02e33dfd4c248244cef423089f782cf5f09"
+    },
+    {
+     "path": "assets/models/goal-gate.glb",
+     "bytes": 119988,
+     "sha256": "7a0c6c51ae2157335de11ec33b51e50d6e19540a5ba005e9506f5b4e013bd371"
+    },
+    {
+     "path": "assets/models/low-wall.glb",
+     "bytes": 34248,
+     "sha256": "60d3d4fc73655d1551a563eb532a334b998328f35bd4d20262e9cb24ba6877bc"
+    },
+    {
+     "path": "assets/models/marble.glb",
+     "bytes": 23476,
+     "sha256": "116aa959ae7817bd176ac9b3b90f631361cb11054e5714f4032480fe28c750ac"
+    },
+    {
+     "path": "assets/ui/drag-hint.svg",
+     "bytes": 1706,
+     "sha256": "5656ee6eb93172bccf78b50494412d14f5d8fd2073f0e5de5ea69d7ae20c016a"
+    },
+    {
+     "path": "assets/ui/ui-kit.svg",
+     "bytes": 9823,
+     "sha256": "552d284f8ccfd9bfbf4356b632842f4c7af55bf46f8636ddc1e0fe51b598b265"
+    },
+    {
+     "path": "assets/ui/wordmark.svg",
+     "bytes": 1296,
+     "sha256": "524e32b5251a6873dc960aad5a99c63fa239cf21c171cb616c7b57e4478d3206"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-1.svg",
+     "bytes": 5320,
+     "sha256": "949c94039f6a22b6c1ca61f38fb178d0ee6878e091427c896b93ab7baabb6719"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-2.svg",
+     "bytes": 5767,
+     "sha256": "f303b7ec5b56677b3a48677431dd24a7c72883255d28e9fe7dad451fbfcdeb26"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-3.svg",
+     "bytes": 5431,
+     "sha256": "97a3fbe2e5440d4427823068e87aec465d7c2bdcad72aa7c1674fa1424b1f6af"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-4.svg",
+     "bytes": 4272,
+     "sha256": "34bb618428a49d457600ab8fc8a35d6c217cf14e064b2dc10274afdcab37d9f8"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-5.svg",
+     "bytes": 1820,
+     "sha256": "950848152857d513e20aa641cf918f92111f0269bfa715804c9dde7270ba4d46"
+    },
+    {
+     "path": "content/units.json",
+     "bytes": 58587,
+     "sha256": "9bc9dcd2e1d20f1ce462a47c56b06754133f7f31e9cf53f1ef1f185be18e6f2d"
+    },
+    {
+     "path": "locales/en.json",
+     "bytes": 2041,
+     "sha256": "4ee400525e9a6da287ce2ee35322606c92832be9ffd27c65ae5132ad03ef38a7"
+    },
+    {
+     "path": "locales/ru.json",
+     "bytes": 2851,
+     "sha256": "c2f52a90b638223d95e58b84e626da87bab0e85c4b5d72d0d91af65d194b978f"
+    },
+    {
+     "path": "metadata/.gitkeep",
+     "bytes": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ],
+   "index_html_scripts": [
+    "<script src=\"https://sdk.crazygames.com/crazygames-sdk-v3.js\">",
+    "<script type=\"module\" crossorigin src=\"./assets/index-CXMKlhZk.js\">"
+   ],
+   "excerpts": [
+    {
+     "file": "assets/index-CXMKlhZk.js",
+     "portal": "crazygames",
+     "signature": "crazygames-sdk",
+     "text": "`,r)}}}Ei=new WeakMap;const bn=\"https://sdk.crazygames.com/crazygames-sdk-v3.js\";function Mr(s){re"
+    },
+    {
+     "file": "assets/index-CXMKlhZk.js.map",
+     "portal": "crazygames",
+     "signature": "crazygames-sdk",
+     "text": "rt const CRAZYGAMES_SDK_URL = \\\"https://sdk.crazygames.com/crazygames-sdk-v3.js\\\";\\nexport functio"
+    }
+   ]
+  },
+  {
+   "label": "43c08e2+backport-y8",
+   "platform_id": "y8",
+   "variant": "backport",
+   "source_dir": "sm-bp/build/platforms/y8/dist",
+   "files": [
+    {
+     "path": "index.html",
+     "bytes": 1776,
+     "sha256": "43e900de3d43c978dd47d309e16562b82ec3ae53c37595eef7d041d59601035f"
+    },
+    {
+     "path": "assets/.gitkeep",
+     "bytes": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+     "path": "assets/assets.json",
+     "bytes": 15589,
+     "sha256": "f01e407f346f0ec527154bb778b8169a6757f9a52b3e4f169e746754871e8f9b"
+    },
+    {
+     "path": "assets/index-C1n50otn.js",
+     "bytes": 1805,
+     "sha256": "1d23666bbddb345a6f74583a381b52f6378b2534aa471a051f2da974ed49e9ea"
+    },
+    {
+     "path": "assets/index-C1n50otn.js.map",
+     "bytes": 6852,
+     "sha256": "ce05d55107b041235e851b6caf72fb9d6c3872c6e7c6b037e8369f905bdc9341"
+    },
+    {
+     "path": "assets/index-D9PvocR4.css",
+     "bytes": 15860,
+     "sha256": "a8110d3d4ac08d1dc73ad3ea73f348b84a6ed30f397c9ddd33c0928d6658095b"
+    },
+    {
+     "path": "assets/index-lGVRL6b6.js",
+     "bytes": 125565,
+     "sha256": "8b4c2213caa0561a86b8ddb48772e2096a12d1144166a9e9cfeb4a5b0d666948"
+    },
+    {
+     "path": "assets/index-lGVRL6b6.js.map",
+     "bytes": 553121,
+     "sha256": "bb6c3928b89fcde9671ee1115ea72ce29dc69838bfb60dc6e547ae29b56e48a4"
+    },
+    {
+     "path": "assets/three.module-Cxb409r3.js",
+     "bytes": 560135,
+     "sha256": "abd8796a9690fcf5daa21f459bfbdb4732d8c51f99a5e20b4d9e4b0a2221c452"
+    },
+    {
+     "path": "assets/three.module-Cxb409r3.js.map",
+     "bytes": 2068952,
+     "sha256": "d66d409d4a16512df3ad8be74fc70bf0482ff368dbee7ccc631271dab0311187"
+    },
+    {
+     "path": "assets/world-view-B-eQj1wh.js",
+     "bytes": 100811,
+     "sha256": "e545c75e4ec2bea5ae2850b01db4ff672a1af8c76f5566990dfa9a8ece2aa5a1"
+    },
+    {
+     "path": "assets/world-view-B-eQj1wh.js.map",
+     "bytes": 436733,
+     "sha256": "615e11f88bed514dd1c599b2ebd9724f6cc286fcbfd998ef4e534e6e6969098e"
+    },
+    {
+     "path": "assets/audio/music-sky.ogg",
+     "bytes": 853230,
+     "sha256": "4e8b868fbca3a5a3cb95b22b106b0df1667b5e19d5046d94255fb764091ce090"
+    },
+    {
+     "path": "assets/audio/sfx-bump.wav",
+     "bytes": 29130,
+     "sha256": "6d83229431e716334149ba1a51c988a854c8367d74d6891b213305fbca11ffc8"
+    },
+    {
+     "path": "assets/audio/sfx-bumper.wav",
+     "bytes": 22094,
+     "sha256": "62eba3bf92f54be7048850b6830e5fe20982ba33a62c70c18406831b2cebcfe6"
+    },
+    {
+     "path": "assets/audio/sfx-checkpoint.wav",
+     "bytes": 22094,
+     "sha256": "c07e7225f96fae789da3376ab0a8fca1bec9ba107e15940f688b528c0e465637"
+    },
+    {
+     "path": "assets/audio/sfx-fall.wav",
+     "bytes": 29110,
+     "sha256": "13abef12ed9e055737487b9fd273dda5180ae3246f3014a8a9331dc4a4edc99c"
+    },
+    {
+     "path": "assets/audio/sfx-gem.wav",
+     "bytes": 30428,
+     "sha256": "1b4f0d6eb67cdbfe73cd2f2b3bd06c7065d484cad135d025f79a1d0e51524b68"
+    },
+    {
+     "path": "assets/audio/sfx-roll.wav",
+     "bytes": 176444,
+     "sha256": "1124c1835a8d1f1974a9b4ab50814253e7b6af2c7284df5750fa5b0cc288a950"
+    },
+    {
+     "path": "assets/audio/sfx-star.wav",
+     "bytes": 30428,
+     "sha256": "954150b7e8a535083013052ed40a18aadfc04f85545a291c18d1cb76e8a069ab"
+    },
+    {
+     "path": "assets/audio/ui-fanfare.wav",
+     "bytes": 170708,
+     "sha256": "981261e4cf44ce1644fbebcf0828f29312f7eebce8874415b8b3afd5ad23ba67"
+    },
+    {
+     "path": "assets/audio/ui-tap.wav",
+     "bytes": 10920,
+     "sha256": "06a0e982af975d6db9e95eb713c422bae2446e255d10b935d157e93848731636"
+    },
+    {
+     "path": "assets/backgrounds/skybox.svg",
+     "bytes": 2566,
+     "sha256": "02a79e8832162446c18cb063b6d3b6f66d1996dc676079ad61fad7faa2f18c96"
+    },
+    {
+     "path": "assets/environments/cloud-layers-1.glb",
+     "bytes": 63788,
+     "sha256": "24a73295fc3e45a68d168720e61b5a95b3ea16da6a2bc0ec56c6d72008ee64cf"
+    },
+    {
+     "path": "assets/environments/island-kit-1.glb",
+     "bytes": 97464,
+     "sha256": "ebed02414edcfe321f6315d986c99c4d9625dc5cc3db3ff171a81bc446778d29"
+    },
+    {
+     "path": "assets/environments/moving-platform.glb",
+     "bytes": 107396,
+     "sha256": "9a23f45181866fa873690d0375d872f9ce43c87b40f38ca9a5967e83f4b144d3"
+    },
+    {
+     "path": "assets/fonts/LICENSE-commissioner.txt",
+     "bytes": 4395,
+     "sha256": "4a7d88c77b4bc39ff84f2e058ba8f015636c50ce33588a86d9da97defe519933"
+    },
+    {
+     "path": "assets/fonts/LICENSE-playfair-display.txt",
+     "bytes": 4449,
+     "sha256": "566be814f8e96e93dfa16101331557eb6b5467e9e03f627c0910fe93ca12300e"
+    },
+    {
+     "path": "assets/fonts/fonts-1.woff2",
+     "bytes": 58376,
+     "sha256": "9fee76848535ac4b02ad29c648b673a7c03a4c0e02faf6c22304863cc392e21f"
+    },
+    {
+     "path": "assets/fonts/fonts-2.woff2",
+     "bytes": 98036,
+     "sha256": "d9c441d3600789a0a84f29f47e3690ae0f4a5eab3cb3034ee4771cef8128209a"
+    },
+    {
+     "path": "assets/icons/icons-1.svg",
+     "bytes": 1916,
+     "sha256": "4899eb1d822fdbb8564a54ff97092aaa5e1b93752a5a235bf66de8760a5024f9"
+    },
+    {
+     "path": "assets/icons/icons-2.svg",
+     "bytes": 1872,
+     "sha256": "2288d82374197da742a742573f555f937c7618515c6b0d9f58120638d9756fa0"
+    },
+    {
+     "path": "assets/icons/icons-3.svg",
+     "bytes": 2729,
+     "sha256": "f8885f8d72aaba7b77bc24ad9d814b564d29baeff1e49624bbafa8918e3b801a"
+    },
+    {
+     "path": "assets/icons/icons-4.svg",
+     "bytes": 2270,
+     "sha256": "c7df310db958b7f1b8c5f12ef39b2a1ec16bca2089d8e87301bc36e2bb892c8a"
+    },
+    {
+     "path": "assets/icons/icons-5.svg",
+     "bytes": 2271,
+     "sha256": "6a4f67108177b4d8b918ebc191117ed87747ec9d57f24ec9a355d0e273a1f8c0"
+    },
+    {
+     "path": "assets/icons/icons-6.svg",
+     "bytes": 3930,
+     "sha256": "5df48a037affa41ecbb95bc2a775dfe55c9a39e29f90a579ece29ca2e0848bb2"
+    },
+    {
+     "path": "assets/icons/icons-7.svg",
+     "bytes": 1764,
+     "sha256": "55649e1d2fc9984264813d341fb8e28bb3f6866c82b0fafe158d48ea46d77915"
+    },
+    {
+     "path": "assets/icons/icons-8.svg",
+     "bytes": 2247,
+     "sha256": "c6f368f6eedc29f85a87bc315abb395a4d97edec33474041d8f375667b9c4b58"
+    },
+    {
+     "path": "assets/icons/icons-9.svg",
+     "bytes": 2232,
+     "sha256": "10ecffd8d3eccc7fba3f508e41c8af792caae2fb2483ba231ff2f7dddfe0b96e"
+    },
+    {
+     "path": "assets/models/bumper.glb",
+     "bytes": 65304,
+     "sha256": "9ecb14726df822f8d31dc59127466f43ef388c660e62069190dbf9ce07576744"
+    },
+    {
+     "path": "assets/models/checkpoint.glb",
+     "bytes": 67508,
+     "sha256": "8c936e67eb022e2aae91fc478b68e762cf2ac1bd93351f8eb9b3a24068d92f8f"
+    },
+    {
+     "path": "assets/models/gem.glb",
+     "bytes": 6424,
+     "sha256": "d7efc94c690a86f1dcb57d3ea4bca02e33dfd4c248244cef423089f782cf5f09"
+    },
+    {
+     "path": "assets/models/goal-gate.glb",
+     "bytes": 119988,
+     "sha256": "7a0c6c51ae2157335de11ec33b51e50d6e19540a5ba005e9506f5b4e013bd371"
+    },
+    {
+     "path": "assets/models/low-wall.glb",
+     "bytes": 34248,
+     "sha256": "60d3d4fc73655d1551a563eb532a334b998328f35bd4d20262e9cb24ba6877bc"
+    },
+    {
+     "path": "assets/models/marble.glb",
+     "bytes": 23476,
+     "sha256": "116aa959ae7817bd176ac9b3b90f631361cb11054e5714f4032480fe28c750ac"
+    },
+    {
+     "path": "assets/ui/drag-hint.svg",
+     "bytes": 1706,
+     "sha256": "5656ee6eb93172bccf78b50494412d14f5d8fd2073f0e5de5ea69d7ae20c016a"
+    },
+    {
+     "path": "assets/ui/ui-kit.svg",
+     "bytes": 9823,
+     "sha256": "552d284f8ccfd9bfbf4356b632842f4c7af55bf46f8636ddc1e0fe51b598b265"
+    },
+    {
+     "path": "assets/ui/wordmark.svg",
+     "bytes": 1296,
+     "sha256": "524e32b5251a6873dc960aad5a99c63fa239cf21c171cb616c7b57e4478d3206"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-1.svg",
+     "bytes": 5320,
+     "sha256": "949c94039f6a22b6c1ca61f38fb178d0ee6878e091427c896b93ab7baabb6719"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-2.svg",
+     "bytes": 5767,
+     "sha256": "f303b7ec5b56677b3a48677431dd24a7c72883255d28e9fe7dad451fbfcdeb26"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-3.svg",
+     "bytes": 5431,
+     "sha256": "97a3fbe2e5440d4427823068e87aec465d7c2bdcad72aa7c1674fa1424b1f6af"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-4.svg",
+     "bytes": 4272,
+     "sha256": "34bb618428a49d457600ab8fc8a35d6c217cf14e064b2dc10274afdcab37d9f8"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-5.svg",
+     "bytes": 1820,
+     "sha256": "950848152857d513e20aa641cf918f92111f0269bfa715804c9dde7270ba4d46"
+    },
+    {
+     "path": "content/units.json",
+     "bytes": 58587,
+     "sha256": "9bc9dcd2e1d20f1ce462a47c56b06754133f7f31e9cf53f1ef1f185be18e6f2d"
+    },
+    {
+     "path": "locales/en.json",
+     "bytes": 2041,
+     "sha256": "4ee400525e9a6da287ce2ee35322606c92832be9ffd27c65ae5132ad03ef38a7"
+    },
+    {
+     "path": "locales/ru.json",
+     "bytes": 2851,
+     "sha256": "c2f52a90b638223d95e58b84e626da87bab0e85c4b5d72d0d91af65d194b978f"
+    },
+    {
+     "path": "metadata/.gitkeep",
+     "bytes": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ],
+   "index_html_scripts": [
+    "<script type=\"module\" crossorigin src=\"./assets/index-lGVRL6b6.js\">"
+   ],
+   "excerpts": [
+    {
+     "file": "assets/index-lGVRL6b6.js",
+     "portal": "y8",
+     "signature": "y8-sdk",
+     "text": "gameId:a},warnings:r}}const tr=\"https://cdn.y8.com/minimal-sdk/2-0/y8.min.js\",er=\"y8sdk.ready\",Cc=\"sav"
+    },
+    {
+     "file": "assets/index-lGVRL6b6.js.map",
+     "portal": "y8",
+     "signature": "y8-sdk",
+     "text": "*/\\nexport const Y8_SDK_URL = \\\"https://cdn.y8.com/minimal-sdk/2-0/y8.min.js\\\";\\n/** Dispatched on `wi"
+    }
+   ]
+  },
+  {
+   "label": "43c08e2+backport-y8-with-ids",
+   "platform_id": "y8",
+   "variant": "backport+ids",
+   "source_dir": "sm-bp/dist",
+   "files": [
+    {
+     "path": "index.html",
+     "bytes": 1856,
+     "sha256": "1cb15bac69b41c0b0a5643ed7cb0de32c0c39a119cf63384bb8ca12b65876695"
+    },
+    {
+     "path": "assets/.gitkeep",
+     "bytes": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+     "path": "assets/assets.json",
+     "bytes": 15589,
+     "sha256": "f01e407f346f0ec527154bb778b8169a6757f9a52b3e4f169e746754871e8f9b"
+    },
+    {
+     "path": "assets/index-C1n50otn.js",
+     "bytes": 1805,
+     "sha256": "1d23666bbddb345a6f74583a381b52f6378b2534aa471a051f2da974ed49e9ea"
+    },
+    {
+     "path": "assets/index-C1n50otn.js.map",
+     "bytes": 6852,
+     "sha256": "ce05d55107b041235e851b6caf72fb9d6c3872c6e7c6b037e8369f905bdc9341"
+    },
+    {
+     "path": "assets/index-D9PvocR4.css",
+     "bytes": 15860,
+     "sha256": "a8110d3d4ac08d1dc73ad3ea73f348b84a6ed30f397c9ddd33c0928d6658095b"
+    },
+    {
+     "path": "assets/index-DhFLW9ji.js",
+     "bytes": 125612,
+     "sha256": "227343659e072a9a177b57e912067eaccf953cedc3863179c2fb9345d2c88942"
+    },
+    {
+     "path": "assets/index-DhFLW9ji.js.map",
+     "bytes": 553121,
+     "sha256": "c1047881314b66c9b775d48faa90e7598576eec2406da313faace70acc862a35"
+    },
+    {
+     "path": "assets/three.module-Cxb409r3.js",
+     "bytes": 560135,
+     "sha256": "abd8796a9690fcf5daa21f459bfbdb4732d8c51f99a5e20b4d9e4b0a2221c452"
+    },
+    {
+     "path": "assets/three.module-Cxb409r3.js.map",
+     "bytes": 2068952,
+     "sha256": "d66d409d4a16512df3ad8be74fc70bf0482ff368dbee7ccc631271dab0311187"
+    },
+    {
+     "path": "assets/world-view-aLCblAdT.js",
+     "bytes": 100811,
+     "sha256": "7b483be13349965d24cb67faf377c6af0e1f59548b7c4747c537ef4271a55ffd"
+    },
+    {
+     "path": "assets/world-view-aLCblAdT.js.map",
+     "bytes": 436733,
+     "sha256": "af899f6bb3a2a12e80e38856fb79da0582532ecdbd6f00dedfe5288b749a28cc"
+    },
+    {
+     "path": "assets/audio/music-sky.ogg",
+     "bytes": 853230,
+     "sha256": "4e8b868fbca3a5a3cb95b22b106b0df1667b5e19d5046d94255fb764091ce090"
+    },
+    {
+     "path": "assets/audio/sfx-bump.wav",
+     "bytes": 29130,
+     "sha256": "6d83229431e716334149ba1a51c988a854c8367d74d6891b213305fbca11ffc8"
+    },
+    {
+     "path": "assets/audio/sfx-bumper.wav",
+     "bytes": 22094,
+     "sha256": "62eba3bf92f54be7048850b6830e5fe20982ba33a62c70c18406831b2cebcfe6"
+    },
+    {
+     "path": "assets/audio/sfx-checkpoint.wav",
+     "bytes": 22094,
+     "sha256": "c07e7225f96fae789da3376ab0a8fca1bec9ba107e15940f688b528c0e465637"
+    },
+    {
+     "path": "assets/audio/sfx-fall.wav",
+     "bytes": 29110,
+     "sha256": "13abef12ed9e055737487b9fd273dda5180ae3246f3014a8a9331dc4a4edc99c"
+    },
+    {
+     "path": "assets/audio/sfx-gem.wav",
+     "bytes": 30428,
+     "sha256": "1b4f0d6eb67cdbfe73cd2f2b3bd06c7065d484cad135d025f79a1d0e51524b68"
+    },
+    {
+     "path": "assets/audio/sfx-roll.wav",
+     "bytes": 176444,
+     "sha256": "1124c1835a8d1f1974a9b4ab50814253e7b6af2c7284df5750fa5b0cc288a950"
+    },
+    {
+     "path": "assets/audio/sfx-star.wav",
+     "bytes": 30428,
+     "sha256": "954150b7e8a535083013052ed40a18aadfc04f85545a291c18d1cb76e8a069ab"
+    },
+    {
+     "path": "assets/audio/ui-fanfare.wav",
+     "bytes": 170708,
+     "sha256": "981261e4cf44ce1644fbebcf0828f29312f7eebce8874415b8b3afd5ad23ba67"
+    },
+    {
+     "path": "assets/audio/ui-tap.wav",
+     "bytes": 10920,
+     "sha256": "06a0e982af975d6db9e95eb713c422bae2446e255d10b935d157e93848731636"
+    },
+    {
+     "path": "assets/backgrounds/skybox.svg",
+     "bytes": 2566,
+     "sha256": "02a79e8832162446c18cb063b6d3b6f66d1996dc676079ad61fad7faa2f18c96"
+    },
+    {
+     "path": "assets/environments/cloud-layers-1.glb",
+     "bytes": 63788,
+     "sha256": "24a73295fc3e45a68d168720e61b5a95b3ea16da6a2bc0ec56c6d72008ee64cf"
+    },
+    {
+     "path": "assets/environments/island-kit-1.glb",
+     "bytes": 97464,
+     "sha256": "ebed02414edcfe321f6315d986c99c4d9625dc5cc3db3ff171a81bc446778d29"
+    },
+    {
+     "path": "assets/environments/moving-platform.glb",
+     "bytes": 107396,
+     "sha256": "9a23f45181866fa873690d0375d872f9ce43c87b40f38ca9a5967e83f4b144d3"
+    },
+    {
+     "path": "assets/fonts/LICENSE-commissioner.txt",
+     "bytes": 4395,
+     "sha256": "4a7d88c77b4bc39ff84f2e058ba8f015636c50ce33588a86d9da97defe519933"
+    },
+    {
+     "path": "assets/fonts/LICENSE-playfair-display.txt",
+     "bytes": 4449,
+     "sha256": "566be814f8e96e93dfa16101331557eb6b5467e9e03f627c0910fe93ca12300e"
+    },
+    {
+     "path": "assets/fonts/fonts-1.woff2",
+     "bytes": 58376,
+     "sha256": "9fee76848535ac4b02ad29c648b673a7c03a4c0e02faf6c22304863cc392e21f"
+    },
+    {
+     "path": "assets/fonts/fonts-2.woff2",
+     "bytes": 98036,
+     "sha256": "d9c441d3600789a0a84f29f47e3690ae0f4a5eab3cb3034ee4771cef8128209a"
+    },
+    {
+     "path": "assets/icons/icons-1.svg",
+     "bytes": 1916,
+     "sha256": "4899eb1d822fdbb8564a54ff97092aaa5e1b93752a5a235bf66de8760a5024f9"
+    },
+    {
+     "path": "assets/icons/icons-2.svg",
+     "bytes": 1872,
+     "sha256": "2288d82374197da742a742573f555f937c7618515c6b0d9f58120638d9756fa0"
+    },
+    {
+     "path": "assets/icons/icons-3.svg",
+     "bytes": 2729,
+     "sha256": "f8885f8d72aaba7b77bc24ad9d814b564d29baeff1e49624bbafa8918e3b801a"
+    },
+    {
+     "path": "assets/icons/icons-4.svg",
+     "bytes": 2270,
+     "sha256": "c7df310db958b7f1b8c5f12ef39b2a1ec16bca2089d8e87301bc36e2bb892c8a"
+    },
+    {
+     "path": "assets/icons/icons-5.svg",
+     "bytes": 2271,
+     "sha256": "6a4f67108177b4d8b918ebc191117ed87747ec9d57f24ec9a355d0e273a1f8c0"
+    },
+    {
+     "path": "assets/icons/icons-6.svg",
+     "bytes": 3930,
+     "sha256": "5df48a037affa41ecbb95bc2a775dfe55c9a39e29f90a579ece29ca2e0848bb2"
+    },
+    {
+     "path": "assets/icons/icons-7.svg",
+     "bytes": 1764,
+     "sha256": "55649e1d2fc9984264813d341fb8e28bb3f6866c82b0fafe158d48ea46d77915"
+    },
+    {
+     "path": "assets/icons/icons-8.svg",
+     "bytes": 2247,
+     "sha256": "c6f368f6eedc29f85a87bc315abb395a4d97edec33474041d8f375667b9c4b58"
+    },
+    {
+     "path": "assets/icons/icons-9.svg",
+     "bytes": 2232,
+     "sha256": "10ecffd8d3eccc7fba3f508e41c8af792caae2fb2483ba231ff2f7dddfe0b96e"
+    },
+    {
+     "path": "assets/models/bumper.glb",
+     "bytes": 65304,
+     "sha256": "9ecb14726df822f8d31dc59127466f43ef388c660e62069190dbf9ce07576744"
+    },
+    {
+     "path": "assets/models/checkpoint.glb",
+     "bytes": 67508,
+     "sha256": "8c936e67eb022e2aae91fc478b68e762cf2ac1bd93351f8eb9b3a24068d92f8f"
+    },
+    {
+     "path": "assets/models/gem.glb",
+     "bytes": 6424,
+     "sha256": "d7efc94c690a86f1dcb57d3ea4bca02e33dfd4c248244cef423089f782cf5f09"
+    },
+    {
+     "path": "assets/models/goal-gate.glb",
+     "bytes": 119988,
+     "sha256": "7a0c6c51ae2157335de11ec33b51e50d6e19540a5ba005e9506f5b4e013bd371"
+    },
+    {
+     "path": "assets/models/low-wall.glb",
+     "bytes": 34248,
+     "sha256": "60d3d4fc73655d1551a563eb532a334b998328f35bd4d20262e9cb24ba6877bc"
+    },
+    {
+     "path": "assets/models/marble.glb",
+     "bytes": 23476,
+     "sha256": "116aa959ae7817bd176ac9b3b90f631361cb11054e5714f4032480fe28c750ac"
+    },
+    {
+     "path": "assets/ui/drag-hint.svg",
+     "bytes": 1706,
+     "sha256": "5656ee6eb93172bccf78b50494412d14f5d8fd2073f0e5de5ea69d7ae20c016a"
+    },
+    {
+     "path": "assets/ui/ui-kit.svg",
+     "bytes": 9823,
+     "sha256": "552d284f8ccfd9bfbf4356b632842f4c7af55bf46f8636ddc1e0fe51b598b265"
+    },
+    {
+     "path": "assets/ui/wordmark.svg",
+     "bytes": 1296,
+     "sha256": "524e32b5251a6873dc960aad5a99c63fa239cf21c171cb616c7b57e4478d3206"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-1.svg",
+     "bytes": 5320,
+     "sha256": "949c94039f6a22b6c1ca61f38fb178d0ee6878e091427c896b93ab7baabb6719"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-2.svg",
+     "bytes": 5767,
+     "sha256": "f303b7ec5b56677b3a48677431dd24a7c72883255d28e9fe7dad451fbfcdeb26"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-3.svg",
+     "bytes": 5431,
+     "sha256": "97a3fbe2e5440d4427823068e87aec465d7c2bdcad72aa7c1674fa1424b1f6af"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-4.svg",
+     "bytes": 4272,
+     "sha256": "34bb618428a49d457600ab8fc8a35d6c217cf14e064b2dc10274afdcab37d9f8"
+    },
+    {
+     "path": "assets/vfx/marble-vfx-5.svg",
+     "bytes": 1820,
+     "sha256": "950848152857d513e20aa641cf918f92111f0269bfa715804c9dde7270ba4d46"
+    },
+    {
+     "path": "content/units.json",
+     "bytes": 58587,
+     "sha256": "9bc9dcd2e1d20f1ce462a47c56b06754133f7f31e9cf53f1ef1f185be18e6f2d"
+    },
+    {
+     "path": "locales/en.json",
+     "bytes": 2041,
+     "sha256": "4ee400525e9a6da287ce2ee35322606c92832be9ffd27c65ae5132ad03ef38a7"
+    },
+    {
+     "path": "locales/ru.json",
+     "bytes": 2851,
+     "sha256": "c2f52a90b638223d95e58b84e626da87bab0e85c4b5d72d0d91af65d194b978f"
+    },
+    {
+     "path": "metadata/.gitkeep",
+     "bytes": 0,
+     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+   ],
+   "index_html_scripts": [
+    "<script src=\"https://cdn.y8.com/minimal-sdk/2-0/y8.min.js\" async>",
+    "<script type=\"module\" crossorigin src=\"./assets/index-DhFLW9ji.js\">"
+   ],
+   "excerpts": [
+    {
+     "file": "assets/index-DhFLW9ji.js",
+     "portal": "y8",
+     "signature": "y8-sdk",
+     "text": "gameId:a},warnings:r}}const tr=\"https://cdn.y8.com/minimal-sdk/2-0/y8.min.js\",er=\"y8sdk.ready\",Cc=\"sav"
+    },
+    {
+     "file": "assets/index-DhFLW9ji.js.map",
+     "portal": "y8",
+     "signature": "y8-sdk",
+     "text": "*/\\nexport const Y8_SDK_URL = \\\"https://cdn.y8.com/minimal-sdk/2-0/y8.min.js\\\";\\n/** Dispatched on `wi"
+    }
+   ]
+  }
+ ]
+}

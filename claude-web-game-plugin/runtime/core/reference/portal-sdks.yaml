@@ -1,0 +1,77 @@
+# Portal SDKs in a built bundle: how each portal's SDK is recognised in the files a platform's
+# package ships, and - where the portal documents one way to load it - the script its
+# index.html must load. Read by the verify step (`platform.foreign-sdk:<id>`,
+# `platform.sdk-loaded:<id>`) and by platform-validate (guards `portal_sdk_isolated`,
+# `portal_sdk_loaded`) through scripts/wgflib/portal_sdks.py. docs/verification-module.md.
+#
+# Why a file of its own and not a field of each platform profile: a bundle for one portal is
+# judged against every OTHER portal's identifiers, and a game pins (and vendors) only its
+# targets' profiles. A profile field would also need every profile's version bumped, which
+# makes every title pinned to the old version re-plan before it could be judged at all. The
+# portals' own rules ("no other portal's SDK") stay where they are - in the profiles and the
+# portals' pages; this file only says how to SEE an SDK in built files. Keys are platform ids
+# of core/reference/platforms/ (check-integrity.py); a platform without an entry has no SDK
+# this scan recognises, and is reported so.
+#
+# A signature is a regular expression (Python `re`) searched in every text file of the
+# bundle (.html .js .mjs .cjs .css .json .map .txt .xml .svg .webmanifest - source maps ship
+# in the package, so they are read). The first five are the template's own CrazyGames audit
+# list (web-game-template scripts/crazygames-audit.mjs FORBIDDEN_DEPENDENCIES at v1.2.0,
+# b106261), so the two scans agree; the crazygames and y8 entries are the SDK URLs the
+# template's adapters load (packages/platform-sdk/src/adapters/{crazygames,y8}/sdk.ts at
+# v1.2.0). Measured on real builds (docs/platform-targets-2026-10.md, "Portal SDKs in each
+# bundle"): every pattern matches every v1.2.0 bundle, and only its own portal's bundle once
+# a build carries one adapter (the template backport 0001, scratch).
+#
+# `audit`: the template's own audit of that platform's bundle, which the verify step runs
+# too when the checkout ships the CLI (`node <cli> --dir <bundle> --out
+# build/portal-audits/<id>`), reading result `check` from the `report` it writes. At v1.2.0
+# only CrazyGames' is wired: scripts/verify/yandex-audit.mjs has no foreign-SDK result, and
+# scripts/verify/poki-audit.mjs has one (other portals' names) behind another interface
+# (--dist, --out <file>) for a target that is deferred - not wired.
+#
+# `loader`: the script the portal documents loading in the page head, which the template
+# injects into index.html for that platform's build only (scripts/build/game-config-plugin.ts
+# transformIndexHtml at v1.2.0: CrazyGames always; Y8 only when the build is given
+# WGF_Y8_APP_ID). `needs` names what the build must be given for it - an id a portal issues
+# only when a person creates the game is a person's act (create-before-build,
+# docs/publish-module.md), never the developer's.
+
+version: 1.0.0
+
+portals:
+  generic-web:
+    signatures: []
+  gamevui:
+    # The adapter loads no SDK (the portal publishes none); nothing to recognise.
+    signatures: []
+  poki:
+    signatures:
+      - {id: poki-sdk, pattern: 'game-cdn\.poki\.com|poki-sdk|PokiSDK'}
+  yandex:
+    signatures:
+      - {id: yandex-games-sdk, pattern: 'yandex\.ru/games/sdk|YaGames\b'}
+  crazygames:
+    signatures:
+      - {id: crazygames-sdk, pattern: 'sdk\.crazygames\.com|CrazyGames\.SDK'}
+    loader:
+      script: https://sdk.crazygames.com/crazygames-sdk-v3.js
+    audit:
+      cli: scripts/crazygames-audit.mjs
+      report: crazygames-audit.json
+      check: unexpected_dependencies
+  y8:
+    signatures:
+      - {id: y8-sdk, pattern: 'cdn\.y8\.com/minimal-sdk'}
+    loader:
+      script: https://cdn.y8.com/minimal-sdk/2-0/y8.min.js
+      needs: [WGF_Y8_APP_ID]
+  gamedistribution:
+    signatures:
+      - {id: gamedistribution, pattern: 'gamedistribution\.com|gdsdk', ignore_case: true}
+  gamemonetize:
+    signatures:
+      - {id: gamemonetize, pattern: 'gamemonetize\.com', ignore_case: true}
+  gamepix:
+    signatures:
+      - {id: gamepix, pattern: 'gamepix\.com', ignore_case: true}

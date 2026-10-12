@@ -68,6 +68,8 @@ cursor, so the two never disagree:
 | `assertions_pass` | the verification-report's `policy.assertions:<platform>` evidence for this commit | no blocking assertion breached |
 | `metadata_and_locales_present` | as `store_metadata_complete`, for this platform | as above |
 | `platform_ids_present` | the publication profile's `identity.issued_on_create`, the portal registry, the build's config (`build/platforms/<id>/game.config.json`, checked against its recorded hash) | the portal issues no ids on create, none is issued yet (the submit visit only creates the game), or the build carries every id the registry holds with its value |
+| `portal_sdk_isolated` | the package archive itself (read only when its bytes are the manifest's), scanned with `core/reference/portal-sdks.yaml` (`wgflib/portal_sdks.py`); verify's `platform.foreign-sdk:<platform>` for this commit | the package carries no other portal's SDK, and verify's check (which may include the template's own audit) did not FAIL; RED for a package holding no text file to read, UNKNOWN (never GREEN) while verify's check is BLOCKED - the audit decided nothing, and the scan alone does not decide for it. Since 2.8.0. On the pinned template v1.2.0 every bundle carries every adapter, so this is RED for every portal package until the pin moves to a template whose build carries only the selected adapter ([verification-module.md](verification-module.md#portal-sdks-in-a-bundle)) |
+| `portal_sdk_loaded` | the same scan | the package's `index.html` loads its portal's SDK where the reference names the script (CrazyGames, Y8), else its SDK code is in it (none needed for generic-web, GameVui). For a create-before-build portal with no ids issued yet - none in the registry and none in the build's config - it is GREEN, saying so: that visit only creates the game and uploads nothing; once the registry holds the ids, an SDK-less package (a Y8 build not given `WGF_Y8_APP_ID`) is RED - `platform_ids_present` reads game.config.yaml, which the pinned template does not build the ids from. Since 2.8.0 |
 
 Store metadata is what the release role prepares (`core/roles/release.md`): a JSON file
 `release/<release-id>/store-metadata.json` in the checkout keyed by platform
@@ -302,10 +304,20 @@ not Y8-specific (`scripts/wgf_publish/identity.py`):
    the quality floor (core/reference/quality-policy.yaml, rule 1) refuses submit: the
    checks it rests on passed the old one. A later submit visit with nothing changed - a
    person's `submit` after an upload, the next platform, `--track` - is not refused
-   (scripts/tests/test_quality_inheritance.py `SubmitReentry`).
+   (scripts/tests/test_quality_inheritance.py `SubmitReentry`). On the pinned template
+   (contract 1) game.config.yaml is not where the Y8 loader comes from: the build injects
+   the Y8 SDK script only when it is given `WGF_Y8_APP_ID` in its environment, so that
+   variable must be in `factory.agents.game_env_passthrough` for the rebuilt package to
+   load the SDK.
 3. `platform-validate`'s guard `platform_ids_present` is RED for a build that lacks an id
    the registry holds, or carries another value; GREEN before the game exists (the submit
-   visit uploads nothing then) and for every portal without issued ids.
+   visit uploads nothing then) and for every portal without issued ids. Since 2.8.0
+   `portal_sdk_loaded` is also RED for the rebuilt package once the ids exist, unless its
+   `index.html` loads the Y8 SDK - the write into game.config.yaml alone does not upload.
+   And `portal_sdk_isolated` has no create-only exemption: on the current pin (v1.2.0, every
+   adapter in every bundle) it is RED for the Y8 package too, so even the create-only first
+   visit is refused, and Y8's ids cannot be obtained through the Factory until the pin moves
+   to a template whose build carries one adapter.
 
 ### Outcomes
 

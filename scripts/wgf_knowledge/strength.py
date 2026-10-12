@@ -109,15 +109,32 @@ def _measurement(m):
             "frames": frames}
 
 
+# A history note starting with this is a PASSING report's listing of a noted record
+# (wgf_triage.lifecycle.NOTED_PREFIX): its detection is not a measured failure.
+NOTED = "noted:"
+
+
+def _failure(entry):
+    """Whether a ledger history entry is a measured failure of the finding: its detection
+    (unless a passing report's, noted) or its reopening."""
+    if not isinstance(entry, dict):
+        return False
+    status, note = entry.get("status"), str(entry.get("note") or "")
+    if note.startswith(NOTED):
+        return False
+    return status == "detected" or (status == "classified" and note.startswith("reopened"))
+
+
 def _outcomes(history):
     """[{"verdict": FAIL|PASS, "commit"}] the ledger's history records of the finding's own
-    measurements, in order: detected and reopened are failures, verified is a pass."""
+    measurements, in order: detected and reopened are failures, verified is a pass. A noted
+    detection - named by a report that PASSED - is neither."""
     out = []
     for entry in history or ():
         if not isinstance(entry, dict):
             continue
-        status, note = entry.get("status"), str(entry.get("note") or "")
-        if status == "detected" or (status == "classified" and note.startswith("reopened")):
+        status = entry.get("status")
+        if _failure(entry):
             out.append({"verdict": "FAIL", "commit": entry.get("build")})
         elif status == "verified":
             out.append({"verdict": "PASS", "commit": entry.get("build")})
@@ -136,10 +153,15 @@ def snapshot(record, ledger=None, classify=None):
     history = record.get("history") or []
     detected = next((h for h in history if isinstance(h, dict)
                      and h.get("status") == "detected"), {})
+    # The failure a verification is measured against: the detection - or, when a passing
+    # report detected it (noted), the first measured failure after it (the failing report
+    # that raised it); none when nothing ever failed it (a judge's silence is not a repair).
+    failed = detected if _failure(detected) else next(
+        (h for h in history if _failure(h)), {})
     before = verification.get("before") or record.get("failed_measurement") or (
-        {"artifact_id": detected.get("by"), "content_hash": detected.get("content_hash"),
-         "commit": detected.get("build"), "seq": detected.get("seq"), "status": "FAIL"}
-        if detected else None)
+        {"artifact_id": failed.get("by"), "content_hash": failed.get("content_hash"),
+         "commit": failed.get("build"), "seq": failed.get("seq"), "status": "FAIL"}
+        if failed else None)
     after = verification.get("after")
     if after is None and verification:
         after = {"artifact_id": verification.get("artifact_id"),

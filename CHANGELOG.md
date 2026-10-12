@@ -21,9 +21,15 @@ holding the build: `ledger.blocking` leaves them out, so no gate verdict, the qu
 `open`/`awaiting` and release's `open-findings` refusal are unchanged (tested on the real
 triage v12 replayed with and without the rule). A noted record stays open while the
 producer's newest report lists it, is verified when a newer report no longer does, and
-becomes an ordinary finding when a failing report raises it. Bringing an artifact forward:
-none - existing ledgers stay valid; a run's next triage or quality gate records what its
-newest passing reports name.
+becomes an ordinary finding when the producer's newest report fails it - on the quality gate's
+and release's path too (review r1: a noted record a failing report raised stayed noted and
+non-blocking there, open or reopened). A noted detection is never a measured failure: its
+history entry says `noted:`, the ledger's memory of its checks and evidence strength skip it,
+and the failing report that raises it (`reopened`) is its first failure - the `before` of a
+lesson's FAIL->PASS pair and a flip for the `unstable` cap (review r1: the promotion was not
+counted, and the passing report's commit was taken as the failure). Bringing an artifact
+forward: none - existing ledgers stay valid; a run's next triage or quality gate records what
+its newest passing reports name.
 
 **Greybox playability reports carry their phase in their id** (K7 #10). The greybox's and
 develop's playability reports minted the same artifact id

@@ -384,20 +384,38 @@ per producer, the severities of such findings the ledger records (`visual-qa-rep
 
 It stays open while the producer's newest report still lists it (a later passing report
 listing it again is a history note), is verified (no fix recorded) when a newer report of
-the producer no longer lists it, and becomes an ordinary finding when a failing report
-raises it: `noted` is removed, its history says so, and the triage routes it with that
-report's findings. A record that is not noted - raised earlier by a failing report - keeps
-its status when a passing report lists it again, and its history says that report still
-listed it. Minor findings of a passing report are not recorded: a minor never holds a build.
-The quality gate and release record noted findings too when they advance the ledger
-(`ledger.remeasure`), so a passing report no triage reads is not lost.
+the producer no longer lists it, and becomes an ordinary finding when the producer's newest
+report FAILS it - on every path that advances the ledger, so the quality gate and release
+(`ledger.remeasure`, which normalize no findings of their own) hold the build on it before
+any triage has read the failing report: `noted` is removed, an open record gets a
+`reopened: raised by a failing report ...` entry and a done one is reopened as any done
+record is, and the next triage routes it with that report's findings. A record that is not
+noted - raised earlier by a failing report - keeps the status a passing report's verdict
+leaves it in (a passing report re-measures it as any does), and its history says that report
+still listed it and what the status is. Minor findings of a passing report are not recorded:
+a minor never holds a build. The quality gate and release record noted findings too when they
+advance the ledger, so a passing report no triage reads is not lost.
+
+**A noted detection is not a measured failure** (K6.4). Its `detected` entry's note starts
+`noted:`, and so does the entry of a passing report listing it again after its verification;
+neither is counted as a FAIL by the ledger's memory of its checks (`lifecycle._recorded`, which
+baselines and regressions read) or by evidence strength (`wgf_knowledge.strength`: the
+outcomes history, and the `before` a verification is measured against). The first failure of a
+noted record is the failing report that raised it (`reopened`), so a lesson's FAIL->PASS pair
+is that report's commit to the fix's, never the passing report's; a noted record verified only
+because the judge stopped listing it has no measured failure at all and its strength is
+refused `no-repair` - a judge's silence is not a repair. A noted record that was verified, then
+raised by a failing report, keeps the flip (pass, then failure) in its outcomes, and
+the `unstable` cap holds.
 
 Tests: `scripts/tests/test_triage.py` `PassingReportFindings` - the REAL 3D visual-qa v3
 (PASS, 3f394e2) replayed through the REAL triage v12 it was read by, on all of its real
 inputs (`fixtures/real/triage-hygiene`): the two majors recorded noted with the run's own
 route, groups and findings, and the same ledger and blocking set as without the rule; and,
 over fixture reports, the record staying open while listed, verified when gone, promoted by
-a failing report, held by the quality gate's remeasure without blocking it.
+a failing report, held by the quality gate's remeasure without blocking it - and (review r1)
+raised by a failing report on the quality gate's path, open or done, and never counted as a
+measured failure by the ledger or by evidence strength.
 
 ### What the specialist brief carries
 

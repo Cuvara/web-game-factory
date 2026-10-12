@@ -76,16 +76,22 @@ producer; the routing data classifies it), `assigned` when a triage selects its 
                  out) - the producer passed the build, and its verdict stands. It stays open
                  while the producer's newest report still lists it, is verified when a newer
                  report of the producer no longer does, and becomes an ordinary finding when
-                 a failing report raises it (`noted` removed, said so in its history). A
-                 record that is not noted keeps its status when a passing report lists it;
-                 its history says so.
+                 the producer's newest report FAILS it - on every path that advances the
+                 ledger, triage's or the quality gate's and release's (`noted` removed; an
+                 open record gets a `reopened` entry, a done one is reopened as any done
+                 record is). A noted detection is not a measured failure: its `detected`
+                 entry's note starts with NOTED_PREFIX, which no reader of the history
+                 counts as a FAIL (the failing report's `reopened` entry is the first one);
+                 nor is a passing report listing it again after its verification (`noted:
+                 listed again`, never `reopened`). A record that is not noted keeps the
+                 status a passing report's verdict leaves it in; its history says which.
 """
 
 import re
 
 from . import measurement as measurements
 
-__all__ = ["advance", "unresolved", "OPEN", "DONE", "HELD"]
+__all__ = ["advance", "unresolved", "OPEN", "DONE", "HELD", "NOTED_PREFIX"]
 
 OPEN = ("detected", "classified", "assigned", "implemented")
 DONE = ("verified", "closed")
@@ -93,6 +99,10 @@ DONE = ("verified", "closed")
 HELD = ("unmeasured", "missing", "same-build")
 # The passing re-measurements a verification keeps (the newest).
 MAX_SAMPLES = 20
+# A history note starting with this is a passing report's listing of a noted record - never a
+# measured failure (a `detected` entry so marked is not one; wgf_knowledge.strength agrees).
+NOTED_PREFIX = "noted:"
+NOTED_RAISED = "raised by a failing report - no longer noted, an ordinary finding"
 _HELD_NOTE = {
     "unmeasured": "not verified: {producer} lists {check} but measured nothing ({status})",
     "missing": "not verified: {producer} no longer reports {check} - a check that "
@@ -248,7 +258,8 @@ def _recorded(records, producer, before):
     baselines' passing and failing checks, each record's detection and reopening (a failure)
     and its verified pass (a pass; never a split part's, which says nothing of the check's
     other parts). The step sees only each producer's newest report; this is what the run
-    measured before it, as far as the ledger kept it."""
+    measured before it, as far as the ledger kept it. A noted detection (a passing report's
+    listing, NOTED_PREFIX) is not a failure."""
     out = {}
 
     def put(key, seq, status):
@@ -269,8 +280,9 @@ def _recorded(records, producer, before):
             continue
         key = _check_key(record.get("id"))
         for entry in record.get("history") or ():
-            if isinstance(entry, dict) and (entry.get("status") == "detected" or str(
-                    entry.get("note") or "").startswith("reopened")):
+            note = str(entry.get("note") or "") if isinstance(entry, dict) else ""
+            if isinstance(entry, dict) and not note.startswith(NOTED_PREFIX) and (
+                    entry.get("status") == "detected" or note.startswith("reopened")):
                 put(key, entry.get("seq"), "FAIL")
         verification = record.get("verification") or {}
         if verification.get("verdict") == "passed" and key == record.get("id"):
@@ -391,6 +403,27 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
     for record in previous or []:
         if isinstance(record, dict) and record.get("id"):
             records[record["id"]] = dict(record, history=list(record.get("history") or []))
+
+    # raised: a noted record its producer's newest report now FAILS is an ordinary finding
+    # from here on, on every path that advances the ledger (triage, or the quality gate and
+    # release with current=[]). Its history says so with a note starting "reopened" - the
+    # failing report is the record's first measured failure (lifecycle readers and
+    # wgf_knowledge.strength count a `reopened` entry as a FAIL, never a noted detection).
+    # A done one loses `noted` where it is reopened below, by the same rule as any done record.
+    for record in records.values():
+        producer = (record.get("source") or {}).get("producer")
+        if not record.get("noted") or record["status"] in DONE or producer not in failing \
+                or record["id"] not in failing[producer]:
+            continue
+        record.pop("noted")
+        report = reports.get(producer) or {}
+        provenance = report.get("provenance") or {}
+        record["build"] = build_of(producer) or record.get("build")
+        record["fix"] = None
+        _event(record, "classified", at, by=provenance.get("artifact_id"),
+               build=(record["build"] or {}).get("commit"),
+               note=f"reopened: {NOTED_RAISED} ({producer} fails it)",
+               content_hash=provenance.get("content_hash"), seq=seqs.get(producer))
 
     # implemented: the owner's visit, from the prototype-report it produced.
     block = (proto or {}).get("specialist") if isinstance(proto, dict) else None
@@ -586,9 +619,11 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
                 artifact_id=provenance.get("artifact_id"),
                 content_hash=provenance.get("content_hash"), seq=seq)
         record["fix"] = None
+        was_noted = record.pop("noted", None) is not None
         _event(record, "classified", at, by=provenance.get("artifact_id"),
                build=(record["build"] or {}).get("commit"),
-               note="reopened: failing again after it was " + record["status"],
+               note="reopened: failing again after it was " + record["status"]
+                    + (f"; {NOTED_RAISED}" if was_noted else ""),
                content_hash=provenance.get("content_hash"), seq=seq)
 
     # handed: a gate sent these straight to another step, which has run since: recorded,
@@ -653,27 +688,32 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
             if record is None:
                 record = records[finding["id"]] = _new(finding, at, routing_version, seq)
                 record["noted"] = mark
-                _note(record, at, measured_by, "noted: " + mark["reason"])
+                # the detection is a passing report's: marked so no reader takes it for a
+                # measured failure (NOTED_PREFIX)
+                record["history"][0]["note"] = f"{NOTED_PREFIX} {mark['reason']}"
             elif record.get("noted"):
                 if record["noted"].get("seq") == seq:
                     continue
                 _observe(record, finding)
                 record["noted"] = mark
                 if record["status"] in DONE:
+                    # listed again after its verification - by a PASSING report: open again,
+                    # still noted, and never a failure (the note does not say `reopened`)
                     _event(record, "classified", at, by=source.get("artifact_id"),
                            build=(finding.get("build") or {}).get("commit"),
-                           note=f"reopened, noted: listed again by a {verdict} {producer} "
+                           note=f"{NOTED_PREFIX} listed again by a {verdict} {producer} "
                                 f"after it was {record['status']}",
                            content_hash=source.get("content_hash"), seq=seq)
                 else:
                     _note(record, at, measured_by,
-                          f"noted: listed again by a {verdict} {producer}")
+                          f"{NOTED_PREFIX} listed again by a {verdict} {producer}")
             elif not any(isinstance(h, dict) and h.get("seq") == seq
                          and str(h.get("note") or "").startswith("listed by a passing")
                          for h in record["history"]):
                 _note(record, at, measured_by,
                       f"listed by a passing {producer} at {finding.get('severity')}: its "
-                      "verdict stands, and this record's status is unchanged")
+                      f"verdict stands; the record is {record['status']} as that verdict "
+                      "leaves it (an ordinary finding, not noted)")
 
     # detected / classified, or re-observed, or reopened.
     for finding in current:
@@ -683,15 +723,6 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
             records[finding["id"]] = _new(finding, at, routing_version, seq)
             continue
         _observe(record, finding)
-        if record.pop("noted", None):
-            # A failing report raises what was only noted: an ordinary finding from now on.
-            record["fix"] = None
-            _event(record, "classified", at,
-                   by=(finding.get("source") or {}).get("artifact_id"),
-                   build=(finding.get("build") or {}).get("commit"),
-                   note="raised by a failing report: no longer noted, an ordinary finding",
-                   content_hash=(finding.get("source") or {}).get("content_hash"))
-            continue
         if record["status"] in DONE:
             record["fix"] = None
             _event(record, "classified", at,

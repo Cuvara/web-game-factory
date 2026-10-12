@@ -183,7 +183,7 @@ producers:
       level.: level-design
       runtime.: browser
       runtime.webgl_context: performance
-      # The baseline comparison (core/reference/baseline-compare.yaml, 1.7.0): the candidate
+      # The baseline comparison (core/reference/baseline-compare.yaml, 1.8.0): the candidate
       # made worse than the build a person accepted. A unit gone or its drawn kinds changed is
       # the content's; a unit's layout, size, par or clear time the level's; its difficulty
       # values, their order and how often naive play clears it the difficulty's; the accepted

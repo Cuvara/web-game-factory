@@ -189,13 +189,16 @@ the script its `index.html` must load (CrazyGames always; Y8 only when the build
   the build given the ids (`factory.agents.game_env_passthrough`; on the pinned template the
   ids reach the build through the environment, not game.config.yaml).
 
-**Neither is required.** On the pinned template (v1.2.0, contract 1) every bundle carries
-every portal adapter: the real per-platform builds of both validation games carry Poki,
-Yandex, CrazyGames, Y8, GameDistribution and GameMonetize code in every bundle, and the
-template's own CrazyGames audit FAILs their crazygames bundles on `unexpected_dependencies`
+**Neither is required.** On template v1.2.0 (contract 1) every bundle carries every
+portal adapter: the real per-platform builds of both validation games carry Poki, Yandex,
+CrazyGames, Y8, GameDistribution and GameMonetize code in every bundle, and the template's own
+CrazyGames audit FAILs their crazygames bundles on `unexpected_dependencies`
 ([platform-targets-2026-10.md](platform-targets-2026-10.md#portal-sdks-in-each-bundle)). A
-required check would fail every verification on the pin - the golden runs' included - and
-route to a developer, who cannot change template code. So each is reported on its platform:
+required check would fail every verification of a game on that template - the golden runs'
+included - and route to a developer, who cannot change template code. The current pin, v1.2.1
+(4b74b08), builds each platform with its own adapter only (and generic-web), which real builds
+of both validation games at 4b74b08 show; making the checks required is a separate decision,
+not made here. So each is reported on its platform:
 a FAIL makes that platform `not-ready` in `platform_readiness` (a BLOCKED one `unverified`)
 without failing the verdict, and **platform-validate refuses to publish the package**
 (guards `portal_sdk_isolated`, `portal_sdk_loaded`), per platform, before anything uploads.

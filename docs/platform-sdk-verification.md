@@ -4,8 +4,11 @@ The `sdk` workflow step (`scripts/wgf_sdk/`) produces the `sdk-report`. It does 
 SDK code and it never publishes; it establishes, per targeted platform and per feature,
 whether the build's integration works and how that was observed.
 
-Current as of 2026-10-10, at the pinned template v1.2.0 (b106261,
-`workspace/config/template.lock.json`, whose `platform_adapters` lists the same ids):
+Written 2026-10-10 against template v1.2.0 (b106261). The pin is now v1.2.1 (4b74b08,
+`workspace/config/template.lock.json`, whose `platform_adapters` lists the same ids): the same
+adapters, with the fixes its CHANGELOG lists - one adapter per build, Yandex rewarded video
+shown without `onClose(wasShown)`, a Y8 capped break not counted as shown. Where a row below
+describes one of those behaviours, it describes v1.2.0:
 
 ```
 Game (web-game-template src/)
@@ -24,7 +27,8 @@ Game (web-game-template src/)
 ```
 
 GamePix has a Factory profile but no adapter at the pin (strategy and tech-plan refuse it).
-At v1.2.0 every adapter is compiled into every bundle, whichever one boots: see
+At v1.2.0 every adapter is compiled into every bundle, whichever one boots; at v1.2.1 (the
+pin) a build carries only its platform's adapter and generic-web: see
 [Portal SDKs in each bundle](platform-targets-2026-10.md#portal-sdks-in-each-bundle) and
 [verification-module.md](verification-module.md#portal-sdks-in-a-bundle).
 
@@ -93,11 +97,11 @@ locales), so a revised profile changes new designs — which is the point of ver
 
 ## Known limitations
 
-- **Every bundle carries every adapter** at the pinned v1.2.0 - a CrazyGames or Y8 package
-  carries Poki, Yandex and other portals' SDK code, which the template's own CrazyGames audit
-  FAILs and platform-validate refuses (above). Cleared only by moving the pin to a template
-  whose build carries the selected adapter alone (the unreviewed backport
-  `backport/1.2.0-platform-sdk` does, measured on scratch builds).
+- **Every bundle carries every adapter** at v1.2.0 - a CrazyGames or Y8 package carries
+  Poki, Yandex and other portals' SDK code, which the template's own CrazyGames audit FAILs
+  and platform-validate refuses (above). Cleared from the v1.2.1 pin (the reviewed backport,
+  tagged at 4b74b08), whose builds carry the selected adapter alone; a game created on v1.2.0
+  keeps the limitation until it applies the 1.2.1 patches.
 - **CrazyGames** — an adapter at the pin (`adapters/crazygames/`, ads interstitial and
   rewarded, auth optional); the platform contract has no banner call, so banners are not
   claimed although the profile lists them.

@@ -224,7 +224,7 @@ def loaded_guard(platform_id, scan, ids_pending=False):
         return pub.unknown(f"{platform_id}: the package was not read, so whether it loads the "
                            f"{platform_id} SDK is not established")
     if platform_id not in scan.reference.portals:
-        # Undescribed is not SDK-less: generic-web and gamevui say `signatures: []`.
+        # Undescribed is not SDK-less: a platform with no SDK declares `signatures: []`.
         return pub.unknown(f"{platform_id}: {scan.reference.label} has no entry for "
                            f"{platform_id}, so what its SDK looks like in a package is not "
                            f"established; add one to core/reference/portal-sdks.yaml")

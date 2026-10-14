@@ -9,6 +9,13 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**The development brief and the GDD carry the design's visual effects** (review of the
+craft-identity-vfx merge, F1). `build_spec.vfx` is now a build-spec section of the brief and of
+`docs/GDD.md` (*Visual effects*), and the brief's play-probe section, when the design declares
+effects, says how to report them (`events` and entities of role `vfx` naming each effect id) and
+which checks read them. Before, the production gate held a build to effect ids no developer was
+shown, so a release-tier run's first develop visit failed `vfx.fires`.
+
 **Art style families and the visual effect contract** (`core/reference/art-style-families.yaml`
 1.0.0, `core/reference/vfx.yaml` 1.0.0). A visual identity names its style family
 (`neon-emissive`, `lit-stylized`, `toon`; game-design 1.17.0

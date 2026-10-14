@@ -495,6 +495,40 @@ class DesignAndPlanInTheBrief(DevelopCase):
         self.assertNotIn("Not now.", text)          # the post-mvp mechanic's rules
         self.assertNotIn("At boot", text)           # sdk_touchpoints stay with the sdk step
 
+    def test_the_design_visual_effects_reach_the_developer(self):
+        # Review of the craft-identity-vfx merge (F1): the production gate holds the build to
+        # build_spec.vfx by effect id (vfx.fires, vfx.screen_share, vfx.celebration), and no
+        # brief or GDD carried it, so a developer could not report ids it was never shown.
+        inputs = with_build_spec_and_plan()
+        design = inputs.load("game-design")
+        design["build_spec"] = dict(design["build_spec"], vfx={"effects": [
+            {"id": "gem-burst", "kind": "pickup", "trigger": "a gem taken",
+             "effect": "a ring of palette sparks that expands and fades", "duration_ms": 300,
+             "max_screen_share": 0.05, "tier": "mvp"},
+            {"id": "goal-confetti", "kind": "goal", "trigger": "the course is cleared",
+             "effect": "confetti through the arch, then a glow pulse", "duration_ms": 1200,
+             "max_screen_share": 0.3, "tier": "mvp"}]})
+        design["provenance"]["content_hash"] = content_hash(design)
+        data, text = self.brief(inputs_for(
+            types=("game-design", "asset-manifest", "scaffold-record", "title-strategy",
+                   "tech-plan"),
+            overrides={"game-design": design, "tech-plan": inputs.load("tech-plan")}))
+        self.assertEqual([e["id"] for e in data["build_spec"]["sections"]["vfx"]["effects"]],
+                         ["gem-burst", "goal-confetti"])
+        for needle in ("### Visual effects", "gem-burst", "goal-confetti",
+                       "The design declares visual effects", "an entity of role `vfx`",
+                       "`vfx.fires`", "`vfx.celebration`"):
+            self.assertIn(needle, text)
+        rendered = gdd.render_gdd(design)
+        self.assertIn("gem-burst", rendered)
+        self.assertIn("goal-confetti", rendered)
+
+    def test_a_design_without_visual_effects_asks_for_no_probe_events(self):
+        data, text = self.brief(with_build_spec_and_plan())
+        self.assertNotIn("vfx", data["build_spec"]["sections"])
+        self.assertNotIn("### Visual effects", text)
+        self.assertNotIn("The design declares visual effects", text)
+
     def test_the_prototype_tasks_are_carried_in_dependency_order(self):
         data, text = self.brief(with_build_spec_and_plan())
         plan = data["dev_plan"]

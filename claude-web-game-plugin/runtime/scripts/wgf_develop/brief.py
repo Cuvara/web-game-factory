@@ -343,6 +343,9 @@ BUILD_SPEC_SECTIONS = (
     ("difficulty", "Difficulty"), ("mastery", "Mastery"), ("session_flow", "Session flow"),
     ("monetization_touchpoints", "Monetization touchpoints"), ("audio", "Audio"),
     ("responsive", "Responsive"), ("visual_identity", "Visual identity"),
+    # The effects the production gate holds the build to (vfx.fires, vfx.screen_share,
+    # vfx.celebration) by their ids: a brief without them asked for effects it never named.
+    ("vfx", "Visual effects"),
     # Last, and no longer dropped: what brings a player back. The design has carried it
     # since 1.7.0 and no brief did.
     ("depth", "Depth (reason to return)"),
@@ -1798,6 +1801,19 @@ def render_markdown(brief):
         "`metrics[\"difficulty.<axis>\"]` per axis the design declares. That is how the bot "
         "tells one unit from the next and sees difficulty actually move; a build that reports "
         "one unit forever is a build of one unit.\n")
+    spec_sections = (brief.get("build_spec") or {}).get("sections") or {}
+    if (spec_sections.get("vfx") or {}).get("effects"):
+        add("The design declares visual effects (*Visual effects* in the build spec below). "
+            "Report them so they can be checked from outside: `events`, the latest "
+            "interactions, oldest first - `{seq, kind, vfx}`, `seq` counting every event of the "
+            "session from 1, `kind` one of pickup, impact, checkpoint, goal, fail, `vfx` the "
+            "effect id it fires - and, for as long as an effect draws, an entity of role `vfx` "
+            "whose `vfx` is that effect's id exactly as the build spec lists it, its bounds "
+            "covering everything it draws. The production gate checks that each effect fires "
+            "after its interaction (`vfx.fires`), stays within its `max_screen_share` "
+            "(`vfx.screen_share`), and that the goal's celebration is in view on the result "
+            "screen (`vfx.celebration`). A probe that reports no `events` and no `vfx` entity "
+            "leaves them unmeasured, which a release-tier build does not pass.\n")
     with open(PLAY_PROBE_SCHEMA, encoding="utf-8") as handle:
         add("```json\n" + handle.read().rstrip() + "\n```\n")
 

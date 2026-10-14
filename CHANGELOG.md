@@ -9,6 +9,24 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Art style families and the visual effect contract** (`core/reference/art-style-families.yaml`
+1.0.0, `core/reference/vfx.yaml` 1.0.0). A visual identity names its style family
+(`neon-emissive`, `lit-stylized`, `toon`; game-design 1.17.0
+`build_spec.visual_identity.style_family`, else read from the look's words); the family sets the
+material language, the emissive cap a model spec is refused over, the lighting rig and the
+worked example the model author is shown (`scripts/wgf_assets/style_families.py`,
+`model_author.py`). A design states one effect per interaction kind it has - pickup, impact,
+checkpoint, goal, fail, trail - in `build_spec.vfx` (game-design 1.17.0), held at the release
+and premium tiers by design-consistency-rules 2.5.0 `vfx_covers_interactions`
+(`scripts/wgf_design/vfx.py`). The play probe may report `events` and `vfx` entities
+(play-probe schema); the bot records them and the screen at the win; production-quality 1.4.0
+adds `vfx.fires`, `vfx.screen_share` and `vfx.celebration` (check-tiers 1.5.0: hard, quality,
+quality), routed by specialist-routing 1.9.0 and grouped in quality-assessment 1.2.0 `feedback-effects`; a probe that reports no `events` and no `vfx` entity leaves them unmeasured, never passed - held as a failure at the release tier (quality-policy rule 5), a warning below it; visual-qa's rubric asks `feedback_visible` and
+`celebration_visible`, with a `celebration-hidden` blocker. Craft: `core/craft/juice.md`,
+`production-art-2d.md`, `production-art-3d.md`; adapter binding 1.14.0. Bringing forward: a
+design without `build_spec.vfx` stays schema-valid, and its production checks report nothing;
+a release- or premium-tier design re-run through the design step must state its effects.
+
 ## [2.8.1] - 2026-10-14
 
 Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.1". No runtime change beyond the version.

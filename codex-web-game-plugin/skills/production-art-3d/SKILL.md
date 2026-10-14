@@ -2,11 +2,12 @@
 
 Supports: **asset, gameplay, game-designer**
 
-3D production art from model specs: part decomposition of recognisable low-poly objects, bevel, taper and mirror, materials and emissive, the lighting rig, fog and sky, chase camera and portrait framing, and building and inspecting models.
+3D production art from model specs: part decomposition of recognisable low-poly objects, bevel, taper and mirror, attachment, intersections, camera clearance and scale against the player, materials, emissive and the lighting rig per style family, fog and sky, chase camera and portrait framing, and building and inspecting models.
 
 ## Authoritative sources
 
 - `core/craft/production-art-3d.md`
+- `core/reference/art-style-families.yaml`
 - `core/craft/production-art-and-ui.md`
 - `core/craft/3d-assets-and-animation.md`
 - `core/craft/3d-scene-and-physics.md`

@@ -36,7 +36,9 @@
 #        are recorded in the ledger (noted), never routed and never holding the build.
 # 1.8.0: the baseline comparison's checks (baseline.*, core/reference/baseline-compare.yaml)
 #        in playability-report.
-version: 1.8.0
+# 1.9.0: the visual effect checks (production-quality `vfx.*`, visual-qa `feedback_visible`,
+#        `celebration_visible`).
+version: 1.9.0
 
 # The quality dimensions, as the quality-finding schema enumerates them.
 dimensions: [content, level-design, difficulty, progression, gameplay, art-2d, environment-3d, lighting-material, ui, audio, feel, store-copy, platform, art-direction, performance, browser, compliance]
@@ -208,6 +210,10 @@ producers:
       scene.contrast: lighting
       ui.: ui
       audio.: audio
+      # An effect that does not fire, or fills the screen, is the feel of the interaction; a
+      # result screen over the celebration is the UI's.
+      vfx.: feel
+      vfx.celebration: ui
     default: art
     # The runtime chain per asset (exists -> referenced -> loaded -> rendered -> visible):
     # an asset that does not exist is the assets step's to make; one that exists but is not
@@ -249,6 +255,8 @@ producers:
       buttons_polished: ui
       objective_obvious: ui
       outcome_understandable: ui
+      feedback_visible: feel
+      celebration_visible: ui
     look: art
     default: art
     acceptance: visual-qa judges frames of the next build and no longer fails `{check}`{bar_clause}.

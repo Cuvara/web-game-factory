@@ -292,6 +292,9 @@ elif mode == "box":
 elif mode == "repair":
     spec = keeper if request.get("repair") else dict(keeper, parts=keeper["parts"] + [
         {{"id": "cap", "shape": "hat", "material": "nope"}}])
+elif mode == "glow":
+    spec = keeper if request.get("repair") else dict(keeper, materials=[
+        dict(m, emissive=m["color"], emissive_strength=4) for m in keeper["materials"]])
 elif mode == "stdout":
     print("Here is the spec:")
     print(json.dumps(keeper))
@@ -548,3 +551,50 @@ class RealBlenderAuthor(ModelAuthor):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StyleFamilyRequests(unittest.TestCase):
+    """The request carries the look's style family and its example; a spec that glows more
+    than the family allows is sent back (core/reference/art-style-families.yaml)."""
+
+    setUp, script, settings = ModelAuthor.setUp, ModelAuthor.script, ModelAuthor.settings
+    produce, calls = ModelAuthor.produce, ModelAuthor.calls
+
+    def request(self):
+        run = os.path.join(self.scratch, "run", "keeper")
+        first = sorted(n for n in os.listdir(run) if n.endswith(".request.json"))[0]
+        with open(os.path.join(run, first), encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def test_the_family_and_its_example_are_the_looks(self):
+        self.produce("keeper", look=dict(LOOK, style_family="toon"))
+        request = self.request()
+        self.assertEqual(request["style_family"]["id"], "toon")
+        self.assertEqual(request["style_family"]["basis"], "stated")
+        # The keeper is a character: the toon family's character, not a car.
+        self.assertEqual(request["example"]["id"], "character")
+        self.assertEqual(request["asset"]["example"], "character")
+        self.assertIn("pickup", request["examples"])
+
+    def test_a_sunlit_paper_look_is_not_shown_a_neon_car(self):
+        look = dict(LOOK, concept="Layered cut paper lit from one side: a sunlit diorama.")
+        self.produce("keeper", look=look)
+        request = self.request()
+        self.assertEqual(request["style_family"]["id"], "lit-stylized")
+        self.assertEqual(request["style_family"]["basis"], "words")
+        self.assertNotIn("craft", request["examples"])
+        self.assertLessEqual(request["style_family"]["materials"]["max_emissive_strength"], 1.2)
+
+    def test_a_glowing_spec_in_a_lit_look_is_repaired(self):
+        result = self.produce("glow", look=dict(LOOK, style_family="lit-stylized"))
+        self.assertEqual(result["rounds"], 2)
+        first, second = self.calls()
+        self.assertIsNone(first["repair"])
+        problems = second["repair"]["problems"]
+        self.assertTrue(any(p.startswith("style:") and "emits at 4" in p for p in problems),
+                        problems)
+        # Neon allows strength 4, but not every part glowing.
+        self.produce("glow", look=dict(LOOK, style_family="neon-emissive"))
+        problems = self.calls()[3]["repair"]["problems"]
+        self.assertFalse(any("emits at" in p for p in problems), problems)
+        self.assertTrue(any("parts glow" in p for p in problems), problems)

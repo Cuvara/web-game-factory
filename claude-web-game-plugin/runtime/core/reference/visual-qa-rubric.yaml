@@ -33,7 +33,7 @@
 # characters were untextured cubes on a near-black pitch, and the template's two golden
 # ports. Recalibrate as verdicts accumulate - never to make one build pass.
 
-version: 1.2.0
+version: 1.3.0  # 1.3.0: feedback visuals judged in the interaction and win states
 
 pass_bar: 3
 # The mean of every dimension's score must reach this too. Per-dimension scores from one
@@ -133,6 +133,14 @@ blockers:
     category: composition
     route: develop
     rule: The play area, a readable entity or a required control is cut off on either viewport.
+  - id: celebration-hidden
+    category: ui
+    route: develop
+    rule: In a win frame the result card or panel covers the goal and the celebration (the burst, confetti or lit goal the design's build_spec.vfx goal effect names) while it plays, so the player never sees the moment they won.
+  - id: effect-floods-screen
+    category: composition
+    route: develop
+    rule: An interaction effect (a pickup burst, a checkpoint ring, a crash flash) covers so much of a playing or interaction frame that the player, the track or the next threat cannot be seen.
 
 # The states the frames are grouped into, in the order the brief and the report list them.
 # The judge answers every question below for every (state, viewport) that has frames. A state
@@ -190,6 +198,27 @@ state_questions:
     fail_when: false
     route: develop
     states: [win, loss, retry]
+  # 1.3.0. Feedback visuals, judged where they happen. The design names each effect in
+  # build_spec.vfx (core/reference/vfx.yaml); the brief carries it. A pickup that leaves a few
+  # flat flecks, a crash with no mark, a win whose result card hides the goal all passed
+  # every score before these were asked.
+  - id: feedback_visible
+    ask: >-
+      Does the frame after the action show a designed visual effect acknowledging it - a burst,
+      ring, glow, trail or the item flying to its counter, in the game's style and clearly
+      more than a few flat specks - that leaves the play readable? (null when the action has
+      nothing to acknowledge visually, e.g. a pause)
+    fail_when: false
+    route: develop
+    states: [interaction]
+  - id: celebration_visible
+    ask: >-
+      Is the win celebrated on screen - the goal, a burst or confetti, a lit goal, the
+      celebration the design names - and is that celebration still visible, not hidden behind
+      the result card?
+    fail_when: false
+    route: develop
+    states: [win]
 
 # Asked once, of the whole set of frames. `developer-prototype` fails the build.
 look:

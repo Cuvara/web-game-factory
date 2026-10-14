@@ -47,6 +47,7 @@ from . import archetypes, identity, presentation
 from . import depth as depth_check
 from . import features as feature_check
 from .inherit import PLACEMENTS_BY_CLASS, required_locales, session_profile_name
+from . import vfx as vfx_contract
 from .platforms import supported_placements, tightest_interval
 
 __all__ = ["DesignAuthor", "ArchetypeAuthor", "AUTHORS", "Resolved", "register_author",
@@ -584,6 +585,11 @@ class ArchetypeAuthor(DesignAuthor):
         spec["content"] = content
         spec["difficulty"]["axes"] = self._axes(a, family_block)
         spec["mastery"] = copy.deepcopy(a["mastery"])
+        # The effect each interaction kind fires (core/reference/vfx.yaml): one per kind the
+        # design has, the contract's defaults, for the designer to make the game's own.
+        effects = vfx_contract.seed({"build_spec": spec})
+        if effects:
+            spec["vfx"] = effects
 
         spec["depth"], optional = self._depth(depth_plan, features, spec, session, deferred)
         if optional:

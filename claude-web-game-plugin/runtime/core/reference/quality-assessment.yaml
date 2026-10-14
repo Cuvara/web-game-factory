@@ -62,7 +62,8 @@
 
 # 1.1.0: the baseline comparison's families (accepted-content, accepted-on-screen,
 #        accepted-play, accepted-timing).
-version: 1.1.0
+# 1.2.0: feedback-effects - production-quality's vfx checks (core/reference/vfx.yaml).
+version: 1.2.0
 
 statuses: [PASS, FAIL, INCONCLUSIVE, NOT_SUPPORTED]
 
@@ -375,6 +376,16 @@ families:
     method: The probe's entity kinds, difficulty values and lost state while the bot plays.
     limits: Every value is the game's own report.
     cannot_justify: That the variety is felt, that the difficulty curve is fair, or that the opening is welcoming.
+  - id: feedback-effects
+    label: Interaction effects the design declares, seen in play
+    dimension: player_facing
+    class: heuristic
+    when: reported
+    checks: [production-quality:vfx.fires, production-quality:vfx.screen_share, production-quality:vfx.celebration]
+    measures: Each effect of the design's build_spec.vfx is drawn after its interaction and changes its frame, stays within its share of the screen, and the result screen leaves the goal's celebration in view at the win.
+    method: The probe's events and `vfx` entities while the bot plays, the frames the bot took of each effect and at the win, and the page's cover over the canvas (core/reference/production-quality.yaml `vfx`).
+    limits: Which effect fired and where it is drawn are the game's own report; a changed box is not a designed effect; reported only when the design declares effects.
+    cannot_justify: That an effect reads well or feels rewarding to a player.
   - id: depth-proxies
     label: Depth and session-length proxies
     dimension: player_facing

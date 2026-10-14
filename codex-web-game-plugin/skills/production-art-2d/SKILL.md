@@ -7,6 +7,7 @@ Supports: **asset, gameplay, game-designer**
 ## Authoritative sources
 
 - `core/craft/production-art-2d.md`
+- `core/reference/art-style-families.yaml`
 - `core/craft/production-art-and-ui.md`
 - `core/craft/2d-assets.md`
 - `core/reference/asset-policy.yaml`

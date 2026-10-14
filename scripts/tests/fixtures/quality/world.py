@@ -424,6 +424,36 @@ class World:
                 for policy in ("steady", "jitter")]
         return dict(common, applies=True, input_kind="held", units=[None], repeats=1, runs=runs)
 
+    def effects(self, project):
+        """The design's interaction effects (build_spec.vfx, core/reference/vfx.yaml) as the bot
+        records them (bot.spec.ts Watch): each interaction once as a probe event, each effect
+        drawn within its duration and its share of the screen, and the win's celebration in
+        view with nothing painted over it - a game that draws every effect its design states."""
+        effects = [e for e in ((self.spec.get("vfx") or {}).get("effects") or [])
+                   if isinstance(e, dict) and e.get("id")]
+        if not effects:
+            return {}
+        w, h = VIEWPORTS[project]
+        events, drawn, entities = [], {}, []
+        for n, effect in enumerate(effects):
+            ms = 1000 + n * 500
+            if effect.get("kind") != "trail":
+                events.append({"seq": n + 1, "kind": effect["kind"], "vfx": effect["id"],
+                               "ms": ms, "state": "playing"})
+            drawn[effect["id"]] = {"seen_ms": [ms + 50, ms + 150], "samples": 2, "tries": 0,
+                                   "max_share": round(min(0.02, effect["max_screen_share"] / 2), 4)}
+            if effect.get("kind") == "goal":
+                x, y, bw, bh = _box("goal", 0, (w, h))
+                entities.append({"id": f"{effect['id']}-0", "role": "vfx", "vfx": effect["id"],
+                                 "x": x, "y": y, "w": bw, "h": bh, "visible": True})
+        out = {"events": events, "effects": drawn, "celebration": None}
+        if entities:
+            out["celebration"] = {"frame": "state-won-enter", "ms": 1100, "ms_after_goal": 100,
+                                  "viewport": [w, h], "entities": entities,
+                                  "cover": {"cols": 32, "rows": 32, "viewport": [w, h],
+                                            "cells": "0" * 1024}}
+        return out
+
     def records(self, build, project, items):
         """{test: record} for one viewport, as bot.spec.ts writes them."""
         ex = self.spec.get("experience") or {}
@@ -471,6 +501,8 @@ class World:
                    series=[{"ms": 0, "value": 0, "state": "playing"},
                            {"ms": 900, "value": 0 if broken else 7, "state": "playing"}],
                    ui={k: v for k, v in screens.items() if k == "won"})
+        if not broken:
+            win.update(self.effects(project))
         resource = genre.get("resource_metric")
         initial = self.metrics(first_unit)
         lose_series = [{"ms": 0, "metrics": dict(initial)}]

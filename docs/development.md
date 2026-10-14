@@ -153,7 +153,7 @@ and a lockfile in a repository whose entire product is markdown and JSON is perm
 maintenance surface against zero titles currently in flight.
 
 **CI is the one exception**, added deliberately and kept to one file
-(`.github/workflows/acceptance.yml`, one job, first-party actions only). The reason is
+(`.github/workflows/acceptance.yml`, first-party actions only; since 2.8.1 its jobs run in parallel - the repository checks, four unit shards, the non-golden categories and each golden - split by `scripts/ci-partition.py`, whose `check` proves every test module runs in exactly one job, and one `acceptance` job passes only when all of them passed). The reason is
 specific and not about convenience: `WGF_GOLDEN=1 bin/wgf test-core --strict` is the release
 gate, and the golden harness calls `pnpm` through `wgflib.procs`, which spawns without a
 shell. On Windows pnpm is a `.cmd` shim the spawn cannot resolve, so both goldens fail in

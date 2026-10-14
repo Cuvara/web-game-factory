@@ -9,6 +9,16 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Acceptance CI runs in parallel jobs** (`.github/workflows/acceptance.yml`,
+`scripts/ci-partition.py`). The one job of about three hours - the unit suite, then test-core
+with both goldens, in sequence - is now: the repository checks; four unit shards, the modules
+no suite category names, dealt by size; the non-golden categories through `bin/wgf test-core
+--strict`; the 2D and the 3D golden each in its own job through `test-core --strict --only`;
+and `acceptance`, which passes only when every job passed. `ci-partition.py check` (run in CI,
+and `test_ci_partition`) proves every test module runs in exactly one job; before, the
+categories' modules ran twice. No test, category, gate or expectation changes; nothing is
+cached. Wall clock: the longest job (the 2D golden) instead of the sum.
+
 ## [2.8.0] - 2026-10-14
 
 Release notes: [docs/v2.8-release.md](docs/v2.8-release.md). Template pin: v1.2.1.

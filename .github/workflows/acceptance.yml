@@ -14,6 +14,15 @@
 #   - it changes no test expectation;
 #   - it caches nothing: the goldens warm a pnpm store themselves and then run offline behind
 #     a refusing proxy, and a cache restored from another run would make that unreproducible.
+#
+# Since 2.8.1 the suite runs as parallel jobs instead of one job of about three hours
+# (scripts/ci-partition.py splits it, and `check` proves the split leaves nothing out): the
+# repository checks, four unit shards (the modules no suite category names), the non-golden
+# categories through `bin/wgf test-core --strict`, and each golden category in its own job,
+# also through `test-core --strict`. Every module runs in exactly one place; before the split
+# the categories' modules ran twice, once in the unit suite and once in test-core.
+# `acceptance` passes only when every job passed: the gate is the same, its wall clock is the
+# longest job (the 2D golden) instead of the sum.
 
 name: Acceptance
 
@@ -37,19 +46,10 @@ permissions:
   contents: read
 
 jobs:
-  acceptance:
-    name: integrity, schemas, adapters, unit, test-core with the goldens
+  checks:
+    name: integrity, hashes, schemas, adapters, and the suite's split
     runs-on: ubuntu-24.04
-    # The two golden runs each create a game repository from the pinned template, install it,
-    # build it and drive Chromium through Playwright. Since workflow 5 each golden builds and
-    # plays the game several times (greybox, production, the production-quality and visual-qa
-    # gates): the unit suite alone took 24 min and the run was cancelled at 90 (PR #18).
-    # 180 -> 240 with K7: the contact test adds a frozen-frame play to every 2D playability
-    # visit, and the run with all K7 branches (PR #66, d9e7dbe) passed its unit suite (48 min)
-    # and the 2D golden (69 min, 11 min more than without them) and was cancelled at 180 in the
-    # 3D golden.
-    timeout-minutes: 240
-
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,23 +60,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # The pinned template requires node >= 20 (its package.json `engines`).
           node-version: '22'
-
-      - name: pnpm, at the version the template pins
-        # Corepack ships with node; `pnpm` must be a real executable on PATH because
-        # wgflib.procs spawns it directly. The version is the template's `packageManager`.
-        run: |
-          corepack enable
-          corepack prepare pnpm@9.15.4 --activate
-          pnpm --version
-
-      - name: Record the toolchain
-        run: |
-          python3 --version
-          node --version
-          pnpm --version
-          git --version
 
       - name: Referential integrity
         # The knowledge base: a pull request's base branch (its merge base with the head), a
@@ -113,8 +97,122 @@ jobs:
           bash scripts/gen-adapters.sh
           git diff --exit-code
 
-      - name: Unit suite
-        run: python3 -m unittest discover scripts/tests
+      - name: The split covers every test module exactly once
+        run: python3 scripts/ci-partition.py check 4
+
+  units:
+    name: unit shard ${{ matrix.shard }} of 4
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: pnpm, at the version the template pins
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          pnpm --version
+
+      - name: Unit modules of this shard
+        working-directory: scripts/tests
+        run: |
+          modules=$(python3 ../ci-partition.py units ${{ matrix.shard }} 4)
+          echo "$modules" | tr ' ' '\n'
+          python3 -m unittest $modules
+
+  core:
+    name: test-core, every category but the goldens
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          # The pinned template requires node >= 20 (its package.json `engines`).
+          node-version: '22'
+
+      - name: pnpm, at the version the template pins
+        # Corepack ships with node; `pnpm` must be a real executable on PATH because
+        # wgflib.procs spawns it directly. The version is the template's `packageManager`.
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          pnpm --version
+
+      - name: Record the toolchain
+        run: |
+          python3 --version
+          node --version
+          pnpm --version
+          git --version
+
+      - name: The pinned template, and a browser that matches its Playwright
+        run: |
+          template=$(python3 -c "
+          import sys; sys.path.insert(0, 'scripts')
+          from wgflib import template
+          directory = template.checkout()
+          template.ensure_dependencies(directory)
+          print(directory)
+          ")
+          echo "pinned template: $template"
+          cd "$template" && pnpm exec playwright install --with-deps chromium
+
+      - name: An MP4 encoder for the store-listing trailer
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg && ffmpeg -hide_banner -encoders | grep -w libx264
+
+      - name: Core Acceptance Suite, every category but the goldens
+        run: |
+          args=()
+          while IFS= read -r category; do args+=(--only "$category"); done < <(python3 scripts/ci-partition.py core)
+          bin/wgf test-core --strict "${args[@]}"
+
+  golden:
+    name: ${{ matrix.category }}
+    runs-on: ubuntu-24.04
+    # Each golden run creates a game repository from the pinned template, installs it, builds
+    # it and drives Chromium through Playwright, several times. Alone on a runner the 2D golden
+    # took 58-69 min and the 3D 39-50 (PR #63, #66 runs); 150 leaves room for a slow runner
+    # without hiding a hang for long.
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        category: ['2D GOLDEN', '3D GOLDEN']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: pnpm, at the version the template pins
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          pnpm --version
+
+      - name: Record the toolchain
+        run: |
+          python3 --version
+          node --version
+          pnpm --version
+          git --version
 
       - name: The pinned template, and a browser that matches its Playwright
         # The goldens run offline behind a refusing proxy, so the template's dependencies and
@@ -137,28 +235,51 @@ jobs:
         # libx264 (WGF_FFMPEG, else PATH). Without one a Yandex listing correctly stops for a person.
         run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg && ffmpeg -hide_banner -encoders | grep -w libx264
 
-      - name: Core Acceptance Suite, with both golden runs
+      - name: This golden category
         # WGF_GOLDEN_KEEP keeps each run's working directory, which is where the develop
-        # checks, the review verdict and the browser evidence are written. Without it a
-        # failing gate reports only a count ("conformance: 2 violation(s)") and the evidence
-        # is deleted at teardown, which is a bad trade on a runner that is thrown away anyway.
-        run: WGF_GOLDEN=1 WGF_GOLDEN_KEEP=1 bin/wgf test-core --strict
+        # checks, the review verdict and the browser evidence are written.
+        run: WGF_GOLDEN=1 WGF_GOLDEN_KEEP=1 bin/wgf test-core --strict --only "${{ matrix.category }}"
 
       - name: Golden evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: golden-evidence
+          name: golden-evidence-${{ matrix.category == '2D GOLDEN' && '2d' || '3d' }}
           path: /tmp/wgf-golden-*/evidence
           if-no-files-found: warn
           retention-days: 7
+
+  acceptance:
+    # The gate: one result for the whole suite. It passes only when every job above passed -
+    # a failed, cancelled or skipped job fails it - and when the golden matrix is still every
+    # golden category of the suite.
+    name: acceptance (every job passed)
+    if: always()
+    needs: [checks, units, core, golden]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The golden matrix is every golden category
+        run: |
+          expected=$(python3 scripts/ci-partition.py golden | sort | tr '\n' '|')
+          listed=$(printf '%s\n' '2D GOLDEN' '3D GOLDEN' | sort | tr '\n' '|')
+          [ "$expected" = "$listed" ] || { echo "golden matrix '$listed' != suite '$expected'"; exit 1; }
+
+      - name: Every job passed
+        run: |
+          echo "checks=${{ needs.checks.result }} units=${{ needs.units.result }} core=${{ needs.core.result }} golden=${{ needs.golden.result }}"
+          for r in "${{ needs.checks.result }}" "${{ needs.units.result }}" "${{ needs.core.result }}" "${{ needs.golden.result }}"; do
+            [ "$r" = success ] || exit 1
+          done
 
   # The GOLDEN LOOP category (docs/golden-runs.md "The golden loop"): the 2D golden with a
   # planted defect must fail a real check, be routed back to greybox and pass the same check
   # on a newer commit; its negative control must not pass. The develop-stage variant plants it
   # in production, where the failure goes through triage to a specialist and the run's finding
   # ledger must verify the repair; its negative control blocks at triage's budget. Four more
-  # golden runs, so it is kept out of the job above (its 180 minutes are nearly spent) and runs only when asked: a manual
+  # golden runs, so it is kept out of the jobs above and runs only when asked: a manual
   # run with `golden_loop` ticked, or a pull request carrying the label `golden-loop` (adding
   # the label does not start a run by itself - the next push or a re-run does, so a label
   # event never cancels the acceptance job above through the shared concurrency group).

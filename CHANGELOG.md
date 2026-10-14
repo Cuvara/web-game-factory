@@ -9,6 +9,10 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-10-14
+
+Release notes: [docs/v2.8-release.md](docs/v2.8-release.md). Template pin: v1.2.1.
+
 **The baseline comparison: a candidate held to the build a person accepted** (K7,
 [docs/baseline-comparison.md](docs/baseline-comparison.md), lesson L8 now partial). A run
 that adopts a game records the accepted commit in its design's existing-content floor

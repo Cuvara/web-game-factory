@@ -1074,6 +1074,73 @@ test("first session: objective, and no failure before the grace", async ({ page 
                                              ...watch.record(), audio_unfocused: unfocused, frames }, health);
 });
 
+// -- act-take: one action of the act test, free of the page (test_playability.TheActTest
+// cuts this block out and runs it under node with stubbed dependencies).
+// The states that end an attempt, and how often an action whose attempt ended around it is
+// taken again (issue #67).
+const ENDED = new Set(["won", "lost"]);
+const ACT_RESTARTS = 2;
+// The inputs that bring a game back into play: its resume, or a title screen's begin input.
+const ACT_RESUME = /resume|continue|unpause|^play$/i;
+const ACT_BEGIN = /^(play|start|begin|tap-to-start|continue)$/i;
+/** The attempt was in play before the action and had ended once its frame was taken. */
+function endedAround(before: Snapshot | null, after: Snapshot | null): boolean {
+  return before?.state === "playing" && Boolean(after && ENDED.has(after.state));
+}
+type ActDeps = {
+  snap: () => Promise<Snapshot | null>;
+  press: (move: Move) => Promise<void>;
+  frame: (id: string) => Promise<void>;
+  retry: (s: Snapshot | null) => Promise<unknown>;
+  wait: (ms: number) => Promise<void>;
+  frames: string[];
+  ackMs: number;
+};
+// An attempt can end by the game's own clock between the snapshot and the frame after the
+// action (a wall reaching the craft while a slow host takes the screenshots): the "after"
+// frame then shows the end screen, not this action's acknowledgement, and visual QA judged it
+// as the pause screen (issue #67). Such an action is taken again, from play, at most
+// ACT_RESTARTS times, its frames taken again under the same names; one that still ends the
+// attempt is kept as measured, with `ended_attempts` counting the attempts that ended around it.
+async function takeAction(first: Move, deps: ActDeps): Promise<Record<string, unknown>> {
+  let ended = 0;
+  for (;;) {
+    const mark = deps.frames.length;
+    let before = await deps.snap();
+    if (before && ENDED.has(before.state)) {
+      await deps.retry(before);
+      await deps.wait(300);
+      before = await deps.snap();
+    }
+    if (before && before.state !== "playing") {
+      // Brought back to play the way the game offers, when it does; else measured as is.
+      const resume = before.inputs.find((m) => ACT_RESUME.test(m.action) || ACT_BEGIN.test(m.action));
+      if (resume) {
+        await deps.press(resume);
+        await deps.wait(300);
+        before = await deps.snap();
+      }
+    }
+    const move = before?.inputs.find((m) => m.action === first.action) ?? first;
+    const id = `act-${move.action}`;
+    await deps.frame(`${id}-before`);
+    await deps.press(move);
+    await deps.wait(deps.ackMs);
+    await deps.frame(`${id}-after`);
+    const after = await deps.snap();
+    const endedNow = endedAround(before, after);
+    if (endedNow && ended < ACT_RESTARTS) {
+      ended += 1;
+      deps.frames.length = mark;  // the frames are taken again, under the same names
+      continue;
+    }
+    const total = ended + (endedNow ? 1 : 0);
+    return { action: move.action, input: move.input, before, after,
+             ...(total ? { ended_attempts: total } : {}) };
+  }
+}
+// -- end act-take
+
 test("act: every action is acknowledged on screen", async ({ page }, info) => {
   const project = info.project.name;
   const frames: string[] = [];
@@ -1089,29 +1156,20 @@ test("act: every action is acknowledged on screen", async ({ page }, info) => {
     // And each action is taken from the inputs live NOW, not from the first snapshot: a
     // zone, a lane, a piece moves between snapshots.
     const isPause = (move: Move): boolean => /pause/i.test(move.action);
-    const isResume = (move: Move): boolean => /resume|continue|unpause|^play$/i.test(move.action);
     const order = [...(s0?.inputs ?? [])].sort((a, b) => Number(isPause(a)) - Number(isPause(b)));
     const seen = new Set<string>();
     for (const first of order) {
       if (seen.has(first.action) || seen.size >= 4) continue;
       seen.add(first.action);
-      let before = watch.saw(await snap(page));
-      if (before && before.state !== "playing") {
-        // Brought back to play the way the game offers, when it does; else measured as is.
-        const resume = before.inputs.find(isResume);
-        if (resume) {
-          await act(page, resume, touch);
-          await page.waitForTimeout(300);
-          before = watch.saw(await snap(page));
-        }
-      }
-      const move = before?.inputs.find((m) => m.action === first.action) ?? first;
-      const id = `act-${move.action}`;
-      await frame(page, project, `${id}-before`, frames);
-      await act(page, move, touch);
-      await page.waitForTimeout(CFG.ack_ms);
-      await frame(page, project, `${id}-after`, frames);
-      acted.push({ action: move.action, input: move.input, before, after: watch.saw(await snap(page)) });
+      acted.push(await takeAction(first, {
+        snap: async () => watch.saw(await snap(page)),
+        press: (move) => act(page, move, touch),
+        frame: (id) => frame(page, project, id, frames),
+        retry: (s) => retry(page, s, touch),
+        wait: (ms) => page.waitForTimeout(ms),
+        frames,
+        ackMs: CFG.ack_ms,
+      }));
       await page.waitForTimeout(400);
     }
   }

@@ -13,6 +13,17 @@ and `core/` is still the contract.
 
 Release notes: [docs/v2.8-release.md](docs/v2.8-release.md). Template pin: v1.2.1.
 
+**The act test retakes an action whose attempt ended around it** ([#67](https://github.com/Cuvara/web-game-factory/issues/67),
+`scripts/wgf_playability/bot.spec.ts`). In two acceptance runs the 3D golden's attempt ended by
+the game's own clock - a wall reached the craft - between the snapshot before `pause` and the
+frame after it, so the frame named `act-pause-after` showed the lose screen; visual QA's baseline
+judge compared it with the approved pause look, failed the run and routed `assets`, which
+blocked. An action that was taken in play and whose attempt had ended (`won` or `lost`) once its
+frame was taken is now taken again from play, at most twice, its frames replaced under the same
+names; one that still ends the attempt is kept as measured, with `ended_attempts` on its record.
+No check, bar or route changes. Bringing an artifact forward: none - the bot's version moves,
+so an accepted build's cached baseline play is played again.
+
 **The baseline comparison: a candidate held to the build a person accepted** (K7,
 [docs/baseline-comparison.md](docs/baseline-comparison.md), lesson L8 now partial). A run
 that adopts a game records the accepted commit in its design's existing-content floor

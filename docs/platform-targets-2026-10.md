@@ -339,7 +339,7 @@ default, no_external_links true, store_listing with every size null) and
 TC 4.10, human intents for "Allow Distribution", the child-directed and AI declarations and
 the testkit, everything else under `unknowns`).
 
-The pinned template (v1.2.0) still has no `gamepix` adapter: `createPlatform("gamepix")`
+The pinned template (v1.2.1) still has no `gamepix` adapter: `createPlatform("gamepix")`
 throws at boot. The adapter is on template main (Cuvara/web-game-template#23, merged
 2026-10-04, with a proposed `config/platforms/gamepix.yaml` at the same version 1.0.0 - when
 the pin moves, `check-integrity.py` warns if the two differ). So the profile exists and

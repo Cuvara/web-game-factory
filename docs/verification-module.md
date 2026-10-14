@@ -328,8 +328,8 @@ Lessons L24-L28 (`core/reference/lessons.yaml`) name these checks.
 **Context-menu suppression and the template.** The template's `main` already prevents the
 context menu in `bindPlatform` (web-game-template PR #27), so a game made from a template
 release that carries it passes `context-menu` without code of its own; a game made from an
-earlier pin (v1.2.0, `workspace/config/template.lock.json`) does not, which is what the
-calibration games show. Nothing here duplicates the template's handler: the check only
+earlier pin (v1.2.0) does not, which is what the calibration games show; the current pin
+(v1.2.1, `workspace/config/template.lock.json`) carries it. Nothing here duplicates the template's handler: the check only
 measures it.
 
 **Calibration (2026-10-07).** The spec was run on the two validation games at their accepted

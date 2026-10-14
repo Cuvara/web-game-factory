@@ -397,6 +397,17 @@ class PlayabilityStep(WorkflowStep):
         return PlayabilityStep._unmeasured_held(context, design, "content.variety")
 
     @staticmethod
+    def _report_scope(title_id, params):
+        """The scope of the report's artifact id: the title, and the phase the step plays
+        (`with: {phase: greybox}`) when it names one. Each step counts its executions from
+        1, so the greybox's and develop's reports of one day minted the same id before the
+        phase was part of it (five pairs in the 2D run of 2026-10-05, six in the 3D run).
+        The develop loop's ids are unchanged."""
+        phase = "".join(c if c.isalnum() else "-"
+                        for c in str((params or {}).get("phase") or "").lower()).strip("-")
+        return f"{title_id}-{phase}" if phase else title_id
+
+    @staticmethod
     def _built_tiers(context, design, params):
         """The design tiers the build played here carries: the MVP for the greybox
         (`with: {phase: greybox}`), else those the run's quality tier builds
@@ -852,7 +863,8 @@ class PlayabilityStep(WorkflowStep):
                                            if f"{c['project']}:{c['id']}" in unmeasured})[:3]))
         verdict = "BLOCKED" if blocked else ("FAIL" if failed else "PASS")
         now = self.clock()
-        artifact_id = provenance.artifact_id("playability-report", title_id, now,
+        artifact_id = provenance.artifact_id("playability-report",
+                                             self._report_scope(title_id, self.params), now,
                                              getattr(context, "execution", 1))
         report = {
             "provenance": provenance.build(

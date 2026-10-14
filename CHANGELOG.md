@@ -9,6 +9,45 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**A passing report's own findings are recorded, never routed** (K7 #4, retro H12;
+`core/reference/specialist-routing.yaml` 1.7.0 `ledger.noted_on_pass`, triage-report 1.4.0,
+quality-report 1.6.0, quality-finding record `noted`; docs/specialist-routing.md "A passing
+report's own findings: noted"). The 3D run's visual-qa v3 passed the build with two MAJOR
+findings and the triage that read it recorded neither: only failing reports were normalized.
+A gate report that PASSES now has its own findings at the listed severities
+(`visual-qa-report: [blocker, major]`) recorded in the run's ledger as `noted` - detected and
+classified to their owner, listed in the triage-report's `noted` - never routed and never
+holding the build: `ledger.blocking` leaves them out, so no gate verdict, the quality gate's
+`open`/`awaiting` and release's `open-findings` refusal are unchanged (tested on the real
+triage v12 replayed with and without the rule). A noted record stays open while the
+producer's newest report lists it, is verified when a newer report no longer does, and
+becomes an ordinary finding when the producer's newest report fails it - on the quality gate's
+and release's path too (review r1: a noted record a failing report raised stayed noted and
+non-blocking there, open or reopened). A noted detection is never a measured failure: its
+history entry says `noted:`, the ledger's memory of its checks and evidence strength skip it,
+and the failing report that raises it (`reopened`) is its first failure - the `before` of a
+lesson's FAIL->PASS pair and a flip for the `unstable` cap (review r1: the promotion was not
+counted, and the passing report's commit was taken as the failure). A pass by a report that
+still lists the finding beside its pass - verifying it, or as a later sample - is refused
+`no-repair` by evidence strength (core/reference/evidence-strength.yaml 1.3.0; review r2,
+pre-existing: such passes made a still-listed finding `reproduced`); the ledger's status for it
+is unchanged - the producer's pass stands. A noted record of a check-listing producer raised by
+a failing report keeps that report's measurement as its failure (review r2, latent). Known
+limitations (review r3, docs/specialist-routing.md): the ledger's `_recorded`/`_regressed` still
+read a verified-while-listed record as a pass (errs strict); a record listed again after a clean
+verification stays `single-run`, not reopened; a listing at minor writes no note and still counts;
+ledgers older than this change carry no notes. Bringing an artifact forward: none - existing ledgers stay valid; a run's next triage or quality gate records what
+its newest passing reports name.
+
+**Greybox playability reports carry their phase in their id** (K7 #10). The greybox's and
+develop's playability reports minted the same artifact id
+(`wgf:playability-report:<title>:<date>-<execution>`, each step counting from 1): five pairs
+in the 2D run of 2026-10-05, six in the 3D run. A playability step that names a phase
+(`with: {phase: greybox}`) now puts it in the id's scope (`<title>-greybox`); the develop
+loop's ids are unchanged. Bringing an artifact forward: none - old ids stay valid (the
+ledger already tells them apart by content hash and seq). prototype-report ids collide the
+same way (greybox and develop both mint `prototype-report`); not changed here.
+
 **Platform preflight: portal SDKs measured in each bundle** (docs/verification-module.md
 "Portal SDKs in a bundle", docs/publish-module.md, docs/platform-targets-2026-10.md "Portal
 SDKs in each bundle"). The Factory never looked at which portal SDKs a platform's bundle

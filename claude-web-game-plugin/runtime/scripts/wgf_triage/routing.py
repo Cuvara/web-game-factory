@@ -110,6 +110,17 @@ class Routing:
             for value in (table or {}).values():
                 if value not in self.dimensions:
                     out.append(f"by_engine_dimension.{word} names {value!r}, not a dimension")
+        noted = (self.data.get("ledger") or {}).get("noted_on_pass") or {}
+        if not isinstance(noted, dict):
+            out.append("ledger.noted_on_pass is not a mapping")
+            noted = {}
+        for kind, severities in noted.items():
+            if kind not in (self.data.get("producers") or {}):
+                out.append(f"ledger.noted_on_pass names {kind!r}, which has no producer table")
+            for severity in severities if isinstance(severities, list) else [severities]:
+                if severity not in _SEVERITY_ORDER:
+                    out.append(f"ledger.noted_on_pass.{kind} names {severity!r}, not a "
+                               "severity")
         return out
 
     # -- lookups ---------------------------------------------------------------------

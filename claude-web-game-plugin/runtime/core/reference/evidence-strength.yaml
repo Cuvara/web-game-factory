@@ -27,7 +27,10 @@
 # 1.2.0: a validated context differs in the commits measured - another run replaying the
 # identical failing and passing commits is the same context; the run separates contexts only
 # where a commit is unknown.
-version: 1.2.0
+# 1.3.0: a pass - the verifying one or a later sample - by a report that still listed the
+# finding beside its pass (the ledger's "listed by a passing" history note at that report's
+# seq) is no-repair: the judge still saw the defect.
+version: 1.3.0
 
 # In order, weakest first. `ceiling` is the strongest classification (lessons.yaml
 # `classifications`) a promoted draft may propose on this evidence, on the scale
@@ -60,7 +63,7 @@ refusals:
   self-agreement: (d) A judge re-reading what it already judged - an AI judgment of a build or frames it had already judged, counted as a second judgment.
   claim: (e) A person's or a specialist's claim restating the lesson - a reviewer's comment, a candidate whose finding no gate measured on its build, a source that cannot be re-verified against its run store, a person's G4 decision.
   duplicate: A hash-identical copy of a measurement or report already counted (the same report digest, the same pair of content hashes) - counted once.
-  no-repair: A measured failure the ledger never re-measured passing (no record, still failing, regressed, unmeasured, missing), or a repair the run's newest ledger has reopened since.
+  no-repair: A measured failure the ledger never re-measured passing (no record, still failing, regressed, unmeasured, missing), or a repair the run's newest ledger has reopened since; or a pass - the verifying one or a later sample - by a report that still listed the finding beside its pass (the judge still saw the defect).
 
 # What caps a strength at single-run, with why.
 caps:

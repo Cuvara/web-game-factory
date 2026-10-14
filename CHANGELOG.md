@@ -9,6 +9,18 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**`wgf-delegate` records the delegation lifecycle; a started dispatch is never lost**
+(`scripts/wgf_delegate.py`, `scripts/wgf-delegate.py`, [docs/orca-delegation.md](docs/orca-delegation.md)).
+The ledger holds append-only lifecycle events per task id (`AGENT_REQUESTED` ...
+`AGENT_COMPLETED`, `AGENT_SPAWN_FAILED`, `AGENT_UNVERIFIED`, `AGENT_ORPHANED`); legacy lines
+read as `AGENT_SPAWNED`. `spawn` records before `worker-start` and, once a dispatch exists,
+any later failure as `AGENT_UNVERIFIED` with the remedy (adopt or `worker-stop`); a task held
+by an agent is not spawned twice. New `status <task|dispatch>`. `audit` reports a worktree git
+cannot read, or Orca cannot be asked about, as UNKNOWN (never an empty orphan) and a dispatch
+that never settled as AGENT ORPHANED. WSL paths are translated for the host, Windows git reads
+a WSL worktree through `wsl.exe`, and the launcher is `WGF_ORCA`, then `ORCA_CLI_COMMAND`, then
+`orca`. Tooling only: no artifact, schema or runtime change; an existing ledger reads as before.
+
 ## [2.8.1] - 2026-10-14
 
 Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.1". No runtime change beyond the version.

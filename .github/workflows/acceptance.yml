@@ -44,7 +44,11 @@ jobs:
     # build it and drive Chromium through Playwright. Since workflow 5 each golden builds and
     # plays the game several times (greybox, production, the production-quality and visual-qa
     # gates): the unit suite alone took 24 min and the run was cancelled at 90 (PR #18).
-    timeout-minutes: 180
+    # 180 -> 240 with K7: the contact test adds a frozen-frame play to every 2D playability
+    # visit, and the run with all K7 branches (PR #66, d9e7dbe) passed its unit suite (48 min)
+    # and the 2D golden (69 min, 11 min more than without them) and was cancelled at 180 in the
+    # 3D golden.
+    timeout-minutes: 240
 
     steps:
       - uses: actions/checkout@v4

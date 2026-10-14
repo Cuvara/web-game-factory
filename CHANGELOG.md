@@ -9,6 +9,51 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**The baseline comparison: a candidate held to the build a person accepted** (K7,
+[docs/baseline-comparison.md](docs/baseline-comparison.md), lesson L8 now partial). A run
+that adopts a game records the accepted commit in its design's existing-content floor
+(`factory.init.accepted_baseline`, else the shipped commit). Both playability steps now play
+that commit with the same bot and the same settings as the candidate - every accepted unit
+surveyed, naive play on the accepted units, each unit and policy played `clear_rate.runs`
+times - and report ten `baseline.*` checks, per accepted unit and per measured quantity: units
+removed or renamed, layouts, elements and tuning changed, unit extent and par cut (and the
+whole game's), difficulty values moved or reordered, drawn kinds and role sizes changed, units
+cleared in a fraction of the accepted time or more often beyond the accepted band, a slower
+start, acknowledgement or frame rate. Deterministic, no AI judge. A measured regression fails
+at every tier (`QUALITY REGRESSION against the accepted build`); a person changes accepted
+content only by recording why (`factory.init.accepted_changes`); what the accepted build
+cannot report is `accepted-unmeasured` (reported, not held), what the candidate does not report
+is held as skipped checks are, and a degraded host's recording decides nothing (BLOCKED). The
+accepted play also feeds `naive.clear_rate`. New `core/reference/baseline-compare.yaml` 1.0.0
+(pinned by new-game 18), `playability-report` 1.5.0 (`baseline_comparison`), check-tiers 1.4.0
+(source `baseline-compare`), specialist-routing 1.8.0, quality-floor 1.3.0
+(`floor.accepted_baseline`), quality-assessment 1.1.0 (four families), lessons 2.2.0 (L8 r2).
+Replayed on real measurements of both validation games (fixtures
+`scripts/tests/fixtures/real/baseline-compare/`): the regressed heads 2D 68a12b7 and 3D 1c6b099
+fail against r1; each accepted build passes against its own repeat. Bringing an artifact
+forward: none - a playability-report 1.4.0 stays valid; an adopted run's quality gate reads the
+`baseline.*` checks UNMEASURED until its next playability visit.
+
+**Baseline comparison review r1 fixes** (docs/baseline-comparison.md). An accepted build that
+cannot be played makes the playability step BLOCKED, never a PASS (`accepted-not-played` joins
+the unmeasured reasons `_finish` holds). What the candidate stops declaring or reporting for one
+accepted unit, role or action is no longer skipped while the rest of the check passes: a
+declared layout, layout value, element set, extent, par or difficulty dropped from a unit the
+candidate still declares is a regression; a role, action, start, frame rate, naive policy or
+oracle unit it no longer reports is `not-reported` (held at release); a unit still declared
+that the survey asked for and could not enter, where it entered it on the accepted build, is
+not kept. A check with an undetermined item beside compared ones is a WARNING, never a PASS.
+An accepted play with a recording made on a degraded host is never cached (the next visit
+plays it again), and its degraded naive recording makes `naive.clear_rate` BLOCKED instead of
+being compared. A waiver of a unit-scoped check names its unit (`*` only with a quantity).
+Also: the knowledge and pinning tests follow L8's promotion and new-game 18's pin (both failed
+on 43c4554). Bringing an artifact forward: none; a run's next playability visit applies it.
+The real 3D measurements now read `baseline.clear_time` WARNING (jittered play cleared the
+opening course on neither build). A difficulty moved by exactly the tolerance is within it
+(read at the values' precision: 0.87 - 0.82 was 0.050000000000000044): 3D 43c08e2 against
+c340631 still fails `baseline.difficulty_order`, on hairpin-rise's precision 0.73 -> 0.89
+only - its speed and the two "reordered" pairs were that rounding.
+
 **Measurement integrity: the physics checks read off the pixels** (K7, `play-realism.yaml`
 1.1.0 `contact`, [docs/playability-module.md](docs/playability-module.md) "What the contact
 frames measure, and what they cannot"). `physics.undrawn_collision` and

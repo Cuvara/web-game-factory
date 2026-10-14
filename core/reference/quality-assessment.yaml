@@ -60,7 +60,9 @@
 # 1.5.0), scripts/check-integrity.py. Read live: a view, not a bar - the run's pinned
 # check-tiers still decide which checks exist and where they are read.
 
-version: 1.0.0
+# 1.1.0: the baseline comparison's families (accepted-content, accepted-on-screen,
+#        accepted-play, accepted-timing).
+version: 1.1.0
 
 statuses: [PASS, FAIL, INCONCLUSIVE, NOT_SUPPORTED]
 
@@ -450,6 +452,50 @@ families:
     method: Loudness computed from the shipped clips.
     limits: A level window, not a mix a person judged.
     cannot_justify: That the audio is pleasant or fits the game.
+
+  # ------------------------------------------------- against the accepted build (1.1.0)
+  # core/reference/baseline-compare.yaml: the candidate and the build a person accepted,
+  # played by the same bot with the same settings; reported only by a run that adopted a game.
+  - id: accepted-content
+    label: Accepted content kept
+    dimension: design_validity
+    class: deterministic
+    when: reported
+    checks: [baseline-compare:baseline.units_kept, baseline-compare:baseline.unit_content, baseline-compare:baseline.unit_extent, baseline-compare:baseline.tuning, baseline-compare:baseline.difficulty_order]
+    measures: Every unit the accepted build shipped is still shipped under its id; its declared layout, elements, extent (path length or solid cells), par, tuning and difficulty values are the accepted ones, and no pair of accepted units is in the opposite difficulty order - unless a person recorded why.
+    method: The content data files the two commits ship (their units, layouts and tuning), compared value by value by the playability step; units neither file declares are counted from the units the probe reached, and a difficulty the data does not state is the probe's in the survey.
+    limits: Compares what the data declares - a game that ignores its data is not caught here (that is gate-gaming review's). An accepted build that ships no content data file leaves its layouts, extents, tuning and per-unit difficulty unmeasured; one that declares none of a quantity has nothing accepted to keep.
+    cannot_justify: That the accepted build was good, or that a change a person recorded was right.
+  - id: accepted-on-screen
+    label: What the accepted units draw
+    dimension: design_validity
+    class: self-reported
+    when: reported
+    checks: [baseline-compare:baseline.unit_kinds, baseline-compare:baseline.entity_size]
+    measures: Each accepted unit draws the same content kinds as on the accepted build, and each readable role (player, projectile, goal, target, threat) is drawn the same size within the tolerance.
+    method: The survey's entity kinds per unit through the unit link, and the win test's per-frame entity boxes, on both builds.
+    limits: Kinds and boxes are the game's own report of what it draws.
+    cannot_justify: That the units look or play as they did.
+  - id: accepted-play
+    label: Play against the accepted build
+    dimension: player_facing
+    class: heuristic
+    when: reported
+    checks: [baseline-compare:baseline.clear_time, baseline-compare:baseline.clear_rate]
+    measures: A unit is not cleared by naive play or the oracle in a fraction of the accepted build's time, and naive play does not clear it more often beyond the accepted band (play-realism's naive.clear_rate holds the other side of the band).
+    method: Naive play (play-realism.yaml naive, each unit and policy played clear_rate.runs times) and the survey's oracle on both builds; a unit not cleared within its run is a lower bound.
+    limits: A bot's clear time and clear rate stand for pace and difficulty only as far as the calibration on the two validation games holds; a run that clears nothing on either build decides nothing.
+    cannot_justify: That the game is as fun, fair or well paced as the accepted one.
+  - id: accepted-timing
+    label: Response against the accepted build
+    dimension: runtime_correctness
+    class: deterministic
+    when: reported
+    checks: [baseline-compare:baseline.responsiveness]
+    measures: Play begins about as soon as on the accepted build, every action it acknowledged on screen is still acknowledged, and the frame rate while the oracle plays is not lower beyond the tolerance.
+    method: The bot's first-session timing, the act test's before/after frames and the page's requestAnimationFrame count over the win test, on both builds on one host.
+    limits: Software rendering on the build host; frames are counted, not timed per input - no input-to-photon latency is measured.
+    cannot_justify: That the game feels as responsive on a player's device.
 
 # Floor criteria no family names: each aggregates checks a family already maps (or, for the
 # `kinds` listed, reads a report whose own checks a family maps), so counting it again would

@@ -49,7 +49,7 @@ from wgf_assets.raster import RasterError, decode_png
 from wgflib import paths
 from wgflib.yamllite import load_file
 
-from .analysis import _check
+from .analysis import _check, ENVIRONMENT_DEGRADED
 
 __all__ = ["RULES_PATH", "UNREPORTED", "Strength", "load_rules", "strength_for", "judge",
            "judge_layouts", "judge_runtime", "judge_contacts", "contact_edge", "contact_reach",
@@ -1714,6 +1714,17 @@ def _clear_rate_check(runs, accepted, rules, project, strength):
     base = _accepted_rates(accepted)
     expected = {"min_drop": bars.get("min_drop"), "min_z": bars.get("min_z"),
                 "min_runs": bars.get("min_runs")}
+    if isinstance(accepted, dict) and accepted.get("degraded"):
+        # The accepted build's naive play was recorded on a degraded host: a slowed bot clears
+        # less, which would hide a real drop - unmeasured, never compared, never a pass.
+        return _check("naive.clear_rate", project, False,
+                      "unmeasured: the accepted build's naive play was recorded on a degraded "
+                      "host - measured again on a quiet host, never compared or passed",
+                      required=True, blocked=True,
+                      measured={"unmeasured": ENVIRONMENT_DEGRADED, "rates": current,
+                                "reason": "every attempt of the accepted build's naive "
+                                          "recording was made on a degraded host"},
+                      expected=expected)
     if base is None:
         # Nothing to compare: reported, never a pass, and never held against the build -
         # a game with no accepted build has no clear rate to fall from.

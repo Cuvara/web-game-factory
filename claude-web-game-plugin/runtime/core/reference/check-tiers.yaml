@@ -105,7 +105,8 @@
 # Add a check to a source file and it is classified here, or the integrity check fails.
 
 # 1.3.0: content-sufficiency content.introductions_one_at_a_time (hard: pass/fail).
-version: 1.3.0
+# 1.4.0: baseline-compare - the candidate against the build a person accepted (playability).
+version: 1.4.0
 
 applies_at: release
 
@@ -342,6 +343,47 @@ sources:
       level.clearance: quality
       runtime.console_errors: quality
       runtime.webgl_context: hard
+  baseline-compare:
+    producer: playability-report
+    defined_in: scripts/wgf_playability
+    # core/reference/baseline-compare.yaml: the candidate against the build a person accepted,
+    # played by the same bot with the same settings (docs/baseline-comparison.md). Reported
+    # only by a run that adopted a game (the design's existing_content names the accepted
+    # commit), and not by a visit that played the accepted build itself. A quantity the
+    # accepted build declares none of (`measured.unmeasured: accepted-declares-none` - no
+    # tuning block, no layouts in its data file) has nothing accepted to keep: in the
+    # producer's words, never held. A measured regression holds the build at every tier
+    # (`enforce.fail_required_at: all`); an unmeasured one follows quality-policy.yaml
+    # skipped_checks. Pass/fail ones - a unit gone, an accepted layout, element set, tuning
+    # value or drawn kind changed without a person's recorded reason - are hard; one held to
+    # a ratio or a statistical band is quality.
+    status_at:
+      list: checks
+      id: id
+      status: status
+      not_applicable: {field: measured.unmeasured, values: [accepted-declares-none]}
+      not_reported:
+        - checks: "*"
+          verdict: [PASS, FAIL]
+          ran: probe.
+          missing: {report: game-design, path: existing_content}
+          why: reported only for a run that adopted a game, whose design records the accepted commit
+        - checks: "*"
+          verdict: [PASS, FAIL]
+          ran: probe.
+          one_of: {report: playability-report, path: baseline_comparison.same_build, values: [true]}
+          why: the visit played the accepted build itself - there is nothing to compare
+    checks:
+      baseline.units_kept: hard
+      baseline.unit_content: hard
+      baseline.unit_extent: quality
+      baseline.tuning: hard
+      baseline.difficulty_order: quality
+      baseline.unit_kinds: hard
+      baseline.clear_time: quality
+      baseline.clear_rate: quality
+      baseline.entity_size: quality
+      baseline.responsiveness: quality
   browser-qa-run:
     producer: verification-report
     findings_via: [qa-report]

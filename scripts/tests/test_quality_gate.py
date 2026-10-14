@@ -599,6 +599,8 @@ class Pinning(unittest.TestCase):
                           "core/reference/browser-qa.yaml",
                           "core/reference/check-tiers.yaml",
                           "core/reference/lessons.yaml",
+                          # 18: the tolerances of the baseline comparison.
+                          "core/reference/baseline-compare.yaml",
                           # 17: what the run's knowledge-contract is resolved from.
                           "core/reference/content-sufficiency.yaml",
                           "core/reference/design-consistency-rules.yaml",

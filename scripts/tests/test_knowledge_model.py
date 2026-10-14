@@ -57,9 +57,9 @@ BY_ID = {l["id"]: l for l in LESSONS["lessons"]}
 # The design's table (learning-enforcement design 2.3), computed from the integ registry.
 EXPECTED_LEVELS = {
     "blocking": {"L3", "L5", "L10", "L12", "L15", "L22", "L29"},
-    "required": {"L1", "L2", "L4", "L7", "L11", "L13", "L14", "L20", "L23", "L24", "L25",
-                 "L26", "L27", "L28"},
-    "experimental": {"L8", "L9", "L16", "L17", "L18", "L21"},
+    "required": {"L1", "L2", "L4", "L7", "L8", "L11", "L13", "L14", "L20", "L23", "L24",
+                 "L25", "L26", "L27", "L28"},
+    "experimental": {"L9", "L16", "L17", "L18", "L21"},
     "recommended": set(),
 }
 PROCESS = {"L6", "L19"}
@@ -265,8 +265,8 @@ class LevelIntegrity(Lessons):
         self.has(f"L2: a blocking rule holds the build, but {advisory} is advisory")
 
     def test_a_candidate_declares_no_level(self):
-        self.set_lesson("L8", level="required")
-        self.has("L8: a candidate / gap lesson is experimental; it declares no level")
+        self.set_lesson("L9", level="required")
+        self.has("L9: a candidate / gap lesson is experimental; it declares no level")
 
     def test_a_lesson_without_a_level_fails(self):
         self.set_lesson("L20", checks=None)
@@ -337,8 +337,8 @@ class Lifecycle(Lessons):
             self.assertEqual(lesson["lifecycle"], expected, lesson["id"])
 
     def test_an_active_gap_fails(self):
-        self.set_lesson("L8", lifecycle="active")
-        self.has("L8: nothing holds a gap lesson, so it is a candidate")
+        self.set_lesson("L9", lifecycle="active")
+        self.has("L9: nothing holds a gap lesson, so it is a candidate")
 
     def test_an_active_lesson_names_what_catches_it(self):
         self.set_lesson("L25", tests={"catches": [], "passes": [
@@ -539,7 +539,7 @@ class Exceptions(unittest.TestCase):
 
     def test_a_rule_that_never_blocks_is_not_excepted(self):
         self.assertTrue(any("only blocking or required rules are excepted" in p
-                            for p in self.problems(exception(rule_id="L8"))))
+                            for p in self.problems(exception(rule_id="L9"))))
         self.assertTrue(any("never in a run's contract" in p
                             for p in self.problems(exception(rule_id="L6"))))
 

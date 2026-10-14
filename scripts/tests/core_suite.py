@@ -32,8 +32,9 @@ SUITE = {
     # degradations each detected, blocking and routed, recovery, anti-gaming (WS-13,
     # docs/quality-consistency-tests.md). K6.3: the assessment - design validity, runtime
     # correctness and player-facing quality, each with its checks' measurement class
-    # (docs/quality-assessment.md).
-    "QUALITY": ["test_quality_consistency", "test_quality_assessment"],
+    # (docs/quality-assessment.md). K7: a candidate held to the build a person accepted, on
+    # real measurements of both validation games (docs/baseline-comparison.md).
+    "QUALITY": ["test_quality_consistency", "test_quality_assessment", "test_baseline_compare"],
     "2D GOLDEN": ["test_golden_2d"],
     "3D GOLDEN": ["test_golden_3d"],
     # The closed loop on a real build: the 2D golden with a planted defect fails a real check

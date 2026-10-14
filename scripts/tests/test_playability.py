@@ -1425,6 +1425,50 @@ class TheAntiOracle(unittest.TestCase):
         self.has("filter((m) => !UTILITY.test(m.action) && !UNDO.test(m.action))")
 
 
+class TheActTest(unittest.TestCase):
+    """The act test's frames (bot.spec.ts, "act: every action is acknowledged on screen"). In
+    two acceptance runs (issue #67) the 3D golden's attempt ended by the game's own clock - a
+    wall reached the craft - between the snapshot before `pause` and the frame after it: the
+    frame labelled act-pause-after showed the lose screen, visual QA judged it as the pause
+    screen and failed the run. The record said so (`before` playing at score 53, `after` lost
+    at 99)."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(SCRIPTS, "wgf_playability", "bot.spec.ts"), encoding="utf-8") as handle:
+            source = handle.read()
+        start = source.index('test("act: every action is acknowledged on screen"')
+        cls.body = source[start:source.index("\ntest(", start + 1)]
+        cls.source = source
+
+    def test_an_attempt_that_ended_around_the_action_is_named(self):
+        # In play before the action, ended (won or lost) once its frame was taken.
+        self.assertIn('const ENDED = new Set(["won", "lost"]);', self.source)
+        self.assertIn('return before?.state === "playing" && Boolean(after && ENDED.has(after.state));',
+                      self.source)
+
+    def test_such_an_action_is_taken_again_from_play_a_bounded_number_of_times(self):
+        self.assertIn("const ACT_RESTARTS = 2;", self.source)
+        self.assertIn("if (endedAround(before, after) && ended < ACT_RESTARTS) {", self.body)
+        # Back into play the way the game offers after an ended attempt, before the retake.
+        self.assertIn("if (before && ENDED.has(before.state)) {", self.body)
+        self.assertIn("await retry(page, before, touch);", self.body)
+
+    def test_the_retaken_frames_replace_the_ended_ones(self):
+        # The frames list is wound back and the frames are taken under the same names, so the
+        # report never lists the end screen as the action's "after".
+        self.assertIn("const mark = frames.length;", self.body)
+        self.assertIn("frames.length = mark;", self.body)
+        before = self.body.index("frames.length = mark;")
+        self.assertLess(self.body.index("await frame(page, project, `${id}-after`, frames);"), before)
+
+    def test_an_action_that_still_ends_the_attempt_is_kept_and_says_so(self):
+        # Never retried forever and never dropped: the last attempt is recorded with how many
+        # attempts ended around it, so a reader sees it.
+        self.assertIn("ended_attempts", self.body)
+        self.assertIn("acted.push(", self.body)
+
+
 class TheShowcase(unittest.TestCase):
     """The probe's optional showcase (play.showcase): the bot asks a game that declares it to
     stage the states where later content's assets are drawn, so the production gate can see

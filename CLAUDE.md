@@ -504,6 +504,9 @@ seen by the engine — validate what you write there with ajv.
   it found and fixed, PASS / PASS_MOCK / UNVERIFIED / BLOCKED_EXTERNAL
 - `docs/v2-release.md` — 2.0.0: what was validated on which commit, the release audit's
   fixes, and what the evidence does not cover (no live agent host, shimmed golden runs)
+- `docs/v2.8-release.md` — 2.8.0: knowledge as rules (K1-K5), closed-loop quality (K6), the
+  baseline comparison, measurement integrity, triage hygiene and platform preflight (K7), and
+  the template pin v1.2.1; what was validated where, and that no live `/new-game` run was made
 - `docs/v2.7-release.md` — 2.7.0: the content contract (genre models, `build_spec.content`,
   the content data file, the content and difficulty playability checks), workflow 8's
   `design-gap` return, Research V2, and buildability from a genre family; what was validated

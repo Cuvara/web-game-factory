@@ -9,6 +9,10 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-10-14
+
+Release notes: [docs/v2.8-release.md](docs/v2.8-release.md). Template pin: v1.2.1.
+
 **The act test retakes an action whose attempt ended around it** ([#67](https://github.com/Cuvara/web-game-factory/issues/67),
 `scripts/wgf_playability/bot.spec.ts`). In two acceptance runs the 3D golden's attempt ended by
 the game's own clock - a wall reached the craft - between the snapshot before `pause` and the

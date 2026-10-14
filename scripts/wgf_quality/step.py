@@ -70,7 +70,7 @@ REQUIRED_INPUTS = ("playability-report", "production-quality-report", "visual-qa
                    "prototype-report", "game-design")
 OPTIONAL_INPUTS = ("sdk-report", "review-report", "asset-manifest", "title-strategy",
                    "listing-validation-report", "triage-report", "decision-record",
-                   "knowledge-contract")
+                   "knowledge-contract", "level-design-report")
 FLOOR = "core/reference/quality-floor.yaml"
 BENCHMARK = "core/reference/quality-benchmark.yaml"
 RUBRIC = "core/reference/visual-qa-rubric.yaml"

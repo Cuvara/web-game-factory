@@ -108,7 +108,8 @@
 # 1.4.0: baseline-compare - the candidate against the build a person accepted (playability).
 # 1.5.0: production-quality vfx.fires (hard: pass/fail), vfx.screen_share and vfx.celebration
 #        (quality: held to a share ceiling) - the design's interaction effects (vfx.yaml).
-version: 1.5.0
+# 1.6.0: level-design - the level critic and the risk test (level-design-report).
+version: 1.6.0
 
 applies_at: release
 
@@ -389,6 +390,29 @@ sources:
       baseline.clear_rate: quality
       baseline.entity_size: quality
       baseline.responsiveness: quality
+  level-design:
+    producer: level-design-report
+    defined_in: scripts/wgf_leveldesign
+    # The level critic and the risk test (core/reference/level-design-rubric.yaml,
+    # core/reference/risk-reward.yaml; docs/level-design-critic.md). level.* is reported only
+    # for a design that authors units - a design without levels has none to judge - and the
+    # risk checks always. Required at the release tier, unmeasured is not passed there.
+    # Pass/fail ones (every moment captured, both policies measured) are hard; one held to the
+    # rubric's or the risk bars is quality.
+    status_at:
+      list: checks
+      id: id
+      status: status
+      not_reported:
+        - checks: [level.frames, level.critic]
+          verdict: [PASS, FAIL]
+          ran: risk.
+          why: reported only for a design that authors its units; a design without levels has none to judge
+    checks:
+      level.frames: hard
+      level.critic: quality
+      risk.measured: hard
+      risk.reward: quality
   browser-qa-run:
     producer: verification-report
     findings_via: [qa-report]

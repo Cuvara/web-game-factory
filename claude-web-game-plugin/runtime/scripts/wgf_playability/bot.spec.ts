@@ -29,6 +29,7 @@
 // Factory tooling: it contains no game, and is not part of one.
 
 import { test, type Page } from "@playwright/test";
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -127,6 +128,9 @@ const CFG = JSON.parse(fs.readFileSync(process.env.WGF_PLAY_CONFIG as string, "u
   survey_ms?: number;
   kind_roles?: string[];
   not_content_roles?: string[];
+  // The level critic's frames (core/reference/level-design-rubric.yaml `moments`): with
+  // level_frames, every surveyed unit is captured at its start, middle and end.
+  level_frames?: boolean;
   // Whether the host could measure anything (core/reference/visual-quality.yaml
   // `environment`): the bars a recording's health is judged degraded by, and how many
   // attempts the recordings in retry_records may take. The step's analysis re-judges every
@@ -2627,11 +2631,60 @@ interface SurveyVisit {
   duration_ms: number | null;
   playing_ms: number | null;
   reason?: string;
+  level_frames?: LevelFrame[];
+  level_ms?: number;
 }
 
 function addTo(map: Record<string, string[]>, key: string, value: string): void {
   const list = (map[key] ??= []);
   if (!list.includes(value)) list.push(value);
+}
+
+// The level critic's frames: three of every surveyed unit - its start, its middle and its end
+// as the oracle played it - for the level-design step (core/reference/level-design-rubric.yaml
+// `moments`), each with the entities the probe reported at that moment and its sha256. Kept
+// under <project>/level/, not frames/: they are the level critic's, and visual QA judges
+// frames/ whole. A unit the oracle finishes before a moment is reached has no frame of it,
+// and the record shows which.
+interface LevelFrame {
+  moment: string;
+  file: string;
+  sha256: string;
+  at_ms: number;
+  progress: number | null;
+  // [role, kind, x, y, w, h] of every visible entity but the interface.
+  entities: (string | number | null)[][];
+}
+
+function progressShare(s: Snapshot): number | null {
+  const progress = s.content?.progress;
+  return progress && progress.target > 0 ? progress.value / progress.target : null;
+}
+
+// The moment to capture now, or null: the start a second in, the middle at half the unit's
+// progress (else half its window), the end at three quarters of it (else late in the window).
+function levelMoment(s: Snapshot, elapsedMs: number, taken: LevelFrame[]): string | null {
+  const has = (m: string): boolean => taken.some((f) => f.moment === m);
+  const share = progressShare(s);
+  const span = CFG.survey_unit_ms ?? 0;
+  if (!has("start")) return elapsedMs > 1000 ? "start" : null;
+  if (!has("middle")) return (share !== null && share >= 0.5) || elapsedMs >= span * 0.5 ? "middle" : null;
+  if (!has("end")) return (share !== null && share >= 0.75) || elapsedMs >= span * 0.85 ? "end" : null;
+  return null;
+}
+
+async function levelFrame(page: Page, project: string, id: string, moment: string, s: Snapshot,
+                          atMs: number, copyOf: string | null): Promise<LevelFrame> {
+  const file = `level/${id}-${moment}.png`;
+  const target = path.join(dir(project), ...file.split("/"));
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  // The start is the survey's own one-second frame when it was just taken: the same moment.
+  if (copyOf) fs.copyFileSync(path.join(dir(project), "frames", `${copyOf}.png`), target);
+  else await page.screenshot({ path: target });
+  const sha256 = "sha256:" + crypto.createHash("sha256").update(fs.readFileSync(target)).digest("hex");
+  const entities = (s.entities ?? []).filter((e) => e.visible && e.role !== "ui")
+    .map((e) => [e.role, e.kind ?? null, Math.round(e.x), Math.round(e.y), Math.round(e.w), Math.round(e.h)]);
+  return { moment, file, sha256, at_ms: atMs, progress: progressShare(s), entities };
 }
 
 async function surveyUnit(page: Page, id: string, touch: boolean, watch: Watch, project: string,
@@ -2646,9 +2699,11 @@ async function surveyUnit(page: Page, id: string, touch: boolean, watch: Watch, 
     return visit;
   }
   const kindRoles = new Set(CFG.kind_roles ?? []);
-  const u0 = Date.now();
+  let u0 = Date.now();
   let shot = false;
   let samples = 0;
+  const levels: LevelFrame[] = [];
+  if (CFG.level_frames) visit.level_frames = levels;
   while (Date.now() - u0 < (CFG.survey_unit_ms ?? 0)) {
     const s = watch.saw(await snap(page));
     if (!s) break;
@@ -2676,6 +2731,19 @@ async function surveyUnit(page: Page, id: string, touch: boolean, watch: Watch, 
       if (!shot && Date.now() - u0 > 1000) {
         await frame(page, project, `survey-${id}-1s`, frames);
         shot = true;
+      }
+      if (CFG.level_frames) {
+        const moment = levelMoment(s, Date.now() - u0, levels);
+        if (moment) {
+          // The capture is the observer's time, not the unit's: the unit's window and the
+          // survey's are extended by it, so the survey reaches as many units as without it.
+          const taken = Date.now();
+          levels.push(await levelFrame(page, project, id, moment, s, taken - u0,
+                                       moment === "start" && shot ? `survey-${id}-1s` : null));
+          const spent = Date.now() - taken;
+          u0 += spent;
+          visit.level_ms = (visit.level_ms ?? 0) + spent;
+        }
       }
     }
     if (s.state === "won" || progressDone(s)) {
@@ -2714,12 +2782,14 @@ test("survey: every unit the design lists, entered through the probe's unit link
     return;
   }
   // The survey's own window, beside the per-test timeout every other test shares.
-  test.setTimeout((CFG.survey_ms ?? 0) + units.length * (CFG.start_timeout_ms + 2000) + 60_000);
+  // The level critic's two extra frames per unit are outside the survey's window.
+  test.setTimeout((CFG.survey_ms ?? 0) + units.length * (CFG.start_timeout_ms + 2000
+                                                         + (CFG.level_frames ? 4000 : 0)) + 60_000);
   const frames: string[] = [];
   const watch = new Watch(page, project, frames);
   const touch = Boolean(info.project.use.hasTouch);
   const visits: SurveyVisit[] = [];
-  const t0 = Date.now();
+  let t0 = Date.now();
   for (const id of units) {
     if (Date.now() - t0 > (CFG.survey_ms ?? 0)) {
       visits.push({ asked: id, entered: false, reported: [], index: null, kinds_by_role: {},
@@ -2728,7 +2798,9 @@ test("survey: every unit the design lists, entered through the probe's unit link
                     reason: "survey window spent" });
       continue;
     }
-    visits.push(await surveyUnit(page, id, touch, watch, project, frames));
+    const visit = await surveyUnit(page, id, touch, watch, project, frames);
+    visits.push(visit);
+    t0 += visit.level_ms ?? 0;
   }
   write(project, "survey", { applies: true, asked: units, visits, ...watch.record(), frames });
 });

@@ -9,6 +9,26 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**The level-design step: a level critic and risk and reward** (`new-game` workflow 19,
+`scripts/wgf_leveldesign/`, [docs/level-design-critic.md](docs/level-design-critic.md)).
+After content-sufficiency, a critic reads the start, middle and end frame of every sampled unit
+against the new `core/reference/level-design-rubric.yaml` 1.0.0. The step also holds the
+playability risk test's safe and greedy policies to the new `core/reference/risk-reward.yaml`
+1.0.0: greedy must earn measurably more at a measurably higher failure rate. The new
+`level-design-report` 1.0.0 carries the checks `level.frames`, `level.critic`, `risk.measured`
+and `risk.reward`. The judge is `factory.leveldesign.judge` and ships as `none`, so at the
+release tier the step BLOCKS until an installation configures one, the same as visual QA.
+Playability's survey captures the critic's frames (`level_frames`), and the step asks for the
+risk test (`with: risk: true`), whose settings stay in `play-realism.yaml` `risk`.
+Versions: quality-floor 1.4.0 (`floor.level_design`, `floor.risk_reward`, release blockers),
+quality-policy 1.5.0 (level-design is a required step; a baseline critic or an installation
+rubric makes a run development), specialist-routing 1.9.0, check-tiers 1.5.0,
+quality-assessment 1.2.0 (families `level-critic`, `risk-reward`). Bringing a run forward:
+a run started before this has neither the step nor its pins, and is judged as it started. A
+new release-tier run needs a level critic configured and a probe with `play.policy`, or it
+does not pass the floor. The work comes from wip/level-critic-risk (2026-10-07), reworked
+onto main's play realism.
+
 **The development brief and the GDD carry the design's visual effects** (review of the
 craft-identity-vfx merge, F1). `build_spec.vfx` is now a build-spec section of the brief and of
 `docs/GDD.md` (*Visual effects*), and the brief's play-probe section, when the design declares

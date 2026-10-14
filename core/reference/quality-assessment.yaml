@@ -63,7 +63,8 @@
 # 1.1.0: the baseline comparison's families (accepted-content, accepted-on-screen,
 #        accepted-play, accepted-timing).
 # 1.2.0: feedback-effects - production-quality's vfx checks (core/reference/vfx.yaml).
-version: 1.2.0
+# 1.3.0: the level critic's families (level-critic, risk-reward).
+version: 1.3.0
 
 statuses: [PASS, FAIL, INCONCLUSIVE, NOT_SUPPORTED]
 
@@ -507,6 +508,29 @@ families:
     method: The bot's first-session timing, the act test's before/after frames and the page's requestAnimationFrame count over the win test, on both builds on one host.
     limits: Software rendering on the build host; frames are counted, not timed per input - no input-to-photon latency is measured.
     cannot_justify: That the game feels as responsive on a player's device.
+  # ------------------------------------------------------- the level critic (1.3.0)
+  # core/reference/level-design-rubric.yaml and risk-reward.yaml, the level-design step.
+  - id: level-critic
+    label: Level critic
+    dimension: player_facing
+    class: ai-judged
+    when: reported
+    checks: [level-design:level.frames, level-design:level.critic]
+    judge: {report: level-design-report, kind: judge.kind, runs: judge_runs}
+    measures: Every sampled unit captured at its start, middle and end, and each unit's scores on the rubric's dimensions - play space used, a recognisable layout, more than one viable line, a reveal, a climax that is an event, distinct from the unit before.
+    method: The level-design step's critic - an agent reading the survey's level frames against core/reference/level-design-rubric.yaml; the baseline critic of a golden run measures entity boxes and frame signatures and carries approved scores.
+    limits: An AI judge reading three still frames a unit - it can be fooled, is not stable between runs, and does not see how a unit plays between them.
+    cannot_justify: That a level is well designed or fun to play.
+  - id: risk-reward
+    label: An optional risk that pays
+    dimension: player_facing
+    class: heuristic
+    when: reported
+    checks: [level-design:risk.measured, level-design:risk.reward]
+    measures: Under the game's own oracle, the greedy policy earns measurably more than the safe one at a measurably higher failure rate, on the sampled units.
+    method: The playability bot's risk test (play-realism.yaml `risk`, the probe's play.policy), judged by the level-design step against core/reference/risk-reward.yaml.
+    limits: What `greedy` and `safe` mean is the game's own word; the bars are proposed, not calibrated on measured builds.
+    cannot_justify: That a player sees the risk, or finds taking it worth it.
 
 # Floor criteria no family names: each aggregates checks a family already maps (or, for the
 # `kinds` listed, reads a report whose own checks a family maps), so counting it again would

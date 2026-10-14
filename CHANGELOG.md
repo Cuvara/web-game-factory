@@ -9,6 +9,74 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Measurement integrity: the physics checks read off the pixels** (K7, `play-realism.yaml`
+1.1.0 `contact`, [docs/playability-module.md](docs/playability-module.md) "What the contact
+frames measure, and what they cannot"). `physics.undrawn_collision` and
+`physics.collider_size` read only what the probe says is drawn, so a repair could satisfy them
+without drawing anything: in the 2D validation game a ball drawing enlarged with its collider
+unchanged (68a12b7, retro H3) and undrawn ceilings added so the bot reached units in time
+(cbac64e, H2). The playability bot's new **contact** test (2D builds, desktop and mobile, its
+window outside the time budget) plays with the page's clock stepped one frame per frame drawn,
+freezes the page on the frame that shows a mover just turned, and keeps a crop of it and of the
+same place once the mover left. Two checks read those pixels: `physics.contact_drawn` (hard) -
+something is drawn where the mover turned, whether or not the probe reports a surface there -
+and `physics.drawn_extent` (quality) - the solid drawing over a reported collider, held to the
+same bar as `physics.collider_size`. Where the mover was and its collider stay the game's own
+report (stated per check); a build reporting no collider is unmeasured on its extent, never
+passed. Both are on `floor.physics_drawn`, `physics-fairness` and lesson L11. Replayed on real
+recordings of four commits (`scripts/tests/fixtures/real/play-contact/`): cbac64e and 68a12b7
+FAIL `contact_drawn`, r1 96f5cea PASSes it; with the collider reported (a harness patch to a
+scratch build), 68a12b7 FAILs `drawn_extent` at 2.7 x, 894b4b8 PASSes at 1.0-1.2 x, and r1
+FAILs it at 1.9-2.05 x - its solid disc is 42 px over a 22 px collider, as 894b4b8's own tuning
+says. The contact crops are kept out of the report's `frames` (visual QA judges screens) and
+pinned by sha256 in each check. Bringing an artifact forward: none - a report from an older bot
+has no contact record and gets neither check; a pinned 1.0.0 `play-realism.yaml` keeps a run
+on the old bars.
+
+**Measurement integrity: contact review r2** (K7 review round 2 of e46e2c4,
+`play-realism.yaml` 1.2.0). `physics.drawn_extent` judges the length along the travel again -
+on the opaque pixels only (`contact.along_share` 0.95), upper bar only: a solid tail 3.03 x FAILs
+as it did on 3e8d25f, a fading trail (1.03 x) and a squash still PASS; real `*-r2` 894b4b8 0.73-0.77
+x. A composite whose hit face is drawn nowhere in any frame read is unmeasured even when
+its box holds something drawn (`measured.composite_face_drawn`; the only honest real reading
+0.034). The collider against where it touched is the largest over an entity's turns, not the
+median (honest 0.48-0.92; cbac64e scaled x1.6 now FAILs). Bringing an artifact forward: none -
+a re-judged report can only lose a PASS.
+
+**Measurement integrity: contact review r1** (K7 review of 3e8d25f, `play-realism.yaml` 1.2.0,
+`ReviewR1` and `RealRecordingsR2` in `scripts/tests/test_play_contact.py`). The bot's contact
+test freezes on turns at moving and composite surfaces too (marked `passing`) and keeps a third
+frame (`contact-<n>-later`); the no-mover exit waits six seconds of game time, not of the host's.
+`physics.contact_drawn` reads a surface a later frame cannot show where the mover met it where
+it is - a moving one carried to its place in the frame after, a composite along its face, a
+surface reported anew under another id as that surface - so a box reported where nothing is
+drawn no longer passes by moving 1 px a frame, being labelled a composite or changing its id;
+a surface gone that the mover meets again, or a composite drawn nowhere in any frame read
+(`contact.composite_min_share`), is unmeasured; with the third frame a spark of the hit no
+longer reads as a surface. `physics.drawn_extent` reads a body away from the impact (the frame
+after the turn against the third) and across its travel: a squash on the hit frame or a trail
+along the travel is not the body. Re-recorded on the same builds (`*-r2` fixtures): 894b4b8
+PASSes at 1.05-1.06 x (0.98-1.22 for any `solid_share` 0.3-0.5, was 1.03-1.2 at the impact),
+r1 96f5cea FAILs at 1.95-2.04 x as before, 68a12b7 at 2.32-2.33 x; every drawn contact 103-385,
+every undrawn 4.6-17.1. Also: `contact.max_frame_ms`, which could never fire on a bot record, is
+replaced by `contact.max_travel_px`; a playfield edge that is the viewport's own is a drawn
+edge; a design that declares a projectile the bot never saw is unmeasured, not unreported.
+Bringing an artifact forward: a record without the third frame is judged as before on the
+extent and the sparks; its turns at moving and composite surfaces were never frozen on.
+
+**Measurement integrity: five bypasses closed** (K7 bypass review, `play-realism.yaml` 1.2.0,
+`Bypasses` in `scripts/tests/test_play_contact.py`). A build could still pass the physics
+checks without fixing the game: a collider reported to match the drawing passed
+`physics.drawn_extent` (now held to where it touched the drawn surface it turned at,
+`contact.max_collider_to_contact` 1.15 - honest 0.59-0.86, gamed 1.17-1.97 on the real records);
+an entity reported over a contact in the frame after masked an undrawn wall into
+"unverified" (now read under the mask: nothing drawn even there FAILs); an entity masked in
+every frame dropped out of the extent (now unmeasured); a one-frame hit-stop at each bounce hid
+every turn from `physics.undrawn_collision` and the bot (`physics.hit_stop_frames` 6); and a
+contact test that froze on no turn PASSed while the win test's samples showed turns (now
+unmeasured). Bringing an artifact forward: a report judged under 1.1.0 keeps its verdicts; a
+re-judged one can only lose a PASS.
+
 **A passing report's own findings are recorded, never routed** (K7 #4, retro H12;
 `core/reference/specialist-routing.yaml` 1.7.0 `ledger.noted_on_pass`, triage-report 1.4.0,
 quality-report 1.6.0, quality-finding record `noted`; docs/specialist-routing.md "A passing

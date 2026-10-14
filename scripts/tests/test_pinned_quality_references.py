@@ -47,8 +47,9 @@ class PinnedRun(unittest.TestCase):
         collected = references.collect(PINNED)
         # What the run started under: an older play-realism and browser-QA contract, a
         # different viewport set and lesson list than the live files have now.
-        collected["core/reference/play-realism.yaml"] = collected[
-            "core/reference/play-realism.yaml"].replace(b"version: 1.0.0", b"version: 0.9.0", 1)
+        collected["core/reference/play-realism.yaml"] = re.sub(
+            rb"(?m)^version: [0-9.]+$", b"version: 0.9.0",
+            collected["core/reference/play-realism.yaml"], count=1)
         collected["core/reference/browser-qa.yaml"] = collected[
             "core/reference/browser-qa.yaml"].replace(
             b"  - id: context-menu\n    tier: quality", b"  - id: context-menu\n    tier: advisory", 1)

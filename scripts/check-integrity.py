@@ -367,6 +367,50 @@ def check_platforms():
     return profiles
 
 
+def check_portal_sdks(profiles):
+    """core/reference/portal-sdks.yaml (wgflib.portal_sdks): every key a platform profile,
+    every signature a valid pattern with an id, every loader a script URL, and every profile
+    an entry - one without is undescribed, not SDK-less (a portal with no SDK says
+    `signatures: []`), and platform-validate cannot judge its package."""
+    path = os.path.join("core", "reference", "portal-sdks.yaml")
+    sys.path.insert(0, "scripts")
+    try:
+        from wgflib.yamllite import YamlError, load_file
+        try:
+            document = load_file(path) or {}
+        except (OSError, YamlError) as exc:
+            ERRORS.append(f"{path}: {exc}")
+            return
+    finally:
+        sys.path.pop(0)
+    if not re.match(r"^[0-9]+\.[0-9]+\.[0-9]+$", str(document.get("version") or "")):
+        ERRORS.append(f"{path}: version must be semver")
+    portals = document.get("portals") or {}
+    for pid, entry in portals.items():
+        if pid not in profiles:
+            ERRORS.append(f"{path}: portal '{pid}' has no platform profile in core")
+        entry = entry if isinstance(entry, dict) else {}
+        for item in entry.get("signatures") or []:
+            if not isinstance(item, dict) or not item.get("id") or not item.get("pattern"):
+                ERRORS.append(f"{path}: {pid}: a signature needs an id and a pattern")
+                continue
+            try:
+                re.compile(str(item["pattern"]))
+            except re.error as exc:
+                ERRORS.append(f"{path}: {pid}.{item['id']}: invalid pattern ({exc})")
+        loader = entry.get("loader")
+        if loader is not None and not str((loader or {}).get("script") or "").startswith(
+                "https://"):
+            ERRORS.append(f"{path}: {pid}: loader.script must be an https URL")
+        audit = entry.get("audit")
+        if audit is not None and not all(str((audit or {}).get(k) or "")
+                                         for k in ("cli", "report", "check")):
+            ERRORS.append(f"{path}: {pid}: audit needs cli, report and check")
+    for pid in sorted(set(profiles) - set(portals)):
+        ERRORS.append(f"{path}: no entry for platform '{pid}': say how its SDK is recognised "
+                      "in a bundle, or `signatures: []` when the portal has none")
+
+
 def check_template_adapters(directory, profiles):
     """The lock's platform_adapters is the pinned template's adapter registry: the list
     strategy and tech-plan refuse every other platform by. A profile without an adapter at the
@@ -641,6 +685,13 @@ def check_regression_registry():
 
     problems = registry.problems(os.getcwd())
     ERRORS.extend(problems)
+    # K6.4: the evidence-strength vocabulary and the module that derives it say the same.
+    from wgf_knowledge import strength
+    try:
+        from wgflib.yamllite import load as load_yaml
+        ERRORS.extend(strength.problems(load_yaml(read(strength.VOCABULARY_FILE))))
+    except (OSError, ValueError) as exc:
+        ERRORS.append(f"{strength.VOCABULARY_FILE} cannot be read ({exc})")
     data = registry.load(os.getcwd())
     checks, _ = registry.classify(data["tiers"], os.getcwd())
     strict = os.environ.get("WGF_KNOWLEDGE_STRICT") == "1"
@@ -682,6 +733,7 @@ def main():
     check_charters()
     check_templates()
     platforms = check_platforms()
+    check_portal_sdks(platforms)
     publication = check_publication_profiles()
     check_provider_independence()
     check_no_readme_only_dirs()

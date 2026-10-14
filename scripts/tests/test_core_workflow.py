@@ -815,10 +815,28 @@ class TestCoreCommand(unittest.TestCase):
     def test_the_shipped_mapping_names_every_category(self):
         suite = wgf.load_core_suite()
         self.assertEqual(list(suite), ["WORKFLOW", "AGENTS", "CONTRACTS", "VERIFY", "RELEASE",
-                                       "QUALITY", "2D GOLDEN", "3D GOLDEN", "KNOWLEDGE",
+                                       "QUALITY", "2D GOLDEN", "3D GOLDEN", "GOLDEN LOOP",
+                                       "KNOWLEDGE",
                                        "PROCESS CLEANUP", "SECURITY"])
         self.assertIn("test_core_workflow", suite["WORKFLOW"])
         self.assertIn("test_core_persistence", suite["WORKFLOW"])
+
+    def test_an_opt_in_category_runs_only_when_named_or_enabled(self):
+        # The golden loop is two more golden runs: kept out of a plain run (and the release
+        # gate's --strict) unless enabled or named, and then listed as not run, never PASS.
+        suite = wgf.load_core_suite()
+        opt_in = wgf.load_core_opt_in()
+        self.assertEqual(opt_in, {"GOLDEN LOOP": "WGF_GOLDEN_LOOP"})
+        self.assertEqual(wgf.core_opt_in_not_run(suite, opt_in, environ={}), ["GOLDEN LOOP"])
+        self.assertEqual(wgf.core_opt_in_not_run(suite, opt_in,
+                                                 environ={"WGF_GOLDEN_LOOP": "true"}),
+                         ["GOLDEN LOOP"])
+        self.assertEqual(wgf.core_opt_in_not_run(suite, opt_in,
+                                                 environ={"WGF_GOLDEN_LOOP": "1"}), [])
+        self.assertEqual(wgf.core_opt_in_not_run(suite, opt_in, only=["GOLDEN LOOP"],
+                                                 environ={}), [])
+        self.assertEqual(wgf.core_opt_in_not_run(suite, opt_in, only=["WORKFLOW"],
+                                                 environ={}), [])
 
     def main(self, *argv):
         """(exit code, stdout) of `wgf test-core ...` over the fake suite."""

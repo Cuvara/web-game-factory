@@ -106,7 +106,11 @@ workflow:
   # contract is the knowledge it started under (docs/knowledge-enforcement.md). greybox,
   # develop and triage read the contract (the rules a brief carries, the lessons a finding is
   # guarded by), the quality gate holds the build to it, and release ships it.
-  version: 17
+  # 18: the baseline comparison - a run that adopted a game has both playability steps play
+  # the accepted commit (the design's existing_content) with the same bot and settings and
+  # report the `baseline.*` checks against it; the run pins their tolerances
+  # (core/reference/baseline-compare.yaml, docs/baseline-comparison.md).
+  version: 18
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -125,6 +129,8 @@ workflow:
     - core/reference/browser-qa.yaml
     - core/reference/check-tiers.yaml
     - core/reference/lessons.yaml
+    # 18: the tolerances a candidate is compared with the accepted build under.
+    - core/reference/baseline-compare.yaml
     # 17: what the knowledge is read with - the check sources check-tiers.yaml enumerates
     # that are not pinned above, the scope vocabularies, the policy, the platform profiles.
     - core/reference/content-sufficiency.yaml

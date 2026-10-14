@@ -1558,6 +1558,10 @@ def judge(records, frames_dir, design, rules, experience_rules, project, qa=None
                          **({"reason": "no loss to retry from"} if no_loss else {}),
                          **({"reset_in_unit": mid} if mid is not None else {})},
                expected=f"<= {retry_bar} ms, {goal_metric} reset",
+               # The result screen the retry was pressed on, and what followed it: play back
+               # (state-retry) or the screen a dead retry left (retry-dead, bot.spec.ts).
+               frames=[f for f in lose.get("frames") or []
+                       if f in (f"end-{lose.get('reached')}", "retry-dead", "state-retry")],
                blocked=no_loss))
 
     # What the player must see is drawn, on screen, and large enough.

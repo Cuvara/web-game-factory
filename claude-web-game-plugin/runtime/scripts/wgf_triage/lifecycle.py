@@ -28,28 +28,107 @@ from what this triage can see - never from what a specialist says it did:
 A G4 finding is re-measured by the person: the next G4 decision after the fix verifies it,
 unless that decision is `iterate` naming the same finding again.
 
+A producer that lists its checks one by one (measurement.CHECKED: playability,
+production-quality, listing-validation) re-measures a finding only by measuring the SAME check
+on the SAME project again (measurement.state). "The newest report does not fail it" is not
+enough there, and never verifies:
+
+    unmeasured   the check is listed but measured nothing - BLOCKED, SKIPPED (not
+                 applicable), WARNING, or `measured.unmeasured`: the finding stays open,
+                 `verification.verdict: unmeasured`
+    missing      the report no longer lists the check for that project (removed, or played
+                 only on another viewport): stays open, `verification.verdict: missing`,
+                 named in its history - a check that disappears is reported, never fixed
+    same-build   (playability) the pass was measured on the commit the failure was: a
+                 re-play of the same build, not a repair - stays open
+
+A regression of a fix is a failure of a check that was measured passing before it: the
+record keeps a `baseline` when it is assigned (or implemented) - per producer, the report
+then newest, its commit, the checks it passed (for a producer that lists them: per check,
+as the newest report measured it, else as the ledger last recorded it - a BLOCKED newest
+report does not erase an earlier pass) and the findings it failed. A failure after the fix is a regression only when its check passed in
+that baseline, or the finding was verified before; a producer or check that had never
+measured before the fix (a gate running for the first time) raises a new finding, not a
+regression of the fix. A record with no baseline (a ledger older than triage-report 1.3.0)
+keeps the old rule: any failure first detected at or after the fix.
+
+Every history entry an artifact caused names it by id AND by `content_hash` and run-local
+`seq` where known: two reports of one producer could share an artifact id (greybox and
+develop playability, before the greybox's ids carried their phase), and the hash and seq
+say which one it was. A verification keeps
+`samples`: every later report of the raising producer that measured the same check passing
+again (a single sample of a check known to flip is weak evidence; the count lets a reader
+grade it).
+
+A verified finding of such a producer carries both measurements: `verification.before` (the
+last report that failed it: commit, status, scenario, bot version, frames - kept on the
+record as `failed_measurement`), `verification.after` (the report that passed it) and
+`verification.comparison`, which names every way the two differ (another bot version, other
+settings, viewport or policy): the comparison is then weaker, and says so.
+
 `detected` and `classified` happen when a finding is first normalized (findings.py reads the
 producer; the routing data classifies it), `assigned` when a triage selects its group.
+
+    noted        a finding a PASSING report names itself, at a severity specialist-routing
+                 `ledger.noted_on_pass` lists for its producer (a visual judge's major beside
+                 a pass): detected and classified to its owner, marked `noted`, never
+                 assigned by a triage and never holding the build (`unresolved` leaves it
+                 out) - the producer passed the build, and its verdict stands. It stays open
+                 while the producer's newest report still lists it, is verified when a newer
+                 report of the producer no longer does, and becomes an ordinary finding when
+                 the producer's newest report FAILS it - on every path that advances the
+                 ledger, triage's or the quality gate's and release's (`noted` removed; an
+                 open record gets a `reopened` entry, a done one is reopened as any done
+                 record is). A noted detection is not a measured failure: its `detected`
+                 entry's note starts with NOTED_PREFIX, which no reader of the history
+                 counts as a FAIL (the failing report's `reopened` entry is the first one);
+                 nor is a passing report listing it again after its verification (`noted:
+                 listed again`, never `reopened`). A record that is not noted keeps the
+                 status a passing report's verdict leaves it in; its history says which.
 """
 
-__all__ = ["advance", "unresolved", "OPEN", "DONE"]
+import re
+
+from . import measurement as measurements
+
+__all__ = ["advance", "unresolved", "OPEN", "DONE", "HELD", "NOTED_PREFIX"]
 
 OPEN = ("detected", "classified", "assigned", "implemented")
 DONE = ("verified", "closed")
+# The verdicts of a re-measurement that measured nothing of the finding: it stays open.
+HELD = ("unmeasured", "missing", "same-build")
+# The passing re-measurements a verification keeps (the newest).
+MAX_SAMPLES = 20
+# A history note starting with this is a passing report's listing of a noted record - never a
+# measured failure (a `detected` entry so marked is not one; wgf_knowledge.strength agrees).
+NOTED_PREFIX = "noted:"
+NOTED_RAISED = "raised by a failing report - no longer noted, an ordinary finding"
+_HELD_NOTE = {
+    "unmeasured": "not verified: {producer} lists {check} but measured nothing ({status})",
+    "missing": "not verified: {producer} no longer reports {check} - a check that "
+               "disappears is not a fix",
+    "same-build": "not verified: {producer} passed {check} on the commit it failed on "
+                  "({commit}) - a re-play of the same build, not a repair",
+}
 
 
 def unresolved(lifecycle, severities, producers=None):
     """The ledger's records of a severity in `severities` that are still OPEN - neither
-    verified nor closed - optionally only those raised by one of `producers`."""
-    return [r for r in lifecycle or [] if isinstance(r, dict)
+    verified nor closed - optionally only those raised by one of `producers`. A `noted`
+    record (a passing report's own finding) is never one."""
+    return [r for r in lifecycle or [] if isinstance(r, dict) and not r.get("noted")
             and r.get("status") in OPEN and r.get("severity") in severities
             and (producers is None or (r.get("source") or {}).get("producer") in producers)]
 
 
-def _event(record, status, at, by=None, build=None, note=None):
+def _event(record, status, at, by=None, build=None, note=None, content_hash=None, seq=None):
     record["status"] = status
-    record["history"].append({"status": status, "at": at, "by": by, "build": build,
-                              "note": note})
+    entry = {"status": status, "at": at, "by": by, "build": build, "note": note}
+    if content_hash:
+        entry["content_hash"] = content_hash
+    if seq is not None:
+        entry["seq"] = seq
+    record["history"].append(entry)
 
 
 def _new(finding, at, routing_version, seq):
@@ -66,8 +145,11 @@ def _new(finding, at, routing_version, seq):
     for key, target in (("bar", "expected"), ("measured", "observed")):
         if key in finding:
             record[target] = finding[key]
+    if finding.get("measurement"):
+        record["failed_measurement"] = finding["measurement"]
     _event(record, "detected", at, by=source.get("artifact_id") or source.get("producer"),
-           build=record["build"].get("commit"))
+           build=record["build"].get("commit"), content_hash=source.get("content_hash"),
+           seq=seq)
     _event(record, "classified", at, by=f"specialist-routing {routing_version}",
            note=f"{finding['dimension']} -> {finding['owner']} ({finding['route']})")
     return record
@@ -86,11 +168,213 @@ def _observe(record, finding):
         record["observed"] = finding["measured"]
     if finding.get("task"):
         record["task"] = finding["task"]
+    if finding.get("measurement"):
+        record["failed_measurement"] = finding["measurement"]
+
+
+def _where(record):
+    source = record.get("source") or {}
+    return (f"{source.get('check')}"
+            + (f"@{source.get('project')}" if source.get("project") else ""))
+
+
+def _before(record):
+    """The measurement that last failed the finding: kept on the record, else what the record
+    says of it (a ledger older than this rule)."""
+    if isinstance(record.get("failed_measurement"), dict):
+        return record["failed_measurement"]
+    source = record.get("source") or {}
+    return {"producer": source.get("producer"), "artifact_id": source.get("artifact_id"),
+            "content_hash": source.get("content_hash"),
+            "commit": (record.get("build") or {}).get("commit"), "check": source.get("check"),
+            "project": source.get("project"), "status": "FAIL", "scenario": None, "frames": []}
+
+
+def _remeasured(record, producer, report, failing, measured_by, routing=None):
+    """For a producer that lists its checks: (kind, after) - what its newest report measured
+    of the finding's check (measurement.state), with the measurement; a held kind
+    (`unmeasured`, `missing`, `same-build`) verifies nothing. (None, None) for any other
+    producer: its rule is the newest report not failing the finding's id."""
+    kind = measurements.state(producer, report, record["id"], record.get("source"),
+                              failing.get(producer) or set(), routing)
+    if kind is None:
+        return None, None
+    check = measurements.check_of(producer, report, record.get("source"))
+    after = measurements.of_check(producer, report, check or {},
+                                  commit=(measured_by.get("build") or {}).get("commit"),
+                                  artifact_id=measured_by.get("artifact_id"),
+                                  content_hash=measured_by.get("content_hash"),
+                                  seq=measured_by.get("seq"))
+    if check is None:
+        after.update(check=(record.get("source") or {}).get("check"),
+                     project=(record.get("source") or {}).get("project"))
+    if kind == "pass" and producer == "playability-report":
+        before = _before(record).get("commit")
+        if before and after.get("commit") == before:
+            kind = "same-build"
+    return kind, after
+
+
+def _hold(record, kind, measured_by, after, gates_measured, at):
+    """The re-measurement measured nothing of the finding: it stays as it is, and says why
+    (once per report)."""
+    previous = record.get("verification") or {}
+    record["verification"] = dict(measured_by, verdict=kind, regressions=[],
+                                  gates_measured=gates_measured, observed=after.get("status"),
+                                  before=_before(record), after=after)
+    if previous.get("verdict") == kind and previous.get("artifact_id") == measured_by.get(
+            "artifact_id"):
+        return
+    source = record.get("source") or {}
+    _note(record, at, measured_by, _HELD_NOTE[kind].format(
+        producer=source.get("producer"), check=_where(record), status=after.get("status"),
+        commit=(after.get("commit") or "")[:12]))
+
+
+def _note(record, at, measured_by, note):
+    """A history entry that keeps the status: what a measurement said of it."""
+    entry = {"status": record["status"], "at": at, "by": measured_by.get("artifact_id"),
+             "build": (measured_by.get("build") or {}).get("commit"), "note": note}
+    if measured_by.get("content_hash"):
+        entry["content_hash"] = measured_by["content_hash"]
+    if measured_by.get("seq") is not None:
+        entry["seq"] = measured_by["seq"]
+    record["history"].append(entry)
+
+
+_PART = re.compile(r"^([^:]+:[^/@]+)(?:/[^@]*)?(@.*)?$")
+
+
+def _check_key(fid):
+    """`<producer>:<check>[@<project>]` of a finding id: a split check's route part left out
+    (the check passed means every part of it passed)."""
+    found = _PART.match(str(fid))
+    return (found.group(1) + (found.group(2) or "")) if found else str(fid)
+
+
+def _recorded(records, producer, before):
+    """{check key: (seq, "PASS" | "FAIL")}: the newest measurement of each of `producer`'s
+    checks the ledger itself recorded before `before` (a run-local seq) - the earlier
+    baselines' passing and failing checks, each record's detection and reopening (a failure)
+    and its verified pass (a pass; never a split part's, which says nothing of the check's
+    other parts). The step sees only each producer's newest report; this is what the run
+    measured before it, as far as the ledger kept it. A noted detection (a passing report's
+    listing, NOTED_PREFIX) is not a failure."""
+    out = {}
+
+    def put(key, seq, status):
+        if isinstance(seq, int) and (before is None or seq < before) and (
+                key not in out or seq >= out[key][0]):
+            out[key] = (seq, status)
+    for record in records or ():
+        if not isinstance(record, dict):
+            continue
+        seen = (record.get("baseline") or {}).get(producer) if isinstance(
+            record.get("baseline"), dict) else None
+        if isinstance(seen, dict):
+            for key in seen.get("passing") or ():
+                put(key, seen.get("seq"), "PASS")
+            for fid in seen.get("failing") or ():
+                put(_check_key(fid), seen.get("seq"), "FAIL")
+        if (record.get("source") or {}).get("producer") != producer:
+            continue
+        key = _check_key(record.get("id"))
+        for entry in record.get("history") or ():
+            note = str(entry.get("note") or "") if isinstance(entry, dict) else ""
+            if isinstance(entry, dict) and not note.startswith(NOTED_PREFIX) and (
+                    entry.get("status") == "detected" or note.startswith("reopened")):
+                put(key, entry.get("seq"), "FAIL")
+        verification = record.get("verification") or {}
+        if verification.get("verdict") == "passed" and key == record.get("id"):
+            for measured in [verification] + list(verification.get("samples") or []):
+                if isinstance(measured, dict) and measured.get("status", "PASS") == "PASS":
+                    put(key, measured.get("seq"), "PASS")
+    return out
+
+
+def _baseline(failing, seqs, reports, build_of, before=None, records=None):
+    """What the gates had measured: per producer, its newest report (only those older than
+    `before`, a run-local seq, when given), its commit, the checks it passed (a producer
+    that lists them) and the findings it failed.
+
+    `passing` is per check: the newest report's measurement where it measured the check
+    (PASS or FAIL), else the newest measurement of it the ledger recorded before that report
+    (`records`, _recorded) - so a BLOCKED newest report, its check unmeasured, does not
+    erase a pass measured earlier. A pass in a report the ledger never recorded (no triage
+    read it, no baseline was taken on it) is not known here."""
+    from .findings import finding_id
+    out = {}
+    for producer, ids in (failing or {}).items():
+        seq = seqs.get(producer)
+        if producer == "decision-record" or seq is None or (before is not None
+                                                            and seq >= before):
+            continue
+        report = reports.get(producer) or {}
+        provenance = report.get("provenance") or {}
+        entry = {"artifact_id": provenance.get("artifact_id"),
+                 "content_hash": provenance.get("content_hash"), "seq": seq,
+                 "commit": (build_of(producer) or {}).get("commit"),
+                 "failing": sorted(ids)}
+        if producer in measurements.CHECKED:
+            measured = {}
+            for c in report.get("checks") or []:
+                if not isinstance(c, dict) or c.get("status") not in measurements.MEASURED:
+                    continue
+                unmeasured = isinstance(c.get("measured"), dict) \
+                    and c["measured"].get("unmeasured")
+                if c.get("status") == "PASS" and unmeasured:
+                    continue
+                measured[finding_id(producer, c.get("id"),
+                                    measurements.project_of(producer, c))] = c.get("status")
+            measured.update({_check_key(fid): "FAIL" for fid in ids})
+            earlier = _recorded(records, producer, seq)
+            entry["passing"] = sorted(
+                {key for key, status in measured.items() if status == "PASS"}
+                | {key for key, (_s, status) in earlier.items()
+                   if status == "PASS" and key not in measured})
+        out[producer] = entry
+    return out
+
+
+def _regressed(fid, producer, record, records, after):
+    """Whether `fid`, failing on a build at or after the fix, is a regression of it: its
+    check passed before the fix (the record's baseline), or it was verified before. A
+    failure the ledger already held before the fix is not one; nor is one of a producer or
+    check that had never measured before the fix."""
+    if fid == record["id"]:
+        return False
+    known = records.get(fid)
+    if known is not None and known.get("status") in DONE:
+        return True
+    if known is not None and (known.get("detected_seq") or -1) <= after:
+        return False
+    baseline = record.get("baseline")
+    if not isinstance(baseline, dict):
+        return True  # a ledger older than the baseline: the old rule
+    seen = baseline.get(producer)
+    if not isinstance(seen, dict):
+        return False  # the producer had not measured before the fix: a new finding
+    if producer in measurements.CHECKED:
+        return _check_key(fid) in set(seen.get("passing") or ())
+    return fid not in set(seen.get("failing") or ())
+
+
+def _sample(measured_by, status="PASS"):
+    return {"artifact_id": measured_by.get("artifact_id"),
+            "content_hash": measured_by.get("content_hash"), "seq": measured_by.get("seq"),
+            "commit": (measured_by.get("build") or {}).get("commit"), "status": status}
+
+
+def _evidence(record, after):
+    """verification's before/after pair and how they compare."""
+    before = _before(record)
+    return {"before": before, "after": after,
+            "comparison": measurements.compare(before, after)}
 
 
 def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, decision,
             decision_seq, human_ids, selected, triage_id, routing_version, build_of,
-            handed=None):
+            handed=None, routing=None, noted=None):
     """The ledger after this triage.
 
     previous     the previous triage-report's `lifecycle` (or [])
@@ -107,11 +391,49 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
     handed       [(finding, {"specialist", "artifact_id", "seq"})]: findings a gate routed
                  straight to a step that has run since (the assets step's asset-manifest),
                  so no triage routed them
+    routing      the routing.Routing whose split rules re-split a check (measurement.state);
+                 the shipped data when None
+    noted        {producer: [findings]}: what each newest report that PASSES names itself
+                 at the severities `ledger.noted_on_pass` lists (ledger.noted_reports) -
+                 recorded `noted`, never assigned, never holding the build
     """
+    noted = {kind: list(items or []) for kind, items in (noted or {}).items()}
+    listed = {kind: {f["id"] for f in items} for kind, items in noted.items()}
     records = {}
     for record in previous or []:
         if isinstance(record, dict) and record.get("id"):
             records[record["id"]] = dict(record, history=list(record.get("history") or []))
+
+    # raised: a noted record its producer's newest report now FAILS is an ordinary finding
+    # from here on, on every path that advances the ledger (triage, or the quality gate and
+    # release with current=[]). Its history says so with a note starting "reopened" - the
+    # failing report is the record's first measured failure (lifecycle readers and
+    # wgf_knowledge.strength count a `reopened` entry as a FAIL, never a noted detection).
+    # A done one loses `noted` where it is reopened below, by the same rule as any done record.
+    for record in records.values():
+        producer = (record.get("source") or {}).get("producer")
+        if not record.get("noted") or record["status"] in DONE or producer not in failing \
+                or record["id"] not in failing[producer]:
+            continue
+        record.pop("noted")
+        report = reports.get(producer) or {}
+        provenance = report.get("provenance") or {}
+        record["build"] = build_of(producer) or record.get("build")
+        record["fix"] = None
+        # the failure a later verification is compared with is the failing report's, never
+        # the passing report's measurement the noted record was detected with
+        check = measurements.check_of(producer, report, record.get("source"))
+        if check is not None:
+            record["failed_measurement"] = measurements.of_check(
+                producer, report, check, commit=(record["build"] or {}).get("commit"),
+                artifact_id=provenance.get("artifact_id"),
+                content_hash=provenance.get("content_hash"), seq=seqs.get(producer))
+        else:
+            record.pop("failed_measurement", None)
+        _event(record, "classified", at, by=provenance.get("artifact_id"),
+               build=(record["build"] or {}).get("commit"),
+               note=f"reopened: {NOTED_RAISED} ({producer} fails it)",
+               content_hash=provenance.get("content_hash"), seq=seqs.get(producer))
 
     # implemented: the owner's visit, from the prototype-report it produced.
     block = (proto or {}).get("specialist") if isinstance(proto, dict) else None
@@ -124,8 +446,14 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
                     (record.get("fix") or {}).get("prototype_report") == proto_id):
                 record["fix"] = {"specialist": block.get("role"), "commit": commit,
                                  "prototype_report": proto_id, "seq": proto_seq}
+                if "baseline" not in record:
+                    record["baseline"] = _baseline(failing, seqs, reports, build_of,
+                                                   before=proto_seq,
+                                                   records=list(records.values()))
                 _event(record, "implemented", at, by=proto_id, build=commit,
-                       note=f"{block.get('role')} visit {(proto or {}).get('iteration')}")
+                       note=f"{block.get('role')} visit {(proto or {}).get('iteration')}",
+                       content_hash=((proto or {}).get("provenance") or {}).get("content_hash"),
+                       seq=proto_seq)
 
     # verified / still failing / regressed: only the raising producer's re-measurement.
     for record in records.values():
@@ -142,7 +470,7 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
                            "artifact_id": ((decision.get("provenance") or {})
                                            .get("artifact_id")),
                            "content_hash": None, "build": {"commit": commit, "digest": None},
-                           "observed": decision.get("decision")}
+                           "observed": decision.get("decision"), "seq": decision_seq}
         else:
             if producer not in failing or (seqs.get(producer) or -1) <= after:
                 continue
@@ -152,36 +480,50 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
                            "artifact_id": (report.get("provenance") or {}).get("artifact_id"),
                            "content_hash": (report.get("provenance") or {}).get("content_hash"),
                            "build": build_of(producer),
-                           "observed": "fails" if still else "passes"}
+                           "observed": "fails" if still else "passes",
+                           "seq": seqs.get(producer)}
         measured = sorted(p for p, s in seqs.items() if (s or -1) > after)
+        kind, remeasured = (None, None) if producer == "decision-record" else _remeasured(
+            record, producer, reports.get(producer), failing, measured_by, routing)
+        if kind == "fail" and not still:
+            still = True
+            measured_by["observed"] = "fails"
+        if kind in HELD:
+            _hold(record, kind, measured_by, remeasured, measured, at)
+            continue
         if still:
+            if remeasured is not None:
+                record["failed_measurement"] = remeasured
             record["verification"] = dict(measured_by, verdict="still-failing",
                                           regressions=[], gates_measured=measured)
             _event(record, "classified", at, by=measured_by["artifact_id"],
                    build=measured_by["build"].get("commit"),
-                   note="reopened: the raising gate still fails it after the fix")
+                   note="reopened: the raising gate still fails it after the fix",
+                   content_hash=measured_by.get("content_hash"), seq=measured_by.get("seq"))
             record["fix"] = None
             continue
-        # A regression: a failure first detected on a build at or after this fix.
+        # A regression: a check measured passing before this fix fails at or after it.
         regressions = sorted(
             fid for p, ids in failing.items() if (seqs.get(p) or -1) > after for fid in ids
-            if fid != record["id"] and (fid not in records
-                                        or (records[fid].get("detected_seq") or -1) > after
-                                        or records[fid]["status"] in DONE))
+            if _regressed(fid, p, record, records, after))
         if regressions:
             record["verification"] = dict(measured_by, verdict="regressed",
-                                          regressions=regressions, gates_measured=measured)
-            record["history"].append({
-                "status": "implemented", "at": at, "by": measured_by["artifact_id"],
-                "build": measured_by["build"].get("commit"),
-                "note": "not verified: the build carrying the fix fails what passed before: "
-                        + ", ".join(regressions[:6])})
+                                          regressions=regressions, gates_measured=measured,
+                                          **(_evidence(record, remeasured) if remeasured
+                                             else {}))
+            _note(record, at, measured_by,
+                  "not verified: the build carrying the fix fails what passed before: "
+                  + ", ".join(regressions[:6]))
             continue
         record["verification"] = dict(measured_by, verdict="passed", regressions=[],
-                                      gates_measured=measured)
+                                      gates_measured=measured, samples=[_sample(measured_by)],
+                                      **(_evidence(record, remeasured) if remeasured else {}))
         _event(record, "verified", at, by=measured_by["artifact_id"],
                build=measured_by["build"].get("commit"),
-               note=f"{producer} re-measured a build at or after the fix: no longer fails")
+               note=f"{producer} re-measured a build at or after the fix: no longer fails"
+                    + (f" ({record['verification']['comparison']['note']})"
+                       if remeasured else ""),
+               content_hash=measured_by.get("content_hash"), seq=measured_by.get("seq"))
 
     # verified with no recorded fix: the raising producer measured a newer build than the
     # one it was detected on, and it no longer fails there.
@@ -198,25 +540,101 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
                 continue
             measured_by = {"producer": producer, "artifact_id": decided.get("artifact_id"),
                            "content_hash": None, "build": {"commit": commit, "digest": None},
-                           "observed": decision.get("decision")}
+                           "observed": decision.get("decision"), "seq": decision_seq}
             measured = []
         else:
             if producer not in failing or detected is None \
                     or (seqs.get(producer) or -1) <= detected \
-                    or record["id"] in failing[producer]:
+                    or record["id"] in failing[producer] \
+                    or (record.get("noted") and record["id"] in listed.get(producer, ())):
                 continue
             report = reports.get(producer) or {}
             measured_by = {"producer": producer,
                            "artifact_id": (report.get("provenance") or {}).get("artifact_id"),
                            "content_hash": (report.get("provenance") or {}).get("content_hash"),
-                           "build": build_of(producer), "observed": "passes"}
+                           "build": build_of(producer), "observed": "passes",
+                           "seq": seqs.get(producer)}
             measured = sorted(p for p, s in seqs.items() if (s or -1) > detected)
+        remeasured = None
+        if producer != "decision-record":
+            kind, remeasured = _remeasured(record, producer, reports.get(producer), failing,
+                                           measured_by, routing)
+            if kind == "fail":
+                continue  # the whole check still fails, in a report that is not failing
+            if kind in HELD:
+                _hold(record, kind, measured_by, remeasured, measured, at)
+                continue
         record["verification"] = dict(measured_by, verdict="passed", regressions=[],
-                                      gates_measured=measured)
+                                      gates_measured=measured, samples=[_sample(measured_by)],
+                                      **(_evidence(record, remeasured) if remeasured else {}))
         _event(record, "verified", at, by=measured_by["artifact_id"],
                build=measured_by["build"].get("commit"),
                note=f"{producer} measured a newer build than it was detected on: no longer "
-                    f"fails (no fix was recorded for it)")
+                    f"fails (no fix was recorded for it)"
+                    + (f" ({record['verification']['comparison']['note']})"
+                       if remeasured else ""),
+               content_hash=measured_by.get("content_hash"), seq=measured_by.get("seq"))
+
+    # samples: every later report of the raising producer that measures the verified
+    # finding's check passing again - how many times the pass was seen, never a status.
+    for record in records.values():
+        verification = record.get("verification") or {}
+        samples = verification.get("samples")
+        producer = (record.get("source") or {}).get("producer")
+        if record["status"] not in DONE or not isinstance(samples, list) \
+                or producer == "decision-record" or producer not in failing:
+            continue
+        seq = seqs.get(producer)
+        last = max((x.get("seq") or -1 for x in samples), default=-1)
+        if seq is None or seq <= last or record["id"] in failing[producer]:
+            continue
+        report = reports.get(producer) or {}
+        if measurements.state(producer, report, record["id"], record.get("source"),
+                              failing[producer], routing) not in (None, "pass"):
+            continue
+        provenance = report.get("provenance") or {}
+        samples.append(_sample({"artifact_id": provenance.get("artifact_id"),
+                                "content_hash": provenance.get("content_hash"), "seq": seq,
+                                "build": build_of(producer)}))
+        del samples[:-MAX_SAMPLES]
+
+    # reopened: a done finding whose raising producer's newest report - newer than every
+    # measurement the record holds - fails it again. Triage reopens it from `current` as
+    # well; the quality gate and release advance the ledger with no findings of their own
+    # (current=[]), so without this a closed record would sit beside the report failing it.
+    for record in records.values():
+        producer = (record.get("source") or {}).get("producer")
+        if record["status"] not in DONE or producer == "decision-record" \
+                or producer not in failing or record["id"] not in failing[producer]:
+            continue
+        verification = record.get("verification") or {}
+        held = [verification.get("seq")] + [x.get("seq") for x in
+                                            verification.get("samples") or []
+                                            if isinstance(x, dict)]
+        held += [h.get("seq") for h in record.get("history") or [] if isinstance(h, dict)]
+        last = max((x for x in held if isinstance(x, int)), default=-1)
+        seq = seqs.get(producer)
+        if seq is None or seq <= last:
+            continue
+        report = reports.get(producer) or {}
+        provenance = report.get("provenance") or {}
+        # As triage's _observe would: the reopening report is now the build and the failure
+        # a later verification is compared with - so a re-play of this build is held
+        # `same-build`, and `before` names this failure, not the one first detected.
+        record["build"] = build_of(producer) or record.get("build")
+        check = measurements.check_of(producer, report, record.get("source"))
+        if check is not None:
+            record["failed_measurement"] = measurements.of_check(
+                producer, report, check, commit=(record["build"] or {}).get("commit"),
+                artifact_id=provenance.get("artifact_id"),
+                content_hash=provenance.get("content_hash"), seq=seq)
+        record["fix"] = None
+        was_noted = record.pop("noted", None) is not None
+        _event(record, "classified", at, by=provenance.get("artifact_id"),
+               build=(record["build"] or {}).get("commit"),
+               note="reopened: failing again after it was " + record["status"]
+                    + (f"; {NOTED_RAISED}" if was_noted else ""),
+               content_hash=provenance.get("content_hash"), seq=seq)
 
     # handed: a gate sent these straight to another step, which has run since: recorded,
     # and implemented by that step's artifact, so the gates' re-measurement verifies them.
@@ -233,9 +651,12 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
                    build=(finding.get("build") or {}).get("commit"),
                    note="reopened: failing again after it was " + record["status"])
         if record["status"] in ("detected", "classified"):
+            record["baseline"] = _baseline(failing, seqs, reports, build_of,
+                                           records=list(records.values()))
             _event(record, "assigned", at, by=(finding.get("source") or {}).get("artifact_id"),
                    note=f"routed `{finding.get('route')}` straight from "
-                        f"{(finding.get('source') or {}).get('step') or 'its gate'}")
+                        f"{(finding.get('source') or {}).get('step') or 'its gate'}",
+                   content_hash=(finding.get("source") or {}).get("content_hash"))
         if record["status"] == "assigned" and not (
                 (record.get("fix") or {}).get("artifact_id") == made.get("artifact_id")):
             record["fix"] = {"specialist": made.get("specialist"), "commit": None,
@@ -258,6 +679,52 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
                    note="every gate of the run measured the build carrying the fix: "
                         + ", ".join(sorted(gates)))
 
+    # noted: a passing report's own findings, recorded; they hold nothing.
+    for producer, items in noted.items():
+        seq = seqs.get(producer)
+        verdict = (reports.get(producer) or {}).get("verdict")
+        for finding in items:
+            source = finding.get("source") or {}
+            measured_by = {"artifact_id": source.get("artifact_id"),
+                           "content_hash": source.get("content_hash"), "seq": seq,
+                           "build": finding.get("build") or {}}
+            mark = {"producer": producer, "artifact_id": source.get("artifact_id"),
+                    "content_hash": source.get("content_hash"), "seq": seq,
+                    "verdict": verdict,
+                    "reason": (f"named {finding.get('severity')} by a {verdict} {producer}: "
+                               "recorded, not routed, holding nothing - the report's "
+                               "verdict stands")}
+            record = records.get(finding["id"])
+            if record is None:
+                record = records[finding["id"]] = _new(finding, at, routing_version, seq)
+                record["noted"] = mark
+                # the detection is a passing report's: marked so no reader takes it for a
+                # measured failure (NOTED_PREFIX)
+                record["history"][0]["note"] = f"{NOTED_PREFIX} {mark['reason']}"
+            elif record.get("noted"):
+                if record["noted"].get("seq") == seq:
+                    continue
+                _observe(record, finding)
+                record["noted"] = mark
+                if record["status"] in DONE:
+                    # listed again after its verification - by a PASSING report: open again,
+                    # still noted, and never a failure (the note does not say `reopened`)
+                    _event(record, "classified", at, by=source.get("artifact_id"),
+                           build=(finding.get("build") or {}).get("commit"),
+                           note=f"{NOTED_PREFIX} listed again by a {verdict} {producer} "
+                                f"after it was {record['status']}",
+                           content_hash=source.get("content_hash"), seq=seq)
+                else:
+                    _note(record, at, measured_by,
+                          f"{NOTED_PREFIX} listed again by a {verdict} {producer}")
+            elif not any(isinstance(h, dict) and h.get("seq") == seq
+                         and str(h.get("note") or "").startswith("listed by a passing")
+                         for h in record["history"]):
+                _note(record, at, measured_by,
+                      f"listed by a passing {producer} at {finding.get('severity')}: its "
+                      f"verdict stands; the record is {record['status']} as that verdict "
+                      "leaves it (an ordinary finding, not noted)")
+
     # detected / classified, or re-observed, or reopened.
     for finding in current:
         record = records.get(finding["id"])
@@ -271,12 +738,15 @@ def advance(previous, *, at, current, failing, seqs, reports, proto, proto_seq, 
             _event(record, "classified", at,
                    by=(finding.get("source") or {}).get("artifact_id"),
                    build=(finding.get("build") or {}).get("commit"),
-                   note="reopened: failing again after it was " + record["status"])
+                   note="reopened: failing again after it was " + record["status"],
+                   content_hash=(finding.get("source") or {}).get("content_hash"))
 
     # assigned: the group this triage routes.
     for fid in (selected or {}).get("findings") or []:
         record = records.get(fid)
         if record and record["status"] in ("detected", "classified"):
+            record["baseline"] = _baseline(failing, seqs, reports, build_of,
+                                           records=list(records.values()))
             _event(record, "assigned", at, by=triage_id,
                    note=f"to {(selected or {}).get('owner')} (route "
                         f"{(selected or {}).get('label')})")

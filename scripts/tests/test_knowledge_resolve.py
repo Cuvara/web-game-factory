@@ -214,10 +214,10 @@ class Applicability(unittest.TestCase):
         self.assertTrue(l23["tests"]["catches"] and l23["tests"]["passes"])
         for test in model.all_tests(model_lesson("L23")):
             self.assertIn(test, body["regression_suite"])
-        self.assertEqual(body["counts"], {"blocking": 6, "required": 14, "recommended": 0,
-                                          "experimental": 6, "not_applicable": 3})
+        self.assertEqual(body["counts"], {"blocking": 6, "required": 15, "recommended": 0,
+                                          "experimental": 5, "not_applicable": 3})
         self.assertEqual({e["id"] for e in body["experimental"]},
-                         {"L8", "L9", "L16", "L17", "L18", "L21"})
+                         {"L9", "L16", "L17", "L18", "L21"})
 
     def test_facets_from_a_design_and_a_strategy(self):
         design = {"genre": {"family": "racing", "node": "kart"}, "engine": {"dimension": "3d"}}

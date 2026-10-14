@@ -29,7 +29,10 @@
        classified, assigned, implemented, verified, closed - verified and closed only on the
        raising producer's re-measurement of a newer build, and never past a regression. It
        continues from the newest ledger in the run (ledger.previous_lifecycle): the quality
-       gate advances it too, on the reports it sees (ledger.remeasure).
+       gate advances it too, on the reports it sees (ledger.remeasure). A gate report that
+       PASSES but names blocker or major findings of its own (specialist-routing
+       `ledger.noted_on_pass`: the visual judge's) has them recorded `noted` - classified
+       to their owner, listed in `noted`, never routed and never holding the build.
     6. Regression knowledge (WS-9). Each finding whose check a lesson of
        core/reference/lessons.yaml names carries it as `guarded_by` - the specialist sees a
        known failure and the test that holds it. From the lessons the run pinned; with the
@@ -294,6 +297,10 @@ class TriageStep(WorkflowStep):
         normalized = ledgers.normalize_reports(reports, inputs.refs, routing,
                                                dimension_3d=dimension_3d, commit=commit,
                                                verification=verification)
+        # a passing report's own findings (ledger.noted_on_pass): recorded, never routed
+        noted = ledgers.noted_reports(reports, inputs.refs, routing,
+                                      dimension_3d=dimension_3d, commit=commit,
+                                      verification=verification)
 
         decision = _load(inputs, "decision-record")
         decision_seq = _seq(inputs, "decision-record")
@@ -328,7 +335,7 @@ class TriageStep(WorkflowStep):
             reports={kind: report for kind, report in reports.items() if report is not None},
             proto=proto, proto_seq=proto_seq, decision=decision, decision_seq=decision_seq,
             human_ids={f["id"] for f in human}, routing_version=routing.version,
-            build_of=build_of)
+            build_of=build_of, noted=noted)
         gate_seqs = [_seq(inputs, kind) for kind in GATE_REPORTS if reports.get(kind)]
         measured_since = any(seq > previous_seq for seq in gate_seqs)
         if decision_seq > previous_seq and sent_back:
@@ -563,7 +570,7 @@ class TriageStep(WorkflowStep):
             selected=selected, triage_id=artifact_id,
             routing_version=life.get("routing_version") or routing.version,
             build_of=life.get("build_of") or (lambda kind: {"commit": commit, "digest": None}),
-            handed=life.get("handed"))
+            handed=life.get("handed"), routing=routing, noted=life.get("noted"))
         _guard(findings, context, _load(inputs, "knowledge-contract"))
         candidates = _lesson_candidates(_load(inputs, "triage-report"), life.get("proto"))
         body = {
@@ -592,6 +599,13 @@ class TriageStep(WorkflowStep):
         }
         if candidates:
             body["lesson_candidates"] = candidates
+        noted = [{"finding": f["id"], "severity": f["severity"],
+                  "producer": kind, "reason": r["noted"]["reason"]}
+                 for kind, items in sorted((life.get("noted") or {}).items())
+                 for f in items for r in lifecycle
+                 if r.get("id") == f["id"] and isinstance(r.get("noted"), dict)]
+        if noted:
+            body["noted"] = noted
         return ArtifactOutput("triage-report", provenance.seal(body), metadata={
             "verdict": verdict, "route": (selected or {}).get("label"),
             "owner": (selected or {}).get("owner"), "findings": len(findings),

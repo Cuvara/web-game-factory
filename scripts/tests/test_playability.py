@@ -31,7 +31,7 @@ sys.path.insert(0, SCRIPTS)
 
 from wgf_assets.raster import Image, encode_png  # noqa: E402
 from wgf_design.experience import load_rules as experience_rules  # noqa: E402
-from wgf_playability import analysis  # noqa: E402
+from wgf_playability import analysis, scenario  # noqa: E402
 from wgf_playability.step import PlayabilityStep, load_rules  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
 from wgflib.workflow.model import StepOutcome  # noqa: E402
@@ -184,6 +184,17 @@ class Judge(unittest.TestCase):
     def test_a_retry_that_does_not_reset(self):
         self.records["lose"]["restart"]["metrics"]["saves"] = 5
         self.assertIn("restart.works", self.failed())
+
+    def test_a_dead_retry_cites_the_screen_it_left(self):
+        # The bot's frame after a retry that never returned to play (bot.spec.ts `retry-dead`)
+        # and the result screen it was pressed on are restart.works' evidence; the lose
+        # recording's other frames are not.
+        lose = self.records["lose"]
+        lose["restart"].update({"playingMs": None})
+        lose["frames"] = ["state-lost", "end-lost", "retry-dead"]
+        check = self.judge()["restart.works"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertEqual(check["frames"], ["end-lost", "retry-dead"])
 
     def test_a_threat_too_small_to_read(self):
         self.records["win"]["sampled"] = entity_frames(attacker_size=3)
@@ -1414,6 +1425,133 @@ class TheAntiOracle(unittest.TestCase):
         self.has("filter((m) => !UTILITY.test(m.action) && !UNDO.test(m.action))")
 
 
+_ACT_HARNESS = r"""
+// The harness: plays scripted snapshots through takeAction and prints what it did.
+const script = JSON.parse(process.argv[2]);
+let i = 0;
+const log = [];
+const frames = [];
+const deps = {
+  snap: async () => { const s = script.snaps[Math.min(i, script.snaps.length - 1)]; i += 1; log.push(`snap:${s ? s.state : null}`); return s; },
+  press: async (move) => { log.push(`press:${move.action}`); },
+  frame: async (id) => { frames.push(id); log.push(`frame:${id}`); },
+  retry: async (s) => { log.push(`retry:${s ? s.state : null}`); },
+  wait: async () => {},
+  frames,
+  ackMs: 100,
+};
+takeAction(script.first, deps).then((entry) => {
+  process.stdout.write(JSON.stringify({ entry, frames, log }));
+});
+"""
+
+
+def _state(name, *actions):
+    return {"state": name, "inputs": [{"action": a, "input": {"type": "pointer", "x": 1, "y": 2}}
+                                      for a in actions]}
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not on PATH")
+class TheActTest(unittest.TestCase):
+    """The act test's actions (bot.spec.ts takeAction). In two acceptance runs (issue #67) the
+    3D golden's attempt ended by the game's own clock - a wall reached the craft - between the
+    snapshot before `pause` and the frame after it: the frame act-pause-after showed the lose
+    screen (record: before playing at score 53, after lost at 99), visual QA judged it as the
+    pause screen and failed the run. takeAction is cut out of bot.spec.ts and run under node
+    (type annotations stripped) with scripted snapshots."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(os.path.join(SCRIPTS, "wgf_playability", "bot.spec.ts"), encoding="utf-8") as handle:
+            source = handle.read()
+        begin = source.index("// -- act-take")
+        cls.block = source[begin:source.index("// -- end act-take", begin)]
+        cls.dir = tempfile.mkdtemp(prefix="wgf-act-take-")
+        cls.script = os.path.join(cls.dir, "act-take.ts")
+        with open(cls.script, "w", encoding="utf-8") as handle:
+            handle.write(cls.block + _ACT_HARNESS)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.dir, ignore_errors=True)
+
+    def take(self, snaps, first="pause"):
+        done = subprocess.run(
+            ["node", "--experimental-strip-types", "--no-warnings", self.script,
+             json.dumps({"first": {"action": first, "input": {"type": "pointer", "x": 1, "y": 2}},
+                         "snaps": snaps})],
+            capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return json.loads(done.stdout)
+
+    def test_an_action_in_play_is_taken_once(self):
+        out = self.take([_state("playing", "pause"), _state("paused", "resume")])
+        self.assertEqual(out["frames"], ["act-pause-before", "act-pause-after"])
+        self.assertEqual(out["entry"]["after"]["state"], "paused")
+        self.assertNotIn("ended_attempts", out["entry"])
+        self.assertEqual(out["log"].count("press:pause"), 1)
+
+    def test_an_attempt_that_ended_around_the_action_is_taken_again_from_play(self):
+        # The #67 case: in play before, lost once the frame was taken. Retried, back in play,
+        # taken again - and the second time it pauses.
+        out = self.take([_state("playing", "pause"), _state("lost", "retry"),
+                         _state("lost", "retry"), _state("playing", "pause"),
+                         _state("paused", "resume")])
+        self.assertEqual(out["entry"]["after"]["state"], "paused")
+        self.assertEqual(out["entry"]["ended_attempts"], 1)
+        # The ended attempt's frames are taken again under the same names, listed once.
+        self.assertEqual(out["frames"], ["act-pause-before", "act-pause-after"])
+        self.assertIn("retry:lost", out["log"])
+        self.assertEqual(out["log"].count("press:pause"), 2)
+
+    def test_an_action_that_keeps_ending_the_attempt_is_kept_and_says_so(self):
+        # Bounded: the first take and ACT_RESTARTS (2) more, then measured as is.
+        snaps = [_state("playing", "pause"), _state("lost", "retry")] * 2 + [
+            _state("lost", "retry"), _state("playing", "pause"), _state("lost", "retry")]
+        out = self.take(snaps)
+        self.assertEqual(out["log"].count("press:pause"), 3)
+        self.assertEqual(out["entry"]["ended_attempts"], 3)
+        self.assertEqual(out["entry"]["after"]["state"], "lost")
+        self.assertEqual(out["frames"], ["act-pause-before", "act-pause-after"])
+
+    def test_a_retry_that_lands_on_a_title_screen_begins_play_again(self):
+        # Review of the fix (N1): a retry can leave the game on its title, whose input is
+        # `start`, not a resume; the action is taken from play, not from the title.
+        out = self.take([_state("playing", "pause"), _state("lost", "retry"),
+                         _state("lost", "retry"), _state("title", "start"),
+                         _state("playing", "pause"), _state("paused", "resume")])
+        self.assertIn("press:start", out["log"])
+        self.assertEqual(out["entry"]["before"]["state"], "playing")
+        self.assertEqual(out["entry"]["after"]["state"], "paused")
+
+    def test_an_action_that_never_reached_play_is_not_retaken(self):
+        # Not in play before the action: nothing ended around it, measured as is.
+        out = self.take([_state("title"), _state("lost", "retry")])
+        self.assertEqual(out["log"].count("press:pause"), 1)
+        self.assertNotIn("ended_attempts", out["entry"])
+
+    def test_the_act_test_takes_every_action_through_take_action(self):
+        with open(os.path.join(SCRIPTS, "wgf_playability", "bot.spec.ts"), encoding="utf-8") as handle:
+            source = handle.read()
+        start = source.index('test("act: every action is acknowledged on screen"')
+        body = source[start:source.index("\ntest(", start + 1)]
+        self.assertIn("acted.push(await takeAction(first, {", body)
+        self.assertNotIn("frame(page, project, `${id}", body)
+
+
+class ActScenario(unittest.TestCase):
+    """A scenario lists every press only when the bot recorded every press: an action taken
+    again after its attempt ended (takeAction, #67) had presses its record does not list."""
+
+    def test_an_action_taken_again_leaves_the_scenario_incomplete(self):
+        entry = {"action": "pause", "input": {"type": "pointer", "x": 1, "y": 2},
+                 "before": {"state": "playing"}, "after": {"state": "paused"}}
+        _, complete = scenario._actions("act", {"acted": [entry]})
+        self.assertTrue(complete)
+        _, complete = scenario._actions("act", {"acted": [dict(entry, ended_attempts=1)]})
+        self.assertFalse(complete)
+
+
 class TheShowcase(unittest.TestCase):
     """The probe's optional showcase (play.showcase): the bot asks a game that declares it to
     stage the states where later content's assets are drawn, so the production gate can see
@@ -2128,6 +2266,254 @@ class TheBotsValidity(unittest.TestCase):
     def test_the_config_retries_as_many_times_as_the_rules_allow(self):
         from wgf_playability.step import CONFIG
         self.assertIn("retries: 1,", CONFIG.format(port=1, proxy_var="X", bypass="", retries=1))
+
+
+# -- the scenario each check was measured on (playability-report 1.4.0) ----------------------
+#
+# FIXTURE bot records (made here, in the shape bot.spec.ts writes them), written to a run's
+# records directory and taken through the step's own path: analysis.judge, the frames, the
+# scenarios (scenario.build) and the report (_finish), validated against the schema.
+
+BOT_A = "sha256:" + "a1" * 32
+PROJECTS2 = (("desktop", 1280, 720), ("mobile", 390, 844))
+
+
+def well_played():
+    """A well-behaved game's records, as the bot records them (fixture)."""
+    dive = {"type": "pointer", "x": 50, "y": 90}
+    return {
+        "first-session": {"firstSnapshotMs": 100, "playingMs": 900, "began": "play",
+                          "samples": [snapshot("loading"), snapshot()],
+                          "texts": ["Save eight shots before your lives run out"],
+                          "states": [{"ms": 0, "state": "playing"}],
+                          "lostAtMs": None, "errors": [], "frames": ["first-session-1s"]},
+        "act": {"began": "play", "playingMs": 700,
+                "acted": [{"action": "dive", "input": dive, "before": snapshot(),
+                           "after": snapshot(saves=1)}],
+                "frames": ["act-dive-before", "act-dive-after"]},
+        "win": {"reached": "won", "inputs": 8, "sampled": entity_frames(),
+                "series": [{"ms": 0, "value": 0, "state": "playing"},
+                           {"ms": 4000, "value": 8, "state": "won"}],
+                "frames": ["play-2s", "end-won"]},
+        "lose": {"reached": "lost", "initial": {"saves": 0, "lives": 3},
+                 "wrongPresses": [{"ms": 150, "action": "dive", "picked": 0, "of": 1,
+                                   "repeated": False},
+                                  {"ms": 300, "action": "dive", "picked": 0, "of": 1,
+                                   "repeated": True}],
+                 "series": [{"ms": 0, "state": "playing", "metrics": {"saves": 0, "lives": 3},
+                             "content": None},
+                            {"ms": 2100, "state": "lost", "metrics": {"saves": 0, "lives": 0},
+                             "content": None}],
+                 "restart": {"clicked": "input:retry", "playingMs": 300,
+                             "metrics": {"saves": 0, "lives": 3}},
+                 "frames": ["end-lost"]},
+    }
+
+
+def _write_frames(directory):
+    os.makedirs(directory, exist_ok=True)
+    frame(os.path.join(directory, "first-session-1s.png"), 110, (20, 20, 40))
+    frame(os.path.join(directory, "play-2s.png"), 120, (60, 60, 40))
+    frame(os.path.join(directory, "act-dive-before.png"), 110)
+    frame(os.path.join(directory, "act-dive-after.png"), 110, (100, 100, 30))
+    frame(os.path.join(directory, "end-won.png"), 130, (10, 10, 20))
+    frame(os.path.join(directory, "end-lost.png"), 90, (10, 10, 20))
+
+
+def played_report(run_dir, commit, *, records=None, projects=PROJECTS2, played=None,
+                  bot=BOT_A, settings=None, design=DESIGN, qa=None, change=None, visit=1,
+                  execution=None):
+    """The playability-report the step writes for `commit`, from FIXTURE records: each
+    project in `played` (default: all) gets `records` (a dict, or a function of the project
+    returning one), written under <run_dir>/playability/<visit>-1/out/<project>/. `change`
+    alters the judged checks before the scenarios are read (a stand-in for a bot or analysis
+    that stops listing a check)."""
+    from wgf_playability import scenario as scenarios
+    out = os.path.join(run_dir, "playability", f"{visit}-1", "out")
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, "settings.json"), "w", encoding="utf-8") as handle:
+        json.dump(settings or {"idle_ms": 10000, "naive_seed": 7}, handle)
+    rules = load_rules()
+    rules["_idle_ms"] = 10000
+    checks, frames, listed, by_project = [], [], [], {}
+    for project, width, height in projects:
+        ran = played is None or project in played
+        mine = {}
+        if ran:
+            mine = copy.deepcopy(records(project) if callable(records)
+                                 else (records or well_played()))
+            os.makedirs(os.path.join(out, project), exist_ok=True)
+            for name, record in mine.items():
+                with open(os.path.join(out, project, f"{name}.json"), "w",
+                          encoding="utf-8") as handle:
+                    json.dump(record, handle)
+            _write_frames(os.path.join(out, project, "frames"))
+            checks += analysis.judge(mine, os.path.join(out, project, "frames"), design, rules,
+                                     experience_rules(), project, qa=qa)
+        by_project[project] = mine
+        listed.append({"id": project, "viewport": {"width": width, "height": height},
+                       "ran": bool(mine), "page_errors": []})
+        frames += PlayabilityStep._frames(os.path.join(out, project, "frames"), project,
+                                          run_dir)
+    if change:
+        checks = change(checks)
+    handed, handed_sha = scenarios.settings_of(out)
+    stamp = {"version": bot, "settings_sha256": handed_sha}
+    checks, found = scenarios.build(checks, listed, frames, by_project, out, run_dir,
+                                    bot=stamp, settings=handed)
+
+    class Log:
+        def __getattr__(self, name):
+            return lambda *a, **k: None
+
+    result = PlayabilityStep(types.SimpleNamespace(params={}))._finish(
+        types.SimpleNamespace(logger=Log(), execution=execution or visit),
+        types.SimpleNamespace(refs={}),
+        "demo", commit, checks, frames, {}, None, listed,
+        os.path.relpath(out, run_dir).replace(os.sep, "/"), bot=stamp, scenarios=found)
+    report = result.artifacts[0].content
+    problems = ArtifactContracts()("playability-report", report)
+    assert problems == [], problems
+    return report
+
+
+class Scenarios(unittest.TestCase):
+    """Every check names the scenario it was measured on, read from the bot's own records."""
+
+    def setUp(self):
+        self.run = tempfile.mkdtemp(prefix="wgf-play-scenario-")
+        self.addCleanup(shutil.rmtree, self.run, ignore_errors=True)
+
+    def scenario(self, report, sid):
+        return next(s for s in report["scenarios"] if s["id"] == sid)
+
+    def test_every_check_names_a_stable_scenario_listed_in_the_report(self):
+        report = played_report(self.run, "a" * 40)
+        ids = {s["id"] for s in report["scenarios"]}
+        for check in report["checks"]:
+            self.assertEqual(check["scenario"], f"{check['id']}@{check['project']}")
+            self.assertIn(check["scenario"], ids)
+        self.assertEqual(report["bot"]["version"], BOT_A)
+        # The same records played again give the same ids: a scenario id is stable.
+        again = played_report(self.run, "b" * 40, visit=2)
+        self.assertEqual(ids, {s["id"] for s in again["scenarios"]})
+
+    def test_a_scenario_holds_what_the_bot_recorded_and_nothing_else(self):
+        report = played_report(self.run, "a" * 40)
+        act = self.scenario(report, "act.acknowledged@mobile")
+        self.assertEqual(act["viewport"], {"width": 390, "height": 844})
+        self.assertEqual(act["bot"]["version"], BOT_A)
+        self.assertTrue(act["bot"]["settings_sha256"].startswith("sha256:"))
+        self.assertEqual(act["policy"]["recordings"], {"act": "each-offered-input"})
+        # The begin press, then the dive at its recorded coordinates with the probe states.
+        self.assertEqual([(a["phase"], a["action"]) for a in act["actions"]],
+                         [("start", "play"), ("act", "dive")])
+        dive = act["actions"][1]
+        self.assertEqual(dive["input"], {"type": "pointer", "x": 50, "y": 90})
+        self.assertEqual((dive["state_before"], dive["state_after"]), ("playing", "playing"))
+        self.assertIsNone(dive["at_ms"])  # the act test does not time its presses
+        self.assertTrue(act["actions_complete"])
+        # The record it is judged on, pinned by sha256, and its frames by sha256.
+        [record] = act["records"]
+        self.assertEqual(record["name"], "act")
+        path = os.path.join(self.run, record["path"])
+        with open(path, "rb") as handle:
+            import hashlib
+            self.assertEqual(record["sha256"], "sha256:" + hashlib.sha256(handle.read()).hexdigest())
+        self.assertEqual([f["id"] for f in act["frames"]], ["act-dive-before", "act-dive-after"])
+        self.assertTrue(all(f["sha256"].startswith("sha256:") for f in act["frames"]))
+
+    def test_the_anti_oracle_presses_and_the_retry_are_listed_in_order(self):
+        report = played_report(self.run, "a" * 40)
+        restart = self.scenario(report, "restart.works@desktop")
+        self.assertEqual(restart["policy"]["recordings"], {"lose": "anti-oracle"})
+        self.assertEqual([(a["phase"], a["action"], a["at_ms"]) for a in restart["actions"]],
+                         [("bad-play", "dive", 150), ("bad-play", "dive", 300),
+                          ("retry", "input:retry", None)])
+        self.assertEqual(restart["actions"][-1]["state_before"], "lost")
+        # The oracle's one success before bad play is not listed by the bot: never complete.
+        self.assertFalse(restart["actions_complete"])
+        self.assertEqual([s["state"] for s in restart["states"]], ["playing", "lost"])
+        self.assertEqual([f["id"] for f in restart["frames"]], ["end-lost"])
+
+    def test_a_count_is_kept_where_the_bot_keeps_only_a_count(self):
+        report = played_report(self.run, "a" * 40)
+        win = self.scenario(report, "win.reachable@desktop")
+        self.assertEqual(win["actions"], [{"record": "win", "phase": "play", "action": "oracle",
+                                           "input": None, "at_ms": None, "state_before": None,
+                                           "state_after": "won", "count": 8}])
+        self.assertFalse(win["actions_complete"])
+        # page.errors is read on every record: each is pinned.
+        errors = self.scenario(report, "page.errors@desktop")
+        self.assertEqual(sorted(r["name"] for r in errors["records"]),
+                         ["act", "first-session", "lose", "win"])
+
+    def test_naive_play_carries_its_policies_and_seed_from_the_settings(self):
+        from wgf_playability import scenario as scenarios
+        checks = [{"id": "naive.pace", "project": "desktop", "status": "PASS",
+                   "required": True, "summary": "x"}]
+        records = {"desktop": {"naive": {"runs": [{"policy": "steady", "unit_id": "u1",
+                                                   "inputs": 17, "played_ms": 6829,
+                                                   "won": True}]}}}
+        _checks, [found] = scenarios.build(
+            checks, [{"id": "desktop", "viewport": {"width": 1, "height": 1}}], [], records,
+            self.run, self.run, bot={"version": BOT_A},
+            settings={"naive_seed": 7, "naive_policies": {"pointer": ["steady"]}})
+        self.assertEqual(found["policy"]["seed"], 7)
+        self.assertEqual(found["policy"]["naive"], {"pointer": ["steady"]})
+        self.assertEqual(found["actions"][0]["count"], 17)
+        # The record file was not written here: listed as absent, never invented.
+        self.assertIsNone(found["records"][0]["sha256"])
+
+    def test_a_report_without_scenarios_still_validates(self):
+        """1.4.0 is additive: a check with no scenario, and no scenarios, is a valid report."""
+        result = TheReport.finish([{"id": "idle.grace", "project": "desktop", "status": "PASS",
+                                    "required": True, "summary": "x"}])
+        report = result.artifacts[0].content
+        self.assertEqual(report["scenarios"], [])
+        self.assertTrue(report["bot"]["version"].startswith("sha256:"))
+        self.assertEqual(ArtifactContracts()("playability-report", report), [])
+
+
+class ReportIdentity(unittest.TestCase):
+    """K7 #10: the greybox's and develop's playability reports minted the same artifact id
+    (`wgf:playability-report:<title>:<date>-<execution>`: each step counts its executions
+    from 1) - five pairs in the 2D run of 2026-10-05, six in the 3D run - so a ledger entry
+    naming a report by id could not say which one it was. The greybox phase's reports carry
+    the phase in their scope; the develop loop's ids are unchanged."""
+
+    CHECKS = [{"id": "idle.grace", "project": "desktop", "status": "PASS", "required": True,
+               "summary": "with no input for 10000 ms, play was not lost"}]
+
+    @staticmethod
+    def mint(step_id, params, execution=1):
+        from wgf_playability.step import PlayabilityStep as Step
+
+        class Log:
+            def __getattr__(self, name):
+                return lambda *a, **k: None
+
+        step = Step(types.SimpleNamespace(params=params, id=step_id))
+        step.clock = staticmethod(lambda: "2026-10-05T08:14:20Z")
+        result = step._finish(
+            types.SimpleNamespace(logger=Log(), execution=execution, current_step=step_id),
+            types.SimpleNamespace(refs={}), "demo", "b" * 40,
+            [dict(c) for c in ReportIdentity.CHECKS], [], {}, None,
+            [{"id": "desktop", "viewport": {"width": 1280, "height": 720}, "ran": True}])
+        report = result.artifacts[0].content
+        assert ArtifactContracts()("playability-report", report) == []
+        return report["provenance"]["artifact_id"]
+
+    def test_greybox_and_develop_playability_reports_have_distinct_ids(self):
+        for execution in (1, 2, 6):
+            greybox = self.mint("greybox-playability", {"phase": "greybox"}, execution)
+            develop = self.mint("playability", {}, execution)
+            self.assertNotEqual(greybox, develop)
+        # the develop loop's ids are what they were; the greybox's name its phase
+        self.assertEqual(self.mint("playability", {}, 3),
+                         "wgf:playability-report:demo:20261005-03")
+        self.assertEqual(self.mint("greybox-playability", {"phase": "greybox"}, 3),
+                         "wgf:playability-report:demo-greybox:20261005-03")
 
 
 if __name__ == "__main__":

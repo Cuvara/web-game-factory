@@ -177,6 +177,10 @@ environment is an allowlist, the development commit is scoped, unreviewed releas
 refused, `wgf status` exits as the run. Each has a way back: see **Breaking** and
 **Upgrading from 1.1.0** in [CHANGELOG.md](CHANGELOG.md).
 
+**Upgrading from 2.7.x.** 2.8.0 needs no configuration change for a supervised installation.
+Runs already started keep the knowledge, policy and profiles they pinned; new runs create games
+from template v1.2.1. Update the plugin as below. See [docs/v2.8-release.md](docs/v2.8-release.md).
+
 **Upgrading from 2.5.x.** 2.6.0 needs no configuration change for a supervised installation:
 the new asset authors and the visual-QA judge default to `kind: none` (placeholders are refused
 by production-quality, visual-qa waits for a person). An autonomous project re-copies

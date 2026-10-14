@@ -1,0 +1,1072 @@
+{
+ "_source": {
+  "bot_sha256": "sha256:1b5caaf835d2d4e46303cf5dd1e199f55a22cb90d40303b1fb422e824da5a26f",
+  "capture": "K7 measurement (2026-10-10, Windows 11, CPU only): the playability step of this branch (scripts/wgf_playability/step.py) built the commit in a detached clone and played it with bot.spec.ts behind the refusing proxy, `pnpm preview` on a port in 4190-4199, desktop viewport only; this profile is baseline.profile() of those records, recomputed by PlayabilityStep._profile. Real, not edited.",
+  "commit": "43c08e2f6b92e0d20e74d9376e72b7f474365596",
+  "degraded": {
+   "act": false,
+   "first-session": false,
+   "naive": false,
+   "survey": false,
+   "win": false
+  },
+  "game": "3d",
+  "records": {
+   "content/units.json": "sha256:9bc9dcd2e1d20f1ce462a47c56b06754133f7f31e9cf53f1ef1f185be18e6f2d",
+   "desktop/act.json": "sha256:2c411491af08ae0baea6f51a72b0b61be49314ada23f23b4e80128b88f64d728",
+   "desktop/first-session.json": "sha256:ed58fced2d9e2e2fab03d30e6d06c33ea59da1229f42d3b3657af252e0ea27a5",
+   "desktop/lose.json": "sha256:ea9789f18674d2df17294d1177685f661fe391fbbe5d642d3bb5199c7d3a222b",
+   "desktop/naive.json": "sha256:dc3e31318703361597f9327d5798e368755cf93bda224b3dca60d0bd4d661f7a",
+   "desktop/pause.json": "sha256:a1d637b49a5feb53992586b26221ba09b4277476f94806340f153acf5601bb6f",
+   "desktop/persist.json": "sha256:91702b87e4dc0f0e8ca2973f7a8f7874a5924d5bf649347ecc0515c70b284beb",
+   "desktop/ramp.json": "sha256:7fb3b6822a8f6c558297096fde12e0ce4002b32ad0b04c4a48410019060b25de",
+   "desktop/risk.json": "sha256:ed25a046fb21fe6a02c296690ce9165d32e61e7e44ccb9811fb53fcb842af068",
+   "desktop/session.json": "sha256:298836fb74beecd6aaee7de049f94a3b0ccfd003cf10933c86d2f49ae99406ba",
+   "desktop/showcase.json": "sha256:a596bcce636ce157b215b56797c9cbee6aae20fa7c051d70d381aba14dba3dfe",
+   "desktop/survey.json": "sha256:6964ac0c7360eaa99ba1a1c6874a203b6d1d8bd02838f32978da770325bebc30",
+   "desktop/traverse.json": "sha256:4456142b205a43e21c1e6251c0c85380dd03acb58a7a7674b1088e97c1c18040",
+   "desktop/win.json": "sha256:875b3ab12bd0bd9e3487d5ba6786c268d445df13d5681bf27a491cbd086f0221"
+  },
+  "role": "current candidate (feat/release-content: the r1 courses + 4 new)",
+  "settings_sha256": "sha256:442ba5333cb49d94f76b92e757326eb0d60f895045da380adce76cf44432556c"
+ },
+ "profile": {
+  "content": true,
+  "degraded": {
+   "act": false,
+   "first-session": false,
+   "naive": false,
+   "survey": false,
+   "win": false
+  },
+  "entity_size": {
+   "goal": [
+    65.83,
+    37.17
+   ],
+   "player": [
+    75.15,
+    96.9
+   ],
+   "target": [
+    60.01,
+    61.55
+   ]
+  },
+  "naive_ran": true,
+  "opening": {
+   "policies": {
+    "jitter": {
+     "fastest_s": null,
+     "n": 6,
+     "uncleared_min_s": 24.99,
+     "won": 0
+    },
+    "steady": {
+     "fastest_s": 19.0,
+     "n": 6,
+     "uncleared_min_s": 25.09,
+     "won": 5
+    }
+   },
+   "unit": "first-roll"
+  },
+  "order": [
+   "first-roll",
+   "twin-bends",
+   "drifting-isles",
+   "gem-meadow",
+   "bumper-garden",
+   "narrow-way",
+   "stone-chicane",
+   "cliff-steps",
+   "lantern-ledges",
+   "sunset-run",
+   "hairpin-rise",
+   "switchbacks",
+   "storm-vault",
+   "the-gauntlet",
+   "the-summit",
+   "crown-descent"
+  ],
+  "responsiveness": {
+   "acknowledged": {
+    "pause": 0.8661,
+    "steer": 0.3649
+   },
+   "fps": 11.4,
+   "frame_gap_max_ms": 2017,
+   "start_ms": 500
+  },
+  "survey_ran": true,
+  "tuning": {
+   "checkpoints.fall_depth_m": 10,
+   "checkpoints.fall_penalty_s": 3,
+   "checkpoints.max": 5,
+   "checkpoints.min": 3,
+   "checkpoints.respawn_s": 0.8,
+   "gems.per_course": 10,
+   "gems.points": 100,
+   "par-timer.assist_cap_bonus_share": 0.25,
+   "par-timer.time_over_factor": 2,
+   "par-timer.two_star_factor": 1.25,
+   "steering.accel_m_s2": 18,
+   "steering.air_control": 0.3,
+   "steering.full_drag_px": 90,
+   "steering.max_speed": 16,
+   "steering.rolling_drag_per_s": 0.6,
+   "steering.wall_restitution": 0.5
+  },
+  "units": {
+   "bumper-garden": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.54,
+     "precision": 0.24,
+     "speed": 0.85,
+     "variety": 0.56
+    },
+    "elements": [
+     "bumper",
+     "checkpoint",
+     "gap",
+     "gem",
+     "goal-gate",
+     "moving-platform",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 273.23
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 26, \"t\": \"line\"}",
+      "{\"deg\": -50, \"r\": 20, \"t\": \"turn\"}",
+      "{\"cp\": true, \"len\": 14, \"t\": \"line\"}",
+      "{\"bumpers\": [[9, 0], [17, -2.6], [25, 2.6]], \"gems\": [0], \"len\": 32, \"t\": \"line\", \"w\": 9}",
+      "{\"deg\": 70, \"gems\": [0], \"r\": 20, \"rise\": -2.5, \"t\": \"turn\"}",
+      "{\"cp\": true, \"len\": 22, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 2.4, \"t\": \"jump\"}",
+      "{\"gems\": [0], \"len\": 18, \"t\": \"line\"}",
+      "{\"bumpers\": [[8, 2], [15, -2], [22, 2], [29, -2]], \"gems\": [0, 0], \"len\": 34, \"t\": \"line\", \"w\": 9}",
+      "{\"cp\": true, \"deg\": -60, \"r\": 20, \"t\": \"turn\"}",
+      "{\"len\": 12, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.25, \"speed\": 2.4, \"t\": \"mover\"}",
+      "{\"gems\": [0, 2.3], \"len\": 24, \"t\": \"line\"}",
+      "{\"len\": 18, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 4,
+    "kinds": [
+     "bumper",
+     "checkpoint",
+     "gem",
+     "goal-gate",
+     "ramp"
+    ],
+    "layout_values": {
+     "width": 6.5
+    },
+    "oracle_lower_s": null,
+    "par_s": 24.0,
+    "reached": true
+   },
+   "cliff-steps": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.32,
+     "precision": 0.5,
+     "speed": 0.94,
+     "variety": 0.78
+    },
+    "elements": [
+     "bumper",
+     "checkpoint",
+     "cliff-drop",
+     "gap",
+     "gem",
+     "goal-gate",
+     "moving-platform",
+     "narrow-bridge",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 365.44
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 30, \"t\": \"line\"}",
+      "{\"h\": 1.6, \"t\": \"drop\"}",
+      "{\"cp\": true, \"gems\": [0], \"len\": 24, \"t\": \"line\"}",
+      "{\"deg\": -35, \"r\": 24, \"t\": \"turn\"}",
+      "{\"len\": 14, \"t\": \"line\"}",
+      "{\"deg\": 105, \"gems\": [0], \"r\": 20, \"t\": \"turn\"}",
+      "{\"len\": 20, \"t\": \"line\"}",
+      "{\"h\": 2, \"t\": \"drop\"}",
+      "{\"cp\": true, \"len\": 24, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 3, \"land\": -2, \"t\": \"jump\"}",
+      "{\"gems\": [0], \"len\": 20, \"t\": \"line\"}",
+      "{\"deg\": -80, \"r\": 20, \"rise\": 1.5, \"t\": \"turn\"}",
+      "{\"cp\": true, \"len\": 16, \"t\": \"line\"}",
+      "{\"gems\": [0], \"len\": 24, \"t\": \"line\", \"w\": 3.2}",
+      "{\"len\": 10, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.6, \"speed\": 2.8, \"t\": \"mover\"}",
+      "{\"gems\": [-2], \"len\": 20, \"t\": \"line\"}",
+      "{\"deg\": -50, \"gems\": [0], \"r\": 22, \"t\": \"turn\"}",
+      "{\"len\": 10, \"t\": \"line\"}",
+      "{\"h\": 1.8, \"t\": \"drop\"}",
+      "{\"bumpers\": [[10, -2], [17, 2]], \"gems\": [0], \"len\": 26, \"t\": \"line\", \"w\": 8.5}",
+      "{\"len\": 18, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 7,
+    "kinds": [
+     "checkpoint",
+     "cliff-drop",
+     "gem",
+     "goal-gate",
+     "ramp"
+    ],
+    "layout_values": {
+     "width": 6
+    },
+    "naive_runs": {
+     "policies": {
+      "jitter": {
+       "fastest_s": null,
+       "n": 6,
+       "uncleared_min_s": 25.01,
+       "won": 0
+      },
+      "steady": {
+       "fastest_s": null,
+       "n": 6,
+       "uncleared_min_s": 25.02,
+       "won": 0
+      }
+     }
+    },
+    "oracle_lower_s": null,
+    "par_s": 29.0,
+    "reached": true
+   },
+   "crown-descent": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.41,
+     "precision": 0.67,
+     "speed": 0.82,
+     "variety": 1
+    },
+    "elements": [
+     "checkpoint",
+     "cliff-drop",
+     "gap",
+     "gem",
+     "goal-gate",
+     "hairpin",
+     "low-wall",
+     "moving-platform",
+     "narrow-bridge",
+     "rail",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 238.96
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 24, \"rails\": true, \"t\": \"line\"}",
+      "{\"h\": 2, \"t\": \"drop\"}",
+      "{\"cp\": true, \"gems\": [-1.4, 1.4], \"len\": 22, \"rails\": true, \"t\": \"line\"}",
+      "{\"deg\": 120, \"r\": 14, \"rails\": \"outside\", \"t\": \"turn\"}",
+      "{\"gems\": [0], \"len\": 18, \"t\": \"line\", \"w\": 3}",
+      "{\"h\": 2, \"t\": \"drop\"}",
+      "{\"cp\": true, \"gems\": [0], \"len\": 26, \"rails\": true, \"t\": \"line\", \"walls\": [[8, 1, 0.4], [18, -1, 0.4]]}",
+      "{\"arcGem\": true, \"gap\": 3, \"land\": -2, \"t\": \"jump\"}",
+      "{\"cp\": true, \"gems\": [0], \"len\": 20, \"t\": \"line\"}",
+      "{\"deg\": -170, \"r\": 11, \"rails\": \"outside\", \"t\": \"turn\"}",
+      "{\"len\": 12, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.3, \"speed\": 3.2, \"t\": \"mover\"}",
+      "{\"cp\": true, \"gems\": [1.4, -1.4], \"len\": 24, \"rails\": true, \"t\": \"line\"}",
+      "{\"len\": 20, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 15,
+    "kinds": [
+     "checkpoint",
+     "cliff-drop",
+     "gem",
+     "goal-gate",
+     "low-wall",
+     "narrow-bridge",
+     "rail",
+     "ramp"
+    ],
+    "layout_values": {
+     "width": 5.5
+    },
+    "naive_runs": {
+     "policies": {
+      "jitter": {
+       "fastest_s": null,
+       "n": 6,
+       "uncleared_min_s": 25.09,
+       "won": 0
+      },
+      "steady": {
+       "fastest_s": null,
+       "n": 6,
+       "uncleared_min_s": 25.03,
+       "won": 0
+      }
+     }
+    },
+    "oracle_lower_s": null,
+    "par_s": 21.5,
+    "reached": true
+   },
+   "drifting-isles": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.19,
+     "precision": 0.16,
+     "speed": 0.94,
+     "variety": 0.44
+    },
+    "elements": [
+     "checkpoint",
+     "gap",
+     "gem",
+     "goal-gate",
+     "moving-platform",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 260.35
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 26, \"t\": \"line\"}",
+      "{\"deg\": 45, \"r\": 22, \"t\": \"turn\"}",
+      "{\"cp\": true, \"len\": 20, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0, \"speed\": 2, \"t\": \"mover\"}",
+      "{\"gems\": [0], \"len\": 20, \"t\": \"line\"}",
+      "{\"deg\": -75, \"gems\": [0], \"r\": 20, \"t\": \"turn\"}",
+      "{\"cp\": true, \"gems\": [-2.5], \"len\": 24, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 2.2, \"t\": \"jump\"}",
+      "{\"gems\": [0], \"len\": 20, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.5, \"speed\": 2.2, \"t\": \"mover\"}",
+      "{\"cp\": true, \"gems\": [0], \"len\": 20, \"t\": \"line\"}",
+      "{\"deg\": 65, \"gems\": [0], \"r\": 20, \"t\": \"turn\"}",
+      "{\"gems\": [2.5], \"len\": 28, \"t\": \"line\"}",
+      "{\"len\": 18, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 2,
+    "kinds": [
+     "checkpoint",
+     "gem",
+     "goal-gate",
+     "moving-platform",
+     "ramp"
+    ],
+    "layout_values": {
+     "width": 7
+    },
+    "oracle_lower_s": null,
+    "par_s": 21.0,
+    "reached": true
+   },
+   "first-roll": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.14,
+     "precision": 0,
+     "speed": 0.95,
+     "variety": 0.56
+    },
+    "elements": [
+     "bumper",
+     "checkpoint",
+     "gap",
+     "gem",
+     "goal-gate",
+     "rail",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 234.02
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 34, \"rails\": true, \"t\": \"line\"}",
+      "{\"bumpers\": [[12, 2.6]], \"cp\": true, \"gems\": [0], \"len\": 20, \"rails\": true, \"t\": \"line\"}",
+      "{\"deg\": 45, \"gems\": [0], \"r\": 26, \"rails\": \"outside\", \"t\": \"turn\"}",
+      "{\"gems\": [1.4], \"len\": 30, \"t\": \"line\"}",
+      "{\"len\": 18, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 1.6, \"t\": \"jump\"}",
+      "{\"cp\": true, \"gems\": [0], \"len\": 30, \"t\": \"line\"}",
+      "{\"gems\": [-1.4], \"len\": 30, \"t\": \"line\"}",
+      "{\"cp\": true, \"gems\": [0, 0], \"len\": 30, \"t\": \"line\"}",
+      "{\"len\": 20, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 0,
+    "kinds": [
+     "bumper",
+     "checkpoint",
+     "gem",
+     "goal-gate",
+     "rail",
+     "ramp"
+    ],
+    "layout_values": {
+     "width": 8
+    },
+    "oracle_lower_s": null,
+    "par_s": 18.0,
+    "reached": true
+   },
+   "gem-meadow": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.07,
+     "precision": 0,
+     "speed": 0.89,
+     "variety": 0.44
+    },
+    "elements": [
+     "checkpoint",
+     "gap",
+     "gem",
+     "goal-gate",
+     "rail",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 228.54
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 30, \"rails\": true, \"t\": \"line\"}",
+      "{\"deg\": 40, \"r\": 24, \"rails\": \"outside\", \"t\": \"turn\"}",
+      "{\"cp\": true, \"gems\": [-2.2, 2.2], \"len\": 30, \"rails\": true, \"t\": \"line\"}",
+      "{\"deg\": -60, \"r\": 22, \"rails\": \"outside\", \"t\": \"turn\"}",
+      "{\"gems\": [-2.2], \"len\": 22, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 1.8, \"t\": \"jump\"}",
+      "{\"cp\": true, \"gems\": [2.2, -2.2], \"len\": 30, \"rails\": true, \"t\": \"line\"}",
+      "{\"deg\": 50, \"r\": 24, \"rails\": \"outside\", \"t\": \"turn\"}",
+      "{\"cp\": true, \"gems\": [2.2, 0], \"len\": 34, \"rails\": true, \"t\": \"line\"}",
+      "{\"len\": 20, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 3,
+    "layout_values": {
+     "width": 8
+    },
+    "par_s": 19.5,
+    "reached": true
+   },
+   "hairpin-rise": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.14,
+     "precision": 0.89,
+     "speed": 0.82,
+     "variety": 0.67
+    },
+    "elements": [
+     "bumper",
+     "checkpoint",
+     "gap",
+     "gem",
+     "goal-gate",
+     "hairpin",
+     "narrow-bridge",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 356.9
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 28, \"t\": \"line\"}",
+      "{\"deg\": 170, \"gems\": [0], \"r\": 11, \"rise\": 1.5, \"t\": \"turn\"}",
+      "{\"cp\": true, \"len\": 28, \"rise\": 2.5, \"t\": \"line\"}",
+      "{\"deg\": -170, \"gems\": [0], \"r\": 11, \"rise\": 1.5, \"t\": \"turn\"}",
+      "{\"gems\": [0], \"len\": 22, \"t\": \"line\"}",
+      "{\"cp\": true, \"len\": 20, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 3, \"t\": \"jump\"}",
+      "{\"gems\": [0], \"len\": 20, \"t\": \"line\"}",
+      "{\"deg\": -90, \"r\": 16, \"t\": \"turn\"}",
+      "{\"cp\": true, \"len\": 12, \"t\": \"line\"}",
+      "{\"gems\": [0], \"len\": 24, \"t\": \"line\", \"w\": 3}",
+      "{\"len\": 8, \"t\": \"line\"}",
+      "{\"deg\": 170, \"gems\": [0], \"r\": 11, \"t\": \"turn\"}",
+      "{\"bumpers\": [[10, 1.8], [18, -1.8]], \"gems\": [2.6], \"len\": 28, \"t\": \"line\", \"w\": 8}",
+      "{\"deg\": -60, \"r\": 18, \"t\": \"turn\"}",
+      "{\"len\": 22, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 10,
+    "kinds": [
+     "checkpoint",
+     "gem",
+     "goal-gate",
+     "hairpin",
+     "narrow-bridge",
+     "ramp"
+    ],
+    "layout_values": {
+     "width": 5.5
+    },
+    "oracle_lower_s": null,
+    "par_s": 31.0,
+    "reached": true
+   },
+   "lantern-ledges": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.28,
+     "precision": 0.5,
+     "speed": 0.87,
+     "variety": 0.78
+    },
+    "elements": [
+     "checkpoint",
+     "cliff-drop",
+     "gap",
+     "gem",
+     "goal-gate",
+     "low-wall",
+     "narrow-bridge",
+     "rail",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 234.96
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 30, \"t\": \"line\"}",
+      "{\"h\": 1.6, \"t\": \"drop\"}",
+      "{\"cp\": true, \"gems\": [-1.8], \"len\": 26, \"t\": \"line\", \"walls\": [[14, 1, 0.4]]}",
+      "{\"deg\": 70, \"r\": 20, \"rails\": \"outside\", \"t\": \"turn\"}",
+      "{\"gems\": [0], \"len\": 20, \"t\": \"line\", \"w\": 3.2}",
+      "{\"gems\": [1.5], \"len\": 14, \"t\": \"line\"}",
+      "{\"h\": 1.8, \"t\": \"drop\"}",
+      "{\"cp\": true, \"gems\": [1.8, -1.8], \"len\": 26, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 2.6, \"land\": -1.5, \"t\": \"jump\"}",
+      "{\"gems\": [0], \"len\": 22, \"t\": \"line\"}",
+      "{\"deg\": -80, \"r\": 20, \"rails\": \"outside\", \"t\": \"turn\"}",
+      "{\"cp\": true, \"gems\": [0], \"len\": 24, \"t\": \"line\"}",
+      "{\"len\": 18, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 8,
+    "layout_values": {
+     "width": 6
+    },
+    "par_s": 20.5,
+    "reached": false
+   },
+   "narrow-way": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.1,
+     "precision": 0.46,
+     "speed": 0.95,
+     "variety": 0.56
+    },
+    "elements": [
+     "checkpoint",
+     "gap",
+     "gem",
+     "goal-gate",
+     "moving-platform",
+     "narrow-bridge",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 341.96
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 26, \"t\": \"line\"}",
+      "{\"gems\": [0], \"len\": 24, \"t\": \"line\", \"w\": 3.2}",
+      "{\"cp\": true, \"len\": 16, \"t\": \"line\"}",
+      "{\"deg\": 60, \"r\": 22, \"rise\": 2.5, \"t\": \"turn\"}",
+      "{\"gems\": [0], \"len\": 28, \"rise\": 2.5, \"t\": \"line\"}",
+      "{\"deg\": -75, \"gems\": [0], \"r\": 20, \"t\": \"turn\"}",
+      "{\"cp\": true, \"len\": 22, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 2.6, \"t\": \"jump\"}",
+      "{\"len\": 16, \"t\": \"line\"}",
+      "{\"gems\": [0, 0], \"len\": 28, \"t\": \"line\", \"w\": 3}",
+      "{\"len\": 10, \"t\": \"line\"}",
+      "{\"cp\": true, \"deg\": -50, \"r\": 22, \"t\": \"turn\"}",
+      "{\"len\": 10, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.1, \"speed\": 2.6, \"t\": \"mover\"}",
+      "{\"gems\": [2.4], \"len\": 20, \"t\": \"line\"}",
+      "{\"deg\": 60, \"gems\": [0], \"r\": 20, \"t\": \"turn\"}",
+      "{\"len\": 24, \"t\": \"line\", \"w\": 3.2}",
+      "{\"len\": 18, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 5,
+    "kinds": [
+     "checkpoint",
+     "gem",
+     "goal-gate",
+     "narrow-bridge",
+     "ramp"
+    ],
+    "layout_values": {
+     "width": 6.5
+    },
+    "oracle_lower_s": null,
+    "par_s": 27.0,
+    "reached": true
+   },
+   "stone-chicane": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.43,
+     "precision": 0.51,
+     "speed": 0.79,
+     "variety": 0.56
+    },
+    "elements": [
+     "checkpoint",
+     "gap",
+     "gem",
+     "goal-gate",
+     "low-wall",
+     "narrow-bridge",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 307.1
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 26, \"t\": \"line\"}",
+      "{\"deg\": -60, \"r\": 20, \"t\": \"turn\"}",
+      "{\"cp\": true, \"gems\": [1.4, -1.4], \"len\": 44, \"t\": \"line\", \"walls\": [[12, -1], [22, 1], [32, -1]]}",
+      "{\"deg\": 80, \"gems\": [0], \"r\": 20, \"t\": \"turn\"}",
+      "{\"cp\": true, \"len\": 22, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 2.6, \"t\": \"jump\"}",
+      "{\"len\": 18, \"t\": \"line\"}",
+      "{\"gems\": [0], \"len\": 26, \"t\": \"line\", \"w\": 3}",
+      "{\"len\": 8, \"t\": \"line\"}",
+      "{\"cp\": true, \"deg\": -70, \"r\": 20, \"t\": \"turn\"}",
+      "{\"gems\": [-1.4, 1.4], \"len\": 46, \"t\": \"line\", \"walls\": [[10, 1], [20, -1], [30, 1], [40, -1]]}",
+      "{\"deg\": 50, \"gems\": [0], \"r\": 22, \"t\": \"turn\"}",
+      "{\"len\": 22, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 6,
+    "kinds": [
+     "checkpoint",
+     "gem",
+     "goal-gate",
+     "low-wall",
+     "ramp"
+    ],
+    "layout_values": {
+     "width": 6
+    },
+    "oracle_lower_s": null,
+    "par_s": 29.0,
+    "reached": true
+   },
+   "storm-vault": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.23,
+     "precision": 0.73,
+     "speed": 0.84,
+     "variety": 0.78
+    },
+    "elements": [
+     "bumper",
+     "checkpoint",
+     "gap",
+     "gem",
+     "goal-gate",
+     "hairpin",
+     "moving-platform",
+     "narrow-bridge",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 291.9
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 26, \"t\": \"line\"}",
+      "{\"deg\": -90, \"r\": 16, \"t\": \"turn\"}",
+      "{\"cp\": true, \"gems\": [1.2], \"len\": 22, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.4, \"speed\": 3, \"t\": \"mover\"}",
+      "{\"bumpers\": [[12, 1.2]], \"len\": 24, \"t\": \"line\"}",
+      "{\"deg\": 170, \"r\": 11, \"t\": \"turn\"}",
+      "{\"cp\": true, \"gems\": [-1.2, 1.2], \"len\": 22, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 3, \"t\": \"jump\"}",
+      "{\"gems\": [0], \"len\": 22, \"t\": \"line\"}",
+      "{\"deg\": -80, \"r\": 18, \"t\": \"turn\"}",
+      "{\"cp\": true, \"gems\": [0], \"len\": 22, \"t\": \"line\", \"w\": 2.8}",
+      "{\"len\": 10, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.8, \"speed\": 3.4, \"t\": \"mover\"}",
+      "{\"gems\": [1.2, 0], \"len\": 24, \"t\": \"line\"}",
+      "{\"len\": 18, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 12,
+    "layout_values": {
+     "width": 5
+    },
+    "par_s": 25.5,
+    "reached": false
+   },
+   "sunset-run": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.44,
+     "precision": 0.56,
+     "speed": 0.84,
+     "variety": 0.89
+    },
+    "elements": [
+     "bumper",
+     "checkpoint",
+     "cliff-drop",
+     "gap",
+     "gem",
+     "goal-gate",
+     "low-wall",
+     "moving-platform",
+     "narrow-bridge",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 376.0
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 26, \"t\": \"line\"}",
+      "{\"deg\": -70, \"r\": 18, \"t\": \"turn\"}",
+      "{\"cp\": true, \"len\": 12, \"t\": \"line\"}",
+      "{\"len\": 24, \"t\": \"line\", \"w\": 3}",
+      "{\"deg\": 70, \"gems\": [0], \"r\": 18, \"t\": \"turn\"}",
+      "{\"bumpers\": [[9, 0], [17, -2.4], [25, 2.4]], \"gems\": [0], \"len\": 32, \"t\": \"line\", \"w\": 8.5}",
+      "{\"len\": 10, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.3, \"speed\": 3, \"t\": \"mover\"}",
+      "{\"cp\": true, \"gems\": [0], \"len\": 22, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 2.8, \"t\": \"jump\"}",
+      "{\"len\": 18, \"t\": \"line\"}",
+      "{\"gems\": [-1.2], \"len\": 38, \"t\": \"line\", \"walls\": [[10, 1], [20, -1], [30, 1]]}",
+      "{\"cp\": true, \"deg\": -90, \"gems\": [0], \"r\": 18, \"t\": \"turn\"}",
+      "{\"len\": 18, \"rise\": 2, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.8, \"speed\": 3, \"t\": \"mover\"}",
+      "{\"gems\": [2], \"len\": 20, \"t\": \"line\"}",
+      "{\"deg\": 60, \"gems\": [0], \"r\": 20, \"t\": \"turn\"}",
+      "{\"len\": 22, \"t\": \"line\", \"w\": 3}",
+      "{\"h\": 1.5, \"t\": \"drop\"}",
+      "{\"len\": 22, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 9,
+    "kinds": [
+     "bumper",
+     "checkpoint",
+     "gem",
+     "goal-gate",
+     "narrow-bridge"
+    ],
+    "layout_values": {
+     "width": 5.5
+    },
+    "oracle_lower_s": null,
+    "par_s": 33.5,
+    "reached": true
+   },
+   "switchbacks": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.25,
+     "precision": 0.84,
+     "speed": 0.84,
+     "variety": 0.89
+    },
+    "elements": [
+     "checkpoint",
+     "cliff-drop",
+     "gap",
+     "gem",
+     "goal-gate",
+     "hairpin",
+     "low-wall",
+     "moving-platform",
+     "narrow-bridge",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 401.6
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 26, \"t\": \"line\"}",
+      "{\"deg\": -90, \"r\": 16, \"t\": \"turn\"}",
+      "{\"cp\": true, \"len\": 20, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.2, \"speed\": 3.2, \"t\": \"mover\"}",
+      "{\"gems\": [0], \"len\": 18, \"t\": \"line\"}",
+      "{\"deg\": 175, \"gems\": [0], \"r\": 11, \"t\": \"turn\"}",
+      "{\"len\": 16, \"t\": \"line\"}",
+      "{\"h\": 1.8, \"t\": \"drop\"}",
+      "{\"cp\": true, \"gems\": [0], \"len\": 20, \"t\": \"line\"}",
+      "{\"deg\": -175, \"r\": 11, \"rise\": 1.2, \"t\": \"turn\"}",
+      "{\"gems\": [1], \"len\": 28, \"t\": \"line\", \"walls\": [[10, -1], [20, 1]]}",
+      "{\"cp\": true, \"len\": 20, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 3.2, \"t\": \"jump\"}",
+      "{\"gems\": [0], \"len\": 20, \"t\": \"line\"}",
+      "{\"deg\": 80, \"r\": 18, \"t\": \"turn\"}",
+      "{\"len\": 12, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.7, \"speed\": 3.2, \"t\": \"mover\"}",
+      "{\"cp\": true, \"gems\": [-1.8], \"len\": 18, \"t\": \"line\"}",
+      "{\"gems\": [0], \"len\": 24, \"t\": \"line\", \"w\": 2.8}",
+      "{\"deg\": -60, \"r\": 20, \"t\": \"turn\"}",
+      "{\"len\": 22, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 11,
+    "kinds": [
+     "checkpoint",
+     "cliff-drop",
+     "gem",
+     "goal-gate",
+     "hairpin",
+     "low-wall",
+     "moving-platform",
+     "ramp"
+    ],
+    "layout_values": {
+     "width": 5
+    },
+    "oracle_lower_s": null,
+    "par_s": 35.0,
+    "reached": true
+   },
+   "the-gauntlet": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.44,
+     "precision": 0.84,
+     "speed": 0.78,
+     "variety": 0.89
+    },
+    "elements": [
+     "bumper",
+     "checkpoint",
+     "gap",
+     "gem",
+     "goal-gate",
+     "hairpin",
+     "low-wall",
+     "moving-platform",
+     "narrow-bridge",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 411.8
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 26, \"t\": \"line\"}",
+      "{\"gems\": [0], \"len\": 26, \"t\": \"line\", \"w\": 2.8}",
+      "{\"len\": 8, \"t\": \"line\"}",
+      "{\"cp\": true, \"deg\": -90, \"r\": 16, \"t\": \"turn\"}",
+      "{\"bumpers\": [[8, 0], [15, -2.2], [22, 2.2], [29, 0]], \"len\": 32, \"t\": \"line\", \"w\": 8.5}",
+      "{\"deg\": 170, \"gems\": [0], \"r\": 11, \"t\": \"turn\"}",
+      "{\"cp\": true, \"len\": 18, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.4, \"speed\": 3.4, \"t\": \"mover\"}",
+      "{\"len\": 14, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.9, \"speed\": 3.4, \"t\": \"mover\"}",
+      "{\"gems\": [0], \"len\": 20, \"t\": \"line\"}",
+      "{\"cp\": true, \"len\": 20, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 3.4, \"t\": \"jump\"}",
+      "{\"len\": 18, \"t\": \"line\"}",
+      "{\"gems\": [1.1, -1.1], \"len\": 42, \"t\": \"line\", \"walls\": [[10, -1], [20, 1], [30, -1], [38, 1]]}",
+      "{\"cp\": true, \"deg\": -170, \"r\": 11, \"t\": \"turn\"}",
+      "{\"gems\": [0], \"len\": 26, \"t\": \"line\", \"w\": 2.8}",
+      "{\"len\": 8, \"t\": \"line\"}",
+      "{\"deg\": 70, \"gems\": [0], \"r\": 18, \"t\": \"turn\"}",
+      "{\"len\": 22, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 13,
+    "kinds": [
+     "bumper",
+     "checkpoint",
+     "gem",
+     "goal-gate",
+     "hairpin",
+     "moving-platform",
+     "narrow-bridge"
+    ],
+    "layout_values": {
+     "width": 5
+    },
+    "oracle_lower_s": null,
+    "par_s": 39.0,
+    "reached": true
+   },
+   "the-summit": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.38,
+     "precision": 0.89,
+     "speed": 0.82,
+     "variety": 1
+    },
+    "elements": [
+     "bumper",
+     "checkpoint",
+     "cliff-drop",
+     "gap",
+     "gem",
+     "goal-gate",
+     "hairpin",
+     "low-wall",
+     "moving-platform",
+     "narrow-bridge",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 440.15
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 26, \"t\": \"line\"}",
+      "{\"deg\": 80, \"r\": 16, \"rise\": 1.5, \"t\": \"turn\"}",
+      "{\"cp\": true, \"len\": 12, \"t\": \"line\"}",
+      "{\"len\": 22, \"t\": \"line\", \"w\": 2.8}",
+      "{\"len\": 8, \"t\": \"line\"}",
+      "{\"deg\": -170, \"gems\": [0], \"r\": 11, \"rise\": 1.5, \"t\": \"turn\"}",
+      "{\"bumpers\": [[9, 0], [17, -2], [25, 2]], \"len\": 32, \"t\": \"line\", \"w\": 8}",
+      "{\"len\": 10, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.35, \"speed\": 3.4, \"t\": \"mover\"}",
+      "{\"cp\": true, \"len\": 22, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 3.4, \"land\": -1.5, \"t\": \"jump\"}",
+      "{\"gems\": [0], \"len\": 20, \"t\": \"line\"}",
+      "{\"deg\": -90, \"gems\": [0], \"r\": 16, \"t\": \"turn\"}",
+      "{\"gems\": [-1], \"len\": 40, \"t\": \"line\", \"walls\": [[10, 1], [20, -1], [30, 1]]}",
+      "{\"h\": 1.8, \"t\": \"drop\"}",
+      "{\"cp\": true, \"len\": 18, \"t\": \"line\"}",
+      "{\"gems\": [0], \"len\": 24, \"t\": \"line\", \"w\": 2.8}",
+      "{\"len\": 10, \"t\": \"line\"}",
+      "{\"len\": 8, \"phase\": 0.85, \"speed\": 3.6, \"t\": \"mover\"}",
+      "{\"cp\": true, \"gems\": [0], \"len\": 20, \"t\": \"line\"}",
+      "{\"deg\": 170, \"r\": 11, \"rise\": 2, \"t\": \"turn\"}",
+      "{\"gems\": [0], \"len\": 26, \"rise\": 1.5, \"t\": \"line\"}",
+      "{\"len\": 18, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 14,
+    "kinds": [
+     "bumper",
+     "checkpoint",
+     "gem",
+     "hairpin",
+     "moving-platform",
+     "narrow-bridge",
+     "ramp"
+    ],
+    "layout_values": {
+     "width": 4.5
+    },
+    "oracle_lower_s": null,
+    "par_s": 39.0,
+    "reached": true
+   },
+   "twin-bends": {
+    "declared": true,
+    "difficulty": {
+     "density": 0.06,
+     "precision": 0.08,
+     "speed": 0.95,
+     "variety": 0.33
+    },
+    "elements": [
+     "checkpoint",
+     "gap",
+     "gem",
+     "goal-gate",
+     "ramp"
+    ],
+    "extent": {
+     "kind": "path",
+     "unit": "length",
+     "value": 256.47
+    },
+    "geometry": [
+     [
+      "{\"gems\": [0, 0], \"len\": 28, \"t\": \"line\"}",
+      "{\"deg\": 60, \"gems\": [0], \"r\": 22, \"t\": \"turn\"}",
+      "{\"cp\": true, \"len\": 20, \"t\": \"line\"}",
+      "{\"deg\": -60, \"gems\": [0], \"r\": 22, \"t\": \"turn\"}",
+      "{\"gems\": [0], \"len\": 30, \"rise\": -2.5, \"t\": \"line\"}",
+      "{\"len\": 18, \"t\": \"line\"}",
+      "{\"arcGem\": true, \"gap\": 2, \"t\": \"jump\"}",
+      "{\"cp\": true, \"gems\": [0, 2.7], \"len\": 26, \"t\": \"line\"}",
+      "{\"deg\": -55, \"r\": 20, \"t\": \"turn\"}",
+      "{\"deg\": 55, \"gems\": [0], \"r\": 20, \"t\": \"turn\"}",
+      "{\"cp\": true, \"gems\": [0], \"len\": 26, \"t\": \"line\"}",
+      "{\"len\": 22, \"t\": \"line\"}"
+     ]
+    ],
+    "index": 1,
+    "kinds": [
+     "checkpoint",
+     "gem",
+     "goal-gate"
+    ],
+    "layout_values": {
+     "width": 7.5
+    },
+    "oracle_lower_s": null,
+    "par_s": 20.0,
+    "reached": true
+   }
+  }
+ }
+}

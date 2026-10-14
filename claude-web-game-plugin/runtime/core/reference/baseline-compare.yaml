@@ -1,0 +1,117 @@
+# The baseline comparison: a candidate build held to the build a person accepted.
+#
+# Read by scripts/wgf_playability/baseline.py through the playability step. When a run adopts
+# an existing game (factory.init.adopt_existing), the design records the commit its content
+# floor was counted at (`existing_content.source.commit`: the adopted checkout's shipped commit,
+# or the one a person names in factory.init.accepted_baseline). The playability step plays that
+# accepted commit with the same bot and the same settings as the candidate, and reports, per
+# accepted unit and per measured quantity, what got worse beyond the tolerances below
+# (docs/baseline-comparison.md). A change to accepted content is a failure unless a person
+# recorded why (factory.init.accepted_changes); it is then listed, never hidden.
+#
+# Why it exists (K6 retro, 2026-10-09): both 2026-10-05 loops made their gates pass while making
+# the person-accepted games worse - the 3D courses cut from 234-440 m to 38-124 m corridors and
+# the first course cleared by holding forward in 5.8 s against a 24 s par (H6, H7); the 2D
+# paddle, capsules, opener and speed curve changed (H4). No gate compared with the accepted
+# build (H1).
+#
+# Calibration (docs/baseline-comparison.md, "Calibration"): every tolerance is held by
+# scripts/tests/test_baseline_compare.py over real measurements of the accepted builds (2D
+# 96f5cea, 3D 64ff4c6), the regressed loop heads (2D 68a12b7, 3D 1c6b099) and the current
+# candidates (2D 0db72b6, 3D 43c08e2), and each accepted build measured twice: the accepted
+# build passes against its own second measurement, the regressed heads fail.
+version: 1.0.0
+
+# A measured regression holds the build at every tier: an accepted game made worse is never a
+# development detail. An unmeasured comparison follows quality-policy.yaml skipped_checks (not
+# passed at the release tier), except where the accepted build carries none of a quantity
+# (`accepted-declares-none`: nothing accepted to keep - reported, never held).
+enforce:
+  fail_required_at: all
+
+# The viewports the comparison reads (both builds are played on them; the accepted build only
+# on them). Content, naive play and the survey run on desktop (play-realism.yaml naive.projects,
+# content-sufficiency.yaml survey.projects).
+play:
+  projects: [desktop]
+
+# A unit's extent: a PATH layout's centre-line length (realism.layout_length, the layout's own
+# units), else the solid cells of a GRID layout - every character of a list of strings that is
+# not one of `grid_empty`. Compared only when both builds declare the same kind.
+extent:
+  grid_empty: [".", " ", "0", "-", "_"]
+
+# Where a unit's par is read, first found: its layout, the unit, its parameters.
+par_keys: [par_s, par_time_s, time_target]
+
+# Each accepted unit's declared layout and declared elements. 1.0: identical - the same
+# sequences by value (wgf_design.layouts: container names dropped, 30.0 is 30). Accepted
+# content is changed only with a person's recorded reason, so no change is tolerated; a scalar
+# outside every list (tuning) is the `tuning` comparison's.
+unit_content:
+  min_similarity: 1.0
+
+# Each accepted unit's extent and par, candidate over accepted. 0.9: a unit may lose a tenth of
+# its length or cells (one brick of 16 is 0.94) before it is reported as cut - the layout
+# change itself is unit_content's. The real cuts are 0.09-0.29 (3D courses, 1c6b099 against the
+# accepted courses) and 0.625 (2D w1-l1, 68a12b7: 10 bricks for 16).
+unit_extent:
+  min_ratio: 0.9
+  min_par_ratio: 0.9
+
+# Every accepted tuning value (the content data file's `tuning` block, flattened to dotted
+# keys): kept, or the change recorded by a person. 0.0: data is exact - a ball speed, a paddle
+# width or a speed curve is the feel a person accepted.
+tuning:
+  max_relative_change: 0.0
+
+# Each accepted unit's difficulty value per axis (the content data's `difficulty`, else the
+# probe's metrics.difficulty in the survey) and the order of every pair of accepted units on
+# each axis. The tolerance is genre-models.yaml implementation.difficulty_tolerance (the one a
+# build is held to its design's values by), read there - not restated here.
+difficulty_order:
+  tolerance_from: core/reference/genre-models.yaml implementation.difficulty_tolerance
+
+# The fastest clear of each compared unit, per naive policy (play-realism.yaml naive), and the
+# oracle's clear in the survey, candidate over accepted. A run that did not clear its unit is a
+# lower bound (its clear is later still): a regression is reported only when the candidate's
+# clear is shorter than the bar whatever the unknown part of the bound is. 0.6: the accepted
+# 3D build against its own repeat clears the opening course held forward in 22.86 s and
+# 20.65 s (0.90 / 1.11 x); the regressed 3D head in 6.18 s (0.27 x; jittered, at most 0.31 x);
+# the current 3D candidate in 19.0 s (0.83 x). Naive play clears no 2D level in its run on
+# any build measured, so this bar decides nothing there (reported `undetermined`).
+clear_time:
+  min_ratio: 0.6
+
+# A clear rate above the accepted band (a unit got easier beyond chance) is reported here; a
+# drop below it is play-realism's naive.clear_rate, measured against the same accepted play.
+# Both use play-realism.yaml clear_rate's bars (runs, min_runs, min_drop, min_z): one band.
+clear_rate:
+  bars_from: core/reference/play-realism.yaml clear_rate
+
+# The median drawn size of each role while the oracle plays (the win test's per-frame
+# entities), on each axis. 0.25: a quarter larger or smaller is a different paddle or ball to a
+# player. The accepted builds against their repeats move at most 1.6 % (3D) and 0 (2D); the
+# regressed 2D head draws the paddle 0.71 x as wide and 1.23 x as tall.
+entity_size:
+  roles: [player, projectile, goal, target, threat]
+  max_change: 0.25
+
+# The build's response, from what the bot already records: play begins (first session,
+# navigation to play less the bot's own measuring), every action the accepted build visibly
+# acknowledged within the acknowledgement window still changes min_ack_fraction of the frame
+# (visual-quality.yaml acknowledgement.min_changed_fraction), and frames per second while the
+# oracle plays (requestAnimationFrame callbacks over the page's lifetime in the win test).
+# Software rendering on the build host: a ratio between two builds on one host, never a
+# player's device. The start is timed from the page's first byte (the wait for it is the
+# local server's: 2301 ms of one candidate's 2801). The bars allow what the accepted builds'
+# own repeats measured on this shared host: starts of 510 / 820 ms (2D) and 708 / 317 ms
+# (3D) - inside max(1.5 x, + 1000 ms) either way - and frame rates of 10.6 / 10.0 (2D) and
+# 8.5 / 11.0 (3D): the 3D build against itself reads 0.77 x, so 0.6. No build measured ran
+# slower than its accepted build beyond that spread: the frame-rate and start bars are
+# calibrated on noise only, and have not been shown to catch a real regression.
+responsiveness:
+  max_start_ratio: 1.5
+  start_slack_ms: 1000
+  min_ack_fraction: 0.002
+  min_fps_ratio: 0.6

@@ -9,6 +9,10 @@ by the raising producer's re-measurement of a newer build, never by a specialist
     previous     the newest ledger in the run: the triage-report's `lifecycle`, or the
                  quality-report's `ledger.lifecycle` when that report is newer
     failing      every newest gate report, normalized (findings.py) when it fails
+    noted        every newest gate report that does NOT fail, the findings it names itself
+                 at the severities `ledger.noted_on_pass` lists for its producer: recorded
+                 `noted` (detected, classified to their owner), never routed and never
+                 holding the build - the producer passed it, and its verdict stands
     decision     the newest decision-record (G4's iterate or pass)
 
 Which findings hold a build back is reference data: specialist-routing.yaml
@@ -24,8 +28,9 @@ from . import findings as normalizer
 from . import lifecycle as lifecycles
 from .routing import Routing
 
-__all__ = ["GATE_REPORTS", "LEDGER_INPUTS", "normalize_reports", "previous_lifecycle",
-           "remeasure", "blocking", "blocking_severities", "build_of_report", "failing_report"]
+__all__ = ["GATE_REPORTS", "LEDGER_INPUTS", "normalize_reports", "noted_reports",
+           "noted_severities", "previous_lifecycle", "remeasure", "blocking",
+           "blocking_severities", "build_of_report", "failing_report"]
 
 # The reports a build is judged by, in the order they are read.
 GATE_REPORTS = ("playability-report", "production-quality-report", "visual-qa-report",
@@ -85,6 +90,38 @@ def normalize_reports(reports, refs, routing, *, dimension_3d, commit, verificat
     return normalized
 
 
+def noted_severities(routing):
+    """specialist-routing.yaml `ledger.noted_on_pass`: {producer: (severities)} - the
+    findings a passing report of the producer names that the ledger records as noted."""
+    table = ((routing.data or {}).get("ledger") or {}).get("noted_on_pass") or {}
+    return {kind: tuple(sev or ()) for kind, sev in table.items() if isinstance(kind, str)}
+
+
+def noted_reports(reports, refs, routing, *, dimension_3d, commit, verification,
+                  rubric=None):
+    """{kind: [findings]}: for every report in `reports` that does not fail, the findings it
+    names at the severities `ledger.noted_on_pass` lists for its kind (nothing for a kind it
+    does not list); each finding carries the build its report measured. A failing report's
+    findings are normalize_reports'."""
+    table = noted_severities(routing)
+    if rubric is None and table:
+        rubric = load_file(RUBRIC_PATH) if os.path.isfile(RUBRIC_PATH) else {}
+    noted = {}
+    for kind, report in reports.items():
+        severities = table.get(kind)
+        if report is None or not severities or failing_report(kind, report):
+            continue
+        found = [f for f in normalizer.normalize(
+            kind, report, routing, ref=(refs or {}).get(kind), dimension_3d=dimension_3d,
+            playability=reports.get("playability-report"), rubric=rubric)
+            if f.get("severity") in severities]
+        for finding in found:
+            finding["build"] = build_of_report(report, commit, verification)
+        if found:
+            noted[kind] = found
+    return noted
+
+
 def previous_lifecycle(refs, load):
     """The newest ledger in the run: the triage-report's, or the quality-report's when that
     report is newer and carries one."""
@@ -105,7 +142,8 @@ def blocking_severities(routing):
 
 
 def blocking(lifecycle, routing, producers=None):
-    """The ledger's records that hold the build back: of a blocking severity, still open."""
+    """The ledger's records that hold the build back: of a blocking severity, still open. A
+    `noted` record (a passing report's own finding) never holds it."""
     return lifecycles.unresolved(lifecycle, blocking_severities(routing), producers)
 
 
@@ -127,7 +165,9 @@ def remeasure(refs, load, *, at, by, routing=None, run_dir=None, current=None):
     `refs` are the newest artifact refs per type (each with its run-local `seq`), `load`
     reads one by type. `current` ({kind: (report, seq)}) is a report the caller is producing
     now - the quality gate's own - read as the newest of its kind. Nothing new is detected
-    here: only triage detects and assigns; this verifies, regresses, reopens and closes."""
+    here that can hold the build: only triage detects and assigns; this verifies, regresses,
+    reopens and closes - and records a passing report's own findings as `noted`, which hold
+    nothing (`ledger.noted_on_pass`)."""
     routing = routing or Routing.load()
     refs = dict(refs or {})
     loaded = {}
@@ -150,6 +190,8 @@ def remeasure(refs, load, *, at, by, routing=None, run_dir=None, current=None):
     reports = {k: v for k, v in reports.items() if isinstance(v, dict)}
     normalized = normalize_reports(reports, refs, routing, dimension_3d=dimension_3d,
                                    commit=commit, verification=verification)
+    noted = noted_reports(reports, refs, routing, dimension_3d=dimension_3d, commit=commit,
+                          verification=verification)
     decision = get("decision-record")
     human = set()
     if isinstance(decision, dict) and decision.get("decision") == "iterate":
@@ -166,4 +208,5 @@ def remeasure(refs, load, *, at, by, routing=None, run_dir=None, current=None):
         seqs=seqs, reports=reports, proto=proto, proto_seq=seq_of(refs, "prototype-report"),
         decision=decision if isinstance(decision, dict) else None,
         decision_seq=seq_of(refs, "decision-record"), human_ids=human, selected=None,
-        triage_id=by, routing_version=routing.version, build_of=build_of)
+        triage_id=by, routing_version=routing.version, build_of=build_of, routing=routing,
+        noted=noted)

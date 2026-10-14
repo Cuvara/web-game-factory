@@ -52,7 +52,9 @@
 # 1.2.0: the scorecard (lines per discipline, hard blockers apart, a criterion's `scorecard`);
 #        play realism (play-realism.yaml) and browser QA (browser-qa.yaml) on the floor; the
 #        `browser` line.
-version: 1.2.0
+# 1.3.0: floor.accepted_baseline - the candidate against the build a person accepted
+#        (baseline-compare.yaml).
+version: 1.3.0
 
 references:
   quality-benchmark: core/reference/quality-benchmark.yaml
@@ -297,6 +299,25 @@ universal:
     evidence: content-sufficiency-report content.regression
     regression: the check FAILs, or is SKIPPED, on a newer build
     basis: proposed
+  # 1.3.0: the candidate against the build a person accepted (core/reference/
+  # baseline-compare.yaml), reported only by a run that adopted a game. The playability step
+  # holds a measured regression at every tier itself; here the same checks are on the floor,
+  # so a quality gate never passes a build its own playability report found worse than the
+  # accepted one. Every check counts - a unit gone, an accepted layout, tuning value or drawn
+  # kind changed, a unit cut, cleared in a fraction of its time, made easier, a role drawn
+  # another size, a slower start or frame rate - unless a person recorded why.
+  - id: floor.accepted_baseline
+    dimension: content
+    metric: share of the baseline-comparison checks that pass - nothing the accepted build shipped is gone, changed without a person's recorded reason, or worse beyond its tolerance
+    evaluate: {kind: checks, report: playability-report, checks: [baseline.units_kept, baseline.unit_content, baseline.unit_extent, baseline.tuning, baseline.difficulty_order, baseline.unit_kinds, baseline.clear_time, baseline.clear_rate, baseline.entity_size, baseline.responsiveness], required_only: passed, applies: reported}
+    minimum: 1.0
+    preferred: 1.0
+    severity: {mvp: blocker, release: blocker}
+    owner: level-design
+    route: develop
+    evidence: playability-report baseline.*
+    regression: a check FAILs on a newer build
+    basis: measured-2
   - id: floor.session_content
     dimension: content
     metric: share of the session checks that pass - every unit shipped, the designed playtime, the first session's length
@@ -644,8 +665,8 @@ universal:
   - id: floor.physics_drawn
     dimension: gameplay
     scorecard: feel
-    metric: share of the physics-vs-drawing checks that pass - every turn at a drawn surface, the drawn body the size of the collider
-    evaluate: {kind: checks, report: playability-report, checks: [physics.undrawn_collision, physics.collider_size], required_only: passed, applies: reported}
+    metric: share of the physics-vs-drawing checks that pass - every turn at a drawn surface, the drawn body the size of the collider, both as the probe reports them and as the pixels show them
+    evaluate: {kind: checks, report: playability-report, checks: [physics.undrawn_collision, physics.collider_size, physics.contact_drawn, physics.drawn_extent], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
     severity: {release: blocker}

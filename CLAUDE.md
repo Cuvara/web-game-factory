@@ -12,7 +12,7 @@ Games live in their own repositories, created from `web-game-template`
 (https://github.com/Cuvara/web-game-template) — the source of truth for template code, the
 example games (Tower Merge Rush, PixiJS; Neon Drift Arena, Three.js), platform adapters and
 engine support (2D: `pixijs` or `phaserjs`; 3D: `threejs`). The Factory never copies any of it. It pins **one template commit** - the
-latest template *release*, by tag and commit (1.2.0: `v1.2.0`, `b106261`) - in
+latest template *release*, by tag and commit (1.2.1: `v1.2.1`, `4b74b08`) - in
 `workspace/config/template.lock.json`; init creates every game at exactly that tree, and the
 golden runs' replay ports, which the release does not ship, are pinned separately there as
 test fixtures (`golden_ports`). Everything that reads template files (golden runs,
@@ -457,6 +457,12 @@ seen by the engine — validate what you write there with ajv.
 - `docs/quality-gate-module.md` — the `quality-gate` step: one build scored on every quality
   dimension from the same build's reports, hard floors per dimension (no averaging past a
   blocker), stale evidence, the finding lifecycle, the release decision, routing, pinning
+- `docs/quality-assessment.md` — the quality-report's `assessment`: design validity, runtime
+  correctness and player-facing quality, each PASS / FAIL / INCONCLUSIVE / NOT_SUPPORTED with
+  its checks' measurement class (deterministic, heuristic, self-reported, AI-judged, human)
+  and the metric table of what each check family measures and cannot justify
+  (`core/reference/quality-assessment.yaml`); a view that decides nothing, and player-facing
+  quality is never PASS without a person's G4 decision on the build
 - `docs/factory-quality-benchmark.md` — the Factory quality benchmark as a system: the
   benchmark and the two-layer floor (universal + genre/3D), calibration and how to version it
 - `docs/store-listing-module.md` — the `store-listing` and `listing-validation` steps: the
@@ -498,6 +504,9 @@ seen by the engine — validate what you write there with ajv.
   it found and fixed, PASS / PASS_MOCK / UNVERIFIED / BLOCKED_EXTERNAL
 - `docs/v2-release.md` — 2.0.0: what was validated on which commit, the release audit's
   fixes, and what the evidence does not cover (no live agent host, shimmed golden runs)
+- `docs/v2.8-release.md` — 2.8.0: knowledge as rules (K1-K5), closed-loop quality (K6), the
+  baseline comparison, measurement integrity, triage hygiene and platform preflight (K7), and
+  the template pin v1.2.1; what was validated where, and that no live `/new-game` run was made
 - `docs/v2.7-release.md` — 2.7.0: the content contract (genre models, `build_spec.content`,
   the content data file, the content and difficulty playability checks), workflow 8's
   `design-gap` return, Research V2, and buildability from a genre family; what was validated

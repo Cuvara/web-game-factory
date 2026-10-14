@@ -205,6 +205,15 @@ def honoring_build(command, cwd, env):
             platform = json.load(handle)["platforms"][0]["id"]
     with open(os.path.join(cwd, "dist", "platform.txt"), "w") as handle:
         handle.write(platform)
+    if platform == "crazygames":
+        # The pinned template's game-config plugin injects the CrazyGames SDK into the head
+        # of a crazygames build (transformIndexHtml), as platform.sdk-loaded reads it.
+        index = os.path.join(cwd, "dist", "index.html")
+        with open(index, encoding="utf-8") as handle:
+            html = handle.read()
+        with open(index, "w", encoding="utf-8") as handle:
+            handle.write(html.replace("<head>", '<head><script src="https://sdk.crazygames.com/'
+                                                'crazygames-sdk-v3.js"></script>', 1))
     return ok("vite v6 building for production...")
 
 

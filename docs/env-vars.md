@@ -84,7 +84,8 @@ run at anything but its own checkout.
 |---|---|---|---|
 | `WGF_PUBLISH_BROWSER_TEST` | `test_publish_module`, `test_publish_executor`, `test_publish_observe` | `1` drives the fixture portal (`scripts/tests/fixtures/publish/portal.py`) with real headless Chromium through the publish module's console executor and the read-only console observer, with the test playing the person who logs in, in the pinned template's checkout. Contacts nothing but 127.0.0.1. | off |
 | `WGF_GOLDEN` | `scripts/golden/testing.py` (via `test_golden_2d`, `test_golden_3d`) | `1` runs the 2D and 3D golden pipelines (minutes each). Otherwise the `2D GOLDEN` / `3D GOLDEN` categories are `SKIP`. | off |
-| `WGF_GOLDEN_KEEP` | `scripts/golden/testing.py` | `1` keeps a golden run's work directory after the test. | off: removed |
+| `WGF_GOLDEN_LOOP` | `scripts/tests/test_golden_loop.py` | `1` runs the GOLDEN LOOP category: the 2D golden with a planted defect, failed, routed back and repaired, and its negative control (two golden runs). Otherwise the category is `SKIP` when run; a plain `wgf test-core` leaves it out as opt-in (`core_suite.OPT_IN`) unless this is `1` or it is named with `--only`. | off |
+| `WGF_GOLDEN_KEEP` | `scripts/golden/testing.py`, `scripts/tests/test_golden_loop.py` | `1` keeps a golden run's work directory after the test. | off: removed |
 | `WGF_GOLDEN_DIR` | `scripts/golden/harness.py` | Parent of a golden run's fresh work directory. | `/tmp` |
 | `WGF_GOLDEN_TEMPLATE_REF` | `scripts/golden/harness.py` | Older spelling of `WGF_TEMPLATE_COMMIT` for the golden runs; used only when that is unset. | unset |
 | `WGF_AJV` | `test_assets`, `test_discovery`, `test_init_module`, `test_verification`, `test_release_module`, `test_core_agents`, `test_develop_module`, `test_techplan_module` | `1` also validates emitted artifacts with ajv through `npx` (may download ajv-cli once). | off |

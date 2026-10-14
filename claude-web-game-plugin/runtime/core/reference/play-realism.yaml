@@ -26,7 +26,17 @@
 # (2D 96f5cea, 3D 64ff4c6) and the 3D r1-forward build (c340631) PASS.
 #
 # Changing a bar is a version bump of this file, with the calibration that moved it.
-version: 1.0.0
+# 1.1.0: `contact` - physics.contact_drawn and physics.drawn_extent, the same two questions read
+# off the pixels of frames frozen where a mover turned (the probe-reported checks can be
+# satisfied by reporting a surface or a body that is not drawn).
+# 1.2.0: a turn is seen across a hit-stop (`physics.hit_stop_frames`), and a collider is held
+# to where it touched the drawn surface it turned at (`contact.max_collider_to_contact`) - two
+# ways a build passed both checks unchanged (K7 bypass review, 2026-10-12); `contact.max_frame_ms`,
+# which could never fire on a bot record, is replaced by `contact.max_travel_px`; the bot
+# freezes on turns at moving and composite surfaces and keeps a third frame, read for sparks
+# and for the drawn extent away from the impact (`contact.composite_min_share`,
+# `contact.along_share`; K7 review).
+version: 1.2.0
 basis: measured-2
 
 # Which quality tiers (quality-benchmark.yaml `tiers[].id`) a measured FAIL of a check here
@@ -54,6 +64,13 @@ physics:
   stop_frames: 3
   # A jump larger than this between two frames is a respawn or a reset, not a turn.
   max_step_px: 120
+  # A hit-stop: a mover that barely moves (under `min_speed_px`) for up to this many frames
+  # between moving one way and moving back still turned there - the turn is judged where it
+  # stalled. Without it a single still frame at each bounce (a hit-stop, or a loop that skips
+  # the move on the frame it reflects) hid every turn from both physics checks and the
+  # contact test (synthetic: scripts/tests/test_play_contact.py Bypasses). 6 frames is 100 ms
+  # at 60 fps, the long end of a hit-stop; a longer one is a stop (`stop_frames`).
+  hit_stop_frames: 6
   # A turn is explained when the mover's collider (else its drawn box) reaches a drawn
   # surface - another visible entity's drawn box in the frame of the turn or the one before
   # (a brick the hit breaks), or an edge of the probe's playfield - on the side it was moving
@@ -78,12 +95,123 @@ physics:
   # passed without something drawn to hold it to - a halo without a body, an empty body, or a
   # body outside the drawn box FAILs. No 2026-10 build reports a collider yet, so the bar is
   # the ledger's (L11: "<= ~1.3x"). From the builds' own tuning (board units, ball radius
-  # and sprite): r1 96f5cea draws a 56.8 glow around a 22 collider (2.6x on the sprite);
+  # and sprite): r1 96f5cea draws a 60 glow around a 22 collider (2.7x on the sprite, 1.9x on
+  # its 42.3 solid disc - measured on its pixels by physics.drawn_extent, below);
   # r1-forward 894b4b8 draws a solid disc of exactly its 40 collider inside the same 56.8
   # glow - 1.0x on its body (PASS), 1.42x on the whole sprite (FAIL), which is why the body
   # is what is judged; a sprite enlarged with the collider unchanged still FAILs on its body.
   max_drawn_to_collider: 1.3
   min_drawn_to_collider: 0.77
+
+# -- physics.contact_drawn, physics.drawn_extent: the same questions read off PIXELS ----------
+contact:
+  # The bot's contact test (bot.spec.ts) freezes the page on the frame that shows a mover of
+  # `roles` just reversed, keeps a crop of it, lets `after_frames` frames run, and keeps the
+  # same crop again, and (from 1.2.0) as many frames on a third; realism.judge_contacts reads
+  # them. Where the mover was and its collider are the probe's (self-reported); what is drawn
+  # there is measured on the pixels. Judged on the `dimensions` whose screen positions are a
+  # board's, as physics is. A turn at a moving surface or a composite is frozen on too (1.2.0;
+  # before, it was left to the probe's word, so a box reported where nothing is drawn passed by
+  # moving 1 px a frame or being labelled a composite - K7 review).
+  dimensions: [2d]
+  roles: [projectile]
+  projects: [desktop, mobile]
+  # The window per viewport (outside the time budget, like naive play), and how many turns
+  # it freezes on at most, at least `gap_ms` of game time apart.
+  window_s: 40
+  max_captures: 10
+  gap_ms: 400
+  # The page's clock is stepped by `frame_ms` each frame drawn, so a loop that takes its delta
+  # from the frame's timestamp moves one step per frame however slowly the host draws
+  # (measured 3-7 frames a second on the shared Windows host, 2026-10-10). `after_frames`:
+  # 0.3 s of game time for the mover to leave the place it turned.
+  # A loop that reads its own clock (performance.now) instead of the frame's timestamp is not
+  # stepped: on a slow host it moves tens of px a frame. The bot records the stepped
+  # timestamps, so their gaps cannot show it (1.1.0's `max_frame_ms` could never fire on a
+  # bot record - K7 review); what the reading depends on is the mover's travel in the frame
+  # it turned, which sets how far past its leading edge the band reaches. A turn that
+  # travelled more than `max_travel_px` in that frame is not read (counted unverified):
+  # every real turn recorded travelled 1.0-4.2 px (2026-10-10, stepped), the unstepped host
+  # pace 30-40 px.
+  frame_ms: 16.667
+  after_frames: 18
+  max_travel_px: 16
+  # physics.contact_drawn: in the frame after, along each line across the contact, the largest
+  # colour distance (RGB, 0-441) from the mover's centre to `physics.tolerance_px` + its travel
+  # past its leading edge, against the median colour of the quarter behind its centre (where it
+  # was, now background); the median over the lines. Calibration (real, the 2D game, 2026-10-10,
+  # scripts/tests/fixtures/real/play-contact/): every drawn wall, static brick and board edge
+  # 172-385 (r1 96f5cea, 68a12b7, cbac64e, 894b4b8); every undrawn ceiling 13-34 (33.5 where a
+  # ceiling crosses the backdrop's hill line). 48 sits 1.4 x above the highest undrawn reading
+  # and 3.6 x under the lowest drawn one. One contact under it FAILs: every reading under 34
+  # was a turn at nothing drawn. Re-recorded with the 1.2.0 bot (2026-10-12, `*-r2`): every
+  # drawn contact - walls, paddles read where they went, brick rows along their face - 103-385,
+  # every undrawn ceiling 4.6-17.1. A surface a later frame cannot show where the mover met it
+  # is read where it is (realism._contact_surface): a moving one carried to its place in the
+  # frame after, a composite along its face. With the third frame, the lower of the two
+  # readings counts (a spark of the hit has faded by then).
+  min_edge: 48
+  min_undrawn: 1
+  # A composite the mover turned at, whose face showed nothing drawn near the contact (the
+  # bricks around a hit can all be gone), is left to the probe - unless no frame read shows
+  # this share of its box drawn (colour step >= `min_edge` from where the mover was): then it is
+  # a box with nothing drawn in it, and the check is not passed (unmeasured). Calibration (the
+  # 1.2.0 recordings): every honest brick composite 0.106-0.995 of its box in view; a box with
+  # nothing drawn reads 0. The same share is asked of the face it was hit on (a strip of its box
+  # along that face, a mover deep, in view) in some frame read: a drawn row bundled with an
+  # undrawn face into one box is not passed either (K7 review round 2). The one honest reading,
+  # a brick row whose bricks along the hit face were mostly gone (894b4b8 mobile), 0.034.
+  composite_min_share: 0.01
+  # physics.drawn_extent: the entities held (a collider reported on any of them), and how their
+  # solid drawing is told from a glow - the pixels whose colour changed by `min_delta` and by
+  # `solid_share` of the change inside the collider (90th percentile) when the entity moved
+  # away, connected to the collider, within `window_colliders` x its size. The bar is
+  # physics.max_drawn_to_collider / min_drawn_to_collider: one property, two measurements.
+  # Calibration (real, the collider reported by a harness patch): r1 96f5cea 1.9-2.05 x (its
+  # 42.3 solid disc over a 22 collider; its glow, at most 49 % of the disc's change, is left
+  # out), 68a12b7 2.6-2.7 x across (the enlarged paper ball and its dart; its ink outline, 42 %
+  # of the fill's change, is left out too - the fill alone still FAILs), 894b4b8 1.03-1.2 x
+  # (r1's art, the collider grown to its solid disc).
+  # From 1.2.0 a record with the third frame is read AWAY from the impact - the frame after the
+  # turn against the third - and ACROSS the direction of travel there (K7 review MAJOR-4: every
+  # sample was at an impact, where a squash or a burst lives, and a trail along the travel was
+  # counted as body; 894b4b8, the collider set to its solid disc, read up to 1.2 x). Re-recorded
+  # (2026-10-12, `*-r2`): 894b4b8 1.05-1.06 x (0.98-1.22 for any `solid_share` 0.3-0.5), r1
+  # 96f5cea 1.95-2.04 x, 68a12b7 2.32-2.33 x, cbac64e 1.4-1.74 x.
+  # Along the travel the body is read on its OPAQUE pixels only - changed by at least
+  # `along_share` of the change inside the collider, connected to it - and held to the upper
+  # bar (`max_drawn_to_collider`) only: a solid tail or a sprite drawn long along its motion
+  # (a comet, a dart) FAILs, a fading motion trail does not (K7 review round 2: without it a
+  # solid 30 px tail passed). A shaded body reads shorter than it is on its opaque pixels
+  # (lenient, never a false FAIL). Calibration: synthetic (scripts/tests/test_play_contact.py
+  # ReviewR1) - a solid comet 3.03 x at every share 0.8-0.95, three 60 % ghosts behind a
+  # collider-sized ball 1.73 / 1.38 / 1.03 x at 0.8 / 0.9 / 0.95 (they blend to 94 % where they
+  # overlap); real `*-r2`: 894b4b8 0.73-0.77 x, r1 96f5cea 1.43-1.45 x, 68a12b7 0.78-1.33 x,
+  # cbac64e 0.98 x. A trail dense enough to blend past 95 % reads as body.
+  along_share: 0.95
+  extent_roles: [player, projectile, threat, collectible, hazard]
+  solid_share: 0.5
+  min_delta: 24
+  window_colliders: 2
+  # physics.drawn_extent also holds the reported collider to where it touched: at a turn read
+  # as drawn, on a mover that reports a collider, the distance from its centre to the first
+  # pixel of the surface (colour step >= `min_edge`, the median over the lines) plus the
+  # distance it travelled that frame bounds what collides from above, so an honest collider's
+  # half extent on that axis is at most 1.0 x it; at no turn of an entity may it exceed this bar
+  # (the 0.15 is a pixel or two of edge rounding on a small ball; the largest over its turns, not
+  # the median, from K7 review round 2). A collider
+  # reported to match a drawing the simulation does not use passes the pixel extent and fails
+  # this. Calibration (real records, the collider reported by the harness patch): every honest
+  # turn 0.59-0.86 (68a12b7, 96f5cea desktop; 894b4b8 desktop and mobile), 0.48-0.92 on the
+  # 1.2.0 recordings; the same records with the ball's collider scaled about its centre as a
+  # gaming build would report it - x2.0 (the drawn extent of 96f5cea then reads 1.0 x)
+  # 1.17-1.72, x2.3 / x2.6 (where 68a12b7 / 96f5cea pass the drawn extent alone) 1.43-1.97.
+  # On the `*-r2` recordings, the largest over an entity's turns: honest 0.48-0.92; scaled to
+  # where the drawn extent passes - 96f5cea x1.6 1.09 (desktop) / 1.44 (mobile), x1.7 1.16,
+  # cbac64e x1.5-1.7 1.12-1.27. What it cannot see: the step bounds the reading from above, so
+  # a collider reported up to about 1.5 x the simulation's can still pass both bars (96f5cea
+  # x1.6 desktop, cbac64e x1.5) - the bar is not tightened to 1.0 on one game (honest 0.92).
+  max_collider_to_contact: 1.15
 
 # -- naive.*: the build played by someone who is not perfect ---------------------------------
 naive:

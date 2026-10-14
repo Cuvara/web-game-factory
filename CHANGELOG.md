@@ -9,6 +9,371 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-10-14
+
+Release notes: [docs/v2.8-release.md](docs/v2.8-release.md). Template pin: v1.2.1.
+
+**The act test retakes an action whose attempt ended around it** ([#67](https://github.com/Cuvara/web-game-factory/issues/67),
+`scripts/wgf_playability/bot.spec.ts`). In two acceptance runs the 3D golden's attempt ended by
+the game's own clock - a wall reached the craft - between the snapshot before `pause` and the
+frame after it, so the frame named `act-pause-after` showed the lose screen; visual QA's baseline
+judge compared it with the approved pause look, failed the run and routed `assets`, which
+blocked. An action that was taken in play and whose attempt had ended (`won` or `lost`) once its
+frame was taken is now taken again from play, at most twice, its frames replaced under the same
+names; one that still ends the attempt is kept as measured, with `ended_attempts` on its record
+(and its scenario no longer claims to list every press). Back in play means the game's resume
+or, after a retry that lands on a title screen, its begin input (`start`, `begin`, ...).
+No check, bar or route changes. Bringing an artifact forward: none - the bot's version moves,
+so an accepted build's cached baseline play is played again.
+
+**The baseline comparison: a candidate held to the build a person accepted** (K7,
+[docs/baseline-comparison.md](docs/baseline-comparison.md), lesson L8 now partial). A run
+that adopts a game records the accepted commit in its design's existing-content floor
+(`factory.init.accepted_baseline`, else the shipped commit). Both playability steps now play
+that commit with the same bot and the same settings as the candidate - every accepted unit
+surveyed, naive play on the accepted units, each unit and policy played `clear_rate.runs`
+times - and report ten `baseline.*` checks, per accepted unit and per measured quantity: units
+removed or renamed, layouts, elements and tuning changed, unit extent and par cut (and the
+whole game's), difficulty values moved or reordered, drawn kinds and role sizes changed, units
+cleared in a fraction of the accepted time or more often beyond the accepted band, a slower
+start, acknowledgement or frame rate. Deterministic, no AI judge. A measured regression fails
+at every tier (`QUALITY REGRESSION against the accepted build`); a person changes accepted
+content only by recording why (`factory.init.accepted_changes`); what the accepted build
+cannot report is `accepted-unmeasured` (reported, not held), what the candidate does not report
+is held as skipped checks are, and a degraded host's recording decides nothing (BLOCKED). The
+accepted play also feeds `naive.clear_rate`. New `core/reference/baseline-compare.yaml` 1.0.0
+(pinned by new-game 18), `playability-report` 1.5.0 (`baseline_comparison`), check-tiers 1.4.0
+(source `baseline-compare`), specialist-routing 1.8.0, quality-floor 1.3.0
+(`floor.accepted_baseline`), quality-assessment 1.1.0 (four families), lessons 2.2.0 (L8 r2).
+Replayed on real measurements of both validation games (fixtures
+`scripts/tests/fixtures/real/baseline-compare/`): the regressed heads 2D 68a12b7 and 3D 1c6b099
+fail against r1; each accepted build passes against its own repeat. Bringing an artifact
+forward: none - a playability-report 1.4.0 stays valid; an adopted run's quality gate reads the
+`baseline.*` checks UNMEASURED until its next playability visit.
+
+**Baseline comparison review r1 fixes** (docs/baseline-comparison.md). An accepted build that
+cannot be played makes the playability step BLOCKED, never a PASS (`accepted-not-played` joins
+the unmeasured reasons `_finish` holds). What the candidate stops declaring or reporting for one
+accepted unit, role or action is no longer skipped while the rest of the check passes: a
+declared layout, layout value, element set, extent, par or difficulty dropped from a unit the
+candidate still declares is a regression; a role, action, start, frame rate, naive policy or
+oracle unit it no longer reports is `not-reported` (held at release); a unit still declared
+that the survey asked for and could not enter, where it entered it on the accepted build, is
+not kept. A check with an undetermined item beside compared ones is a WARNING, never a PASS.
+An accepted play with a recording made on a degraded host is never cached (the next visit
+plays it again), and its degraded naive recording makes `naive.clear_rate` BLOCKED instead of
+being compared. A waiver of a unit-scoped check names its unit (`*` only with a quantity).
+Also: the knowledge and pinning tests follow L8's promotion and new-game 18's pin (both failed
+on 43c4554). Bringing an artifact forward: none; a run's next playability visit applies it.
+The real 3D measurements now read `baseline.clear_time` WARNING (jittered play cleared the
+opening course on neither build). A difficulty moved by exactly the tolerance is within it
+(read at the values' precision: 0.87 - 0.82 was 0.050000000000000044): 3D 43c08e2 against
+c340631 still fails `baseline.difficulty_order`, on hairpin-rise's precision 0.73 -> 0.89
+only - its speed and the two "reordered" pairs were that rounding.
+
+**Measurement integrity: the physics checks read off the pixels** (K7, `play-realism.yaml`
+1.1.0 `contact`, [docs/playability-module.md](docs/playability-module.md) "What the contact
+frames measure, and what they cannot"). `physics.undrawn_collision` and
+`physics.collider_size` read only what the probe says is drawn, so a repair could satisfy them
+without drawing anything: in the 2D validation game a ball drawing enlarged with its collider
+unchanged (68a12b7, retro H3) and undrawn ceilings added so the bot reached units in time
+(cbac64e, H2). The playability bot's new **contact** test (2D builds, desktop and mobile, its
+window outside the time budget) plays with the page's clock stepped one frame per frame drawn,
+freezes the page on the frame that shows a mover just turned, and keeps a crop of it and of the
+same place once the mover left. Two checks read those pixels: `physics.contact_drawn` (hard) -
+something is drawn where the mover turned, whether or not the probe reports a surface there -
+and `physics.drawn_extent` (quality) - the solid drawing over a reported collider, held to the
+same bar as `physics.collider_size`. Where the mover was and its collider stay the game's own
+report (stated per check); a build reporting no collider is unmeasured on its extent, never
+passed. Both are on `floor.physics_drawn`, `physics-fairness` and lesson L11. Replayed on real
+recordings of four commits (`scripts/tests/fixtures/real/play-contact/`): cbac64e and 68a12b7
+FAIL `contact_drawn`, r1 96f5cea PASSes it; with the collider reported (a harness patch to a
+scratch build), 68a12b7 FAILs `drawn_extent` at 2.7 x, 894b4b8 PASSes at 1.0-1.2 x, and r1
+FAILs it at 1.9-2.05 x - its solid disc is 42 px over a 22 px collider, as 894b4b8's own tuning
+says. The contact crops are kept out of the report's `frames` (visual QA judges screens) and
+pinned by sha256 in each check. Bringing an artifact forward: none - a report from an older bot
+has no contact record and gets neither check; a pinned 1.0.0 `play-realism.yaml` keeps a run
+on the old bars.
+
+**Measurement integrity: contact review r2** (K7 review round 2 of e46e2c4,
+`play-realism.yaml` 1.2.0). `physics.drawn_extent` judges the length along the travel again -
+on the opaque pixels only (`contact.along_share` 0.95), upper bar only: a solid tail 3.03 x FAILs
+as it did on 3e8d25f, a fading trail (1.03 x) and a squash still PASS; real `*-r2` 894b4b8 0.73-0.77
+x. A composite whose hit face is drawn nowhere in any frame read is unmeasured even when
+its box holds something drawn (`measured.composite_face_drawn`; the only honest real reading
+0.034). The collider against where it touched is the largest over an entity's turns, not the
+median (honest 0.48-0.92; cbac64e scaled x1.6 now FAILs). Bringing an artifact forward: none -
+a re-judged report can only lose a PASS.
+
+**Measurement integrity: contact review r1** (K7 review of 3e8d25f, `play-realism.yaml` 1.2.0,
+`ReviewR1` and `RealRecordingsR2` in `scripts/tests/test_play_contact.py`). The bot's contact
+test freezes on turns at moving and composite surfaces too (marked `passing`) and keeps a third
+frame (`contact-<n>-later`); the no-mover exit waits six seconds of game time, not of the host's.
+`physics.contact_drawn` reads a surface a later frame cannot show where the mover met it where
+it is - a moving one carried to its place in the frame after, a composite along its face, a
+surface reported anew under another id as that surface - so a box reported where nothing is
+drawn no longer passes by moving 1 px a frame, being labelled a composite or changing its id;
+a surface gone that the mover meets again, or a composite drawn nowhere in any frame read
+(`contact.composite_min_share`), is unmeasured; with the third frame a spark of the hit no
+longer reads as a surface. `physics.drawn_extent` reads a body away from the impact (the frame
+after the turn against the third) and across its travel: a squash on the hit frame or a trail
+along the travel is not the body. Re-recorded on the same builds (`*-r2` fixtures): 894b4b8
+PASSes at 1.05-1.06 x (0.98-1.22 for any `solid_share` 0.3-0.5, was 1.03-1.2 at the impact),
+r1 96f5cea FAILs at 1.95-2.04 x as before, 68a12b7 at 2.32-2.33 x; every drawn contact 103-385,
+every undrawn 4.6-17.1. Also: `contact.max_frame_ms`, which could never fire on a bot record, is
+replaced by `contact.max_travel_px`; a playfield edge that is the viewport's own is a drawn
+edge; a design that declares a projectile the bot never saw is unmeasured, not unreported.
+Bringing an artifact forward: a record without the third frame is judged as before on the
+extent and the sparks; its turns at moving and composite surfaces were never frozen on.
+
+**Measurement integrity: five bypasses closed** (K7 bypass review, `play-realism.yaml` 1.2.0,
+`Bypasses` in `scripts/tests/test_play_contact.py`). A build could still pass the physics
+checks without fixing the game: a collider reported to match the drawing passed
+`physics.drawn_extent` (now held to where it touched the drawn surface it turned at,
+`contact.max_collider_to_contact` 1.15 - honest 0.59-0.86, gamed 1.17-1.97 on the real records);
+an entity reported over a contact in the frame after masked an undrawn wall into
+"unverified" (now read under the mask: nothing drawn even there FAILs); an entity masked in
+every frame dropped out of the extent (now unmeasured); a one-frame hit-stop at each bounce hid
+every turn from `physics.undrawn_collision` and the bot (`physics.hit_stop_frames` 6); and a
+contact test that froze on no turn PASSed while the win test's samples showed turns (now
+unmeasured). Bringing an artifact forward: a report judged under 1.1.0 keeps its verdicts; a
+re-judged one can only lose a PASS.
+
+**A passing report's own findings are recorded, never routed** (K7 #4, retro H12;
+`core/reference/specialist-routing.yaml` 1.7.0 `ledger.noted_on_pass`, triage-report 1.4.0,
+quality-report 1.6.0, quality-finding record `noted`; docs/specialist-routing.md "A passing
+report's own findings: noted"). The 3D run's visual-qa v3 passed the build with two MAJOR
+findings and the triage that read it recorded neither: only failing reports were normalized.
+A gate report that PASSES now has its own findings at the listed severities
+(`visual-qa-report: [blocker, major]`) recorded in the run's ledger as `noted` - detected and
+classified to their owner, listed in the triage-report's `noted` - never routed and never
+holding the build: `ledger.blocking` leaves them out, so no gate verdict, the quality gate's
+`open`/`awaiting` and release's `open-findings` refusal are unchanged (tested on the real
+triage v12 replayed with and without the rule). A noted record stays open while the
+producer's newest report lists it, is verified when a newer report no longer does, and
+becomes an ordinary finding when the producer's newest report fails it - on the quality gate's
+and release's path too (review r1: a noted record a failing report raised stayed noted and
+non-blocking there, open or reopened). A noted detection is never a measured failure: its
+history entry says `noted:`, the ledger's memory of its checks and evidence strength skip it,
+and the failing report that raises it (`reopened`) is its first failure - the `before` of a
+lesson's FAIL->PASS pair and a flip for the `unstable` cap (review r1: the promotion was not
+counted, and the passing report's commit was taken as the failure). A pass by a report that
+still lists the finding beside its pass - verifying it, or as a later sample - is refused
+`no-repair` by evidence strength (core/reference/evidence-strength.yaml 1.3.0; review r2,
+pre-existing: such passes made a still-listed finding `reproduced`); the ledger's status for it
+is unchanged - the producer's pass stands. A noted record of a check-listing producer raised by
+a failing report keeps that report's measurement as its failure (review r2, latent). Known
+limitations (review r3, docs/specialist-routing.md): the ledger's `_recorded`/`_regressed` still
+read a verified-while-listed record as a pass (errs strict); a record listed again after a clean
+verification stays `single-run`, not reopened; a listing at minor writes no note and still counts;
+ledgers older than this change carry no notes. Bringing an artifact forward: none - existing ledgers stay valid; a run's next triage or quality gate records what
+its newest passing reports name.
+
+**Greybox playability reports carry their phase in their id** (K7 #10). The greybox's and
+develop's playability reports minted the same artifact id
+(`wgf:playability-report:<title>:<date>-<execution>`, each step counting from 1): five pairs
+in the 2D run of 2026-10-05, six in the 3D run. A playability step that names a phase
+(`with: {phase: greybox}`) now puts it in the id's scope (`<title>-greybox`); the develop
+loop's ids are unchanged. Bringing an artifact forward: none - old ids stay valid (the
+ledger already tells them apart by content hash and seq). prototype-report ids collide the
+same way (greybox and develop both mint `prototype-report`); not changed here.
+
+**Platform preflight: portal SDKs measured in each bundle** (docs/verification-module.md
+"Portal SDKs in a bundle", docs/publish-module.md, docs/platform-targets-2026-10.md "Portal
+SDKs in each bundle"). The Factory never looked at which portal SDKs a platform's bundle
+carries: real per-platform builds of both validation candidates (2D 0db72b6, 3D 43c08e2) on
+the pinned template v1.2.0 carry Poki, Yandex, CrazyGames, Y8, GameDistribution and
+GameMonetize code in every bundle, the template's own `crazygames-audit.mjs` FAILs their
+crazygames bundles on `unexpected_dependencies`, and verify passed them; and `y8_sdk_present`
+held for a Y8 bundle that loads no Y8 SDK, because on contract 1 `collect-facts.mjs` echoes
+the platform id into `package.platform_sdk`. Now `core/reference/portal-sdks.yaml` 1.0.0 (new;
+a file of its own, not a profile field: a bundle is judged against every other portal's
+identifiers, a game pins only its targets' profiles, and a profile bump would force every
+pinned title to re-plan) says how each portal's SDK is recognised in built files and which
+page script CrazyGames and Y8 load; `scripts/wgflib/portal_sdks.py` scans a bundle directory
+or a package archive with it. Verify adds `platform.foreign-sdk:<id>` (the Factory scan, plus
+the template's CrazyGames audit when the checkout ships it - named in the reference's
+`audit`, so the kernel names no portal; template contract 2.1.0 log `PORTAL_AUDITS_DIR`,
+acceptance unchanged) and `platform.sdk-loaded:<id>` (Y8 without
+`WGF_Y8_APP_ID`: BLOCKED for a person, create-before-build), both **not required**: on the
+pin every bundle carries every adapter, so a required check would fail every verification,
+the golden runs' included; a FAIL makes that platform `not-ready`. On contract 1
+`policy.assertions:<id>` no longer counts profile assertions on `package.platform_sdk`
+(recorded as `not_counted`). platform-validate adds the guards `portal_sdk_isolated` and
+`portal_sdk_loaded` on the package archive itself, so every portal package on the current pin
+is BLOCKED there; moving the pin to a template whose build carries one adapter (the
+unreviewed backport `backport/1.2.0-platform-sdk` does, measured) clears it. check-integrity
+holds the reference's keys to the platform profiles. Regression input is real and minimised:
+`scripts/tests/fixtures/portal-sdks/sky-marble-43c08e2.json` (`test_portal_sdks`, RELEASE).
+Preflight review fixes: a package archive is scanned whole (a file beside its single
+top-level folder was skipped), a bundle directory's `node_modules/` is scanned (the package
+zips it), a bundle or package with no text file to read is never isolated (FAIL / RED), and
+`portal_sdk_loaded` grants the create-only exemption only while no issued id is in the
+registry or the build's config. Final review fixes: a platform without a portal-sdks.yaml entry is an
+error in check-integrity and UNKNOWN on `portal_sdk_loaded` (undescribed is not SDK-less); a
+checkout shipping the template audit that reports nothing makes `platform.foreign-sdk`
+BLOCKED, and `portal_sdk_isolated` UNKNOWN on that verify verdict; a loader inside an
+HTML comment is not loaded; the scan's limits and the Y8
+create-before-build consequences on the current pin are documented.
+Docs: platform-targets-2026-10.md (the current runs replace the workflow-v7 runs in "Exact
+commands"; Y-3: both games cancel the context menu since 27c49f0 / ff7f451; gap 4 now seen),
+platform-sdk-verification.md (adapters at the pin, profile status on 2026-10-10). Bringing an
+artifact forward: none - a verification-report without the new checks still validates;
+platform-validate re-run on an existing release reads the package itself.
+
+**K6 review r1 fixes** (docs/specialist-routing.md, docs/knowledge-enforcement.md). The
+ledger no longer verifies a split finding (`.../develop`, `.../assets`) whose check still
+FAILs its part in a BLOCKED report: the check is split again by the same rule, `unmeasured`
+when its part cannot be established. The run ledger's reopen (quality gate, release)
+refreshes the record's `build` and `failed_measurement`, so a re-play of the reopening build
+is held `same-build` and `before` names that failure. A record's regression baseline keeps,
+per check, the newest measurement the ledger recorded when the newest report left the check
+unmeasured (a BLOCKED report no longer erases an earlier pass). Evidence strength reads the
+run's newest ledger (a newer quality-report's `ledger.lifecycle` over the last
+triage-report's) and refuses a repair it reopened; a re-play of the build that passed is no
+independent repeat, and validated contexts differ in the commits measured - two runs replaying
+the identical commits are one context (`evidence-strength.yaml` 1.2.0, review r2). A held finding whose check stops applying has no in-run
+close - documented as a known limitation. G4's assessment lines also count the checks not
+reported. Bringing an artifact forward: none - existing ledgers and candidates stay valid; a
+candidate's strength is derived again on its next ingest or promote.
+
+**Core v1 change: `scripts/wgflib/gate_evidence.py`** (K6.3; reason: G4 is decided on the
+quality-report, and a person must see its assessment - the three questions, each check's
+measurement class, a PASS resting on the game's own report or one AI judgment named so, the
+checks not reported - to decide it). Display only: it adds the assessment lines to the
+evidence the CLI shows for a waiting checkpoint (`status --json` `pending.evidence`), reads only the report's
+`assessment` section, and decides nothing - no gate, verdict, route or release decision reads
+it.
+
+**Validated learning: a lesson's evidence strength, derived from the ledger** (K6.4,
+`core/reference/evidence-strength.yaml` 1.2.0, candidate store 1.1.0, `evidence.yaml` 2.1.0,
+[docs/knowledge-enforcement.md](docs/knowledge-enforcement.md) "Evidence strength"). `wgf
+knowledge ingest` now records, for every lesson candidate, how far the measurements behind it
+were repeated - `hypothesis` (no measured repair), `single-run` (one FAIL->PASS pair),
+`reproduced` (the pass repeated in a later independent report on a later commit than the
+one that passed, on a check that does not alternate verdicts, by a class that is not only the
+game's probe), `validated` (reproduced in two contexts differing in the commits measured - desktop and
+mobile of one run and build, or two runs of the identical commits, are one context) - derived from each source's re-measurement in its run's finding ledger
+(K6.2 before/after/samples, content hashes, history) and the check's measurement class (K6.3),
+with why (`strength_why`), the checks marked `unstable`, and every measurement refused with its
+rule and reason (`refused_evidence`): the detecting report counted again, the lesson's own
+proposed check on a build that motivated it, a pass on the failing commit (or a re-play of the
+build that passed, counted as a repeat), a repair the run's newest ledger reopened, a judge
+re-reading
+what it judged, a person's or specialist's claim; hash-identical duplicates count once. A pair
+measured only by the game's own probe, one AI judgment, or a check of no known class is capped
+at single-run. `wgf knowledge promote` derives the strength again from the run store and never
+drafts a classification beyond it: a measured candidate held only by an advisory check is
+drafted an experimental candidate lesson on hypothesis or single-run evidence, a
+RECOMMENDATION on reproduced, and may be drafted a VALIDATED_PRINCIPLE (`--classification`;
+an enforced, validated lesson with its three test stubs and the evidence's `verified` leg) on
+validated evidence; a classification asked for beyond the evidence is refused. **BLOCKING and
+REQUIRED are unchanged**: still derived only from the check tiers (K4). Strength is about a
+measurement repeating, not about player value. Bringing an existing artifact forward: none -
+stored candidates without the fields stay valid, and get them when a new source merges
+into them or their run's ledger re-measures a source's finding on its next ingest; promote
+derives them regardless.
+
+**Repairs verified on the same scenario** (playability-report 1.4.0, triage-report 1.3.0,
+[docs/specialist-routing.md](docs/specialist-routing.md) "What counts as a re-measurement",
+[docs/playability-module.md](docs/playability-module.md) "The scenario each check was
+measured on"). Every playability check names a stable scenario, `<check>@<project>`, and the
+report lists what the bot played for it, read from the records it already writes: the bot
+version (sha256 of bot.spec.ts) and settings, the viewport, the policy and seed, the records
+with their sha256, the inputs and probe states those records list, the frames with their
+sha256. The finding ledger now verifies a finding of a producer that lists its checks
+(playability, production-quality, listing-validation) only when the same check on the same
+project was measured and passed: a newer report that leaves the check unmeasured (BLOCKED,
+SKIPPED, WARNING, `measured.unmeasured`), no longer lists it, lists it only on another
+viewport, or - for playability - passes it on the commit it failed on, **no longer verifies
+the finding**; it stays open with the verdict `unmeasured`, `missing` or `same-build`, said
+in its history. A FAIL check in a BLOCKED report still fails. Each verification keeps the
+failing and passing measurements (`before`, `after`) and a `comparison` naming every
+difference (a newer bot, other settings: a weaker comparison, said so), and `samples` of the
+passes after it. **A regression now needs a prior pass**: a failure after a fix is its
+regression only when its check passed in the record's `baseline` (what the gates had
+measured when it was assigned) or it was verified before - a gate measuring for the first
+time raises a new finding, not a regression (the real 2D/3D runs: nine fixes never verified
+for this). History entries name the artifact's content hash and seq beside its id. A done finding whose raising producer's newest report fails it again is reopened also when
+the quality gate or release advances the ledger (`ledger.remeasure`, no triage findings of its
+own) - replaying the real 2D run's ledger left two findings closed beside the report failing
+them. Existing
+artifacts stay valid (every change is additive); a ledger written before this keeps the old
+regression rule for its records (no baseline). An open finding of a run in progress that the
+old rule would have verified on an unmeasured, missing or same-commit pass stays open on
+resume until its check is measured passing.
+
+**The quality assessment: three separate questions, and how each was measured** (K6.3,
+quality-report 1.5.0, `core/reference/quality-assessment.yaml` 1.0.0,
+[docs/quality-assessment.md](docs/quality-assessment.md)). The quality-report gains an
+additive `assessment` section that reads the evidence the gate already read as design
+validity, runtime correctness and player-facing quality - each PASS, FAIL, INCONCLUSIVE or
+NOT_SUPPORTED with the checks it rests on (read through check-tiers `status_at`, the reader
+knowledge compliance uses), each check's measurement class (deterministic, heuristic,
+self-reported by the game's probe, AI-judged; human for a person's G4 decision), the judges'
+recorded runs, every blocker or major visual-judge finding listed unresolved whatever its
+report's verdict, a PASS that rests on the game's own report or one AI judgment marked
+`qualified` or `weak`, and what the evidence cannot justify. A held check that failed fails a
+dimension; one that measured nothing leaves it INCONCLUSIVE, never PASS; player-facing quality
+is never PASS without a person's G4 decision that pins this build's reports. **It decides
+nothing**: the floor, the verdict and the release decision are computed without it (tested
+identical with and without it). G4 shows the three lines. check-integrity holds that every
+check-tiers source and check is placed in the mapping or excluded with why. Bringing an
+existing artifact forward: none - a 1.4.0 quality-report without the section stays valid.
+
+**The golden loop through triage and the finding ledger** (K6,
+[docs/golden-runs.md](docs/golden-runs.md) "The develop stage"). The greybox loop never
+reached the Factory's own Diagnose -> Repair -> Verify bookkeeping: greybox-playability's
+`fail` goes straight back to greybox, so its run's triage-report and quality-report ledgers
+were empty. `--defect-stage develop` (`scripts/golden/run.py`, `GoldenRun(defect_stage=)`,
+`replay_developer.STAGES`) plants the defect in the first production develop visit instead;
+playability's failure goes through triage to the specialist that owns `restart.works` (UI),
+and the replay leaves the defect out on the visit briefed with those findings
+(`specialist.findings`), keeping it out on later visits (`kept-repaired`). The loop record
+(`evidence/golden-loop-2d-develop.json`) closes only when the run's ledger verified the
+repair: detected and assigned by triage, implemented at the repairing commit, verified on
+the same scenario with the failing and passing measurements and their frames' sha256,
+nothing open - the ledger records and the assessment lines copied in. Two more GOLDEN LOOP
+classes (`GoldenLoopDevelop2D`, `GoldenLoopDevelopNoRepair2D`; the category is now four
+golden runs, its CI job 360 min) and `WGF_GOLDEN_LOOP_DIR` to run each class in a named
+directory, or assert a kept run of the same variant; fast checks in `GoldenLoopFast`.
+Measured on Windows: closed on `76d9556` -> `c6fb256`, both findings closed in the
+quality-report's ledger; the negative control blocked at triage's `playability.fail` budget
+with the findings never verified. A negative control's exit status now requires every
+report to have failed the planted defect (`loop.control_held`): an unreadable loop record is
+`closed: false` too and used to pass it. No Factory change: nothing to bring forward.
+
+**The golden loop: a real closed loop on a real build, no LLM** (K6.1,
+[docs/golden-runs.md](docs/golden-runs.md) "The golden loop"). The golden replay developer
+takes `--defect NAME` (`replay_developer.DEFECTS`, exact-once rewrites; an anchor not found
+exactly once refuses the replay): `restart-dead` makes the 2D port's restart button click
+without restarting. It is planted on a greybox visit whose brief names no `restart.works`
+failure and left out on one that does, and each visit records which in its report
+(`replay.defect`, labelled a replay, never an agent's fix); `--no-repair` is the negative
+control. `GoldenRun(defect=, repair=)` / `scripts/golden/run.py --defect NAME [--no-repair]`;
+`scripts/golden/loop.py` writes the before/after record (`evidence/golden-loop-2d.json`,
+frames under `evidence/golden-loop/`). New Core Acceptance category **GOLDEN LOOP**
+(`test_golden_loop`, `WGF_GOLDEN_LOOP=1`): greybox-playability FAILs `restart.works` on both
+viewports on commit A with frames, greybox is re-entered, the same check PASSes measured on a
+newer commit B, and the run ends in its normal golden outcome; the negative control exhausts
+greybox's route budget and blocks with the check still failing. The category is **opt-in**
+(`core_suite.OPT_IN`): `wgf test-core` without `--only` leaves it out and lists it as not run
+(`opt_in_not_run` in `--json`), so `WGF_GOLDEN=1 bin/wgf test-core --strict` is unchanged; it
+runs in its own CI job (`golden-loop`: a manual run with `golden_loop`, or a pull request
+labelled `golden-loop`). The playability bot now captures `retry-dead` when a retry never
+returns to play, and `restart.works` cites the lose recording's result and retry frames
+(before, it cited none). Nothing to bring forward: an existing playability-report stays
+valid; a new one's `restart.works` may carry `frames`.
+
+**Template pin: web-game-template v1.2.1** (`workspace/config/template.lock.json`: `v1.2.1`,
+`4b74b08`, was `v1.2.0`, `b106261`). Template contract unchanged (1); `platform_adapters` and
+`golden_ports` unchanged. 1.2.1 fixes the platform SDK on the 1.2 line: a build carries only
+its own portal's adapter and SDK (a v1.2.0 build carried every portal's, which the CrazyGames
+audit fails), Yandex rewarded video counts as shown without `onClose(wasShown)`, a Y8
+frequency-capped break is not an ad shown, and generic-web stays in every build. A game
+created from v1.2.0 keeps its pin; bringing one forward is applying the template's 1.2.1
+patches in the game repository. Both golden runs pass on the new pin in CI.
+
 **Cross-session quality transfer, and the first transferred principle (L29)** (lessons
 2.1.0, check-tiers 1.3.0, design-consistency-rules 2.4.1, content-sufficiency 1.6.0,
 game-design 1.16.0, knowledge-contract 1.2.0, quality-report 1.4.0,

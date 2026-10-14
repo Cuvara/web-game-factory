@@ -288,6 +288,14 @@ built content: `designed`, `built`, `partial`, `cut` and a per-unit list, so the
 checked rather than believed — a prototype that built two of six levels is not a prototype of
 the design. `title:design` joins the consumers. Additive; 1.0.0 artifacts remain valid.
 
+**`playability-report` 1.4.0** adds, additively, `bot` (version and settings sha256),
+`scenarios[]` and each check's `scenario` id (`<check>@<project>`): what the bot played for
+each check, read from its records (docs/playability-module.md). **`triage-report` 1.3.0**
+adds to the ledger records (shared `quality-finding.schema.json`): `failed_measurement`,
+`baseline`, the verification verdicts `unmeasured`, `missing` and `same-build`, the
+verification's `before`, `after`, `comparison`, `seq` and `samples`, and each history entry's
+`content_hash` and `seq` (docs/specialist-routing.md); a finding's `measurement`.
+
 **`playability-report` 1.2.0** adds the status `SKIPPED` and `skipped_checks[]`
 (`{id, reason}`). A check is skipped only when the design does not claim the thing it
 measures — a game with no win has no `win.reachable` to prove — and a skip is **never** a
@@ -319,6 +327,11 @@ Additive; 1.1.0 artifacts remain valid.
 to the reviewer as notes and never blockers by themselves (a probe change that only adds
 code), and `truncated`, whether the change held more commits than the pre-check reads.
 Additive; 1.2.0 artifacts remain valid.
+
+**`playability-report` 1.5.0** adds, additively, `baseline_comparison` and the `baseline.*`
+checks: for a run that adopted a game, the candidate against the build a person accepted,
+played by the same bot with the same settings (docs/baseline-comparison.md). 1.4.0 reports
+remain valid; a report of an adopted run without them reads the checks UNMEASURED.
 
 **`review-report` 1.4.0** adds optional `lesson_candidates`
 (`shared/quality-finding.schema.json#/$defs/lesson_candidate`): systemic issues the reviewer

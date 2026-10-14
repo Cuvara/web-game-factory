@@ -627,6 +627,19 @@ def realism_report(frames, project_checks=()):
     return {"commit": gate_fixture.DEV, "verdict": "PASS", "checks": checks + list(project_checks)}
 
 
+def pixel_checks(build):
+    """physics.contact_drawn and physics.drawn_extent replayed on a real contact recording
+    (scripts/tests/fixtures/real/play-contact/), both viewports."""
+    checks = []
+    for project in ("desktop", "mobile"):
+        directory = os.path.join(HERE, "fixtures", "real", "play-contact", build, project)
+        with gzip.open(os.path.join(directory, "contact.json.gz"), "rb") as handle:
+            record = json.loads(handle.read().decode("utf-8"))
+        checks += realism.judge_contacts({"contact": record}, directory, D2, RULES, project,
+                                         RELEASE)
+    return checks
+
+
 def body_ball(drawn, body, collider):
     """Frames of a ball drawn `drawn` px across (a glow), its opaque body `body` px across
     (None: not reported), colliding `collider` px across."""
@@ -795,9 +808,16 @@ class RegressionFirewall(unittest.TestCase):
         self.assertEqual({c["check"]: c["status"] for c in l11["checks"]}[
             "play-realism:physics.collider_size"], "FAIL")
         self.assertTrue(regressed["holds_release"])
-        # The fix: the probe reports the opaque body, exactly the collider - 1.0 x.
-        fixed = evaluate(contract, {"playability-report": realism_report(
+        # The probe reporting the opaque body, exactly the collider - 1.0 x - is the build's
+        # own word: without the pixel checks it is not enough to satisfy L11.
+        claimed = evaluate(contract, {"playability-report": realism_report(
             body_ball(30.8, 21.7, 21.7)), "review-report": review})
+        self.assertEqual(by_id(claimed)["L11"]["status"], "UNMEASURED")
+        # The fix, measured: the same report with the contact frames' pixel checks of a build
+        # whose solid drawing is its collider (the real 894b4b8 replay, both viewports).
+        fixed = evaluate(contract, {"playability-report": realism_report(
+            body_ball(30.8, 21.7, 21.7), project_checks=pixel_checks("894b4b8-collider")),
+            "review-report": review})
         self.assertEqual(by_id(fixed)["L11"]["status"], "SATISFIED")
         self.assertEqual(fixed["verdict"], "PASS")
 

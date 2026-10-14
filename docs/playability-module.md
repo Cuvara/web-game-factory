@@ -41,6 +41,13 @@ looked at a rendered frame or played the game. This step does both.
 | FAILED, route `fail` | a required check failed: back to develop, whose brief leads with *Fix first: what the build did when it was played* (each failed check and the frames that show it) |
 | BLOCKED | the step could not establish a result: no experience contract in the design, no checkout, the commit would not install or build, the browser would not start - or, with no check failed, a required check could not be measured: every attempt of its recording ran on a degraded host (`environment-degraded`), or the unit content.variety's negative rests on was cut short (`sample-cut`). Nothing about the game is claimed; resume on a quieter host |
 
+The report's artifact id is `wgf:playability-report:<title>:<yyyymmdd>-<nn>`, `nn` the
+step's execution count. A step that names a phase (`greybox-playability`, `with: {phase:
+greybox}`) puts it in the scope - `wgf:playability-report:<title>-greybox:...` - because
+each step counts its executions from 1: before, the greybox's and develop's reports of one
+day shared ids (five pairs in the 2D run of 2026-10-05, six in the 3D run). Older reports
+keep their ids; the ledger tells them apart by content hash and run-local seq.
+
 The route budgets `greybox-playability.fail: 2` (on greybox) and `playability.fail: 2` (on
 develop) bound the loops. The third unplayable build blocks the run for a person, like the
 other loops (`max_visits_by_route`,
@@ -183,6 +190,33 @@ probe. The developer brief embeds the schema, so a developer knows how the build
 - **Risk** (only with `with: risk: true`; `play-realism.yaml` `risk`): sampled units played
   under the game's own oracle policies `safe` and `greedy` (the probe's optional
   `play.policy`), `risk.json` recording what each attempt earned and how it ended.
+- **Contact** (2D builds only, `play-realism.yaml contact`): the oracle plays for up to
+  `contact.window_s` on each of `contact.projects`, with the page's clock **stepped** - every
+  frame's callbacks get a timestamp `contact.frame_ms` after the last, whatever the host took to
+  draw it (`clock: frame-stepped`), so a loop that takes its delta from the frame's timestamp
+  (the template's fixed-step loop) moves one step per frame drawn and a turn is seen where it
+  happened even on a loaded host. At the start of each frame, before the page's callbacks run,
+  the probe is read; when a mover of `contact.roles` reverses on an axis (the `physics` rules'
+  `min_speed_px` and `max_step_px`), every requestAnimationFrame callback is **held**: the
+  canvas keeps the frame the snapshot describes, and the bot keeps a crop of it around the turn
+  at one pixel per CSS px (`contact-<n>-at`), lets the game run `contact.after_frames` frames,
+  freezes it again and keeps the same crop (`contact-<n>-after`), in which the mover has left,
+  and as many frames on a third (`contact-<n>-later`, from play-realism 1.2.0): a spark of the
+  hit has faded by then, and the mover's drawing is read there away from the impact. A turn at
+  a surface that moved (a paddle) or at a composite (a row of bricks) is frozen on too, marked
+  `passing` and counted in `passed` (before 1.2.0 it was not frozen on: such a surface was left
+  to the probe's word); at most `contact.max_captures`, at least `contact.gap_ms` of game time
+  apart. The no-mover exit (`no <roles> in play`) waits six seconds of GAME time, not of the
+  host's. When movers were in play and none was frozen on, the bot asks for one set of frames
+  anyway (`kind: asked`), for the drawn extent. `contact.json` records each capture's three
+  snapshots around the turn and at each later frame, the event (the axes it turned on),
+  whether the page was still frozen on the same frame after each shot, how many turns it saw
+  (`turns`, of them `passed`), the frames with a mover in play (`movers_seen`), the game time
+  armed (`game_ms`) and the page's real frame pacing (`frame_gaps`). The crops are
+  evidence of the physics checks only: they are left out of the report's `frames` (visual QA
+  judges screens, not crops) and each check pins every crop it read by sha256
+  (`measured.frames`). Its window is outside the time budget, like naive play's; the process
+  timeout grows by it. Any other build records `{applies: false}` with why.
 - **The adopted floor** - when the design records the existing-content floor `unmeasured`
   (the adopted checkout ships no content data file) and this visit plays exactly its commit,
   the traverse plays up to `brief-commitments.yaml existing_content.probe.max_units` units
@@ -302,6 +336,41 @@ reads these from `records_dir`:
   control and text; the probe's `ui`-role entities; and every entity the probe reported at
   that moment (with `asset` and `render`), so a state frame can be read at an entity's box.
 
+### The scenario each check was measured on (playability-report 1.4.0)
+
+A check's status alone cannot say whether a later PASS measured the same thing as an earlier
+FAIL. Every check names its `scenario`, `<check>@<project>` - stable across reports - and
+the report lists, per scenario (`scenarios[]`, built by `wgf_playability/scenario.py` from
+the records the bot already writes; nothing the bot did not record is added):
+
+- `bot` - the bot's version (sha256 of `bot.spec.ts` as the step copied it into the clone)
+  and the sha256 of the settings it was handed (`<records_dir>/settings.json`); the report's
+  own `bot` says the same once;
+- `viewport` - the project's width and height (null for `level.*`, a check of the commit's
+  content data file, project `build`);
+- `policy` - how the bot played each recording the check reads (`idle`,
+  `each-offered-input`, `oracle`, `anti-oracle`, ...), and naive play's seed and policies
+  from the settings, or risk's policies from its record;
+- `records` - the raw records the check is judged on (`analysis.EVIDENCE`, extended for the
+  checks that table leaves out; every record for `page.errors` and `runtime.*`), each with
+  its run-relative path and sha256;
+- `actions` - the inputs those records list, in order, as recorded: the begin press, each
+  act input with its coordinates or key and the probe state before and after, each
+  anti-oracle press with its time, a reset inside the unit, the retry, a pause, each naive
+  or risk run (its policy, unit, inputs and time). Where the bot keeps only a count - the
+  oracle's presses in the win test - one entry carries that count, and `actions_complete` is
+  false. `actions_complete` is true only when every press is listed one by one;
+- `states` - the probe state transitions the records list, with their times;
+- `frames` - the frames the check and its records name, each with its path and sha256.
+
+Lists are capped (80 actions, 40 states, 16 frames) and `omitted` says how many were left
+out. The ledger reads the scenario of the check a finding failed and the one it later passed
+(docs/specialist-routing.md, "What counts as a re-measurement"): a different bot version,
+other settings or another viewport make that comparison weaker, and it says so. What the
+records do not hold stays unrecorded: the oracle's individual presses in the win, traverse,
+persist, session and ramp tests, and the timing of act inputs. Tests:
+`scripts/tests/test_playability.py` `Scenarios`.
+
 ## The checks
 
 | Check | Passes when |
@@ -311,7 +380,7 @@ reads these from `records_dir`:
 | `start.playable` | play begins within `first_30s.playable_s` of navigation, less the time the bot itself spent measuring the title screen (settling, styles, a frame; recorded as `observerMs` beside the wall-clock `playingMs`) |
 | `start.objective` | ≥ 60 % of the objective statement's content words are on screen in the first 3 s of play |
 | `idle.grace` | no loss during the idle window |
-| `act.acknowledged` | every action changes ≥ `min_changed_fraction` of the frame by ≥ `min_pixel_delta` luminance; each is measured in play (a pause goes last, and the bot resumes through the game's own resume input before the next action) |
+| `act.acknowledged` | every action changes ≥ `min_changed_fraction` of the frame by ≥ `min_pixel_delta` luminance; each is measured in play (a pause goes last, and the bot resumes through the game's own resume input before the next action); an action whose attempt ended by the game's clock around it (in play before, `won`/`lost` after) is taken again from play (the game's retry, then its resume or begin input), at most twice, and one that still ends it is kept with `ended_attempts` (#67) |
 | `win.reachable` | good play reaches `won`. Never degraded to "the metric rose" when the contract states a win; and a design whose genre family wins by anything but a best score, with no `experience.win`, fails here - there is nothing for good play to reach |
 | `lose.reachable` | bad play reaches `lost`, and - when the family names a `resource_metric` - that number is seen to fall under the anti-oracle |
 | `restart.works` | the retry returns to play within `retry_s` + 1 s, with the goal metric reset; and, when the family says a unit can be restarted from inside it (`reset_in_unit`), a restart pressed mid-unit returns to a clean unit. Reported **BLOCKED** with `measured.reason` "no loss to retry from" when bad play never reached `lost` and nothing offered a retry: this check waits on `lose.reachable`, which fails on its own |
@@ -399,6 +468,8 @@ check (a degraded host never softens a failure).
 |---|---|
 | `physics.undrawn_collision` | (2D builds; a 3D build's screen positions are projections, so it is not judged there) every turn or stop of a projectile in the win test's per-frame samples happens at a drawn surface: the face of another visible entity on the side the mover was moving toward (in that frame or the one before - a brick the hit breaks), an edge of the probe's `playfield`, something the mover is inside, or a surface moving with it (a ball carried on a paddle), within `tolerance_px` plus the frame's travel, measured from the mover's `collider` when it reports one, else its drawn box. Without a `playfield`, a turn at nothing drawn fails only when a drawn entity still lies ahead of the mover; otherwise it is unmeasured |
 | `physics.collider_size` | every entity that reports a `collider` is drawn `min_drawn_to_collider`-`max_drawn_to_collider` x it on each axis (median over the frames), judged on its opaque `body` when the probe reports one (a solid disc inside a glow, declared `halo: true`), else on its whole drawn box. A halo without a body, an empty body or a body outside the drawn box fails: a collider is never passed with nothing drawn to hold it to. No collider reported: unmeasured |
+| `physics.contact_drawn` | (2D, contact frames) every frozen turn whose surface a later frame can show - a turn the probe explains by nothing, by its `playfield`, or by an entity still in place and not a composite - is at something DRAWN: in the frame after the mover left, along each line across the contact (the mover's span on the other axis), the largest colour distance between the band from the mover's centre to `tolerance_px` + its travel past its leading edge and the median colour of the quarter behind its centre (where it was, now background); the median over the lines is at least `contact.min_edge`. FAILs at `contact.min_undrawn` contacts under it, naming whether the probe reported a surface there (a box or edge the screen does not draw) or nothing. A turn at the board's edge where that edge is the viewport's own (the canvas fills the screen) is at a drawn edge (`surface: screen edge`). A turn at a surface a later frame cannot show where the mover met it is read where it is (play-realism 1.2.0, K7 review): at a moving surface the contact is carried with the surface to its place in the frame after (`read: carried`); at a composite, along its face, drawn if any part of it near the contact is (`read: along its face`); a surface gone by the frame after but reported anew under another id at the same place is that surface. With a third frame the contact is read on both frames and the lower reading counts (a spark of the hit has faded). Left to `physics.undrawn_collision` (counted in `measured.unverified`): a surface gone by the frame after (a brick the hit broke) - unmeasured instead when the mover meets it again (`measured.gone_and_met_again`); a composite with nothing drawn along its face near the contact - unmeasured instead when nothing is drawn in its box in any frame read (`measured.composites_drawn_nowhere`, `contact.composite_min_share`); a turn that travelled more than `contact.max_travel_px` in its frame (a loop on its own clock: the band would reach that far). A contact masked on every line by something reported in the frame after is read under the mask against the background behind it: nothing drawn there either is a turn at nothing drawn. Movers in play that never turned: PASS, nothing to verify (as `physics.undrawn_collision`) - unless the win test's samples show them turning (unmeasured). Turns seen and none it could read: unmeasured. No mover of the roles in play: not reported when the design declares none of `contact.roles` (`build_spec.assets[].role`), else unmeasured |
+| `physics.drawn_extent` | (2D, contact frames) every entity of `contact.extent_roles` that reports a `collider` is drawn `physics.min_drawn_to_collider`-`physics.max_drawn_to_collider` x it (per axis on a record without the third frame; across and along its travel on one with it - see below) - the same bar as `physics.collider_size`, measured on the PIXELS: the pixels whose colour changed by at least `contact.min_delta` and `contact.solid_share` of the change inside the collider (90th percentile) between the frozen frame and the frame after the entity moved away, connected to the collider, other entities' boxes masked. Median per axis over the captures; an axis whose measured body reaches a mask or the crop's edge is a lower bound (it can show a body too large, never one small enough). With a third frame (play-realism 1.2.0) the body is read away from the impact - on the frame after the turn against the third frame - and across the entity's direction of travel there (`measured.across`; a trail or a stretch along the travel is not the body, a squash on the hit frame is not read), against the collider's own extent across the same direction; along the travel, on its opaque pixels only (`contact.along_share` of the change inside the collider, `measured.along`), held to the upper bar - a solid tail or a body drawn long along its motion FAILs, a fading trail does not, and a shaded body reads short there (lenient). Records without the third frame are read on the frozen frame against the frame after. The reported collider is held to where it touched (`contact.max_collider_to_contact`, the largest over the entity's turns). Nothing inside the collider changed: FAIL. No collider reported: unmeasured |
 | `naive.setbacks` | in the OPENING unit, the probe's `setbacks` rise at most `setbacks.max_per_min` a minute of jittered play (a FAIL needs `min_count`). Without `setbacks`, losses are a lower bound: a FAIL above the bar, unmeasured below it. Every unit's rate is reported |
 | `naive.drift` | the time-weighted mean of `track` `\|offset\| / half_width` under jittered play in the opening unit is at most `drift.max_mean_share`. No `track`: unmeasured on the dimensions `drift.dimensions` lists (3D), not judged elsewhere |
 | `naive.alignment` | the 90th percentile angle between `view.camera_forward` and `view.control_forward` is at most `alignment.max_p90_deg`. No `view`: unmeasured on `alignment.dimensions` (3D) |
@@ -410,6 +481,95 @@ check (a degraded host never softens a failure).
 | `level.clearance` | (a proxy: blocking only for a unit whose `naive.clear_rate` against the accepted build was not measured; advisory where the unit's clear rate was measured and passed; where it failed, both are reported and the clear rate blocks) in every GRID layout, each row holding a solid cell (`play_geometry.grid.solid`) leaves a passage at least `clearance.min_widest_to_body` x the moving body's diameter (`play_geometry.body`); a build whose units lay out what reads as a grid but declares no `play_geometry.grid` is unmeasured and not held (the grid is a guess from the data's shape); a declared grid missing its cell or body is held |
 | `runtime.console_errors` | no `console.error` from the game's own origin in any recording (lines matching `runtime.ignore` - the sandbox refusing a network request - are counted apart, never against the build) |
 | `runtime.webgl_context` | no `webglcontextlost` on any canvas in any recording |
+
+### What the contact frames measure, and what they cannot
+
+The two contact checks exist because the probe-reported physics checks can be satisfied without
+drawing anything. In the 2D validation game (2026-10) a specialist cleared the visibility bar by
+enlarging the ball's drawing while its collider stayed r11 (68a12b7, H3), and a level designer
+added undrawn ceilings mid-board so the bot reached units in time (cbac64e, H2). A build that
+reported a playfield edge or an entity box at that ceiling, or a `body` the collider's size,
+would pass `physics.undrawn_collision` and `physics.collider_size` as they stand.
+
+| What | Measurement class |
+|---|---|
+| where the mover was when it turned, and its collider | **self-reported** (the probe) |
+| that it turned: the reversal of its reported centre between consecutive frames | derived from the self-report |
+| whether the page was frozen on the frame the snapshot describes | derived: the hook's own state, read again after the shot - every requestAnimationFrame callback is held, so a game drawing from rAF (the template's loop) keeps its frame; one drawing from timers or a worker would keep drawing, and nothing here would show it |
+| whether anything is drawn at the contact | **pixels** (the frame after, against where the mover was) |
+| what is drawn of an entity: its solid extent | **pixels** (the frozen frame against the frame after) |
+
+Calibration (real, `scripts/tests/fixtures/real/play-contact/`): on the 2D game's builds
+(96f5cea, cbac64e, 68a12b7, 894b4b8), every drawn wall, static brick and board edge read 172-385
+and every undrawn ceiling 13-34 (the highest, 33.5, a ceiling crossing the backdrop's hill line).
+`min_edge` 48 sits 1.4 x above the highest undrawn reading and 3.6 x under the lowest drawn one.
+Drawn extent, with the collider reported (a harness patch to a scratch build, see the README):
+68a12b7 2.6-2.7 x its collider across (the enlarged paper ball and its dart), r1 96f5cea
+1.9-2.05 x (its solid disc, 42 board px over a 22 px collider - the figure 894b4b8's own tuning
+states), 894b4b8 1.03-1.2 x (r1's art with the collider grown to the solid disc). So the accepted
+r1 build FAILs `physics.drawn_extent` too: it held the same bar `physics.collider_size` already
+fails it on once a collider is reported, and 894b4b8 is the build that cleared it.
+
+Closed by the bypass review (2026-10-12, `Bypasses` in `scripts/tests/test_play_contact.py`,
+each failing on the code before its fix): an entity reported over the contact in the frame
+after masked it out of the reading (a mask hides what is drawn under it, never that nothing is:
+read under the mask against the background behind it, nothing drawn is a turn at nothing
+drawn); an entity whose collider was masked in every frame dropped out of the drawn extent
+(now unmeasured, named in `measured.masked_out`); a collider reported larger than the
+simulation's (above); a hit-stop - up to `physics.hit_stop_frames` still frames at a bounce -
+hid the turn from `physics.undrawn_collision` and from the bot (a turn is now seen across the
+stall); and a contact test that froze on no turn PASSed although the win test's samples show
+the mover turning (now unmeasured).
+
+What they cannot catch:
+
+- a collider the probe does not report: `physics.drawn_extent` is unmeasured, never a pass; a
+  collider reported smaller than the simulation's is believed. One reported LARGER is held to
+  where it touched (`contact.max_collider_to_contact`): at a turn read as drawn, its half
+  extent against the distance from its centre to the surface's first pixel plus its step;
+  honest readings 0.48-0.92 (the largest over an entity's turns), the real records with the
+  collider scaled to pass the extent 1.09-1.97. The step bounds that reading from above, so a
+  collider reported up to about 1.5 x the simulation's still passes both bars (96f5cea's
+  scaled x1.6 on desktop, cbac64e's x1.5);
+- a wall the bot never touched in the window; a surface gone by the frame after (a brick the
+  hit broke) that the mover never meets again; a composite with nothing drawn along its face
+  near the contact while something is drawn elsewhere on that face (a ghost box made the union
+  of a real brick row and an invisible ceiling ALONG the same face - one bundled behind the
+  row, whose hit face is drawn nowhere, is unmeasured: `measured.composite_face_drawn`); a box
+  that moves with a mover of the judged roles (two balls passing are not read as a contact);
+- a trail dense enough to blend past `contact.along_share` reads as body along the travel;
+  and the other way round (K7 review round 3, P12), a body drawn long along its motion at
+  80-94 % opacity - a shaded dart, a comet with a slightly translucent tail - is not held along
+  the travel: only its opaque pixels count there (a uniform 0.8 or 0.9 tail three times the
+  body reads 1.03 x and PASSes; at 0.97 it FAILs at 3.03 x; 3e8d25f FAILed all three). Lenient
+  by design, so that a blended motion trail (P5, 94 % where its ghosts overlap) is not the body;
+- OPEN RISK, to watch in the first live run (K7 review round 3, P13): an HONEST composite whose
+  face it was hit on is drawn nowhere in any frame read - its bricks near the hit broken and
+  the rest of that face outside the crop - reads 0.0 on `measured.composite_face_drawn`: the
+  check is unmeasured, which holds the build at release. The only honest real reading so far is
+  0.034 (894b4b8 mobile) against `contact.composite_min_share` 0.01. Candidate fixes, not made:
+  read the face strip on the whole viewport rather than the crop, or apply the face rule only
+  when the same composite is skipped at two or more captures;
+- turns frozen on are capped (`contact.max_captures`) and a turn at a paddle or a brick row
+  now takes one of them: in the step's window (`contact.window_s`, on a loaded host a few
+  seconds of game time) fewer captures go to walls than before 1.2.0;
+- a spark of the hit still drawn in the frame after, on a record without the third frame (a
+  bot before 1.2.0): it reads as a surface;
+- a game that detects the harness (the wrapped requestAnimationFrame) and draws differently
+  while measured, and one drawing from timers or a worker (the freeze holds rAF callbacks only;
+  `still` is the hook's state, not the canvas's);
+- an undrawn wall that happens to coincide with a backdrop feature as strong as `min_edge`
+  along the contact (a contrasting horizon exactly where the ceiling is);
+- a drawn surface whose colour equals the background's behind the mover (it reads undrawn; to a
+  player it is invisible too) - or is within `min_edge` of it: a wall at a colour distance of
+  20-35 from its backdrop is visible on a monitor and FAILs as undrawn (a false positive: the bar
+  was calibrated on one game's palette; `test_a_low_contrast_wall_reads_undrawn_a_known_limitation`);
+- an opaque outline darker than half the body's change is read as background, so a body with
+  such an outline measures smaller (lenient: 68a12b7's ink outline, which still FAILs on its fill);
+- a 3D build (screen positions are a moving camera's projection), and a game whose loop reads
+  its own clock instead of the frame's timestamp - its turns are seen at the host's pace; a turn
+  that travelled more than `contact.max_travel_px` in its frame is not read (1.1.0's
+  `max_frame_ms` gap test could never fire: the bot records the stepped timestamps).
 
 Geometry is read from the content contract's one declared place
 (`core/reference/content-sufficiency.yaml` `layout`: a unit's `layout` entry in
@@ -428,8 +588,8 @@ Triage routes the checks by `core/reference/specialist-routing.yaml` (1.6.0): `p
 `naive.alignment` to gameplay, `naive.pace`, `naive.unit_duration` and `level.` to the level
 designer, the rest of `naive.` to difficulty, `runtime.console_errors` to browser QA (as
 `page.errors` is) and `runtime.webgl_context` to the performance engineer. Each has a tier in
-`core/reference/check-tiers.yaml` (source `play-realism`: `physics.undrawn_collision` and
-`runtime.webgl_context` hard, the rest quality, `level.clearance` advisory unit by unit where
+`core/reference/check-tiers.yaml` (source `play-realism`: `physics.undrawn_collision`,
+`physics.contact_drawn` and `runtime.webgl_context` hard, the rest quality, `level.clearance` advisory unit by unit where
 its clear rate passed), and the quality gate places them on its scorecard
 (`core/reference/quality-floor.yaml` 1.2.0, `applies: reported`): `floor.physics_drawn` on game
 feel, `floor.naive_control` on gameplay, `floor.naive_challenge` and `floor.level_geometry` on
@@ -439,6 +599,22 @@ performance. `level.clearance` is held by this step only: a proxy whose clear ra
 (`core/reference/lessons.yaml`) name these checks. What is calibrated on which build, and what is only reasoned (`collider_size`,
 `alignment`, and `drift` on regressed builds), is stated beside each bar; the replay tests are
 `scripts/tests/test_play_realism.py` over `scripts/tests/fixtures/real/play-realism/`.
+
+### The accepted build (playability-report 1.5.0)
+
+When the run adopted a game, the design names the build a person accepted
+(`existing_content.source.commit`: `factory.init.accepted_baseline`, else the adopted
+checkout's shipped commit). Every visit that plays another commit also plays the accepted one -
+with the same bot and the same settings, the accepted units surveyed and sampled by naive play,
+each naive unit and policy played `clear_rate.runs` times - on desktop, kept under
+`<run>/baseline/` and reused while the bot and settings are the same. The `baseline.*` checks
+then report what got worse, unit by unit and quantity by quantity: units removed or renamed,
+layouts, elements and tuning changed, units cut, difficulty values moved or reordered, drawn
+kinds and role sizes changed, units cleared in a fraction of the accepted time or more often,
+a slower start or frame rate. A measured regression fails at every tier; a person changes
+accepted content only by recording why (`factory.init.accepted_changes`). The accepted play
+also feeds `naive.clear_rate` when the step has no `with: accepted_play`. See
+[baseline-comparison.md](baseline-comparison.md).
 
 ## What it does not claim
 

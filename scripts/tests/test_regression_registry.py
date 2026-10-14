@@ -93,7 +93,9 @@ class Sandbox(unittest.TestCase):
              "workspace/lessons/evidence.yaml",
              # The knowledge model's scope vocabularies (wgf_knowledge.model.vocabulary).
              "core/reference/genre-models.yaml", "core/reference/quality-benchmark.yaml",
-             "core/reference/visual-quality.yaml", "core/reference/play-realism.yaml")
+             "core/reference/visual-quality.yaml", "core/reference/play-realism.yaml",
+             # K6.3: the quality assessment places every declared check.
+             "core/reference/quality-assessment.yaml")
     TREES = ("scripts/wgf_playability", "scripts/wgf_production", "scripts/wgf_assets",
              "scripts/wgf_verification", "scripts/tests")
     # Copied whole (every file, not only .py): the platform profiles a scope names, and the
@@ -280,8 +282,8 @@ class Lessons(Sandbox):
                             for p in self.problems()))
 
     def test_a_gap_that_says_nothing_fails(self):
-        self.set_lesson("L8", gap=None)
-        self.assertTrue(any("L8: a gap lesson says what is not held yet" in p
+        self.set_lesson("L9", gap=None)
+        self.assertTrue(any("L9: a gap lesson says what is not held yet" in p
                             for p in self.problems()))
 
     def test_a_lesson_naming_a_game_fails(self):
@@ -397,7 +399,7 @@ def _with_result(source, check, failing):
     elif source == "content-sufficiency":
         report["checks"].append({"id": check, "status": status, "required": True,
                                  "summary": "measured"})
-    elif source in ("playability", "play-realism"):
+    elif source in ("playability", "play-realism", "baseline-compare"):
         report["checks"].append({"id": check, "project": "desktop", "status": status,
                                  "required": True, "summary": "measured"})
     elif source == "production-quality":

@@ -1,0 +1,147 @@
+{
+ "about": "Real measurements behind baseline-compare.yaml 1.1.0's advisory bars, carried over from the unmerged accepted-baseline branch (refs/remotes/origin/wip/accepted-baseline 9159015, scripts/tests/fixtures/accepted-baseline/real-reports.json; issue #75). `frames`: the frames.readable measurements of the real playability reports of the 2026-10 validation games - the build a person accepted at G4 (baseline-r1) and the build a person then judged worse - copied as that branch trimmed them, each with the run-store path and the content hash of the original report. `rewrite`: the replacement shares that branch measured from the games' repositories (its docs/accepted-baseline.md 'Calibration'): numbers as recorded there, not re-measured here. Not edited by hand.",
+ "frames": {
+  "2d-accepted": {
+   "commit": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+   "content_hash": "sha256:ada438cd971b478f62b92012114e774b4832722a6366625817f09ca917c23b94",
+   "projects": {
+    "desktop": {
+     "first-session-1s": {
+      "contrast": 26.45,
+      "mean_luminance": 25.79
+     },
+     "play-2s": {
+      "contrast": 26.25,
+      "mean_luminance": 25.71
+     }
+    },
+    "mobile": {
+     "first-session-1s": {
+      "contrast": 41.25,
+      "mean_luminance": 28.38
+     },
+     "play-2s": {
+      "contrast": 41.25,
+      "mean_luminance": 28.38
+     }
+    }
+   },
+   "source": "val-2d/project/.factory/workflows/new-game-20261003-081154-4e5e0a/artifacts/playability-report/v23.json",
+   "title_id": "brick-breaker-worlds"
+  },
+  "2d-candidate": {
+   "commit": "68a12b7a237ec41d70fc81c2531f0f1a3cb0ab74",
+   "content_hash": "sha256:a625b9b1624934f3833770efbde414f696edf3cc11d7f4918192d380f8c172d9",
+   "projects": {
+    "desktop": {
+     "first-session-1s": {
+      "contrast": 51.78,
+      "mean_luminance": 95.9
+     },
+     "play-2s": {
+      "contrast": 42.41,
+      "mean_luminance": 88.8
+     }
+    },
+    "mobile": {
+     "first-session-1s": {
+      "contrast": 73.18,
+      "mean_luminance": 112.16
+     },
+     "play-2s": {
+      "contrast": 73.16,
+      "mean_luminance": 112.15
+     }
+    }
+   },
+   "source": "val-2d/project/.factory/workflows/new-game-20261005-002926-318384/artifacts/playability-report/v15.json",
+   "title_id": "brick-breaker-worlds"
+  },
+  "3d-accepted": {
+   "commit": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+   "content_hash": "sha256:bb6acca222b72591497d1053c53f75f3ca64fb58576bf8ac15bf22a49defa1aa",
+   "projects": {
+    "desktop": {
+     "first-session-1s": {
+      "contrast": 47.25,
+      "mean_luminance": 121.81
+     },
+     "play-2s": {
+      "contrast": 47.29,
+      "mean_luminance": 121.8
+     }
+    },
+    "mobile": {
+     "first-session-1s": {
+      "contrast": 59.1,
+      "mean_luminance": 123.91
+     },
+     "play-2s": {
+      "contrast": 59.15,
+      "mean_luminance": 123.72
+     }
+    }
+   },
+   "source": "val-3d/project/.factory/workflows/new-game-20261003-082542-0de9b5/artifacts/playability-report/v15.json",
+   "title_id": "sky-marble"
+  },
+  "3d-candidate": {
+   "commit": "1c6b099f1f2d0c960223460bc8926683209c75cf",
+   "content_hash": "sha256:bc0c58a3280b4a08e6773d39c41de7c29e71e6202ac9412ba642485fcea97da6",
+   "projects": {
+    "desktop": {
+     "first-session-1s": {
+      "contrast": 48.36,
+      "mean_luminance": 183.62
+     },
+     "play-2s": {
+      "contrast": 48.36,
+      "mean_luminance": 183.76
+     }
+    },
+    "mobile": {
+     "first-session-1s": {
+      "contrast": 46.63,
+      "mean_luminance": 184.51
+     },
+     "play-2s": {
+      "contrast": 45.98,
+      "mean_luminance": 184.73
+     }
+    }
+   },
+   "source": "val-3d/project/.factory/workflows/new-game-20261005-002923-597b5e/artifacts/playability-report/v13.json",
+   "title_id": "sky-marble"
+  }
+ },
+ "rewrite": {
+  "improving_max": {
+   "files_rewritten_share": 0.0556,
+   "lines_deleted_share": 0.0842,
+   "units_replaced_share": 0.0625
+  },
+  "rejected": {
+   "2d": {
+    "accepted": "96f5cea",
+    "candidate": "68a12b7",
+    "files_rewritten_share": 0.0256,
+    "lines_deleted_share": 0.1145,
+    "units_replaced_share": 1.0
+   },
+   "3d": {
+    "accepted": "64ff4c6",
+    "candidate": "b6b9edb",
+    "files_rewritten_share": 0.1897,
+    "lines_deleted_share": 0.4618,
+    "units_replaced_share": null
+   },
+   "3d-head": {
+    "accepted": "64ff4c6",
+    "candidate": "1c6b099",
+    "files_rewritten_share": 0.172,
+    "lines_deleted_share": 0.46,
+    "units_replaced_share": null
+   }
+  }
+ }
+}

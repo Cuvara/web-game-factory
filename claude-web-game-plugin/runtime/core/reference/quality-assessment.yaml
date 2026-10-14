@@ -63,7 +63,9 @@
 # 1.1.0: the baseline comparison's families (accepted-content, accepted-on-screen,
 #        accepted-play, accepted-timing).
 # 1.2.0: feedback-effects - production-quality's vfx checks (core/reference/vfx.yaml).
-version: 1.2.0
+# 1.3.0: accepted-replacement and accepted-look - the baseline comparison's advisory checks
+#        (baseline-compare.yaml 1.1.0): supporting only, they decide no dimension.
+version: 1.3.0
 
 statuses: [PASS, FAIL, INCONCLUSIVE, NOT_SUPPORTED]
 
@@ -507,6 +509,28 @@ families:
     method: The bot's first-session timing, the act test's before/after frames and the page's requestAnimationFrame count over the win test, on both builds on one host.
     limits: Software rendering on the build host; frames are counted, not timed per input - no input-to-photon latency is measured.
     cannot_justify: That the game feels as responsive on a player's device.
+  # Advisory (baseline-compare.yaml 1.1.0, check-tiers `advisory`): listed as supporting,
+  # never deciding a dimension - their bars are uncalibrated.
+  - id: accepted-replacement
+    label: How much of the accepted build was replaced
+    dimension: design_validity
+    class: deterministic
+    when: reported
+    checks: [baseline-compare:baseline.source_rewrite]
+    measures: The share of the accepted content data file's units the candidate removed or altered, of the accepted source files (under the configured roots) it deleted or rewrote, and of the accepted source lines it deleted.
+    method: Read from git objects between the accepted and the candidate commit in the playability step's own clone - the content data file at each commit, and `git diff --numstat` with renames off.
+    limits: A share is not a judgement - a rewrite can improve a game and a small change can ruin one; a moved file counts as deleted; the bars are proposed, not calibrated by this step.
+    cannot_justify: That the candidate is better or worse than the accepted build.
+  - id: accepted-look
+    label: The look against the accepted build
+    dimension: player_facing
+    class: deterministic
+    when: reported
+    checks: [baseline-compare:baseline.frame_metrics]
+    measures: The mean luminance and contrast of the compared frames (first-session-1s, play-2s) against the accepted build's frames of the same states.
+    method: The same pixel statistics frames.readable reports, computed on both builds' frames from the same bot and settings on one host.
+    limits: A brighter or flatter frame is a change, not a defect; a frame the bot captured at another moment of play differs for that reason alone; the bars are proposed, not calibrated by this step.
+    cannot_justify: That the game looks as good as, or better than, the accepted one.
 
 # Floor criteria no family names: each aggregates checks a family already maps (or, for the
 # `kinds` listed, reads a report whose own checks a family maps), so counting it again would

@@ -9,6 +9,27 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Two advisory measurements against the accepted build** (issue #75, the accepted-baseline
+part; `core/reference/baseline-compare.yaml` 1.1.0, `check-tiers.yaml` 1.6.0,
+`quality-assessment.yaml` 1.3.0). A run that adopted a game now also reports
+`baseline.source_rewrite` - the share of the accepted content units removed or altered, of the
+accepted `src/` files rewritten and of the accepted lines deleted between the accepted and the
+candidate commit, read from git in the playability step's own clone - and
+`baseline.frame_metrics` - each compared frame's mean luminance and contrast against the
+accepted build's frames. Both are **ADVISORY**: always `required: false`, never read by
+`floor.accepted_baseline`, never routed by triage, and they never change the step's verdict.
+Their bars (0.25 per share; 32 luminance, 24 contrast) are proposed from the unmerged
+accepted-baseline branch's measurements of the two validation games
+(`scripts/tests/fixtures/real/baseline-compare/advisory/`) and are not calibrated by this step.
+A default run adopts nothing and reports neither; the golden runs adopt nothing. They become
+blocking only with bars measured by this step on builds a person judged, a new
+baseline-compare version, the tier moved to `quality` and the checks named in
+`floor.accepted_baseline`. Not ported, with why (docs/baseline-comparison.md "Not ported"):
+the paired visual judgement and visual-QA score drops (an LLM judge per adopted run), the
+playtest-notes CLI with approve/restore (a new human-decision surface), and finding the
+accepted build from a G4 decision-record (the record pins reports, not a commit; it would make
+the design step read other runs' stores). Nothing to bring forward: existing reports are valid.
+
 **The development brief and the GDD carry the design's visual effects** (review of the
 craft-identity-vfx merge, F1). `build_spec.vfx` is now a build-spec section of the brief and of
 `docs/GDD.md` (*Visual effects*), and the brief's play-probe section, when the design declares

@@ -183,6 +183,18 @@ def assertion_results(verification, manifest, platform_id):
     return None
 
 
+def verified_check(verification, manifest, check_id):
+    """Verify's check `check_id` when the verification-report is about the release's commit,
+    else None."""
+    if not isinstance(verification, dict):
+        return None
+    commit = (verification.get("commit") or {}).get("sha")
+    if not same_commit(commit, (manifest or {}).get("commit_sha")):
+        return None
+    return next((c for c in verification.get("checks") or []
+                 if isinstance(c, dict) and c.get("id") == check_id), None)
+
+
 def output_name(platform_id):
     return f"{ARTIFACT}-{platform_id}"
 

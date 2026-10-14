@@ -141,6 +141,11 @@ def _actions(name, record):
                 out.append(_action(name, entry.get("action"), phase="act",
                                    input=entry.get("input"), before=_state(entry.get("before")),
                                    after=_state(entry.get("after"))))
+                # An action taken again after its attempt ended (bot.spec.ts takeAction,
+                # issue #67) had presses the record does not list: the retry and the earlier
+                # takes.
+                if entry.get("ended_attempts"):
+                    complete = False
     elif name == "win":
         out.append(_action(name, "oracle", phase="play", count=record.get("inputs"),
                            after=record.get("reached")))

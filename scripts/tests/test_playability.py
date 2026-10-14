@@ -31,7 +31,7 @@ sys.path.insert(0, SCRIPTS)
 
 from wgf_assets.raster import Image, encode_png  # noqa: E402
 from wgf_design.experience import load_rules as experience_rules  # noqa: E402
-from wgf_playability import analysis  # noqa: E402
+from wgf_playability import analysis, scenario  # noqa: E402
 from wgf_playability.step import PlayabilityStep, load_rules  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
 from wgflib.workflow.model import StepOutcome  # noqa: E402
@@ -1425,48 +1425,131 @@ class TheAntiOracle(unittest.TestCase):
         self.has("filter((m) => !UTILITY.test(m.action) && !UNDO.test(m.action))")
 
 
+_ACT_HARNESS = r"""
+// The harness: plays scripted snapshots through takeAction and prints what it did.
+const script = JSON.parse(process.argv[2]);
+let i = 0;
+const log = [];
+const frames = [];
+const deps = {
+  snap: async () => { const s = script.snaps[Math.min(i, script.snaps.length - 1)]; i += 1; log.push(`snap:${s ? s.state : null}`); return s; },
+  press: async (move) => { log.push(`press:${move.action}`); },
+  frame: async (id) => { frames.push(id); log.push(`frame:${id}`); },
+  retry: async (s) => { log.push(`retry:${s ? s.state : null}`); },
+  wait: async () => {},
+  frames,
+  ackMs: 100,
+};
+takeAction(script.first, deps).then((entry) => {
+  process.stdout.write(JSON.stringify({ entry, frames, log }));
+});
+"""
+
+
+def _state(name, *actions):
+    return {"state": name, "inputs": [{"action": a, "input": {"type": "pointer", "x": 1, "y": 2}}
+                                      for a in actions]}
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not on PATH")
 class TheActTest(unittest.TestCase):
-    """The act test's frames (bot.spec.ts, "act: every action is acknowledged on screen"). In
-    two acceptance runs (issue #67) the 3D golden's attempt ended by the game's own clock - a
-    wall reached the craft - between the snapshot before `pause` and the frame after it: the
-    frame labelled act-pause-after showed the lose screen, visual QA judged it as the pause
-    screen and failed the run. The record said so (`before` playing at score 53, `after` lost
-    at 99)."""
+    """The act test's actions (bot.spec.ts takeAction). In two acceptance runs (issue #67) the
+    3D golden's attempt ended by the game's own clock - a wall reached the craft - between the
+    snapshot before `pause` and the frame after it: the frame act-pause-after showed the lose
+    screen (record: before playing at score 53, after lost at 99), visual QA judged it as the
+    pause screen and failed the run. takeAction is cut out of bot.spec.ts and run under node
+    (type annotations stripped) with scripted snapshots."""
 
     @classmethod
     def setUpClass(cls):
         with open(os.path.join(SCRIPTS, "wgf_playability", "bot.spec.ts"), encoding="utf-8") as handle:
             source = handle.read()
+        begin = source.index("// -- act-take")
+        cls.block = source[begin:source.index("// -- end act-take", begin)]
+        cls.dir = tempfile.mkdtemp(prefix="wgf-act-take-")
+        cls.script = os.path.join(cls.dir, "act-take.ts")
+        with open(cls.script, "w", encoding="utf-8") as handle:
+            handle.write(cls.block + _ACT_HARNESS)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.dir, ignore_errors=True)
+
+    def take(self, snaps, first="pause"):
+        done = subprocess.run(
+            ["node", "--experimental-strip-types", "--no-warnings", self.script,
+             json.dumps({"first": {"action": first, "input": {"type": "pointer", "x": 1, "y": 2}},
+                         "snaps": snaps})],
+            capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return json.loads(done.stdout)
+
+    def test_an_action_in_play_is_taken_once(self):
+        out = self.take([_state("playing", "pause"), _state("paused", "resume")])
+        self.assertEqual(out["frames"], ["act-pause-before", "act-pause-after"])
+        self.assertEqual(out["entry"]["after"]["state"], "paused")
+        self.assertNotIn("ended_attempts", out["entry"])
+        self.assertEqual(out["log"].count("press:pause"), 1)
+
+    def test_an_attempt_that_ended_around_the_action_is_taken_again_from_play(self):
+        # The #67 case: in play before, lost once the frame was taken. Retried, back in play,
+        # taken again - and the second time it pauses.
+        out = self.take([_state("playing", "pause"), _state("lost", "retry"),
+                         _state("lost", "retry"), _state("playing", "pause"),
+                         _state("paused", "resume")])
+        self.assertEqual(out["entry"]["after"]["state"], "paused")
+        self.assertEqual(out["entry"]["ended_attempts"], 1)
+        # The ended attempt's frames are taken again under the same names, listed once.
+        self.assertEqual(out["frames"], ["act-pause-before", "act-pause-after"])
+        self.assertIn("retry:lost", out["log"])
+        self.assertEqual(out["log"].count("press:pause"), 2)
+
+    def test_an_action_that_keeps_ending_the_attempt_is_kept_and_says_so(self):
+        # Bounded: the first take and ACT_RESTARTS (2) more, then measured as is.
+        snaps = [_state("playing", "pause"), _state("lost", "retry")] * 2 + [
+            _state("lost", "retry"), _state("playing", "pause"), _state("lost", "retry")]
+        out = self.take(snaps)
+        self.assertEqual(out["log"].count("press:pause"), 3)
+        self.assertEqual(out["entry"]["ended_attempts"], 3)
+        self.assertEqual(out["entry"]["after"]["state"], "lost")
+        self.assertEqual(out["frames"], ["act-pause-before", "act-pause-after"])
+
+    def test_a_retry_that_lands_on_a_title_screen_begins_play_again(self):
+        # Review of the fix (N1): a retry can leave the game on its title, whose input is
+        # `start`, not a resume; the action is taken from play, not from the title.
+        out = self.take([_state("playing", "pause"), _state("lost", "retry"),
+                         _state("lost", "retry"), _state("title", "start"),
+                         _state("playing", "pause"), _state("paused", "resume")])
+        self.assertIn("press:start", out["log"])
+        self.assertEqual(out["entry"]["before"]["state"], "playing")
+        self.assertEqual(out["entry"]["after"]["state"], "paused")
+
+    def test_an_action_that_never_reached_play_is_not_retaken(self):
+        # Not in play before the action: nothing ended around it, measured as is.
+        out = self.take([_state("title"), _state("lost", "retry")])
+        self.assertEqual(out["log"].count("press:pause"), 1)
+        self.assertNotIn("ended_attempts", out["entry"])
+
+    def test_the_act_test_takes_every_action_through_take_action(self):
+        with open(os.path.join(SCRIPTS, "wgf_playability", "bot.spec.ts"), encoding="utf-8") as handle:
+            source = handle.read()
         start = source.index('test("act: every action is acknowledged on screen"')
-        cls.body = source[start:source.index("\ntest(", start + 1)]
-        cls.source = source
+        body = source[start:source.index("\ntest(", start + 1)]
+        self.assertIn("acted.push(await takeAction(first, {", body)
+        self.assertNotIn("frame(page, project, `${id}", body)
 
-    def test_an_attempt_that_ended_around_the_action_is_named(self):
-        # In play before the action, ended (won or lost) once its frame was taken.
-        self.assertIn('const ENDED = new Set(["won", "lost"]);', self.source)
-        self.assertIn('return before?.state === "playing" && Boolean(after && ENDED.has(after.state));',
-                      self.source)
 
-    def test_such_an_action_is_taken_again_from_play_a_bounded_number_of_times(self):
-        self.assertIn("const ACT_RESTARTS = 2;", self.source)
-        self.assertIn("if (endedAround(before, after) && ended < ACT_RESTARTS) {", self.body)
-        # Back into play the way the game offers after an ended attempt, before the retake.
-        self.assertIn("if (before && ENDED.has(before.state)) {", self.body)
-        self.assertIn("await retry(page, before, touch);", self.body)
+class ActScenario(unittest.TestCase):
+    """A scenario lists every press only when the bot recorded every press: an action taken
+    again after its attempt ended (takeAction, #67) had presses its record does not list."""
 
-    def test_the_retaken_frames_replace_the_ended_ones(self):
-        # The frames list is wound back and the frames are taken under the same names, so the
-        # report never lists the end screen as the action's "after".
-        self.assertIn("const mark = frames.length;", self.body)
-        self.assertIn("frames.length = mark;", self.body)
-        before = self.body.index("frames.length = mark;")
-        self.assertLess(self.body.index("await frame(page, project, `${id}-after`, frames);"), before)
-
-    def test_an_action_that_still_ends_the_attempt_is_kept_and_says_so(self):
-        # Never retried forever and never dropped: the last attempt is recorded with how many
-        # attempts ended around it, so a reader sees it.
-        self.assertIn("ended_attempts", self.body)
-        self.assertIn("acted.push(", self.body)
+    def test_an_action_taken_again_leaves_the_scenario_incomplete(self):
+        entry = {"action": "pause", "input": {"type": "pointer", "x": 1, "y": 2},
+                 "before": {"state": "playing"}, "after": {"state": "paused"}}
+        _, complete = scenario._actions("act", {"acted": [entry]})
+        self.assertTrue(complete)
+        _, complete = scenario._actions("act", {"acted": [dict(entry, ended_attempts=1)]})
+        self.assertFalse(complete)
 
 
 class TheShowcase(unittest.TestCase):

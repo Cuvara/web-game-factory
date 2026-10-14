@@ -20,7 +20,9 @@ frame after it, so the frame named `act-pause-after` showed the lose screen; vis
 judge compared it with the approved pause look, failed the run and routed `assets`, which
 blocked. An action that was taken in play and whose attempt had ended (`won` or `lost`) once its
 frame was taken is now taken again from play, at most twice, its frames replaced under the same
-names; one that still ends the attempt is kept as measured, with `ended_attempts` on its record.
+names; one that still ends the attempt is kept as measured, with `ended_attempts` on its record
+(and its scenario no longer claims to list every press). Back in play means the game's resume
+or, after a retry that lands on a title screen, its begin input (`start`, `begin`, ...).
 No check, bar or route changes. Bringing an artifact forward: none - the bot's version moves,
 so an accepted build's cached baseline play is played again.
 

@@ -1,0 +1,84 @@
+# The visual effect contract: what a game draws the moment an interaction happens.
+#
+# A game that ships without designed effects reads as unfinished however good its models
+# are: a pickup that leaves a few flat flecks, a player with no trail at speed, a checkpoint
+# ring that fills the screen, a result card that covers the goal and the celebration the
+# instant the player wins. Each of those was a build that passed every gate, because nothing
+# asked for an effect or looked for one.
+#
+# The design states one effect per interaction kind in game-design build_spec.vfx (what it
+# draws, how long, the largest share of the screen it may take). The design step holds it to
+# this file (consistency rule `vfx_covers_interactions`, scripts/wgf_design/vfx.py): at a
+# quality tier in `binds_at_tiers`, every kind the design implies (`implied_by`) has an
+# effect, no cap exceeds the kind's `max_screen_share`, and an effect's asset or audio cue
+# exists. The production gate measures them in play (core/reference/production-quality.yaml
+# `vfx`, checks `vfx.fires` and `vfx.celebration`) and visual QA judges them in the
+# interaction and win frames (core/reference/visual-qa-rubric.yaml `feedback_visible`,
+# `celebration_visible`). The craft is core/craft/juice.md ("Interaction effects").
+#
+# Calibrated 2026-10-05 on frames of the two validation games (a 2D brick breaker, a 3D
+# marble course; docs/production-quality-module.md, "VFX calibration"): the 3D gem pickup's
+# flecks spanned 0.044 of a desktop frame and still read as nothing - a share is a ceiling,
+# not proof of an effect, which is visual QA's to judge; the 3D result card covered 0.24 of
+# the desktop frame and 0.65 of the mobile one, centred on the goal, from the first frame
+# of the win.
+#
+# Changing a kind, a ceiling or an implication is a version bump, and the consistency
+# ruleset pins this file's version.
+
+version: 1.0.0
+
+# Quality tiers at which a design must state an effect for every implied kind.
+binds_at_tiers: [release, premium]
+
+kinds:
+  pickup:
+    label: a collectible taken
+    # Read from the design: build_spec.assets roles, the design's mechanic ids
+    # (core/reference/mechanic-lexicon.yaml), the experience contract.
+    implied_by: {roles: [collectible], mechanics: [collect]}
+    max_screen_share: 0.08
+    duration_ms: 450
+    effect: >-
+      A ring or glow burst at the pickup in its accent colour, and the item flying to its
+      HUD counter, which pops; never a few flat flecks alone.
+  impact:
+    label: a hit, a bump or a crash
+    implied_by: {roles: [threat, hazard, projectile], mechanics: [crash, wall, shoot, dodge]}
+    max_screen_share: 0.15
+    duration_ms: 300
+    effect: >-
+      A short burst at the contact point in the danger colour, with a brief squash of what
+      was hit; a hit-stop or a small shake at most.
+  checkpoint:
+    label: a checkpoint or gate passed
+    implied_by: {mechanics: [gate]}
+    max_screen_share: 0.2
+    duration_ms: 600
+    effect: >-
+      The checkpoint itself lights up and a ring or flag snaps at it, drawn in the world;
+      never a ring around the camera that fills the frame.
+  goal:
+    label: the goal reached, the unit won
+    implied_by: {roles: [goal], mechanics: [exit], experience: [win]}
+    max_screen_share: 0.6
+    duration_ms: 1200
+    effect: >-
+      A celebration at the goal - a burst, confetti, the goal lighting up - with the result
+      screen waiting for it or placed clear of it.
+  fail:
+    label: a fall, a crash, a life lost
+    implied_by: {experience: [lose]}
+    max_screen_share: 0.35
+    duration_ms: 600
+    effect: >-
+      What went wrong shown where it happened - a splash, a puff, a flash on the player -
+      before the loss screen.
+  trail:
+    label: the player moving at speed
+    implied_by: {mechanics: [steer, drive, drift, race, boost]}
+    max_screen_share: 0.08
+    duration_ms: 350
+    effect: >-
+      A trail, streaks or speed lines behind the player that grow with its speed, in the
+      player's accent.

@@ -579,6 +579,10 @@ class RealJudgeVerdict(ProductionCase):
         from wgf_visualqa.brief import frame_state
         from wgf_visualqa.step import report_states
         rubric = rubric_mod.load_rubric()
+        # The verdict was recorded under rubric 1.2.0: the questions 1.3.0 added (the visual
+        # effects, core/reference/vfx.yaml) were never asked of it, so they are not asked here.
+        rubric["state_questions"] = [q for q in rubric["state_questions"] if q["id"] not in
+                                     ("feedback_visible", "celebration_visible")]
         frames = [{"key": f"{p}/{i}", "project": p, "id": i, "state": frame_state(i)[0],
                    "path": f"playability/playability-1-1/{p}/frames/{i}.png"}
                   for p in ("desktop", "mobile") for i in self.IDS]

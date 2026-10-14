@@ -23,7 +23,7 @@ import datetime
 import json
 import os
 
-from wgflib import paths, provenance
+from wgflib import check_strength, paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.yamllite import load_file
 
@@ -94,11 +94,30 @@ class ProductionQualityStep(WorkflowStep):
                 blocked = f"no playability records under {directory}"
         checks = []
         if not blocked:
-            checks = judging.judge(records, manifest, design, load_rules(), frames)
+            checks = judging.judge(records, manifest, design, load_rules(), frames,
+                                   held=self._unmeasured_held(context, design))
             stale = [c for c in checks if c["required"] and c["status"] == "BLOCKED"]
             if stale:
                 blocked = "; ".join(c["summary"] for c in stale)
         return self._finish(context, inputs, title_id, commit, checks, blocked)
+
+    @staticmethod
+    def _unmeasured_held(context, design):
+        """check id -> why a check that measured nothing is not passed, or None: the run's
+        quality tier (else the design's) against core/reference/quality-policy.yaml rule 5."""
+        from wgflib.workflow.quality import run_tier
+        from wgf_design.content import quality_tier
+        tier = (run_tier(getattr(context, "environment", None))
+                or quality_tier(design, None)[0])
+        strength = check_strength.for_tier(tier)
+        steps = ("production-quality", getattr(context, "current_step", None))
+
+        def held(check):
+            if not strength.required(check, steps):
+                return None
+            return (f"at quality tier {tier} a check that measured nothing is not passed "
+                    f"(core/reference/quality-policy.yaml skipped_checks)")
+        return held
 
     def _finish(self, context, inputs, title_id, commit, checks, blocked):
         failing = [c for c in checks if c["required"] and c["status"] == "FAIL"]

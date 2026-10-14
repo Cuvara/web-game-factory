@@ -1,7 +1,7 @@
 # Juice: the numbers
 
 **Serves** `build_spec.controls`, `.rewards[].feedback`, `.hud[].feedback`,
-`.failure.feedback`, `build_spec.experience` (acknowledgement, grace, retry),
+`.failure.feedback`, `build_spec.experience` (acknowledgement, grace, retry), `build_spec.vfx`,
 `visual_identity.motion`, and the playability checks `act.acknowledged`, `idle.grace`,
 `restart.works` (`docs/playability-module.md`).
 
@@ -115,12 +115,50 @@ before 10 s of play when the grace is a time.
 - Card entry: 260 ms `steps(4)` stamp from scale 1.12, -1.5 degrees.
 - `prefers-reduced-motion`: drop shake, flash and bumps; keep the colour, sound and text.
 
+## 9. Interaction effects: the design's contract, measured
+
+Sections 3-5 tune effects; `build_spec.vfx` makes them a contract
+(`core/reference/vfx.yaml`): one effect per interaction kind the game has, each with what it
+draws, its `duration_ms` and the largest share of the screen it may cover. At a release
+quality tier the design must state one for every kind it has (rule
+`vfx_covers_interactions`); the production gate checks each fires after its interaction and
+stays inside its cap (`vfx.fires`, `vfx.screen_share`), and that the result screen leaves the
+win's celebration in view (`vfx.celebration`); visual QA judges the interaction and win
+frames (`feedback_visible`, `celebration_visible`).
+
+| Kind | Draw | Duration | Screen-share ceiling |
+|---|---|---|---|
+| pickup | a ring or glow burst at the item in its accent + the item flying to its HUD counter, which pops | 300-600 ms | 0.08 |
+| impact | a short burst at the contact point in the danger colour, a squash of what was hit | 200-400 ms | 0.15 |
+| checkpoint | the checkpoint itself lights and a flag or ring snaps at it, in the world | 400-800 ms | 0.2 |
+| goal | a celebration at the goal: burst, confetti, the goal lit | 900-1500 ms | 0.6 |
+| fail | the cause shown where it happened: a splash, a puff, a flash on the player | 400-800 ms | 0.35 |
+| trail | streaks or a trail behind the player growing with speed | segments live 250-450 ms | 0.08 |
+
+- **Effects belong to the world, not the lens.** A checkpoint ring drawn around the camera
+  fills the frame; draw it at the checkpoint, sized against the player.
+- **More than flecks.** A pickup's few flat squares read as dust: a pickup needs a shape (a
+  ring, a glow) and a destination (the counter).
+- **The celebration plays before the card.** Delay the result card by the goal effect's
+  duration, or place it clear of the goal (a bottom sheet, a side panel) and keep the goal in
+  view; the card covering the goal from the first frame of the win hides the moment the
+  player earned.
+- **In the family's language.** Neon effects are additive glows; lit-stylized effects are
+  paper confetti, puffs and lit shapes with no bloom; toon effects are flat shapes with ink
+  outlines (`core/reference/art-style-families.yaml`).
+- **Report them to the probe.** While an effect draws, the probe lists it as an entity of
+  role `vfx` naming its effect id with bounds covering all of it, and each interaction is a
+  probe `event` (`core/artifacts/shared/play-probe.schema.json`); a game that does not report
+  them fails `vfx.fires`.
+
 ## Failure modes
 
 - An acknowledgement that waits for the game action (or the release) - over 100 ms.
 - Every merge at maximum: effects that ignore chain size.
 - Overlapping bursts from one chain (missing throttle).
 - A crash that cuts to the result card before the cause is seen.
+- A win card that covers the goal and its celebration from the first frame.
+- A pickup that leaves a few flat flecks; a checkpoint ring that fills the screen.
 - No grace: the first-time player dies to the first threat before the first input.
 - Per-frame constants: a 120 Hz phone plays faster.
 

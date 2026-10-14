@@ -98,6 +98,16 @@ consistency result is atomic.
    developer builds these units as data, the tech plan makes `CONTENT-nnn` tasks of them, and
    the playability bot plays them. Craft: `core/craft/content-and-level-design.md`.
 
+   **State the effect every interaction fires** in `build_spec.vfx`: one effect per kind the
+   game has - `pickup`, `impact`, `checkpoint`, `goal`, `fail`, `trail` - with what it draws
+   in the look's style family, its `duration_ms`, and the largest share of the screen it may
+   cover, within the kind's ceiling (`core/reference/vfx.yaml`). The goal's celebration
+   stays in view for its duration: the result screen waits for it or sits clear of it. At a
+   release quality tier the rule `vfx_covers_interactions` requires an effect for every kind
+   the design implies; the production gate and visual QA measure them in play. Name the
+   look's family in `visual_identity.style_family` (`core/reference/art-style-families.yaml`).
+   Craft: `core/craft/juice.md` section 9.
+
 9. **List features by tier.** `features` is the canonical tier list; `scope.tiers` is
    derived from it (mvp → mvp and prototype, post-mvp → production, optional → future).
    An mvp feature carries acceptance criteria. Every item of the strategy's `mvp` is carried

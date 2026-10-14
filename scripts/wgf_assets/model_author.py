@@ -94,7 +94,7 @@ import re
 
 from wgflib import agentenv, jsonschema_lite, paths, permpath, procs
 
-from . import blender, gltf, model_quality, modelspec
+from . import blender, gltf, model_quality, modelspec, style_families
 from . import render as render_mod
 from .policy import GENERATED_LICENSE, PolicyError, load_policy
 
@@ -112,7 +112,8 @@ DEFAULTS = {"kind": "command", "mode": "each", "argv": [], "spec_from": "file",
 _MAX_BYTES = 1024 * 1024
 
 # The craft playbooks (core/craft/) the request's `craft` names, in reading order: the 3D
-# production art guide carries the reference game's own spec, material table and rig.
+# production art guide carries the material language and rig per style family, and how parts
+# attach, clear the camera and scale against the player.
 MODEL_CRAFT = ("production-art-3d.md", "3d-assets-and-animation.md", "art-direction.md")
 
 _SHAPES = ("boxes, cylinders, cones, spheres, capsules, extruded outlines and lathed "
@@ -177,8 +178,10 @@ PROMPT_SET = (
     "as one set. Read the request at {request}: every 3D asset requirement (role, "
     "description, and the `readability` line - what a player must recognise at gameplay "
     "distance), the game's visual identity, art direction and camera, the model spec JSON "
-    "Schema and the rules. Read the craft guides in `craft` first: they hold the reference "
-    "game's own specs and material table. Then write one model spec per asset - a "
+    "Schema and the rules. Read the craft guides in `craft` first: they hold the material "
+    "language of each style family - follow the request's `style_family`, and take its "
+    "`example` (and `examples`) as the shape, not the look, of a spec. Then write one model "
+    "spec per asset - a "
     "recognisable low-poly object composed of shaped parts (" + _SHAPES + ") - all in one "
     "palette, one material language and one level of detail, "
 )
@@ -249,6 +252,19 @@ RULES = [
     "stand a fin upright.",
     "Give every part a material, and take the material colours from the palette (`color`: "
     "#rrggbb); a highlight or a dark detail may be a shade of a palette colour.",
+    "The look's style family (`style_family`) sets the material language: keep metallic and "
+    "roughness in its ranges, and emit light only as its `materials` allow - at most "
+    "`max_emissive_strength`, on at most `max_emissive_part_share` of the parts. A spec that "
+    "glows more than its family allows is refused. In a lit look colour lives in the albedo: "
+    "a goal or a body that glows reads as a lamp.",
+    "Attach every part: each touches or overlaps its parent or a neighbour - a flag on its "
+    "pole, a lamp on its post, a beam resting on both posts; nothing floats. A part meant to "
+    "be seen (a band, a stripe, an emblem, a trim) sits on the surface, raised above it; a "
+    "part sunk inside another, or coplanar with its face, never shows.",
+    "Size against the player and clear the camera: `fit` each object at its size beside the "
+    "player (a gate the player passes through is several times its width and well over its "
+    "height), and keep what the player passes through or under open at the camera's height, "
+    "so the chase camera never flies into a beam, a flag or a ring that then fills the frame.",
     "Leave `pivot` at its default (the centre of the base) unless the object hangs or "
     "floats, and set `fit` to the object's real size (a player 1.8 m tall: "
     "{\"size\": 1.8, \"axis\": \"y\"}).",
@@ -268,37 +284,10 @@ SET_RULES = [
     "shows them at the scale a player sees them side by side.",
 ]
 
-# A worked example of the shape the author writes - deliberately not any game's asset.
-EXAMPLE = {
-    "parts": [
-        {"id": "body", "shape": "box", "size": [1.6, 0.45, 3.4], "position": [0, 0.45, 0],
-         "bevel": 0.08, "material": "paint"},
-        {"id": "cabin", "shape": "box", "size": [1.3, 0.45, 1.6], "position": [0, 0.42, -0.2],
-         "parent": "body", "taper": [0.8, 0.7], "bevel": 0.05, "material": "glass"},
-        {"id": "wheel", "shape": "cylinder", "size": [0.6, 0.3, 0.6],
-         "position": [0.78, -0.15, 1.05], "rotation": [0, 0, 90], "parent": "body",
-         "bevel": 0.04, "mirror": "x", "material": "tyre"},
-        {"id": "wheel-rear", "shape": "cylinder", "size": [0.6, 0.3, 0.6],
-         "position": [0.78, -0.15, -1.05], "rotation": [0, 0, 90], "parent": "body",
-         "bevel": 0.04, "mirror": "x", "material": "tyre"},
-        {"id": "spoiler", "shape": "extrude", "outline": [[0, 0], [1, 0], [0.8, 0.5], [0.1, 0.5]],
-         "size": [1.5, 0.05, 0.35], "position": [0, 0.5, -1.55], "parent": "body",
-         "material": "tyre"},
-        {"id": "light", "shape": "sphere", "size": [0.25, 0.15, 0.08],
-         "position": [0.55, 0.05, 1.7], "parent": "body", "mirror": "x", "material": "lamp"},
-        {"id": "exhaust", "shape": "lathe", "profile": [[0.6, 0], [1, 0.7], [0.8, 1]],
-         "segments": 10, "size": [0.16, 0.25, 0.16], "position": [0.45, -0.1, -1.75],
-         "rotation": [-90, 0, 0], "parent": "body", "material": "tyre"},
-    ],
-    "materials": [{"id": "paint", "color": "#d7263d", "roughness": 0.4},
-                  {"id": "glass", "color": "#1b998b", "roughness": 0.2},
-                  {"id": "tyre", "color": "#2e294e", "roughness": 0.9},
-                  {"id": "lamp", "color": "#f46036", "emissive": "#f46036",
-                   "emissive_strength": 2}],
-    "fit": {"size": 3.4, "axis": "z"},
-    "budget": {"max_triangles": 4000},
-}
-
+# The worked example the author is shown is its look's: core/reference/art-style-families.yaml
+# holds example specs per style family (neon / emissive, lit stylized, toon), and the request
+# carries the one whose `fits` words the requirement names (style_families.example). One car
+# for every look taught a sunlit paper diorama to glow like a neon racer.
 
 class ModelAuthorError(RuntimeError):
     """The author could not produce a model that passes. `retryable`: the host failed, timed
@@ -374,8 +363,9 @@ def _schema_problems(spec):
     return [f"schema: {error}" for error in list(_VALIDATOR[0].iter_errors(spec))[:20]]
 
 
-def _spec_problems(spec, asset_id):
-    """Problems a repair can fix in a spec as written."""
+def _spec_problems(spec, asset_id, family=None):
+    """Problems a repair can fix in a spec as written. `family`: the look's style family entry
+    (core/reference/art-style-families.yaml), whose emissive limits the spec must keep."""
     if not isinstance(spec, dict):
         return ["the spec is not a JSON object"]
     problems = _schema_problems(spec) + [f"spec: {p}" for p in modelspec.validate(spec)]
@@ -383,6 +373,8 @@ def _spec_problems(spec, asset_id):
         problems.append("spec: it has no parts to build")
     if not problems and any(p["id"] == asset_id for p in modelspec.expand_parts(spec["parts"])):
         problems.append(f"spec: a part may not share the asset's id {asset_id!r}")
+    if not problems and family:
+        problems += style_families.style_problems(spec, family)
     return list(dict.fromkeys(problems))
 
 
@@ -505,6 +497,9 @@ class _Session:
         except ValueError as exc:
             raise ModelAuthorError(str(exc)) from exc
         self.bars = model_quality.load_bars()
+        # The look's style family: its material rules, its emissive limits (refused in
+        # _spec_problems) and the worked example each request is shown.
+        self.family_id, self.family, self.family_basis = style_families.family(self.look)
         self.models = [_Model(r) for r in reqs]
         self.builds = {}             # spec hash -> (data, report, key) or problem text
         self.asks = 0
@@ -597,6 +592,9 @@ class _Session:
                                      "spec", "tier", "count") if req.get(k) is not None}
         if req["expectations"]:
             asset["expectations"] = req["expectations"]
+        example_id, _spec, matched = style_families.example(self.family, req)
+        if matched:
+            asset["example"] = example_id
         if req["findings"]:
             asset["findings_from_review"] = req["findings"]
         feedback = req.get("feedback") or {}
@@ -616,12 +614,30 @@ class _Session:
             "visual_identity": identity,
             "schema": SCHEMA_PATH,
             "rules": RULES,
-            "example": EXAMPLE,
+            "style_family": style_families.request_block(self.family_id, self.family,
+                                                         self.family_basis),
+            "example": self._example([m.req for m in self.models]),
+            # Every example of the family, so a set's character, pickup and gate each have
+            # one of their own kind (an asset's `example` names it).
+            "examples": {e.get("id"): e.get("spec") for e in self.family.get("examples") or []
+                         if isinstance(e, dict)},
             "quality_bars": self.bars,
             "craft": [os.path.join(paths.CORE, "craft", name) for name in MODEL_CRAFT],
         }
         request.update(self.design)
         return request
+
+    def _example(self, reqs):
+        """The family's worked example for these requirements: {id, family, spec} - the one
+        whose `fits` words a requirement names, else the family's first."""
+        chosen = None
+        for req in reqs:
+            example_id, spec, matched = style_families.example(self.family, req)
+            if chosen is None or matched:
+                chosen = {"id": example_id, "family": self.family_id, "spec": spec}
+            if matched:
+                break
+        return chosen or {"id": None, "family": self.family_id, "spec": None}
 
     def _measured(self, model):
         out = {}
@@ -702,11 +718,11 @@ class _Session:
             spec = _last_json_object(text)
             if spec is None:
                 return None, ["the author printed no JSON object"]
-            return spec, _spec_problems(spec, model.req["id"])
+            return spec, _spec_problems(spec, model.req["id"], self.family)
         spec, problems = _read_spec(spec_path)
         if problems:
             return None, problems
-        return spec, _spec_problems(spec, model.req["id"])
+        return spec, _spec_problems(spec, model.req["id"], self.family)
 
     # -- set mode --------------------------------------------------------------------------
 
@@ -778,7 +794,7 @@ class _Session:
             for model in self.models:
                 if model.req["id"] in models:
                     spec = models[model.req["id"]]
-                    answers[model.req["id"]] = (spec, _spec_problems(spec, model.req["id"]))
+                    answers[model.req["id"]] = (spec, _spec_problems(spec, model.req["id"], self.family))
                 elif stage == "author":
                     answers[model.req["id"]] = (None, [f"the author's answer has no spec for "
                                                        f"{model.req['id']!r}"])
@@ -790,8 +806,8 @@ class _Session:
                     and os.path.getmtime(path) == mtime:
                 continue  # untouched: the author left it as it was
             spec, problems = _read_spec(path)
-            answers[model.req["id"]] = (spec, problems or _spec_problems(spec,
-                                                                         model.req["id"]))
+            answers[model.req["id"]] = (spec, problems or _spec_problems(
+                spec, model.req["id"], self.family))
         return answers
 
     # -- the rounds ------------------------------------------------------------------------

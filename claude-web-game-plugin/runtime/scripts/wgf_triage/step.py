@@ -563,7 +563,7 @@ class TriageStep(WorkflowStep):
             selected=selected, triage_id=artifact_id,
             routing_version=life.get("routing_version") or routing.version,
             build_of=life.get("build_of") or (lambda kind: {"commit": commit, "digest": None}),
-            handed=life.get("handed"))
+            handed=life.get("handed"), routing=routing)
         _guard(findings, context, _load(inputs, "knowledge-contract"))
         candidates = _lesson_candidates(_load(inputs, "triage-report"), life.get("proto"))
         body = {

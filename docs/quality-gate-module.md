@@ -177,6 +177,17 @@ a passing verdict `FAIL`, routed by the producers of what is missing. A run that
 knowledge but whose contract does not reach this step is RELEASE_BLOCKED, never skipped.
 Details: [knowledge-enforcement.md](knowledge-enforcement.md#compliance-the-build-held-to-its-contract).
 
+## The assessment
+
+The `assessment` section (1.5.0, `scripts/wgf_quality/assessment.py`): the same evidence read
+as three separate questions - design validity, runtime correctness, player-facing quality -
+each PASS, FAIL, INCONCLUSIVE or NOT_SUPPORTED with the checks it rests on, each check's
+measurement class (deterministic, heuristic, self-reported, AI-judged; human for a person's
+G4 decision) and what it cannot justify (`core/reference/quality-assessment.yaml`). A view: it
+decides nothing - the floor, the verdict and the release decision below are computed without
+it. Player-facing quality is never PASS without a person's G4 decision on this build. G4
+shows the three lines. Details and the metric table: [quality-assessment.md](quality-assessment.md).
+
 ## The release decision
 
 | Tier | Every dimension at its floor | Decision | Verdict |

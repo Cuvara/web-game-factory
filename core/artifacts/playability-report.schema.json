@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/playability-report.schema.json",
   "title": "Playability report",
-  "description": "Whether a built game can be played and read by a first-time player, measured from outside: a bot drives the production build with real pointer and key input on desktop and mobile viewports, reads its play probe (shared/play-probe.schema.json) before and after each input, and inspects rendered frames. Every check names what was measured and the bar from the design's experience contract (core/reference/experience-rules.yaml) or core/reference/visual-quality.yaml. This is automation evidence: it proves the game is playable and visible, and it never stands in for what first-time players understand (a kill criterion measured from people).\n\nSince 1.2.0 a check may be `SKIPPED`: the design does not claim the thing the check measures, so there was nothing to measure - a game with no win has no win.reachable to prove. A SKIPPED check is listed in `skipped_checks` with the reason and is never counted as a pass; a check that the design does claim and the build does not do is a FAIL, not a skip.",
+  "description": "Whether a built game can be played and read by a first-time player, measured from outside: a bot drives the production build with real pointer and key input on desktop and mobile viewports, reads its play probe (shared/play-probe.schema.json) before and after each input, and inspects rendered frames. Every check names what was measured and the bar from the design's experience contract (core/reference/experience-rules.yaml) or core/reference/visual-quality.yaml. This is automation evidence: it proves the game is playable and visible, and it never stands in for what first-time players understand (a kill criterion measured from people).\n\nSince 1.2.0 a check may be `SKIPPED`: the design does not claim the thing the check measures, so there was nothing to measure - a game with no win has no win.reachable to prove. A SKIPPED check is listed in `skipped_checks` with the reason and is never counted as a pass; a check that the design does claim and the build does not do is a FAIL, not a skip.\n\nSince 1.4.0 every check names its `scenario` (`<check>@<project>`) and the report lists, per scenario, what the bot played for it - the bot version, viewport, policy and seed, the records with their sha256, the inputs and probe states those records list, and the frames - so a repair is verified only by a later measurement of the same check on the same viewport (docs/specialist-routing.md).",
 
   "x-wgf": {
     "id": "playability-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "producer": "title:prototype",
     "consumers": ["title:prototype", "title:prototype-review", "release:qa", "release:store-listing", "release:draft"],
     "repo_path": "<game-repo>/qa/playability/<commit>.json",
@@ -54,7 +54,8 @@
           "summary": { "type": "string", "description": "What was measured, and against which bar." },
           "measured": {},
           "expected": {},
-          "frames": { "type": "array", "items": { "type": "string" }, "description": "Frame ids (see `frames`) that show it." }
+          "frames": { "type": "array", "items": { "type": "string" }, "description": "Frame ids (see `frames`) that show it." },
+          "scenario": { "type": "string", "description": "Since 1.4.0. The id of what was played for it in `scenarios`: `<check>@<project>`, stable across reports, so a later report's measurement of the same check on the same viewport is found by it." }
         },
         "additionalProperties": false
       }
@@ -98,9 +99,117 @@
       "$ref": "./shared/existing-content.schema.json#/$defs/floor",
       "description": "Since 1.3.0. The existing-content floor counted on the shipped build through the probe (`source.method: probe`): written by the first visit that plays the adopted checkout's HEAD while the design's floor is `unmeasured` (the adopted checkout ships no content data file), and carried unchanged by every later report of the run - a floor once measured is never measured again. Absent when the run adopted nothing or its floor is counted on a content data file."
     },
+    "bot": {
+      "type": "object",
+      "description": "Since 1.4.0. The bot that played: `version` is the sha256 of the bot (bot.spec.ts) as the step copied it into the clone, `settings_sha256` that of the settings it was handed (<records_dir>/settings.json). Two reports by different bots, or under different settings, measured the same check in different ways: a comparison between them is weaker, and is said to be.",
+      "required": ["version"],
+      "properties": {
+        "version": { "type": ["string", "null"] },
+        "settings_sha256": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "scenarios": {
+      "type": "array",
+      "description": "Since 1.4.0. What the bot played for each check, read from its own records (scripts/wgf_playability/scenario.py): nothing the bot did not record is added - a field it did not keep is null.",
+      "items": { "$ref": "#/$defs/scenario" }
+    },
     "failed_checks": { "type": "array", "items": { "type": "string" } },
     "blocked_reason": { "type": ["string", "null"] },
     "verdict": { "enum": ["PASS", "FAIL", "BLOCKED"] }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+
+  "$defs": {
+    "scenario": {
+      "type": "object",
+      "description": "What the bot played for one check on one project.",
+      "required": ["id", "check", "project", "bot", "viewport", "policy", "records", "actions", "actions_complete", "states", "frames"],
+      "properties": {
+        "id": { "type": "string", "description": "`<check>@<project>`." },
+        "check": { "type": "string" },
+        "project": { "type": "string" },
+        "bot": {
+          "type": "object",
+          "required": ["version"],
+          "properties": { "version": { "type": ["string", "null"] }, "settings_sha256": { "type": ["string", "null"] } },
+          "additionalProperties": false
+        },
+        "viewport": {
+          "type": ["object", "null"],
+          "description": "The project's viewport; null for a check of the build rather than of a viewport (level.*: the commit's content data file).",
+          "properties": { "width": { "type": "integer" }, "height": { "type": "integer" } },
+          "additionalProperties": false
+        },
+        "policy": {
+          "type": "object",
+          "description": "How the bot played the recordings the check reads: per recording (idle, each-offered-input, oracle, anti-oracle, ...), and naive play's seed and policies or risk's policies when the check reads them.",
+          "properties": {
+            "recordings": { "type": "object", "additionalProperties": { "type": ["string", "null"] } },
+            "seed": { "type": ["integer", "null"] },
+            "naive": {},
+            "risk": {}
+          },
+          "additionalProperties": false
+        },
+        "records": {
+          "type": "array",
+          "description": "The raw records the check is judged on, relative to the run's directory, each pinned by sha256.",
+          "items": {
+            "type": "object",
+            "required": ["name", "path", "sha256"],
+            "properties": { "name": { "type": "string" }, "path": { "type": "string" }, "sha256": { "type": ["string", "null"] } },
+            "additionalProperties": false
+          }
+        },
+        "actions": {
+          "type": "array",
+          "description": "The inputs the records list, in order, as recorded: the action, the input (pointer coordinates or key) when recorded, the time when recorded, the probe state before and after when recorded, and a count where the bot keeps only how many presses it made.",
+          "items": {
+            "type": "object",
+            "required": ["record", "action"],
+            "properties": {
+              "record": { "type": "string" },
+              "phase": { "type": ["string", "null"] },
+              "action": { "type": ["string", "null"] },
+              "input": { "type": ["object", "null"] },
+              "at_ms": { "type": ["number", "null"] },
+              "state_before": { "type": ["string", "null"] },
+              "state_after": { "type": ["string", "null"] },
+              "count": { "type": ["integer", "null"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "actions_complete": { "type": "boolean", "description": "Every press the bot made for these recordings is listed one by one. False where it keeps only a count (the oracle's presses) or caps its list." },
+        "states": {
+          "type": "array",
+          "description": "The probe state transitions the records list, with their times.",
+          "items": {
+            "type": "object",
+            "required": ["record", "state"],
+            "properties": { "record": { "type": "string" }, "ms": { "type": ["number", "null"] }, "state": { "type": "string" } },
+            "additionalProperties": false
+          }
+        },
+        "frames": {
+          "type": "array",
+          "description": "The frames the check and its records name, each pinned by sha256.",
+          "items": {
+            "type": "object",
+            "required": ["id", "path", "sha256"],
+            "properties": { "id": { "type": "string" }, "path": { "type": "string" }, "sha256": { "type": ["string", "null"] } },
+            "additionalProperties": false
+          }
+        },
+        "omitted": {
+          "type": "object",
+          "description": "How many actions, states and frames past the scenario's caps were left out.",
+          "properties": { "actions": { "type": "integer" }, "states": { "type": "integer" }, "frames": { "type": "integer" } },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
 }

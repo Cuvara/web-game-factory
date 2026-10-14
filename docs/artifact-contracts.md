@@ -288,6 +288,14 @@ built content: `designed`, `built`, `partial`, `cut` and a per-unit list, so the
 checked rather than believed — a prototype that built two of six levels is not a prototype of
 the design. `title:design` joins the consumers. Additive; 1.0.0 artifacts remain valid.
 
+**`playability-report` 1.4.0** adds, additively, `bot` (version and settings sha256),
+`scenarios[]` and each check's `scenario` id (`<check>@<project>`): what the bot played for
+each check, read from its records (docs/playability-module.md). **`triage-report` 1.3.0**
+adds to the ledger records (shared `quality-finding.schema.json`): `failed_measurement`,
+`baseline`, the verification verdicts `unmeasured`, `missing` and `same-build`, the
+verification's `before`, `after`, `comparison`, `seq` and `samples`, and each history entry's
+`content_hash` and `seq` (docs/specialist-routing.md); a finding's `measurement`.
+
 **`playability-report` 1.2.0** adds the status `SKIPPED` and `skipped_checks[]`
 (`{id, reason}`). A check is skipped only when the design does not claim the thing it
 measures — a game with no win has no `win.reachable` to prove — and a skip is **never** a

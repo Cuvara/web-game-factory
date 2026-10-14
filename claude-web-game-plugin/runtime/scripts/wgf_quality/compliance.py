@@ -52,7 +52,7 @@ import datetime
 from wgf_knowledge import model
 
 __all__ = ["evaluate", "apply", "bind_self", "retroactive_contract", "run_exceptions",
-           "honoured_exceptions", "scope_covers", "now_utc",
+           "honoured_exceptions", "scope_covers", "now_utc", "read_check",
            "render_markdown", "render_lines", "summary", "RULE_STATUSES", "BLOCKING_LEVELS",
            "EXCEPTION_EVENT", "SELF"]
 
@@ -173,6 +173,11 @@ def _read_check(held, tiers, reports, refs, entries, build, self_report, facts=N
         out["note"] = (out.get("note", "") + "; " if out.get("note") else "") + (
             "a finding of the producer names no check: " + ", ".join(unattributed[:4]))
     return out, _viewports(tiers, check_id, report)
+
+
+# The one reading of a check's result on a build, shared with the quality assessment
+# (assessment.py): ({check, tier, producer, evidence, status, results, note?}, viewports).
+read_check = _read_check
 
 
 # --------------------------------------------------------------------------- exceptions

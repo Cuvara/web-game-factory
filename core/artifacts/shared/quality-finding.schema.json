@@ -90,6 +90,7 @@
         "route": { "$ref": "#/$defs/route" },
         "assets": { "type": "array", "items": { "type": "string" }, "description": "Asset ids it concerns, when the producer names them." },
         "build": { "$ref": "#/$defs/build" },
+        "measurement": { "$ref": "#/$defs/measurement", "description": "Since triage-report 1.3.0. For a producer that lists its checks (playability, production-quality, listing-validation): the measurement the finding was read from." },
         "guarded_by": { "type": "array", "items": { "$ref": "#/$defs/guard" }, "description": "Since quality-report 1.2.0 / triage-report 1.2.0. The regression guards this failure already has: the lessons of core/reference/lessons.yaml whose check this finding's check is, with the tests that prove the check catches it. Empty or absent: no lesson names it, and a systemic cause is a lesson candidate." },
         "excepted": {
           "type": "object",
@@ -191,7 +192,28 @@
           "properties": { "by": { "type": "string" }, "at": { "type": "string" }, "reason": { "type": "string" } },
           "additionalProperties": false
         },
-        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/candidate_source" } }
+        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/candidate_source" } },
+        "strength": { "enum": ["hypothesis", "single-run", "reproduced", "validated"], "description": "Added for K6.4 (core/reference/evidence-strength.yaml, scripts/wgf_knowledge/strength.py). How far the measurements behind the candidate were repeated, derived from its sources' re-measurements in their runs' finding ledgers - never written by a reporter: hypothesis (no measured repair), single-run (one measured FAIL->PASS pair), reproduced (the pass repeated in a later independent measurement, on a stable check, by a class that is not only the game's own report), validated (reproduced in two or more distinct contexts, differing in the commits measured: two scenarios of one run and build, or two runs of the identical commits, are one context). Promote derives it again from the run store; it caps the classification a draft may propose below REQUIRED." },
+        "strength_why": { "type": "string", "description": "Added for K6.4. Why the strength is what it is: the pair, its repeats, the caps (unstable, self-reported, single-judge, unknown-class) and the refusals." },
+        "refused_evidence": {
+          "type": "array",
+          "description": "Added for K6.4. Every measurement offered that may not count toward strength, with its rule and reason - never dropped silently: same-report (a), own-check (b), same-build (c), self-agreement (d), claim (e), duplicate, no-repair.",
+          "items": {
+            "type": "object",
+            "required": ["rule", "reason"],
+            "properties": {
+              "rule": { "enum": ["same-report", "own-check", "same-build", "self-agreement", "claim", "duplicate", "no-repair"] },
+              "reason": { "type": "string", "minLength": 1 },
+              "run": { "type": ["string", "null"] },
+              "artifact_id": { "type": ["string", "null"] },
+              "report_hash": { "type": ["string", "null"] },
+              "finding": { "type": ["string", "null"] },
+              "measurement": { "type": "object" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "unstable": { "type": "array", "items": { "type": "string" }, "description": "Added for K6.4. Findings whose check the ledger shows alternating verdicts (a pass, then a failure again; or a failure and a pass on one commit): a pair on them is capped at single-run." }
       },
       "additionalProperties": false
     },
@@ -225,7 +247,30 @@
         },
         "evidence_refs": { "type": "array", "items": { "type": "string" } },
         "date": { "type": ["string", "null"] },
-        "ingested_at": { "type": "string" }
+        "ingested_at": { "type": "string" },
+        "remeasurement": {
+          "type": ["object", "null"],
+          "description": "Added for K6.4. What the run's newest finding ledger (triage-report `lifecycle`) held of the source's finding when it was ingested (scripts/wgf_knowledge/strength.py snapshot): the ledger report, the finding, its producer, check and measurement class (core/reference/quality-assessment.yaml), the verification verdict, the before and after measurements (commit, content hash, seq, status, scenario, frame digests), the comparison, the samples, the detection and the outcomes history. Refreshed when the run is ingested again; promote reads it again from the run store and never trusts this copy.",
+          "properties": {
+            "ledger": { "type": ["object", "null"] },
+            "finding": { "type": ["string", "null"] },
+            "producer": { "type": ["string", "null"] },
+            "check": { "type": ["string", "null"] },
+            "check_id": { "type": ["string", "null"] },
+            "project": { "type": ["string", "null"] },
+            "class": { "enum": ["deterministic", "heuristic", "self-reported", "ai-judged", "human", null] },
+            "status": { "type": ["string", "null"] },
+            "verdict": { "type": ["string", "null"] },
+            "before": { "type": ["object", "null"] },
+            "after": { "type": ["object", "null"] },
+            "same_scenario": { "type": ["boolean", "null"] },
+            "differences": { "type": "array", "items": { "type": "string" } },
+            "samples": { "type": "array", "items": { "type": ["object", "null"] } },
+            "detected": { "type": ["object", "null"] },
+            "outcomes": { "type": "array", "items": { "type": "object" } }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },
@@ -241,9 +286,49 @@
       "additionalProperties": false
     },
 
+    "measurement": {
+      "type": "object",
+      "description": "Since triage-report 1.3.0. One report's measurement of one check, as the ledger keeps it: the report, the commit it measured, the check and project, the status, and - for playability (playability-report 1.4.0) - the scenario the bot played for it and its frames. The `before` and `after` a repair is verified on.",
+      "required": ["producer", "check", "status"],
+      "properties": {
+        "producer": { "type": "string" },
+        "artifact_id": { "type": ["string", "null"] },
+        "content_hash": { "type": ["string", "null"] },
+        "seq": { "type": ["integer", "null"], "description": "The report's run-local production order: with the content hash, which of two reports sharing an artifact id it was." },
+        "commit": { "type": ["string", "null"] },
+        "check": { "type": ["string", "null"] },
+        "project": { "type": ["string", "null"] },
+        "status": { "type": ["string", "null"], "description": "The check's status in that report (PASS, FAIL, BLOCKED, SKIPPED, WARNING); null when the report does not list it." },
+        "scenario": {
+          "type": ["object", "null"],
+          "description": "The playability scenario: its id (`<check>@<project>`), the bot version and the settings it was handed, the viewport, the policy per recording and the seed. Null for a report that records none.",
+          "properties": {
+            "id": { "type": "string" },
+            "bot_version": { "type": ["string", "null"] },
+            "settings_sha256": { "type": ["string", "null"] },
+            "viewport": { "type": ["object", "null"] },
+            "policy": { "type": "object" },
+            "seed": { "type": ["integer", "null"] },
+            "actions_complete": { "type": ["boolean", "null"] }
+          },
+          "additionalProperties": false
+        },
+        "frames": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path"],
+            "properties": { "id": { "type": ["string", "null"] }, "path": { "type": ["string", "null"] }, "sha256": { "type": ["string", "null"] } },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
     "status": {
       "enum": ["detected", "classified", "assigned", "implemented", "verified", "closed"],
-      "description": "A finding's lifecycle. detected: a producer reported it. classified: its dimension, owner and route were decided from the routing data. assigned: a triage routed it to its owner. implemented: the owner's visit built a change for it. verified: the producer that raised it re-measured a newer build and it no longer fails, and nothing that was passing failed on that build (a fix that regresses another gate is not verified). closed: verified, and every gate the run holds a report of has measured the build carrying the fix. Never closed on the specialist's word: only on the raising gate's re-measurement. A verified or closed finding the gate raises again is classified again (reopened)."
+      "description": "A finding's lifecycle. detected: a producer reported it. classified: its dimension, owner and route were decided from the routing data. assigned: a triage routed it to its owner. implemented: the owner's visit built a change for it. verified: the producer that raised it re-measured a newer build and it no longer fails, and nothing that was passing failed on that build (a fix that regresses another gate is not verified). closed: verified, and every gate the run holds a report of has measured the build carrying the fix. Never closed on the specialist's word: only on the raising gate's re-measurement - and, for a producer that lists its checks, only on a measurement of the same check on the same project (a check the report no longer lists, or lists as BLOCKED, SKIPPED or WARNING, verifies nothing; playability also needs another commit than the one it failed on). A verified or closed finding the gate raises again is classified again (reopened)."
     },
 
     "record": {
@@ -264,6 +349,23 @@
         "observed": { "description": "The value last measured (the finding's measured)." },
         "evidence_refs": { "type": "array", "items": { "type": "string" } },
         "task": { "$ref": "#/$defs/task" },
+        "failed_measurement": { "$ref": "#/$defs/measurement", "description": "Since triage-report 1.3.0. The last measurement that failed the finding: the `before` its verification is compared with." },
+        "baseline": {
+          "type": "object",
+          "description": "Since triage-report 1.3.0. What the gates had measured when the finding was assigned (or, assigned by none, implemented): per producer, its newest report then, the commit, the findings it failed and - for a producer that lists its checks - the checks it passed (`<producer>:<check>[@<project>]`): as the newest report measured each, else - a check it left unmeasured - as the ledger last recorded it. A failure after the fix is a regression of it only when its check passed here, or it was verified before: a producer or check that had never measured raises a new finding, not a regression.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "artifact_id": { "type": ["string", "null"] },
+              "content_hash": { "type": ["string", "null"] },
+              "seq": { "type": ["integer", "null"] },
+              "commit": { "type": ["string", "null"] },
+              "failing": { "type": "array", "items": { "type": "string" } },
+              "passing": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": false
+          }
+        },
         "fix": {
           "type": ["object", "null"],
           "description": "The specialist visit that implemented it.",
@@ -280,14 +382,43 @@
           "type": ["object", "null"],
           "description": "The raising producer's re-measurement of a newer build than the fix: its report, the build, what it measured, and any regressions that keep the finding from being verified.",
           "properties": {
-            "verdict": { "enum": ["passed", "still-failing", "regressed"] },
+            "verdict": { "enum": ["passed", "still-failing", "regressed", "unmeasured", "missing", "same-build"], "description": "passed: re-measured, no longer failing. still-failing: the producer still fails it (reopened). regressed: no longer failing, but the build fails what passed before. Since triage-report 1.3.0, for a producer that lists its checks, three that verify nothing and leave the finding open: unmeasured (the check is listed but measured nothing: BLOCKED, SKIPPED, WARNING or `measured.unmeasured`), missing (the report no longer lists the check for that project), same-build (playability passed it on the commit it failed on)." },
             "producer": { "type": "string" },
             "artifact_id": { "type": ["string", "null"] },
             "content_hash": { "type": ["string", "null"] },
             "build": { "$ref": "#/$defs/build" },
             "observed": {},
             "regressions": { "type": "array", "items": { "type": "string" }, "description": "Findings first detected on a build at or after the fix: something that was passing fails now." },
-            "gates_measured": { "type": "array", "items": { "type": "string" }, "description": "The producers whose reports measured a build at or after the fix." }
+            "gates_measured": { "type": "array", "items": { "type": "string" }, "description": "The producers whose reports measured a build at or after the fix." },
+            "before": { "$ref": "#/$defs/measurement", "description": "Since triage-report 1.3.0. The measurement that failed it." },
+            "after": { "$ref": "#/$defs/measurement", "description": "Since triage-report 1.3.0. The newer measurement the verdict was read from." },
+            "seq": { "type": ["integer", "null"], "description": "Since triage-report 1.3.0. The run-local seq of the report the verdict was read from." },
+            "samples": {
+              "type": "array",
+              "description": "Since triage-report 1.3.0. Every report of the raising producer that measured it passing, from the one that verified it on (the newest 20): one sample is a single run; more are the pass reproduced. Never a status of its own.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "artifact_id": { "type": ["string", "null"] },
+                  "content_hash": { "type": ["string", "null"] },
+                  "seq": { "type": ["integer", "null"] },
+                  "commit": { "type": ["string", "null"] },
+                  "status": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "comparison": {
+              "type": "object",
+              "description": "Since triage-report 1.3.0. Whether `before` and `after` are the same scenario played by the same bot under the same settings on the same viewport, every difference named. A comparison with differences is weaker, and says so.",
+              "required": ["same_scenario", "differences", "note"],
+              "properties": {
+                "same_scenario": { "type": "boolean" },
+                "differences": { "type": "array", "items": { "type": "string" } },
+                "note": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
           },
           "required": ["verdict", "producer"],
           "additionalProperties": false
@@ -304,6 +435,8 @@
               "at": { "type": "string" },
               "by": { "type": ["string", "null"], "description": "The artifact or step the transition came from." },
               "build": { "type": ["string", "null"] },
+              "content_hash": { "type": ["string", "null"], "description": "Since triage-report 1.3.0. The content hash of the artifact `by` names, when known: two reports can share an artifact id." },
+              "seq": { "type": ["integer", "null"], "description": "Since triage-report 1.3.0. That artifact's run-local seq, when known." },
               "note": { "type": ["string", "null"] }
             },
             "additionalProperties": false

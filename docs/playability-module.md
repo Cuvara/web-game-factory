@@ -302,6 +302,41 @@ reads these from `records_dir`:
   control and text; the probe's `ui`-role entities; and every entity the probe reported at
   that moment (with `asset` and `render`), so a state frame can be read at an entity's box.
 
+### The scenario each check was measured on (playability-report 1.4.0)
+
+A check's status alone cannot say whether a later PASS measured the same thing as an earlier
+FAIL. Every check names its `scenario`, `<check>@<project>` - stable across reports - and
+the report lists, per scenario (`scenarios[]`, built by `wgf_playability/scenario.py` from
+the records the bot already writes; nothing the bot did not record is added):
+
+- `bot` - the bot's version (sha256 of `bot.spec.ts` as the step copied it into the clone)
+  and the sha256 of the settings it was handed (`<records_dir>/settings.json`); the report's
+  own `bot` says the same once;
+- `viewport` - the project's width and height (null for `level.*`, a check of the commit's
+  content data file, project `build`);
+- `policy` - how the bot played each recording the check reads (`idle`,
+  `each-offered-input`, `oracle`, `anti-oracle`, ...), and naive play's seed and policies
+  from the settings, or risk's policies from its record;
+- `records` - the raw records the check is judged on (`analysis.EVIDENCE`, extended for the
+  checks that table leaves out; every record for `page.errors` and `runtime.*`), each with
+  its run-relative path and sha256;
+- `actions` - the inputs those records list, in order, as recorded: the begin press, each
+  act input with its coordinates or key and the probe state before and after, each
+  anti-oracle press with its time, a reset inside the unit, the retry, a pause, each naive
+  or risk run (its policy, unit, inputs and time). Where the bot keeps only a count - the
+  oracle's presses in the win test - one entry carries that count, and `actions_complete` is
+  false. `actions_complete` is true only when every press is listed one by one;
+- `states` - the probe state transitions the records list, with their times;
+- `frames` - the frames the check and its records name, each with its path and sha256.
+
+Lists are capped (80 actions, 40 states, 16 frames) and `omitted` says how many were left
+out. The ledger reads the scenario of the check a finding failed and the one it later passed
+(docs/specialist-routing.md, "What counts as a re-measurement"): a different bot version,
+other settings or another viewport make that comparison weaker, and it says so. What the
+records do not hold stays unrecorded: the oracle's individual presses in the win, traverse,
+persist, session and ramp tests, and the timing of act inputs. Tests:
+`scripts/tests/test_playability.py` `Scenarios`.
+
 ## The checks
 
 | Check | Passes when |

@@ -31,6 +31,9 @@
                                           the paths a workflow lets an implementer's change
                                           take to G4 or release without every judge
                                           (core/reference/quality-policy.yaml rule 6)
+    assessment_problems(tiers, checks, root=None)
+                                          the quality assessment's coverage of the checks
+                                          (core/reference/quality-assessment.yaml)
     problems(root=None, runtime=False)    every problem above, for check-integrity
 
 Pure reads of data files under the Factory root: no process, no network, no clock. Nothing
@@ -45,7 +48,7 @@ from wgflib.yamllite import load as load_yaml
 __all__ = ["TIERS_FILE", "LESSONS_FILE", "EVIDENCE_FILE", "TIERS", "load", "classify",
            "lesson_problems", "guards", "problems", "floor_criteria",
            "independent_review_problems", "successors", "status_at", "check_results",
-           "check_status", "status_at_problems", "RESULT_STATUSES"]
+           "check_status", "status_at_problems", "assessment_problems", "RESULT_STATUSES"]
 
 TIERS_FILE = "core/reference/check-tiers.yaml"
 LESSONS_FILE = "core/reference/lessons.yaml"
@@ -834,6 +837,20 @@ def independent_review_problems(workflow, policy):
     return problems
 
 
+def assessment_problems(tiers, checks, root=None):
+    """The quality assessment's coverage of the declared checks (core/reference/
+    quality-assessment.yaml, wgf_quality.assessment.problems): every check it names is
+    declared, every source is mapped or excluded, every floor criterion is placed."""
+    from . import assessment
+    root = _root(root)
+    try:
+        mapping = _read(root, assessment.MAPPING_FILE)
+        floor = _read(root, "core/reference/quality-floor.yaml")
+    except (OSError, ValueError) as exc:
+        return [f"{assessment.MAPPING_FILE} cannot be read ({exc})"]
+    return assessment.problems(mapping, tiers, checks, floor, root)
+
+
 def problems(root=None, runtime=False):
     """Every problem of the registry: unclassified checks, results that cannot be located,
     broken lessons. `runtime`: an installed runtime, whose tests are not shipped."""
@@ -845,6 +862,7 @@ def problems(root=None, runtime=False):
     checks, found = classify(data["tiers"], root)
     found += status_at_problems(data["tiers"], root)
     found += lesson_problems(data["lessons"], checks, root, data["evidence"], runtime=runtime)
+    found += assessment_problems(data["tiers"], checks, root)
     try:
         policy = _read(root, "core/reference/quality-policy.yaml")
         workflow = (_read(root, "core/workflows/new-game.workflow.yaml") or {}).get("workflow")

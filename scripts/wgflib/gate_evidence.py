@@ -33,6 +33,16 @@ by step or artifact type, so any checkpoint whose inputs carry the same fields s
                                                    with the hard blockers listed on their own,
                                                    the gates the run's workflow lacks, and the
                                                    lessons specialists proposed (WS-9)
+    assessment           (quality-report)          design validity, runtime correctness and
+                                                   player-facing quality, each PASS, FAIL,
+                                                   INCONCLUSIVE or NOT_SUPPORTED as the report
+                                                   states it (never shown as a pass unless it
+                                                   is one), the class mix its checks were
+                                                   measured by, a PASS resting on the game's own
+                                                   report or one AI judgment named so, how
+                                                   many of its checks were not reported (a
+                                                   producer's report absent), and every
+                                                   unresolved judge finding
     compliance           (quality-report)          the run's knowledge compliance: enforcing or
                                                    advisory (and why), the verdict, the rules
                                                    by level - satisfied, failed, unmeasured,
@@ -145,6 +155,72 @@ def _quality(content):
                               if isinstance(g, dict) and g.get("step")],
             "lesson_candidates": [c.get("summary") for c in content.get("lesson_candidates")
                                   or [] if isinstance(c, dict) and c.get("summary")]}
+
+
+def _assessment(content):
+    """The three separate questions of an artifact carrying an `assessment` section
+    (quality-report 1.5.0), or None: each dimension's status exactly as stated."""
+    section = content.get("assessment")
+    if not isinstance(section, dict):
+        return None
+    out = []
+    for dim in section.get("dimensions") or []:
+        if not isinstance(dim, dict):
+            continue
+        checks = [c for c in dim.get("checks") or [] if isinstance(c, dict)]
+        held = [c for c in checks if c.get("holds") and c.get("status") != "NOT_APPLICABLE"]
+        classes = {}
+        for check in checks:
+            if check.get("status") != "NOT_APPLICABLE":
+                classes[check.get("class")] = classes.get(check.get("class"), 0) + 1
+        basis = dim.get("basis") if isinstance(dim.get("basis"), dict) else {}
+        out.append({"id": dim.get("id"), "label": dim.get("label") or dim.get("id"),
+                    "status": dim.get("status") or "INCONCLUSIVE",
+                    "reason": dim.get("reason"), "requires": dim.get("requires"),
+                    "held": len(held),
+                    "unmeasured": sum(1 for c in held if c.get("status") not in ("PASS", "FAIL")),
+                    "failed": sum(1 for c in held if c.get("status") == "FAIL"),
+                    "not_reported": len([n for n in dim.get("not_reported") or []
+                                         if isinstance(n, dict)]),
+                    "classes": classes, "human": len(dim.get("human") or []),
+                    "strength": basis.get("strength"), "basis_why": basis.get("why"),
+                    "judges": [j for j in dim.get("judges") or [] if isinstance(j, dict)],
+                    "unresolved": [u for u in dim.get("unresolved") or []
+                                   if isinstance(u, dict)]})
+    return {"dimensions": out, "problem": section.get("problem")}
+
+
+def _assessment_lines(assessment):
+    if not assessment:
+        return []
+    lines = ["    assessment (a view over the evidence above - it decides nothing):"]
+    if assessment.get("problem"):
+        lines.append(f"      ! {str(assessment['problem'])[:110]}")
+    for dim in assessment.get("dimensions") or []:
+        status = str(dim["status"])
+        if status == "PASS" and dim.get("strength") in ("weak", "qualified"):
+            status = f"PASS ({dim['strength']})"
+        mix = ", ".join(f"{n} {k}" for k, n in sorted(dim["classes"].items(), key=str))
+        lines.append(f"      {str(dim['label']):<24} {status:<16} {dim['held']} held"
+                     + (f", {dim['failed']} failed" if dim["failed"] else "")
+                     + (f", {dim['unmeasured']} not measured" if dim["unmeasured"] else "")
+                     + (f", {dim['not_reported']} not reported" if dim.get("not_reported")
+                        else "")
+                     + (f"; {mix}" if mix else "")
+                     + (f"; {dim['human']} person's decision(s)" if dim["human"] else ""))
+        if dim["status"] != "PASS" and dim.get("reason"):
+            lines.append(f"        {str(dim['reason'])[:110]}")
+        if dim.get("basis_why"):
+            lines.append(f"        ! {str(dim['basis_why'])[:110]}")
+        for judge in dim.get("judges") or []:
+            lines.append(f"        judge {judge.get('kind') or '?'} ({judge.get('artifact_type')}): "
+                         f"{judge.get('runs') if judge.get('runs') is not None else '?'} run(s), "
+                         f"one verdict - never repeated or cross-checked")
+        for finding in dim.get("unresolved") or []:
+            lines.append(f"        ! unresolved {finding.get('severity')} finding "
+                         f"{finding.get('id')} on a {finding.get('report_verdict')} "
+                         f"{finding.get('artifact_type')}: {str(finding.get('summary'))[:70]}")
+    return lines
 
 
 def _compliance(content):
@@ -261,6 +337,9 @@ def summarize(artifacts):
             knowledge = _compliance(content)
             if knowledge:
                 scorecard["compliance"] = knowledge
+            view = _assessment(content)
+            if view:
+                scorecard["assessment"] = view
             quality.append({"artifact": artifact_type, **scorecard})
         omitted = _left_out(content)
         if omitted:
@@ -437,6 +516,7 @@ def render(evidence):
         for summary in (entry.get("lesson_candidates") or [])[:6]:
             lines.append(f"    lesson candidate (promote to core/reference/lessons.yaml, or "
                          f"not): {summary[:90]}")
+        lines.extend(_assessment_lines(entry.get("assessment")))
         lines.extend(_compliance_lines(entry.get("compliance")))
     for entry in evidence.get("knowledge") or []:
         counts = entry.get("counts") or {}

@@ -93,7 +93,9 @@ class Sandbox(unittest.TestCase):
              "workspace/lessons/evidence.yaml",
              # The knowledge model's scope vocabularies (wgf_knowledge.model.vocabulary).
              "core/reference/genre-models.yaml", "core/reference/quality-benchmark.yaml",
-             "core/reference/visual-quality.yaml", "core/reference/play-realism.yaml")
+             "core/reference/visual-quality.yaml", "core/reference/play-realism.yaml",
+             # K6.3: the quality assessment places every declared check.
+             "core/reference/quality-assessment.yaml")
     TREES = ("scripts/wgf_playability", "scripts/wgf_production", "scripts/wgf_assets",
              "scripts/wgf_verification", "scripts/tests")
     # Copied whole (every file, not only .py): the platform profiles a scope names, and the

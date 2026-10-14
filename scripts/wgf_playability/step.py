@@ -44,7 +44,7 @@ from wgf_design import commitments, existing, layouts
 from wgf_design.content import quality_tier
 from wgf_design.experience import load_rules as load_experience_rules
 
-from . import analysis, realism
+from . import analysis, realism, scenario
 
 __all__ = ["PlayabilityStep", "RULES_PATH", "BOT_SPEC", "FAIL_ROUTE", "RECORDS", "PROJECTS"]
 
@@ -334,13 +334,19 @@ class PlayabilityStep(WorkflowStep):
                 blocked = "the bot produced no records on any viewport; see " + os.path.join(logs, "bot.log")
             records_dir = (os.path.relpath(out, context.run_dir).replace(os.sep, "/")
                            if os.path.isdir(out) else None)
+            # Every check's scenario: what the bot played for it, read from its records.
+            handed, handed_sha = scenario.settings_of(out)
+            bot = {"version": scenario.bot_version(BOT_SPEC), "settings_sha256": handed_sha}
+            checks, scenarios = scenario.build(checks, projects, frames, played, out,
+                                               context.run_dir, bot=bot, settings=handed)
             if measuring and not blocked:
                 floor, note = existing.probe_floor(
                     floor, played, commit, step=getattr(context, "current_step", None))
                 context.logger.info("existing-content floor", floor=note)
             return self._finish(context, inputs, title_id, commit, checks, frames, rules, blocked,
                                 projects, records_dir,
-                                floor=floor if existing.measured(floor) else None)
+                                floor=floor if existing.measured(floor) else None,
+                                bot=bot, scenarios=scenarios)
         finally:
             shutil.rmtree(repo, ignore_errors=True)
 
@@ -821,7 +827,7 @@ class PlayabilityStep(WorkflowStep):
     # -- the report ---------------------------------------------------------------------
 
     def _finish(self, context, inputs, title_id, commit, checks, frames, rules, blocked,
-                projects=None, records_dir=None, floor=None):
+                projects=None, records_dir=None, floor=None, bot=None, scenarios=None):
         failed = sorted({f"{c['project']}:{c['id']}" for c in checks
                          if c["required"] and c["status"] == "FAIL"})
         # A skipped check measured nothing, because the design claims nothing it could measure.
@@ -864,6 +870,9 @@ class PlayabilityStep(WorkflowStep):
             "records_dir": records_dir,
             "failed_checks": failed,
             "skipped_checks": skipped,
+            # Since 1.4.0: the bot that played, and what it played for each check.
+            "bot": bot or {"version": scenario.bot_version(BOT_SPEC), "settings_sha256": None},
+            "scenarios": scenarios or [],
             "blocked_reason": blocked,
             "verdict": verdict,
         }

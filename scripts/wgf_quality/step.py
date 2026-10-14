@@ -24,6 +24,10 @@
          FAILED or UNMEASURED and not excepted by a person makes the release decision
          not-release (the `compliance` section). A run that made no contract (it started
          before the knowledge model) gets the same section resolved now, advisory
+      -> the assessment (assessment.py): the same evidence read as three separate questions -
+         design validity, runtime correctness, player-facing quality - each PASS, FAIL,
+         INCONCLUSIVE or NOT_SUPPORTED with the checks it rests on and how each was measured
+         (core/reference/quality-assessment.yaml). A view: it changes no decision
       -> the run's finding ledger (wgf_triage.ledger.remeasure), advanced on every report
          of this build and this report itself: a finding a specialist fixed is verified or
          regressed here, by the producer that raised it, though no triage runs after the
@@ -53,12 +57,13 @@ from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow import references as pinned_references
 from wgflib.yamllite import YamlError, load as load_yaml
 
+from . import assessment as quality_assessment
 from . import compliance as knowledge_compliance
 from . import scoring
 
 __all__ = ["QualityGateStep", "REQUIRED_INPUTS", "OPTIONAL_INPUTS", "FLOOR", "BENCHMARK",
            "RUBRIC", "load_contract", "advance_ledger", "missing_gates", "lesson_candidates",
-           "knowledge_compliance_of"]
+           "knowledge_compliance_of", "assessment_of"]
 
 REQUIRED_INPUTS = ("playability-report", "production-quality-report", "visual-qa-report",
                    "content-sufficiency-report", "qa-report", "verification-report",
@@ -270,6 +275,36 @@ def knowledge_compliance_of(context, inputs, loaded, refs, entries, result, buil
         run_class=run_class, evaluated_by=_factory_now())
 
 
+def assessment_of(context, loaded, refs, entries, result, build, render=None):
+    """The quality-report's `assessment` section (assessment.evaluate) over the evidence this
+    gate read, the check tiers the run pinned and core/reference/quality-assessment.yaml.
+    Never raises: what cannot be read is said in the section, and every dimension is then
+    INCONCLUSIVE."""
+    from wgf_quality import registry
+    environment = getattr(context, "environment", None) or {}
+    run_dir = getattr(context, "run_dir", None)
+
+    def reader(relpath):
+        try:
+            return _pinned_yaml(relpath, environment, run_dir)
+        except pinned_references.PinError as exc:
+            raise OSError(str(exc))
+
+    self_report = {"criteria": (result or {}).get("criteria") or [],
+                   "dimensions": (result or {}).get("dimensions") or []}
+    try:
+        mapping, reference = quality_assessment.load(environment, run_dir)
+        tiers = reader(registry.TIERS_FILE)
+        checks, _problems = registry.classify(tiers, reader=reader)
+    except (pinned_references.PinError, YamlError, OSError, ValueError) as exc:
+        return quality_assessment.evaluate(None, None, {}, loaded,
+                                           problem=f"the assessment's references cannot be "
+                                                   f"read ({exc})")
+    return quality_assessment.evaluate(mapping, tiers, checks, loaded, refs=refs,
+                                       entries=entries, build=build, self_report=self_report,
+                                       render=render, reference=reference)
+
+
 def _factory_now():
     """The Factory version and commit of the code running this gate (read from files)."""
     from wgf_knowledge import versions
@@ -330,6 +365,10 @@ class QualityGateStep(WorkflowStep):
         result["compliance"] = knowledge_compliance_of(
             context, inputs, loaded, refs, entries, result, build, tier,
             candidates=result["lesson_candidates"], now=self._knowledge_now())
+        # A view over the evidence above, taken before any decision below is changed by it -
+        # it changes none (docs/quality-assessment.md).
+        result["assessment"] = assessment_of(context, loaded, refs, entries, result, build,
+                                             summary.get("render") or render)
         if result["missing_gates"]:
             names = ", ".join(g["step"] for g in result["missing_gates"])
             decision = result["release_decision"]
@@ -427,6 +466,10 @@ class QualityGateStep(WorkflowStep):
             report["compliance"] = knowledge_compliance.bind_self(
                 section, report["provenance"]["artifact_id"])
             knowledge_compliance.apply(report, section)
+        view = (result or {}).get("assessment")
+        if view:
+            report["assessment"] = quality_assessment.bind_self(
+                view, report["provenance"]["artifact_id"])
         if blocked and "missing_gates" not in report:
             gates = missing_gates(context)
             if gates:

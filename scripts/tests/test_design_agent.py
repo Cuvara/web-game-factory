@@ -388,9 +388,11 @@ class TheModuleStillJudges(AgentCase):
                                         competitors=competitors)
         return strategy
 
-    def prompt_for(self, strategy):
+    def prompt_for(self, strategy, beats_prompt=True):
         config = self.config("improve")
         config["design"]["agent"]["argv"].append("{prompt}")
+        if beats_prompt is not None:
+            config["design"]["agent"]["beats_prompt"] = beats_prompt
         AgentAuthor().draft(self.brief(strategy=strategy, config=config))
         with open(os.path.join(self.scratch, "run", "design", "argv.json"),
                   encoding="utf-8") as handle:
@@ -432,6 +434,18 @@ class TheModuleStillJudges(AgentCase):
         self.assertIn(PROMPT_BEATS, self.prompt_for(self.release_strategy()))
         # The worked example states no quality tier: no bars bind, the prompt is not grown.
         self.assertNotIn(PROMPT_BEATS, self.prompt_for(design_tests.load_strategy()))
+
+    def test_the_beats_prompt_is_opt_in(self):
+        # Asked only when factory.design.agent.beats_prompt is true: by default a release-tier
+        # run does not pay for the advisory contract (hypothesis bars), and the request still
+        # carries design_rules for an author that reads them.
+        from wgf_design.agent import PROMPT_BEATS
+        self.assertNotIn(PROMPT_BEATS, self.prompt_for(self.release_strategy(),
+                                                       beats_prompt=None))
+        self.assertNotIn(PROMPT_BEATS, self.prompt_for(self.release_strategy(),
+                                                       beats_prompt=False))
+        self.assertIn(PROMPT_BEATS, self.prompt_for(self.release_strategy(),
+                                                    beats_prompt=True))
 
     def test_the_prompt_names_the_content_rules(self):
         from wgf_design.agent import PROMPT_CONTENT

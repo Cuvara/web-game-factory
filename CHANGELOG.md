@@ -9,6 +9,11 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**The design-contract prompt is opt-in** (`factory.design.agent.beats_prompt`, default false).
+The advisory `design.*` rules still run on every design and are reported at G3; only the extra
+prompt asking the agent author for beats, references and signature moments waits for a project
+to turn it on, so a default release-tier run does not pay for bars that are hypotheses.
+
 **The design contract beyond the counts, advisory** (issue #75, design-contract). Two
 release-tier designs met every content count and still played like a genre's first draft. A
 release-tier design is now also read for its references to teardown records of the genre's

@@ -391,7 +391,11 @@ def _repair_list(problems):
 KEEP = ("identity", "palette", "fonts", "assets", "controls", "ui")
 
 DEFAULTS = {"argv": [], "timeout_seconds": 1800, "idle_timeout_seconds": 600,
-            "draft_from": "file"}
+            "draft_from": "file",
+            # The advisory design-contract prompt (PROMPT_BEATS) is opt-in: it asks the
+            # author for more per design (a beat per unit, references, signature moments)
+            # against bars that are hypotheses, so a run does not pay for it by default.
+            "beats_prompt": False}
 # The order a gap's keys are written in: what to find and change first.
 _GAP_KEYS = ("id", "field", "question", "severity", "observed", "bar", "assumed", "unit",
              "finding")
@@ -835,7 +839,7 @@ class AgentAuthor(DesignAuthor):
         if not revision and not gaps:
             values["prompt"] += PROMPT_ART_KIT
         values["prompt"] += PROMPT_DEPTH + PROMPT_CONTENT
-        if request["design_rules"]["binding"]:
+        if request["design_rules"]["binding"] and settings.get("beats_prompt") is True:
             values["prompt"] += PROMPT_BEATS
         values["prompt"] += PROMPT_FEATURES + PROMPT_COMMITMENTS
         if knowledge:

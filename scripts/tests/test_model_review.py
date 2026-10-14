@@ -624,11 +624,20 @@ class ReviewRounds(AuthorCase):
         self.assertEqual(result["quality"]["verdict"], "pass")
         self.assertEqual([h["stage"] for h in result["history"]], ["author", "review"])
 
-    def test_a_revision_that_breaks_a_check_is_dropped(self):
-        result = self.produce("break", max_repair_rounds=0)
-        self.assertEqual(len(result["spec"]["parts"]), len(base.keeper_spec()["parts"]))
-        self.assertIn("dropped", result["notes"])
-        self.assertEqual(result["quality"]["verdict"], "pass")
+    def test_a_revision_that_breaks_a_check_blocks_the_model(self):
+        # The author judged its passing spec unreadable and its revision fails: neither
+        # passes, so nothing ships - never the spec its own author refused (L15).
+        with self.assertRaises(model_author.ModelAuthorError) as caught:
+            self.produce("break", max_repair_rounds=0)
+        error = caught.exception
+        self.assertTrue(error.blocked)
+        self.assertFalse(error.retryable)
+        self.assertIn("BLOCKED", str(error))
+        self.assertIn("the author judged its renders unreadable", str(error))
+        self.assertEqual(error.finding["dimension"], "environment-3d")
+        self.assertEqual(error.finding["owner"], "environment-artist")
+        self.assertEqual(error.finding["route"], "assets")
+        self.assertFalse(os.path.exists(os.path.join(self.out, "keeper.glb")))
 
     def test_a_broken_revision_is_repaired_while_repairs_remain(self):
         result = self.produce("break", max_repair_rounds=1)

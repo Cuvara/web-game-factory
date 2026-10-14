@@ -1,7 +1,7 @@
 {
   "parts": [
     {"id": "torso", "shape": "box", "size": [0.5, 0.6, 0.28], "position": [0, 1.05, 0], "taper": [1.2, 1.0], "bevel": 0.04, "material": "kit"},
-    {"id": "shorts", "shape": "box", "size": [0.46, 0.22, 0.28], "position": [0, 0.68, 0], "bevel": 0.03, "material": "shorts"},
+    {"id": "shorts", "shape": "box", "size": [0.46, 0.22, 0.3], "position": [0, 0.68, 0], "bevel": 0.03, "material": "shorts"},
     {"id": "neck", "shape": "cylinder", "size": [0.11, 0.1, 0.11], "position": [0, 1.39, 0], "segments": 12, "material": "skin"},
     {"id": "head", "shape": "sphere", "size": [0.26, 0.3, 0.27], "position": [0, 1.57, 0], "segments": 16, "material": "skin"},
     {"id": "arm", "shape": "capsule", "size": [0.13, 0.55, 0.13], "position": [0.36, 1.08, 0], "rotation": [0, 0, 25], "segments": 12, "mirror": "x", "material": "kit"},

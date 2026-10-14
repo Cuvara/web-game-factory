@@ -133,6 +133,25 @@
       },
       "additionalProperties": false
     },
+    "contract": {
+      "type": "object",
+      "description": "What the game's code looks up in this model by name - the game<->asset node contract. A kit whose pieces the game places by node name (a straight top, a ramp top, gap chunks) or a model whose parts it animates or recolours by name declares those names here, and the delivered GLB must have them, whichever source it came from: a missing name is an error (`model-nodes-missing`), and the model author is told to name its parts so.",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "description": "Node names the GLB must contain. A name ending in `*` is a family: at least one node whose name starts with what precedes the `*` (`gap-chunk-*`).",
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*\\*?$" },
+          "uniqueItems": true
+        },
+        "materials": {
+          "type": "array",
+          "description": "Material names the GLB must contain (game code that recolours or swaps a material by name).",
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
     "budget": {
       "type": "object",
       "description": "Limits this design sets for this model. Exceeding one is an error.",

@@ -132,6 +132,16 @@ def build(parts, materials=(), *, name="model", normals=True):
         gltf_materials.append({"name": material["id"], "pbrMetallicRoughness": {
             "baseColorFactor": [round(c, 6) for c in color], "metallicFactor": 0,
             "roughnessFactor": 0.8}})
+        emissive = material.get("emissive")
+        if isinstance(emissive, str):
+            value = emissive.lstrip("#")
+            emissive = [_srgb_to_linear(int(value[i:i + 2], 16)) for i in (0, 2, 4)]
+        if emissive and any(emissive[:3]):
+            gltf_materials[-1]["emissiveFactor"] = [round(c, 6) for c in emissive[:3]]
+            strength = material.get("emissive_strength")
+            if strength not in (None, 1, 1.0):
+                gltf_materials[-1]["extensions"] = {
+                    "KHR_materials_emissive_strength": {"emissiveStrength": strength}}
 
     nodes = [{"name": name, "children": []}]
     node_of = {}
@@ -174,6 +184,8 @@ def build(parts, materials=(), *, name="model", normals=True):
                 "buffers": [{"byteLength": len(binary)}]}
     if gltf_materials:
         document["materials"] = gltf_materials
+        if any("extensions" in m for m in gltf_materials):
+            document["extensionsUsed"] = ["KHR_materials_emissive_strength"]
     return pack(document, bytes(binary))
 
 

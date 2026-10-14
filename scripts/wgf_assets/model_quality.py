@@ -10,6 +10,8 @@ section of core/reference/asset-quality.yaml.
     quality = assess(data, role="player", visual_identity=design_look, spec=model_spec)
     quality["quality"]          {verdict, checks, primitive_only, parts, triangles, colors, author}
     quality["geometry"]         the pieces, each with the primitive it matched (or None)
+    quality["lint"]             the craft lint's findings (model_lint.py): floating, hidden or
+                                z-fighting parts, emissive and proportion limits
 
 How a primitive is recognised. The visual model (LOD0, collision proxies excluded, as
 `gltf.inspect` counts it) is split into connected pieces - triangles sharing a vertex
@@ -262,6 +264,9 @@ def analyse(data, *, tolerance=0.02, name="model"):
     world = []  # the visual model's triangles in model space, for the silhouette
     faces = []  # the same triangles by piece, for what each piece shows (round_body)
     surface = {}  # material index (-1: none) -> visible surface area, for the contrast
+    # The visual model's triangles by mesh node, with their material: what the craft lint
+    # (model_lint.py) reads - which parts float, which hide, which faces fight for depth.
+    by_node = []
     while stack:
         index, inherited, parent_matrix = stack.pop()
         if index in seen or not 0 <= index < len(nodes):
@@ -299,6 +304,9 @@ def analyse(data, *, tolerance=0.02, name="model"):
                 if all(i < len(placed) for i in tri))
             world.extend((index, tuple(placed[i] for i in tri)) for tri in prim_triangles
                          if all(i < len(placed) for i in tri))
+            by_node.extend((node.get("name") or f"nodes[{index}]", material,
+                            tuple(placed[i] for i in tri)) for tri in prim_triangles
+                           if all(i < len(placed) for i in tri))
             for points, triangles, own in _pieces(positions, prim_triangles):
                 lo = [min(p[k] for p in points) for k in range(3)]
                 hi = [max(p[k] for p in points) for k in range(3)]
@@ -321,14 +329,49 @@ def analyse(data, *, tolerance=0.02, name="model"):
                         "color": _srgb_hex(factor[:3]),
                         "emissive": _srgb_hex([min(1.0, c * float(strength))
                                                for c in emissive]),
+                        "emissive_strength": float(strength) if any(emissive) else 0.0,
                         "area": round(surface.get(i, 0.0), 6),
                         "textured": isinstance(pbr.get("baseColorTexture"), dict)})
     _reach(pieces)
     if decoded:
         _shown(pieces, faces)
+    names = {i: m.get("name") or f"material-{i}" for i, m in enumerate(materials)}
     return {"pieces": pieces, "mesh_nodes": mesh_nodes, "normals": normals and mesh_nodes > 0,
             "decoded": decoded, "materials": colours,
-            "silhouette": silhouette(world) if decoded and world else None}
+            "silhouette": silhouette(world) if decoded and world else None,
+            "nodes": _nodes(by_node, pieces, names) if decoded else None,
+            "_faces": [(n, names.get(m, "none") if m >= 0 else "none", tri)
+                       for n, m, tri in by_node] if decoded else None}
+
+
+def _nodes(by_node, pieces, names):
+    """Per mesh node, in model space: its bounds, triangle count, materials, and per
+    silhouette view the share of the outline where it is the nearest surface (`shown`, the
+    sum of its pieces')."""
+    out = {}
+    for name, material, tri in by_node:
+        entry = out.setdefault(name, {"name": name, "min": [math.inf] * 3,
+                                      "max": [-math.inf] * 3, "triangles": 0,
+                                      "materials": set()})
+        entry["triangles"] += 1
+        entry["materials"].add(names.get(material, "none") if material >= 0 else "none")
+        for p in tri:
+            for k in range(3):
+                entry["min"][k] = min(entry["min"][k], p[k])
+                entry["max"][k] = max(entry["max"][k], p[k])
+    for entry in out.values():
+        entry["materials"] = sorted(entry["materials"])
+        entry["min"] = [round(v, 6) + 0.0 for v in entry["min"]]
+        entry["max"] = [round(v, 6) + 0.0 for v in entry["max"]]
+        shown = {}
+        for piece in pieces:
+            if piece["node"] != entry["name"] or not isinstance(piece.get("shown"), dict):
+                continue
+            for view, share in piece["shown"].items():
+                if share is not None:
+                    shown[view] = round(shown.get(view, 0.0) + share, 3)
+        entry["shown"] = shown
+    return [out[name] for name in sorted(out)]
 
 
 def _reach(pieces):
@@ -435,6 +478,42 @@ def background_colour(visual_identity):
         if any(w in words for w in ("background", "ground", "backdrop", "sky")):
             return entry["hex"]
     return min((e["hex"] for e in palette), key=_luminance, default=None)
+
+
+# Words a palette entry names the play surface by - what a game camera that looks down on
+# the play sees behind a model standing on it - strongest first. Whole words: "ground" is
+# not "background".
+SURFACE_WORDS = ("play surface", "surface", "floor", "ground", "track", "road", "path",
+                 "pitch", "court", "field", "terrain", "deck", "arena", "board", "tiles",
+                 "island tops")
+# A camera at least this many degrees above the horizontal sees the play surface behind
+# what stands on it; a flatter one (a side view, first person) sees the backdrop.
+SURFACE_ELEVATION = 15.0
+
+
+def surface_colour(visual_identity):
+    """(hex, token) of the palette entry whose token or role names the play surface, or
+    (None, None)."""
+    palette = [e for e in (visual_identity or {}).get("palette") or [] if isinstance(e, dict)
+               and isinstance(e.get("hex"), str) and len(e["hex"]) == 7]
+    for word in SURFACE_WORDS:
+        pattern = re.compile(r"(?<![a-z])" + re.escape(word) + r"(?![a-z])")
+        for entry in palette:
+            words = f"{entry.get('token', '')} {entry.get('role', '')}".lower()
+            if pattern.search(words.replace("-", " ").replace("_", " ")):
+                return entry["hex"], entry.get("token")
+    return None, None
+
+
+def looks_down(camera, role=None):
+    """True when the design's camera looks down on the play steeply enough that the play
+    surface, not the backdrop, is behind what stands on it."""
+    from . import render as render_mod
+    game = render_mod.game_direction(camera, role)
+    if not game:
+        return False
+    x, y, z = game[0]
+    return math.degrees(math.atan2(y, math.hypot(x, z))) >= SURFACE_ELEVATION
 
 
 def contrast_share(materials, background):
@@ -717,14 +796,17 @@ def round_body(requirement, pieces, outline, bars=None):
 # -- the verdict ----------------------------------------------------------------------------
 
 def assess(data, *, role=None, visual_identity=None, spec=None, kind="model", name="model",
-           bars=None, policy=None, author=None, inspection=None, requirement=None):
+           bars=None, policy=None, author=None, inspection=None, requirement=None,
+           camera=None, lint_rules=None):
     """{quality, geometry, findings}: the manifest `quality` block for a GLB, the geometry it
     was judged on, and the inspector's and the spec's findings [(code, severity, message)].
 
     `spec` is the model spec (buildable or an expectation): its declared fit, clips, budget
     and part count are held against the file. `policy` is the asset policy (for the kind's
     budgets; optional). `requirement` is the design's asset requirement (description,
-    readability, spec): what tells a round body from a blob (`round_body`)."""
+    readability, spec): what tells a round body from a blob (`round_body`). `camera` is the
+    design's camera statement: what the game camera sees behind the model (`model.contrast`).
+    `lint` in the result is the craft lint's findings (model_lint.py)."""
     bars = dict(DEFAULT_BARS, **(bars or load_bars()))
     inspection = inspection or gltf.inspect(data, name=name, kind=kind)
     kind_policy = policy.kind(kind) if policy is not None else None
@@ -891,6 +973,35 @@ def assess(data, *, role=None, visual_identity=None, spec=None, kind="model", na
         else:
             check("model.contrast", "pass", f"{text} (at least {float(floor):.0%})")
 
+    # The craft lint (model_lint.py, core/reference/model-review-rubric.yaml `lint`): what a
+    # careful modeller never ships - floating, hidden or z-fighting parts, glow beyond the
+    # identity, a compact role stretched thin. Errors fail; warnings are reported.
+    lint_findings = []
+    if geometry is None or not geometry.get("decoded"):
+        check("model.lint", "skipped" if geometry is not None else "fail",
+              "the geometry could not be decoded (compressed or quantised)"
+              if geometry is not None else "the geometry could not be read")
+    elif styled:
+        check("model.lint", "skipped", "the visual identity states primitive_style")
+    else:
+        from . import model_lint
+        lint_findings = model_lint.lint(geometry, spec=spec, role=role,
+                                        visual_identity=visual_identity,
+                                        rules=lint_rules or model_lint.load_rules())
+        lint_errors = [f for f in lint_findings if f["severity"] == "error"]
+        if lint_errors:
+            check("model.lint", "fail", f"{len(lint_errors)} craft error(s): " + "; ".join(
+                f"{f['code']} {', '.join(f['parts'][:4])}".strip() for f in lint_errors[:4]))
+        else:
+            warnings = [f for f in lint_findings if f["severity"] == "warning"]
+            check("model.lint", "pass",
+                  "nothing floats, hides or fights for depth; emissive and proportion within "
+                  "the identity's limits" + (f"; {len(warnings)} warning(s): " + "; ".join(
+                      f"{f['code']} {', '.join(f['parts'][:4])}" for f in warnings[:3])
+                      if warnings else ""))
+    if geometry is not None:
+        geometry.pop("_faces", None)
+
     verdict ="fail" if any(c["status"] == "fail" for c in checks) else "pass"
     quality = {"verdict": verdict, "checks": checks, "primitive_only": only,
                "parts": len(pieces) if geometry is not None else None,
@@ -899,4 +1010,4 @@ def assess(data, *, role=None, visual_identity=None, spec=None, kind="model", na
     if author is not None:
         quality["author"] = author
     return {"quality": quality, "geometry": geometry, "findings": findings,
-            "summary": summary}
+            "summary": summary, "lint": lint_findings}

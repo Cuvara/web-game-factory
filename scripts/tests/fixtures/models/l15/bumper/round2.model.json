@@ -1,0 +1,236 @@
+{
+ "animations": [
+  {
+   "duration": 0.4,
+   "loop": false,
+   "name": "squash",
+   "tracks": [
+    {
+     "keys": [
+      {
+       "t": 0,
+       "value": [
+        1,
+        1,
+        1
+       ]
+      },
+      {
+       "t": 0.08,
+       "value": [
+        1.25,
+        0.6,
+        1.25
+       ]
+      },
+      {
+       "t": 0.22,
+       "value": [
+        0.9,
+        1.15,
+        0.9
+       ]
+      },
+      {
+       "t": 0.4,
+       "value": [
+        1,
+        1,
+        1
+       ]
+      }
+     ],
+     "part": "base",
+     "path": "scale"
+    }
+   ]
+  }
+ ],
+ "budget": {
+  "max_triangles": 4000
+ },
+ "collision": {
+  "shape": "convex"
+ },
+ "fit": {
+  "axis": "y",
+  "size": 0.8
+ },
+ "materials": [
+  {
+   "color": "#2CA5A5",
+   "id": "teal",
+   "roughness": 0.55
+  },
+  {
+   "color": "#1F8A8A",
+   "id": "teal-mid",
+   "roughness": 0.7
+  },
+  {
+   "color": "#F7F1E3",
+   "id": "cream",
+   "roughness": 0.6
+  },
+  {
+   "color": "#D8CDB8",
+   "id": "stone",
+   "roughness": 0.8
+  },
+  {
+   "color": "#26211C",
+   "id": "ink",
+   "roughness": 0.9
+  }
+ ],
+ "parts": [
+  {
+   "bevel": 0.025,
+   "id": "base",
+   "material": "stone",
+   "position": [
+    0,
+    0.06,
+    0
+   ],
+   "segments": 16,
+   "shape": "cylinder",
+   "size": [
+    1.2,
+    0.12,
+    1.2
+   ]
+  },
+  {
+   "bevel": 0.02,
+   "id": "skirt",
+   "material": "teal-mid",
+   "parent": "base",
+   "position": [
+    0,
+    0.16,
+    0
+   ],
+   "segments": 16,
+   "shape": "cylinder",
+   "size": [
+    1.0,
+    0.2,
+    1.0
+   ],
+   "taper": [
+    0.85,
+    0.85
+   ]
+  },
+  {
+   "bevel": 0.02,
+   "id": "body",
+   "material": "teal",
+   "parent": "base",
+   "position": [
+    0,
+    0.36,
+    0
+   ],
+   "segments": 16,
+   "shape": "cylinder",
+   "size": [
+    0.76,
+    0.4,
+    0.76
+   ]
+  },
+  {
+   "id": "band",
+   "material": "cream",
+   "parent": "base",
+   "position": [
+    0,
+    0.3,
+    0
+   ],
+   "segments": 16,
+   "shape": "cylinder",
+   "size": [
+    0.82,
+    0.1,
+    0.82
+   ]
+  },
+  {
+   "id": "gap",
+   "material": "ink",
+   "parent": "base",
+   "position": [
+    0,
+    0.46,
+    0
+   ],
+   "segments": 16,
+   "shape": "cylinder",
+   "size": [
+    0.7,
+    0.03,
+    0.7
+   ]
+  },
+  {
+   "bevel": 0.04,
+   "id": "cap",
+   "material": "teal",
+   "parent": "base",
+   "position": [
+    0,
+    0.56,
+    0
+   ],
+   "segments": 16,
+   "shape": "cylinder",
+   "size": [
+    1.2,
+    0.16,
+    1.2
+   ],
+   "taper": [
+    0.82,
+    0.82
+   ]
+  },
+  {
+   "bevel": 0.03,
+   "id": "ring",
+   "material": "cream",
+   "parent": "base",
+   "position": [
+    0,
+    0.69,
+    0
+   ],
+   "segments": 16,
+   "shape": "cylinder",
+   "size": [
+    1.05,
+    0.1,
+    1.05
+   ]
+  },
+  {
+   "id": "dome",
+   "material": "teal",
+   "parent": "base",
+   "position": [
+    0,
+    0.68,
+    0
+   ],
+   "segments": 12,
+   "shape": "sphere",
+   "size": [
+    0.58,
+    0.12,
+    0.58
+   ]
+  }
+ ]
+}

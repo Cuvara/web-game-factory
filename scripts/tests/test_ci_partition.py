@@ -65,7 +65,10 @@ class TheWorkflow(unittest.TestCase):
     def test_the_shard_count_is_the_one_the_split_is_checked_on(self):
         self.assertIn("shard: [0, 1, 2, 3]", self.text)
         self.assertIn("python3 scripts/ci-partition.py check 4", self.text)
-        self.assertIn("python3 ../ci-partition.py units ${{ matrix.shard }} 4", self.text)
+        self.assertIn("python3 scripts/ci-partition.py units ${{ matrix.shard }} 4", self.text)
+        # Run from the repository root, as discover ran them: some tests read repository
+        # files by relative path (the first parallel run failed test_check_integrity on it).
+        self.assertIn("PYTHONPATH=scripts/tests python3 -m unittest $modules", self.text)
 
     def test_the_gate_needs_every_job_and_runs_the_suite_strictly(self):
         self.assertIn("needs: [checks, units, core, golden]", self.text)

@@ -124,11 +124,12 @@ jobs:
           pnpm --version
 
       - name: Unit modules of this shard
-        working-directory: scripts/tests
+        # From the repository root, as `unittest discover scripts/tests` ran them (some tests
+        # read repository files by relative path); the test directory is on the path.
         run: |
-          modules=$(python3 ../ci-partition.py units ${{ matrix.shard }} 4)
+          modules=$(python3 scripts/ci-partition.py units ${{ matrix.shard }} 4)
           echo "$modules" | tr ' ' '\n'
-          python3 -m unittest $modules
+          PYTHONPATH=scripts/tests python3 -m unittest $modules
 
   core:
     name: test-core, every category but the goldens

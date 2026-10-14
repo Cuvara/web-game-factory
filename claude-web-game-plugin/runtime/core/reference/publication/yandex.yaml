@@ -10,7 +10,13 @@
 # otherwise.
 
 id: yandex
-version: 2.3.0  # 2.3.0: re-read 2026-10-07 - the horizontal video required, the vertical one optional,
+version: 2.4.0  # 2.4.0: the draft form and moderation pages read 2026-10-05 (issue #75,
+                #        publish-yandex): the per-language text limits (title 50, description
+                #        and how to play 100-1000 and how to play required, short 70 and
+                #        optional, SEO 50-160), the contract-before-moderation rule, the 2 h
+                #        withdrawal window, the status read only after a reload, the 100-day
+                #        resubmission warning; media sizes stay in the platform profile
+                # 2.3.0: re-read 2026-10-07 - the horizontal video required, the vertical one optional,
                 #        media sizes pointed at the platform profile, content moderation and
                 #        update rules, REQ 1.24
                 # 2.2.0: the Yandex adapter's flow - Create draft at upload, the language tabs,
@@ -28,6 +34,8 @@ sources:
   - {url: "https://yandex.com/legal/yandexgames/en/", read: "2026-10-04"}
   - {url: "https://yandex.com/dev/games/doc/en/console/add-new-game/draft", read: "2026-10-07"}
   - {url: "https://yandex.ru/dev/games/doc/ru/console/add-new-game/draft", read: "2026-10-07"}
+  - {url: "https://yandex.com/dev/games/doc/en/concepts/moderation", read: "2026-10-05", note: "contract before moderation, 2 h withdrawal, the 100-day warning, the official rejection list"}
+  - {url: "https://yandex.com/dev/games/doc/en/console/manage-account", read: "2026-10-05", note: "profile, then contract (ULM or YAN); one developer account per Yandex ID"}
   - {url: "https://yandex.com/dev/games/doc/en/console/update-game", read: "2026-10-07"}
   - {url: "https://yandex.com/dev/games/doc/en/concepts/moderation", read: "2026-10-07"}
   - {url: "https://yandex.com/dev/games/doc/en/concepts/requirements", read: "2026-10-07"}
@@ -36,7 +44,8 @@ unknowns:
   - Console labels beyond those the documentation quotes, and their Russian forms (the Russian names below are translations, not read on the console).
   - The age-rating and category lists.
   - The archive upload widget.
-  - The text limits of every per-language field except those the documentation states.
+  - "The title's minimum length, the category list and the tag vocabulary (REQ 5.3, \"specified in the draft form\")."
+  - "Whether the console refuses a PNG with an alpha channel (\"JPEG or 24-bit PNG\" is stated, and that such a PNG \"may\" be refused; a refusal is not)."
   - Whether the console itself enforces the media sizes the documentation states (they are stated in platforms/yandex.yaml store_listing and checked there).
   - The contract screens (licensing model or YAN with payout details).
   - Whether a CAPTCHA, a second factor or an anti-bot check protects Yandex ID for the console.
@@ -239,11 +248,13 @@ submission:
     resubmission_cooldown: "24 h, doubling to 2, 4, 8 and 16 days; reset once per 28 days"
 
   fields:
-    title: {required: true, max: null, locales: per-locale, listing: listing.text.<locale>.title, basis: documented}
-    seo_description: {required: null, max: null, locales: per-locale, basis: documented}
-    description: {required: true, max: null, locales: per-locale, listing: listing.text.<locale>.description, basis: documented}
-    short_description: {required: null, max: null, locales: per-locale, basis: documented}
-    how_to_play: {required: null, max: null, locales: per-locale, listing: listing.text.<locale>.how_to_play, basis: documented}
+    # Text limits read 2026-10-05 from the draft form documentation; the platform profile's
+    # store_listing block is where listing-validation measures them.
+    title: {required: true, max: 50, locales: per-locale, listing: listing.text.<locale>.title, basis: documented, note: "Capital first letter; no full caps; no 'free', 'top', 'best' (8.2.2); the same in every material (5.1.3)."}
+    seo_description: {required: false, min: 50, max: 160, locales: per-locale, basis: documented}
+    description: {required: true, min: 100, max: 1000, locales: per-locale, listing: listing.text.<locale>.description, basis: documented}
+    short_description: {required: false, max: 70, locales: per-locale, basis: documented, note: "Optional on the portal; the Factory's platform profile requires it."}
+    how_to_play: {required: true, min: 100, max: 1000, locales: per-locale, listing: listing.text.<locale>.how_to_play, basis: documented}
     # Media sizes are stated (DRAFT, read 2026-10-07) and checked mechanically in the
     # platform profile's store_listing block (platforms/yandex.yaml); `size` stays null here
     # so the same bound is not reported twice as an unchecked string.
@@ -260,6 +271,14 @@ submission:
     developer_comment: {required: false, max: 2048, locales: shared, human: true, basis: documented}
 
   restrictions:
+    - rule: Moderation needs a signed contract first - the unified licensing contract in the Console (Russian legal entities and sole proprietors) or a Yandex Advertising Network agreement for everyone else; document review takes about 3 business days (read 2026-10-05).
+      source: https://yandex.com/dev/games/doc/en/concepts/moderation
+    - rule: A submitted draft can be withdrawn within 2 hours; after that it waits for the moderators (read 2026-10-05).
+      source: https://yandex.com/dev/games/doc/en/concepts/moderation
+    - rule: The console shows a new game status only after the page is reloaded - a status read follows a reload (read 2026-10-05).
+      source: https://yandex.com/dev/games/doc/en/console/update-game
+    - rule: A submission older than 100 days warns that the requirements may have changed - a person cancels, re-checks and resubmits (read 2026-10-05).
+      source: https://yandex.com/dev/games/doc/en/concepts/moderation
     - rule: Moderation takes 3-5 business days, one per game at a time, at most 2 new-game requests per account.
       source: https://yandex.com/dev/games/doc/en/concepts/moderation
     - rule: Full moderation (a new game, or an update that changes game files) takes 3-5 working days and stops at the first violation; content moderation (icon and cover A/B tests, promo-only updates) takes 1-2 working days (read 2026-10-07).

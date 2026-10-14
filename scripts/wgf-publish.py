@@ -3,7 +3,7 @@
 
     python3 scripts/wgf-publish.py profiles                      every publication profile:
                                                                  method, terms, credential kind
-    python3 scripts/wgf-publish.py readiness --manifest FILE [--publication FILE]
+    python3 scripts/wgf-publish.py readiness --manifest FILE [--publication FILE] [--platform ID]
                                                                  the publication guards on a
                                                                  release-manifest (and a record)
     python3 scripts/wgf-publish.py registry show <title> [--json]
@@ -86,6 +86,22 @@ def cmd_readiness(args):
             profiles[pid] = None
     results = {"candidate_frozen": publication.candidate_frozen(manifest),
                "store_metadata_complete": publication.store_metadata_complete(manifest, profiles)}
+    if args.platform:
+        # A target is not a package: a release that targets a platform without packaging
+        # its build cannot be uploaded there (a new release candidate must be built).
+        pid = args.platform
+        targeted = pid in {str(t.get("id")) for t in manifest.get("target_platforms") or []}
+        package = next((p for p in manifest.get("packages") or []
+                        if str(p.get("platform_id")) == pid), None)
+        if package and package.get("checksum"):
+            results["platform_packaged"] = publication.GuardResult(
+                True, f"{pid}: {package.get('filename')} {package['checksum'][:19]}...")
+        else:
+            packaged = ", ".join(str(p.get("platform_id")) for p in manifest.get("packages") or [])
+            results["platform_packaged"] = publication.GuardResult(
+                False, f"{pid}: {'targeted but ' if targeted else 'not targeted and '}not packaged "
+                       f"in release {manifest.get('release_id')} (packages: {packaged or 'none'}); "
+                       f"a {pid} build is a new release candidate with its own G5 and G6")
     if record is not None:
         for name in publication.PLATFORM_GUARDS:
             for entry in record.get("guards") or []:
@@ -277,6 +293,7 @@ def main(argv=None):
     readiness = sub.add_parser("readiness")
     readiness.add_argument("--manifest", required=True)
     readiness.add_argument("--publication")
+    readiness.add_argument("--platform", help="also require this platform's package in the manifest")
     readiness.set_defaults(run=cmd_readiness)
     registry_cmd = sub.add_parser("registry")
     registry_sub = registry_cmd.add_subparsers(dest="registry_command", required=True)

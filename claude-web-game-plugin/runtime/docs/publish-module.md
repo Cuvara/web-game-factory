@@ -812,6 +812,88 @@ factory:
 A step's `with:` overrides any key, plus `repo_dir` for the checkout (the one precedence
 every step uses, `docs/checkouts.md`).
 
+## The publishing workflow
+
+`core/reference/publishing-workflow.yaml` (1.0.0, schema
+`core/artifacts/shared/publishing-workflow.schema.json`) is the platform-neutral recipe every
+portal follows, as data: the stages from research to a live listing, who acts in each
+(automated, human, mixed), the new-game step or command that carries it out, and the gate or
+decision an irreversible stage waits for. `check-integrity.py` holds every step, gate,
+lifecycle state, outcome, waiting state, refusal code and registry status it names to exist
+(`wgflib.publication.publishing_workflow_problems`).
+
+- **Executor.** `executor: {portal: playwright, ci_publishes: false}`: a portal console is
+  driven by Playwright from the publish step, in a headed window a person logs in to; CI/CD
+  never uploads, submits or holds a session. The schema and the integrity check both refuse
+  `ci_publishes: true`.
+- **States.** One vocabulary a person reads a publication in - NOT_STARTED, BLOCKED,
+  RELEASE_ARTIFACT_MISMATCH, READY, WAITING_FOR_HUMAN_LOGIN, DRY_RUN_PASS, UPLOADING,
+  UPLOADED, WAITING_FOR_HUMAN_APPROVAL, SUBMITTED, UNDER_REVIEW, PUBLISHED, FAILED - each
+  mapped to the outcome, refusal code, waiting state or registry status it is read from, so
+  no state is claimed the step did not observe. Upload is not submit; submit is not published.
+  RELEASE_ARTIFACT_MISMATCH names the refusals of [Before any upload](#before-any-upload)
+  (`package-missing`, `build-mismatch`, `wrong-platform`, `wrong-package`, `g6-stale`,
+  `release-mismatch`); the lock itself is the step's, not restated here.
+- **Publication key.** `wgf-pub-<platform>-<16 hex>` over (platform, title, release-manifest
+  hash, package checksum, portal game id or `unassigned`): one artifact on one portal game,
+  the same in any run. Every platform-publication the submit step writes for a packaged
+  platform carries it and the workflow version (`submission.publication_key`,
+  `submission.publishing_workflow`; platform-publication 1.4.0). It is recorded, not looked
+  up: the run-scoped `idempotency_key` stays the in-run draft lookup, and the registry,
+  config ids and exact title stay the duplicate checks.
+- **Per-portal status is not in it.** How far each portal is has one home: the readiness
+  matrix in `docs/portal-publishing-architecture.md`.
+
+`python3 scripts/wgf-publish.py readiness --manifest FILE --platform ID` adds
+`platform_packaged`: a release that targets a platform without packaging its build is RED
+for it ("targeted but not packaged"), and the command exits 1 before any portal is opened -
+a build for that platform is a new release candidate with its own G5 and G6.
+
+## Yandex recipe
+
+Profiles yandex@1.4.0 (platform) and yandex@2.4.0 (publication); publishing workflow 1.0.0.
+Status per stage: the readiness matrix (`docs/portal-publishing-architecture.md`); facts
+and their sources: `docs/platform-targets-2026-10.md`.
+
+1. **Prerequisites** (a person): a Yandex ID; a developer profile; a signed contract - the
+   unified licensing contract in the Console (Russian legal entities and sole proprietors)
+   or a Yandex Advertising Network agreement (everyone else) - before any moderation;
+   `factory.publish.platforms.yandex.terms_confirmed` recorded (`automation_terms:
+   unverified`).
+2. **Game state**: G4 passed; a release whose manifest PACKAGES `yandex.zip` (`readiness
+   --platform yandex`); verify green for the yandex build; G5 and G6 decided by a person.
+3. **SDK**: the template's `yandex` adapter - `YaGames.init()`, `LoadingAPI.ready()` when
+   play is possible (1.19.2, within 90 s), `game_api_pause`/`game_api_resume`, language from
+   `environment.i18n.lang` (2.14), sound off on focus loss (1.3).
+4. **Monetization**: fullscreen ads only at logical pauses (4.4), at most 2 s from the action
+   to the ad (4/4), sound and play paused during ads (4.7); rewarded only on the player's
+   choice, the button says it shows an ad and names the reward (4.5.1), granted only in
+   `onRewarded`; no interval is documented (the Factory keeps a 60 s floor).
+5. **Metadata** (per language): title <= 50; description 100-1000; how to play 100-1000 (the
+   listing's controls text); short description <= 70 (optional on the portal, required by
+   the Factory); SEO 50-160 and keywords <= 100 optional; categories, tags, age rating,
+   orientation and platforms are a person's entries in the draft. Listing validation holds
+   the maxima; how-to-play's presence and the minima are advisory today
+   (`docs/store-listing-module.md`).
+6. **Media**: icon 512x512 PNG; cover 800x470 PNG; horizontal video MP4 16:9, height >= 400,
+   <= 28 s, <= 100 MB (required); screenshots 16:9 or 9:16, long side 1280-2560, JPEG or
+   24-bit PNG (the package writes RGB PNGs), >= 2 per selected platform.
+7. **Console** (the profile's intents): "Add app" or "Create draft", the archive, one
+   "Description and Promotion" tab per locale, icon, cover, screenshots, save; "Submit for
+   moderation" only on a person's `submit`. Locators are documented labels or hypotheses
+   until `wgf-publish.py observe yandex` records the real console.
+8. **A person**: login (and any CAPTCHA or second factor) in the opened window; contract and
+   payout; age rating; categories and tags; Postpone publication; the AI-descriptions
+   switch; Developer's comment; `submit`; Publish on a passed game.
+9. **Upload, submit, status**: `bin/wgf publish --run <run-id> --platform yandex` (live only
+   with `factory.publish.mode: live` and `WGF_PUBLISH_LIVE=1`) ends UPLOAD_COMPLETE; `bin/wgf
+   decide <run-id> submit` requests moderation once (withdrawable by a person for 2 hours);
+   `--track` reads the status on a fresh load (the console shows a new status only after a
+   reload).
+10. **Recovery**: a rejection records the cooldown (24 h doubling to 16 days, one reset per
+    28 days) and is never re-requested automatically; a crashed visit finds its draft by the
+    keys; a submission older than 100 days is re-checked and resubmitted by a person.
+
 ## Tests
 
 `scripts/tests/test_publish_module.py` (RELEASE category): redaction; every guard; adapter
@@ -891,8 +973,14 @@ GamePix: no SDK -> BLOCKED, the declarations a person's).
 spec's source (no action call, no session kept), and - with `WGF_PUBLISH_BROWSER_TEST=1` -
 headless Chromium against the fixture portal with the test playing the person: waiting,
 then authenticated, the form inventory read, nothing typed or prefilled, no password,
-cookie or email in the output, no request caused by the observer. No test contacts a real
-portal; the acceptance job holds no portal credential.
+cookie or email in the output, no request caused by the observer.
+`scripts/tests/test_publishing_workflow.py`: the shipped publishing workflow against its
+schema and `check-integrity.py`; an unknown step, gate, lifecycle state, outcome, waiting
+state, refusal code or registry status refused; the key's five components and
+`ci_publishes: false` held; the key deterministic and distinct per artifact, manifest, title
+and portal game, `unassigned` before the portal issues an id, never made without a package
+checksum; `readiness --platform` RED for a targeted platform without its package. No test
+contacts a real portal; the acceptance job holds no portal credential.
 
 ## What stays with a person
 

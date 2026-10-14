@@ -28,6 +28,11 @@ The rules are written against a projection, not the raw artifact:
     introductions.*           what each content unit debuts - the elements, mechanics and
                               introductions no earlier unit named - and every unit after the
                               opening one that debuts more than one (content.introductions_view)
+    design.*                  the design contract beyond the counts at the design's quality
+                              tier - references, the beat chart, signature moments, meta
+                              systems, market designed play, par calibration - as problem lists
+                              against core/reference/quality-benchmark.yaml `design`
+                              (wgf_design/beats.py view); its rules are warnings: advisory
 
 A rule that reads `platform.*` is evaluated once per required platform and is breached if it
 is breached on any of them. A platform whose profile holds no value for the rule (no ads,
@@ -40,6 +45,7 @@ import os
 
 from wgflib import mechanics, paths
 
+from . import beats as design_contract
 from . import commitments as brief_commitments
 from . import content as content_rules
 from . import existing
@@ -223,7 +229,7 @@ def concept_view(design, strategy, lexicon=None):
 
 
 def projection(design, strategy, platform=None, lexicon=None, concept=None, stated=None,
-               trace=None, effects=None):
+               trace=None, effects=None, contract=None):
     spec = design.get("build_spec") or {}
     cost = sum(item.get("est_cost", 0) for item in (spec.get("assets") or []) + (spec.get("audio") or []))
     return {
@@ -241,6 +247,7 @@ def projection(design, strategy, platform=None, lexicon=None, concept=None, stat
         "introductions": content_rules.introductions_view(design),
         "knowledge": trace if trace is not None else {"present": False, "problems": []},
         "vfx": effects if effects is not None else vfx_contract.view(design, strategy, lexicon=lexicon),
+        "design": contract if contract is not None else design_contract.view(design, strategy),
     }
 
 
@@ -269,10 +276,13 @@ def _measured(value):
     return value
 
 
-def evaluate(design, strategy, platforms, evaluated_at, rules=None, knowledge=None):
+def evaluate(design, strategy, platforms, evaluated_at, rules=None, knowledge=None,
+             benchmark=None):
     """Return the `consistency` block for `design`. `knowledge`: the Factory knowledge the
     author was given (wgf_design/knowledge.py provisional), which the design's decision
-    trace is held against; None when it could not be read."""
+    trace is held against; None when it could not be read. `benchmark`: the quality benchmark
+    the `design.*` rules read (the run's pinned copy; the live file when None; a
+    beats.Unreadable when the pinned copy could not be read)."""
     ruleset = rules or load_rules()
     concept = concept_view(design, strategy, load_lexicon(ruleset))
     vocabulary = load_commitments(ruleset)
@@ -281,6 +291,7 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None, knowledge=No
     contract = load_vfx(ruleset)
     effects = (vfx_contract.view(design, strategy, contract) if contract
                else {"problems": [], "implied": [], "declared": []})
+    design_view = design_contract.view(design, strategy, benchmark)
     required = [p for p in platforms if p.required]
     results = []
     blocking_breached = []
@@ -295,12 +306,12 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None, knowledge=No
         if not reads_platform:
             result = _evaluate_once(rule, projection(design, strategy, concept=concept,
                                                      stated=stated, trace=trace,
-                                                     effects=effects))
+                                                     effects=effects, contract=design_view))
         else:
             per_platform, notes, breached = [], [], False
             for platform in required:
                 context = projection(design, strategy, platform, concept=concept,
-                                     stated=stated, effects=effects)
+                                     stated=stated, effects=effects, contract=design_view)
                 absent = [p for p in _paths(rule["when"])
                           if p.startswith("platform.") and resolve(p, context) in (MISSING, None)]
                 if absent:
@@ -333,6 +344,11 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None, knowledge=No
             result["note"] = (f"{view['units']} unit(s); after the opening one, none debuts more "
                               "than one element" if view["units"] else
                               "the design lists no content units: nothing debuts, the rule holds")
+        if rule["id"].startswith(design_contract.PREFIX) and not result.get("note"):
+            # The design contract (beats.py): what was read, and that it is advisory.
+            note = design_view["notes"].get(design_contract.short(rule["id"]))
+            if note:
+                result["note"] = note
         if trace is not None and not result.get("note"):
             result["note"] = ("no decision trace (knowledge_applied): nothing claimed, nothing "
                               "to contradict" if not trace["present"] else

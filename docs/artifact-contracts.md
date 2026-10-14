@@ -227,6 +227,28 @@ ceiling. The play probe reports effects (entities of role `vfx`) and interaction
 the material language, glow limits and worked examples the model author is held to. Craft:
 `core/craft/juice.md` section 9, `core/craft/production-art-3d.md` sections 2 and 2a.
 
+**`game-design` 1.18.0** adds the design contract beyond the counts, all optional, so 1.17.0
+artifacts remain valid: `references` (`status` `grounded`, or `unknown` with a `reason`;
+`teardowns[]`, the research's teardown-depth competitors the design rests on; `dimensions[]`,
+per core verbs, signature moments, set pieces per group, content duration and meta systems,
+what the references do (`observed`) beside the design line that answers it (`design`,
+`departs`)), each unit's `beat` (`claim` and its `test`, the `decision` and how often it recurs
+`every_s`, its `signature_moment`, an optional `risk_reward` line and payoff, and for a climax
+the `climax.change` - phase, state, rule, arena or objective), `build_spec.content.
+signature_moments[]` (`end-of-unit-payoff`, `combo-escalation`, `rare-spectacle`, each with
+its trigger), `build_spec.content.meta_systems[]` (each system included for its player value
+or declined) and a secondary goal's `par` calibration (`human-playtest`, or `bot-scaled` with
+`ratio_to_bot`). The design step reads them at the release tier against
+`core/reference/quality-benchmark.yaml` `design` (1.7.0) through the twelve `design.*` rules of
+design-consistency-rules 2.6.0 (`scripts/wgf_design/beats.py`). **Every one is advisory**
+(severity `warning`, so `check-tiers.yaml` classifies it `advisory`): a breach is a warning
+carried to G3; it never refuses, repairs or routes a design. The bars are proposals and
+hypotheses no release has been measured against, and the references need teardown records
+the Factory does not ship: with fewer than three in the research the reference is UNKNOWN,
+reported, never a pass. How many elements a unit after the opening one debuts stays
+`content.introductions_one_at_a_time`'s (lesson L29, blocking); `design.introductions_placed`
+only holds the opening unit (which L29 exempts) and where later debuts land.
+
 **`game-design` 1.12.0** states the quality tier in the content contract, all optional:
 `build_spec.content.quality_tier` (`mvp` or `release`; the strategy's
 `concept.content_model.quality_tier` when absent, and never lower than it),

@@ -12,7 +12,7 @@
 # artifact plus the resolved platform profiles. Keep them few and obvious — a rule nobody
 # understands gets waived, and a waived rule is worse than no rule.
 
-version: 2.5.0  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms; 2.0.0: mechanics, not words (below); 2.1.0: brief commitments and the existing-content floor (below); 2.1.1: brief-commitments 1.1.0 (the probe floor); 2.2.0: content.introductions_one_at_a_time and knowledge.trace_matches_design (below); 2.3.0: a unit debuts its non-empty `introduces`, else every element and mechanic it shows for the first time (an empty `introduces` states nothing); 2.4.0: an introduction must be true of its unit - contained in it, and not named by an earlier unit; 2.4.1: a unit stating no `elements` list leaves a declared element's containment unverified, never a breach; 2.5.0: the visual effect contract (below)
+version: 2.6.0  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms; 2.0.0: mechanics, not words (below); 2.1.0: brief commitments and the existing-content floor (below); 2.1.1: brief-commitments 1.1.0 (the probe floor); 2.2.0: content.introductions_one_at_a_time and knowledge.trace_matches_design (below); 2.3.0: a unit debuts its non-empty `introduces`, else every element and mechanic it shows for the first time (an empty `introduces` states nothing); 2.4.0: an introduction must be true of its unit - contained in it, and not named by an earlier unit; 2.4.1: a unit stating no `elements` list leaves a declared element's containment unverified, never a breach; 2.5.0: the visual effect contract (below); 2.6.0: the design contract beyond the counts, twelve design.* warnings (below)
 
 # 2.0.0. The concept rules compared words: "tap hops" in a design read as a foreign `jump`
 # for a brief that asked for hops, a goal gate read as a checkpoint `gate`, and an author
@@ -261,6 +261,139 @@ rules:
     rationale: >
       An open-ended progression with no designed end state produces an endless content
       obligation, which is exactly what a 7-14 day production model cannot service.
+
+  # 2.6.0. Two release-tier designs met every count above and still played like a genre's first
+  # draft: the opening unit taught six mechanics, a climax was the same unit with a new
+  # drawing, risk/reward and the decision cadence were prose, the designed play was five
+  # minutes and nothing was compared with the genre's leaders. `design.*` is the design read
+  # at its quality tier against core/reference/quality-benchmark.yaml `design` (1.7.0) as the
+  # run pinned it (wgf_design/beats.py view). Each is a WARNING - check-tiers.yaml classifies
+  # it advisory: it is carried to G3 and never refuses, repairs or routes a design. The bars
+  # are uncalibrated (`proposed` or `hypothesis`) and the references need a teardown corpus
+  # the Factory does not ship; docs/factory-quality-benchmark.md says what would make each
+  # blocking. Below the tier that states the bars (mvp), none is breached and each note says
+  # what a release would be warned of. Listed before the trace rule, which reads them.
+  - id: design.references_grounded
+    label: The design rests on teardown records of the genre's leaders (release tier, advisory)
+    severity: warning
+    # `design.references_grounded`: fewer teardown-depth records in the strategy's research than
+    # design.references.min_teardowns (UNKNOWN, never a pass - the Factory ships no teardown
+    # corpus yet), a reference the research did not tear down, a reference dimension with no
+    # design line.
+    when: { left: design.references_grounded, op: neq, right: [] }
+    rationale: >
+      At its tier the design rests on teardown records of the genre's leaders the research carries, compared on every reference dimension with the design line that answers it. Advisory until calibrated: no release has been measured against the bar
+      (quality-benchmark design, docs/factory-quality-benchmark.md).
+
+  - id: design.introductions_placed
+    label: The opening unit teaches the core verb and one more mechanic; later debuts land in a teach, breather or twist (release tier, advisory)
+    severity: warning
+    # `design.introductions_placed`: an opening unit introducing more than
+    # design.beats.opening_max_new_mechanics mechanics beside the core verb (the unit
+    # content.introductions_one_at_a_time exempts), and a later unit debuting something on a
+    # purpose outside design.beats.introduce_in. How MANY a later unit debuts is
+    # content.introductions_one_at_a_time's (L29) and is not counted here.
+    when: { left: design.introductions_placed, op: neq, right: [] }
+    rationale: >
+      The opening unit introduces the core verb and at most one more mechanic; every later debut is in a teach, breather or twist unit. Advisory until calibrated: no release has been measured against the bar
+      (quality-benchmark design, docs/factory-quality-benchmark.md).
+
+  - id: design.teach_eases
+    label: A teach unit right after a breather is no harder than it (release tier, advisory)
+    severity: warning
+    # `design.teach_eases`: a teach unit directly after a breather that is harder on an axis.
+    when: { left: design.teach_eases, op: neq, right: [] }
+    rationale: >
+      A teach unit right after a breather is no harder on any axis than that breather. Advisory until calibrated: no release has been measured against the bar
+      (quality-benchmark design, docs/factory-quality-benchmark.md).
+
+  - id: design.beat_chart_stated
+    label: Every unit states its beat (release tier, advisory)
+    severity: warning
+    # `design.beat_chart_stated`: units with no `beat`, and units making the same claim.
+    when: { left: design.beat_chart_stated, op: neq, right: [] }
+    rationale: >
+      Every unit states its beat: a falsifiable claim, its test, and the player's decision. Advisory until calibrated: no release has been measured against the bar
+      (quality-benchmark design, docs/factory-quality-benchmark.md).
+
+  - id: design.group_arc
+    label: Every group has a twist and ends in a climax (release tier, advisory)
+    severity: warning
+    # `design.group_arc`: a group short of design.beats.min_twist_per_group twists, or not ending
+    # in a climax.
+    when: { left: design.group_arc, op: neq, right: [] }
+    rationale: >
+      Every group has a twist and ends in a climax. Advisory until calibrated: no release has been measured against the bar
+      (quality-benchmark design, docs/factory-quality-benchmark.md).
+
+  - id: design.climax_changes_state
+    label: Every climax changes the state, phase, rules, arena or objective (release tier, advisory)
+    severity: warning
+    # `design.climax_changes_state`: a climax unit whose beat declares no change.
+    when: { left: design.climax_changes_state, op: neq, right: [] }
+    rationale: >
+      Every climax changes the state, phase, rules, arena or objective - not only the art. Advisory until calibrated: no release has been measured against the bar
+      (quality-benchmark design, docs/factory-quality-benchmark.md).
+
+  - id: design.risk_reward_offered
+    label: Every group offers a harder line for a payoff (release tier, advisory)
+    severity: warning
+    # `design.risk_reward_offered`: a group with fewer units stating `beat.risk_reward` than
+    # design.beats.min_risk_reward_per_group.
+    when: { left: design.risk_reward_offered, op: neq, right: [] }
+    rationale: >
+      Every group offers a harder line for a payoff. Advisory until calibrated: no release has been measured against the bar
+      (quality-benchmark design, docs/factory-quality-benchmark.md).
+
+  - id: design.decision_cadence
+    label: The player's most frequent decision recurs every few seconds (release tier, advisory)
+    severity: warning
+    # `design.decision_cadence`: a unit whose decision recurs less often than
+    # design.beats.max_decision_interval_s.
+    when: { left: design.decision_cadence, op: neq, right: [] }
+    rationale: >
+      The player's most frequent decision recurs every few seconds. Advisory until calibrated: no release has been measured against the bar
+      (quality-benchmark design, docs/factory-quality-benchmark.md).
+
+  - id: design.signature_moments
+    label: An end-of-unit payoff, a combo escalation and a rare spectacle, each built into a unit (release tier, advisory)
+    severity: warning
+    # `design.signature_moments`: a kind short of its bar, a unit naming an undeclared moment, a
+    # moment no unit stages.
+    when: { left: design.signature_moments, op: neq, right: [] }
+    rationale: >
+      The game has an end-of-unit payoff, a combo escalation and a rare spectacle, each in a unit. Advisory until calibrated: no release has been measured against the bar
+      (quality-benchmark design, docs/factory-quality-benchmark.md).
+
+  - id: design.meta_systems_justified
+    label: Every meta system is included for a player value or declined (release tier, advisory)
+    severity: warning
+    # `design.meta_systems_justified`: no meta systems decided, one both included and declined, or
+    # a persisted meta-loop kind that is not included.
+    when: { left: design.meta_systems_justified, op: neq, right: [] }
+    rationale: >
+      Every meta system is included for a player value or declined, and every persisted one is included. Advisory until calibrated: no release has been measured against the bar
+      (quality-benchmark design, docs/factory-quality-benchmark.md).
+
+  - id: design.designed_play_market
+    label: A finite game carries the designed play the genre's leaders carry (release tier, advisory, hypothesis)
+    severity: warning
+    # `design.designed_play_market`: a finite game short of design.designed_play.finite_min_s (a
+    # hypothesis, confidence 0.5).
+    when: { left: design.designed_play_market, op: neq, right: [] }
+    rationale: >
+      A finite game carries the designed play the genre's leaders carry. Advisory until calibrated: no release has been measured against the bar
+      (quality-benchmark design, docs/factory-quality-benchmark.md).
+
+  - id: design.par_calibrated
+    label: A timed goal is calibrated on people, or scaled from the bot's time (release tier, advisory, hypothesis)
+    severity: warning
+    # `design.par_calibrated`: a timed secondary goal with no `par`, or a bot-scaled par below
+    # design.par_calibration.min_human_to_bot_ratio (a hypothesis, confidence 0.5).
+    when: { left: design.par_calibrated, op: neq, right: [] }
+    rationale: >
+      A timed goal is calibrated on people, or at least the bar's multiple of the bot's time. Advisory until calibrated: no release has been measured against the bar
+      (quality-benchmark design, docs/factory-quality-benchmark.md).
 
   # 2.2.0. The design's decision trace (game-design 1.16.0 `knowledge_applied`): what the
   # author says it did with each Factory rule it was given. A claim the design contradicts is

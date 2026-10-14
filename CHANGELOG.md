@@ -9,6 +9,29 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**The design contract beyond the counts, advisory** (issue #75, design-contract). Two
+release-tier designs met every content count and still played like a genre's first draft. A
+release-tier design is now also read for its references to teardown records of the genre's
+leaders, a beat per unit (a falsifiable claim and its test, the player's decision and how
+often it recurs, a harder line for a payoff, what a climax changes), a twist and a closing
+climax per group, signature moments, meta systems decided, market designed play for a finite
+game and par calibration: game-design 1.18.0 (`references`, units' `beat`,
+`build_spec.content.signature_moments`, `.meta_systems`, secondary goals' `par`, all
+optional), quality-benchmark 1.7.0 `design` (every 1.6.0 bar unchanged; a new basis,
+`hypothesis`), design-consistency-rules 2.6.0 (twelve `design.*` rules,
+`scripts/wgf_design/beats.py`). **Every rule is a warning, so advisory** in check-tiers: it is
+carried to G3 and never refuses, repairs or routes a design, and a run at the mvp tier (the
+golden runs) is breached on none. The bars are uncalibrated - `proposed`, and 1800 s of
+designed play and a 1.25x par ratio are hypotheses at confidence 0.5. The Factory ships no
+teardown corpus, so a default release-tier run reports `design.references_grounded` as
+UNKNOWN (never a pass, never filled in by the designer). How many elements a unit after the
+opening one debuts stays `content.introductions_one_at_a_time`'s (L29, blocking);
+`design.introductions_placed` holds only the opening unit, which L29 exempts, and where later
+debuts land. The agent author is shown the rules and bars (`design_rules`) and, at a tier with
+design bars, an advisory prompt subordinate to every binding rule. What would make a rule
+blocking is in `docs/factory-quality-benchmark.md`. Bringing an artifact forward: nothing; a
+run pinned before these versions is held to none of it.
+
 **The development brief and the GDD carry the design's visual effects** (review of the
 craft-identity-vfx merge, F1). `build_spec.vfx` is now a build-spec section of the brief and of
 `docs/GDD.md` (*Visual effects*), and the brief's play-probe section, when the design declares

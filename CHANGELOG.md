@@ -9,6 +9,10 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-10-14
+
+Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.1". No runtime change beyond the version.
+
 **Acceptance CI runs in parallel jobs** (`.github/workflows/acceptance.yml`,
 `scripts/ci-partition.py`). The one job of about three hours - the unit suite, then test-core
 with both goldens, in sequence - is now: the repository checks; four unit shards, the modules

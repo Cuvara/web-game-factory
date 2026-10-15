@@ -237,6 +237,13 @@ factory:
       idle_timeout_seconds: null
       max_repair_rounds: 2
       review_rounds: 1
+      # The craft review stays off here as shipped (a judge is one more paid agent call per
+      # model and its bars are uncalibrated): the model.craft check is skipped and the last
+      # spec that passed its checks ships; the craft lint stays advisory.
+      judge:
+        kind: none
+        rounds: 2
+      lint: advisory
 
   visualqa:
     # Without a judge visual-qa BLOCKS: it is never a silent pass.

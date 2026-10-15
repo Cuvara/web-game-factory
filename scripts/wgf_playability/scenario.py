@@ -59,6 +59,10 @@ SOURCES = dict(analysis.EVIDENCE, **{
     "baseline.clear_rate": ("naive",),
     "baseline.entity_size": ("win",),
     "baseline.responsiveness": ("first-session", "act", "win"),
+    # Advisory (baseline-compare.yaml 1.1.0): the rewrite is read from git, not from a play;
+    # the frames are the first session's and the win test's.
+    "baseline.source_rewrite": (),
+    "baseline.frame_metrics": ("first-session", "win"),
 })
 # Checks read off every record the bot wrote (errors and the console are counted on all).
 EVERY_RECORD = ("page.errors", "runtime.")

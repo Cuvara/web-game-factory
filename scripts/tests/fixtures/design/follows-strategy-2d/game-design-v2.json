@@ -19,7 +19,7 @@
       {
         "artifact_id": "wgf:title-strategy:brick-breaker-worlds:20261008-02",
         "artifact_type": "title-strategy",
-        "content_hash": "sha256:b75c082064ccc6f8dd7c4b2cafd71c5f276fa98a9f37b11b2e9141c21bf6b723"
+        "content_hash": "sha256:1f3afef90d7f5f9b18681da9d68b783cf8d6730643bee347d3f597e2d26a49d5"
       },
       {
         "artifact_id": "wgf:triage-report:brick-breaker-worlds:20261005-14",
@@ -27,7 +27,7 @@
         "content_hash": "sha256:f354df16b4d3ce69ab0794474419f26210757876b6841caf635f8b9f2cfb0039"
       }
     ],
-    "content_hash": "sha256:fdc184f23dbe81f1eff6f9412d94e0dbc0e11cf7426a64a0cba83aab471c2e11",
+    "content_hash": "sha256:e00b096049fc3033cd43824cd86b298f4dab30edd596cc26d380cfa536048016",
     "status": "draft",
     "supersedes": "wgf:game-design:brick-breaker-worlds:20261005-01"
   },

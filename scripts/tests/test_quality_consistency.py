@@ -266,7 +266,7 @@ class MultiGenreConsistency(_Case):
                              f"{self.failed_ids(artifact_type, report)}")
         self.assertEqual(self.newest(api, state, "qa-report")["verdict"], "pass")
         # The level-design step (workflow 19) ran on the same build and held nothing: no
-        # critic configured and no play.policy - advisory (check-tiers 1.6.0), never a pass.
+        # critic configured and no play.policy - advisory (check-tiers 1.8.0), never a pass.
         self.assertIn("level-design", ran)
         level = self.newest(api, state, "level-design-report")
         played = self.newest(api, state, "playability-report")["commit"]

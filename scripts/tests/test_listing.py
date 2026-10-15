@@ -416,6 +416,7 @@ class ListingCase(unittest.TestCase):
         """The real profiles, with their image sizes and formats left unstated: this case's
         masters are fixture-small (reference-small.yaml), so a portal's real 512 px icon would
         be above every master. For tests about locales, copy and age ratings, not images.
+        So is the screenshots' minimum long side (the fixture captures 320x180 frames).
         Unless `video`, the video's container and minimum height are left unstated too (the
         fake records a 160x90 WebM; yandex 1.3.0 requires a 400 px high MP4), in the platform
         profile and in the publication profile's media fields."""
@@ -428,7 +429,9 @@ class ListingCase(unittest.TestCase):
                 if isinstance(image, dict):
                     image.update(sizes=None, formats=None)
             if isinstance(block.get("screenshots"), dict):
-                block["screenshots"]["formats"] = None
+                # The fixture's frames are 320x180: the portal's screenshot long side
+                # (yandex 1.4.0, 1280-2560 px) is left unstated with the image sizes.
+                block["screenshots"].update(formats=None, min_long_side=None)
             if not video and isinstance(block.get("video"), dict):
                 block["video"].update(formats=None, min_height=None)
             return profile
@@ -760,14 +763,14 @@ class Platforms(unittest.TestCase):
 
     def test_targets_come_from_the_scaffold_record(self):
         scaffold = {"game_config": {"platforms": [{"id": "poki", "profile": "poki@1.1.0", "role": "required"},
-                                                  {"id": "yandex", "profile": "yandex@1.3.0", "role": "optional"}]}}
-        self.assertEqual(platforms.targets(scaffold), [("poki", "required", "1.1.0"), ("yandex", "optional", "1.3.0")])
-        self.assertEqual(platforms.targets(scaffold, ["yandex"]), [("yandex", "optional", "1.3.0")])
+                                                  {"id": "yandex", "profile": "yandex@1.4.0", "role": "optional"}]}}
+        self.assertEqual(platforms.targets(scaffold), [("poki", "required", "1.1.0"), ("yandex", "optional", "1.4.0")])
+        self.assertEqual(platforms.targets(scaffold, ["yandex"]), [("yandex", "optional", "1.4.0")])
         # The verified build's targets win over a scaffold-record written before a retarget.
-        verified = [{"platform_id": "yandex", "profile": "yandex@1.3.0", "role": "required"},
+        verified = [{"platform_id": "yandex", "profile": "yandex@1.4.0", "role": "required"},
                     {"platform_id": "y8", "profile": "y8@1.3.0", "role": "optional"}]
         self.assertEqual(platforms.targets(scaffold, verified=verified),
-                         [("yandex", "required", "1.3.0"), ("y8", "optional", "1.3.0")])
+                         [("yandex", "required", "1.4.0"), ("y8", "optional", "1.3.0")])
         self.assertEqual(platforms.targets(scaffold, ["y8"], verified=verified),
                          [("y8", "optional", "1.3.0")])
         self.assertEqual(platforms.targets(scaffold, verified=[]),
@@ -1051,7 +1054,7 @@ class TheStep(ListingCase):
 
     def test_a_platform_requiring_an_age_rating_gets_the_configured_one(self):
         self.image_sizes_unstated()
-        platforms_ = [{"id": "yandex", "profile": "yandex@1.3.0", "role": "required"}]
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.4.0", "role": "required"}]
         result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_))
         listing = self.listing_of(result)
         self.assertEqual(listing["status"], "incomplete")
@@ -1134,7 +1137,7 @@ class Validation(ListingCase):
         self.game = GameBuild(os.path.join(self.scratch, "own-keys"), strings={
             "en": {"game.title": "Fixture Game", "play.objective": "Tap on the beat to switch lanes and keep the combo alive."},
             "ru": {"game.title": "Fixture Game", "play.objective": "Нажимайте в такт, чтобы менять полосу."}})
-        platforms_ = [{"id": "yandex", "profile": "yandex@1.3.0", "role": "optional"}]
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.4.0", "role": "optional"}]
         result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_),
                                  context=self.context(config={"listing": {"age_rating": {"default": "12+"}}}))
         listing = self.listing_of(result)
@@ -1158,7 +1161,7 @@ class Validation(ListingCase):
         # listing until the loop limit.
         self.game = GameBuild(os.path.join(self.scratch, "en-only"), strings={
             "en": {"title.heading": "Fixture Game", "hud.objective": "Tap on the beat to switch lanes."}})
-        platforms_ = [{"id": "yandex", "profile": "yandex@1.3.0", "role": "required"}]
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.4.0", "role": "required"}]
         result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_),
                                  context=self.context(config={"listing": {"age_rating": {"default": "12+"}}}))
         listing = self.listing_of(result)
@@ -1225,7 +1228,7 @@ class Validation(ListingCase):
 
     def test_only_a_person_can_fix_it_blocks(self):
         self.image_sizes_unstated()
-        platforms_ = [{"id": "yandex", "profile": "yandex@1.3.0", "role": "required"}]
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.4.0", "role": "required"}]
         result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_))
         listing = self.listing_of(result)
         outcome, report = self.validate(listing)
@@ -1240,7 +1243,7 @@ class Validation(ListingCase):
         # fake records only a 160x90 WebM and has no encoder: the package says so as an error,
         # and validation fails the platform's video check for a person to configure.
         self.image_sizes_unstated(video=True)
-        platforms_ = [{"id": "yandex", "profile": "yandex@1.3.0", "role": "required"}]
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.4.0", "role": "required"}]
         result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_),
                                  context=self.context(config={"listing": {"age_rating": {"yandex": "0+"}}}))
         listing = self.listing_of(result)
@@ -1267,6 +1270,172 @@ class Validation(ListingCase):
         checks, _ = validate(listing, self.run_dir, reference, profiles, listing["facts"])
         video = next(c for c in checks if c["id"] == "video.trailer")
         self.assertEqual((video["status"], video["fix"]), ("FAIL", "configure"))
+
+
+class PortalListingRules(ListingCase):
+    """yandex@1.4.0's listing rules (issue #75; docs/platform-targets-2026-10.md, "Yandex,
+    read 2026-10-05"): "How to play" judged on the controls text, a stated text minimum
+    measured, screenshots 16:9 or 9:16 with a long side of 1280-2560 px, and no alpha
+    channel. The proportions and the long side are portal bounds the default capture
+    (1920x1080, 1080x1920) meets, so they fail; how-to-play's presence, text minimums and
+    alpha are ADVISORY (a WARNING, never a failure) until every required locale's copy is
+    written to them - a locale written from the game's own strings has no controls text."""
+
+    def test_the_yandex_requirements_carry_the_portal_rules(self):
+        reqs = {r["id"]: r for r in platforms.requirements(platforms.load_profile("yandex"), self.reference)}
+        self.assertEqual((reqs["text:how_to_play"]["text_field"], reqs["text:how_to_play"]["min_chars"],
+                          reqs["text:how_to_play"]["max_chars"]), ("controls", 100, 1000))
+        self.assertEqual(reqs["text:long_description"]["text_field"], "long_description")
+        self.assertEqual(reqs["text:long_description"]["min_chars"], 100)
+        shots = reqs["screenshots"]
+        self.assertEqual((shots["aspects"], shots["min_long_side"], shots["max_long_side"], shots["transparent"]),
+                         (["16:9", "9:16"], 1280, 2560, False))
+        # The MP4 rule is main's (yandex 1.3.0, eae16bb), unchanged.
+        self.assertEqual((reqs["video"]["required"], reqs["video"]["formats"], reqs["video"]["aspect"]),
+                         (True, ["mp4"], "16:9"))
+
+    def test_the_default_capture_meets_the_screenshot_bounds(self):
+        from wgf_listing.validation import _screenshot_bounds
+        req = {"aspects": ["16:9", "9:16"], "min_long_side": 1280, "max_long_side": 2560}
+        # The shipped reference (this case's fixture reference is fixture-small).
+        shipped = load_file(os.path.join(ROOT, "core", "reference", "store-listing.yaml"))
+        sizes = shipped["renditions"]["screenshots"]
+        for viewport in ("landscape", "portrait"):
+            with self.subTest(viewport=viewport):
+                info = {"width": sizes[viewport]["width"], "height": sizes[viewport]["height"]}
+                self.assertEqual(_screenshot_bounds("s", info, req), [])
+
+    def test_screenshot_bounds(self):
+        from wgf_listing.validation import _screenshot_bounds
+        req = {"aspects": ["16:9", "9:16"], "min_long_side": 1280, "max_long_side": 2560}
+        self.assertEqual(_screenshot_bounds("s", {"width": 1920, "height": 1080}, req), [])
+        self.assertEqual(_screenshot_bounds("s", {"width": 1080, "height": 1920}, req), [])
+        self.assertIn("(capture size)", " ".join(_screenshot_bounds("s", {"width": 320, "height": 180}, req)))
+        self.assertIn("over 2560", " ".join(_screenshot_bounds("s", {"width": 3200, "height": 1800}, req)))
+        self.assertIn("not 16:9 or 9:16", " ".join(_screenshot_bounds("s", {"width": 1600, "height": 1200}, req)))
+        # A bound the profile leaves null is not checked; alpha is judged apart.
+        self.assertEqual(_screenshot_bounds("s", {"width": 1600, "height": 1200, "alpha": True}, {}), [])
+
+    def test_media_reports_an_alpha_channel_and_an_rgb_png_has_none(self):
+        image = Image(4, 2, bytearray([9, 9, 9, 255] * 8))
+        rgba, rgb = os.path.join(self.scratch, "a.png"), os.path.join(self.scratch, "b.png")
+        imaging.write_png(rgba, image)
+        imaging.write_png(rgb, image, alpha=False)
+        self.assertTrue(media.describe(rgba)["alpha"])
+        self.assertFalse(media.describe(rgb)["alpha"])
+        # Opaque pixels survive unchanged; a translucent one is composited over black.
+        self.assertEqual(imaging.read_png(rgb).pixels, image.pixels)
+        half = Image(1, 1, bytearray([200, 100, 50, 128]))
+        imaging.write_png(rgb, half, alpha=False)
+        self.assertEqual(bytes(imaging.read_png(rgb).pixels), bytes([100, 50, 25, 255]))
+
+    def test_the_package_crops_to_the_proportion_of_the_capture_and_downscales(self):
+        frame = os.path.join(self.scratch, "frame.png")
+        imaging.write_png(frame, Image(400, 300, bytearray([10, 20, 30, 255] * 400 * 300)))
+        req = {"id": "screenshots", "kind": "screenshots", "required": True, "min": 1, "max": None,
+               "sizes": None, "aspect": None, "formats": ["png"], "max_kb": None, "orientation": None,
+               "aspects": ["16:9", "9:16"], "min_long_side": None, "max_long_side": 200,
+               "transparent": False, "known": True}
+        out = os.path.join(self.run_dir, "listing", "x")
+        rendition, _ = pkg.render_platform(
+            {"platform_id": "x"}, [req], canonical={"masters": [], "screenshots": [
+                {"id": "shot-1", "path": frame, "viewport": "landscape", "width": 400, "height": 300}]},
+            copies={}, out_dir=out, run_dir=self.run_dir, reference=self.reference)
+        shots = [f for f in rendition["files"] if f["requirement"] == "screenshots"]
+        self.assertEqual(len(shots), 1)
+        info = media.describe(os.path.join(self.run_dir, *shots[0]["path"].split("/")))
+        self.assertEqual((info["width"], info["height"], info["alpha"]), (200, 112, False))
+
+    def keep_text_rules(self, min_long_side=False):
+        """The real yandex profile with only what a fixture-small capture cannot meet left
+        unstated (image sizes, the video's format and height, and unless `min_long_side`
+        the screenshots' long side): its text minimums, how-to-play and alpha stay."""
+        real = platforms.load_profile
+
+        def load(platform_id, directory=None):
+            profile = copy.deepcopy(real(platform_id, directory))
+            block = profile.get("store_listing") or {}
+            for image in [block.get("icon")] + list(block.get("covers") or []):
+                if isinstance(image, dict):
+                    image.update(sizes=None, formats=None)
+            if isinstance(block.get("screenshots"), dict):
+                block["screenshots"]["formats"] = None
+                if not min_long_side:
+                    block["screenshots"]["min_long_side"] = None
+            if isinstance(block.get("video"), dict):
+                block["video"].update(formats=None, min_height=None)
+            return profile
+
+        patcher = unittest.mock.patch.object(platforms, "load_profile", load)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def short_ru_listing(self):
+        self.game = GameBuild(os.path.join(self.scratch, "short-ru"), strings={
+            "en": {"game.title": "Fixture Game", "play.objective": "Tap on the beat to switch lanes."},
+            "ru": {"game.title": "Fixture Game", "play.objective": "Нажимайте в такт."}})
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.4.0", "role": "required"}]
+        result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_),
+                                 context=self.context(config={"listing": {"age_rating": {"default": "0+"}}}))
+        return self.listing_of(result)
+
+    def test_a_short_ru_listing_warns_and_never_fails_on_the_advisory_rules(self):
+        self.keep_text_rules()
+        listing = self.short_ru_listing()
+        yandex = listing["platforms"][0]
+        shots = [f for f in yandex["files"] if f["requirement"] == "screenshots"]
+        self.assertTrue(shots)
+        for shot in shots:
+            info = media.describe(os.path.join(self.run_dir, *shot["path"].split("/")))
+            self.assertFalse(info["alpha"], shot["id"])
+        _outcome, report = self.validate(listing)
+        by_id = {c["id"]: c for c in report["checks"]}
+        long_text = by_id["platforms.yandex.text:long_description"]
+        self.assertEqual(long_text["status"], "WARNING", long_text)
+        self.assertIn("under 100 in ru (advisory)", long_text["summary"])
+        how = by_id["platforms.yandex.text:how_to_play"]
+        # The ru copy written from the game's strings carries no controls text.
+        self.assertEqual(how["status"], "WARNING", how)
+        self.assertIn("how_to_play (controls)", how["summary"])
+        self.assertEqual(by_id["platforms.yandex.screenshots.alpha"]["status"], "PASS")
+        for cid in ("platforms.yandex.text:long_description", "platforms.yandex.text:how_to_play",
+                    "platforms.yandex.screenshots", "platforms.yandex.screenshots.alpha"):
+            self.assertNotIn(cid, report["failed"])
+        self.assertIn("platforms.yandex.text:how_to_play", report["warnings"])
+
+    def test_a_text_over_its_maximum_still_fails(self):
+        self.keep_text_rules()
+        listing = self.short_ru_listing()
+        listing["platforms"][0]["text"]["ru"]["long_description"] = "Слово " * 200
+        listing["provenance"]["content_hash"] = content_hash(listing)
+        _outcome, report = self.validate(listing)
+        by_id = {c["id"]: c for c in report["checks"]}
+        self.assertEqual(by_id["platforms.yandex.text:long_description"]["status"], "FAIL")
+        self.assertIn("platforms.yandex.text:long_description", report["failed"])
+
+    def test_an_alpha_screenshot_is_a_warning(self):
+        self.keep_text_rules()
+        listing = self.short_ru_listing()
+        shot = next(f for f in listing["platforms"][0]["files"] if f["requirement"] == "screenshots")
+        path = os.path.join(self.run_dir, *shot["path"].split("/"))
+        imaging.write_png(path, imaging.read_png(path))  # RGBA again
+        shot["sha256"] = media.sha256_of(path)
+        listing["provenance"]["content_hash"] = content_hash(listing)
+        _outcome, report = self.validate(listing)
+        alpha = {c["id"]: c for c in report["checks"]}["platforms.yandex.screenshots.alpha"]
+        self.assertEqual(alpha["status"], "WARNING", alpha)
+        self.assertIn(shot["id"], alpha["summary"])
+        self.assertNotIn("platforms.yandex.screenshots.alpha", report["failed"])
+        self.assertIn("platforms.yandex.screenshots.alpha", report["warnings"])
+
+    def test_a_capture_below_the_long_side_fails_for_configuration(self):
+        self.keep_text_rules(min_long_side=True)
+        listing = self.short_ru_listing()  # the fixture captures 320x180
+        self.assertIn("size-below-minimum", [p["code"] for p in listing["problems"]])
+        _outcome, report = self.validate(listing)
+        shots = {c["id"]: c for c in report["checks"]}["platforms.yandex.screenshots"]
+        self.assertEqual((shots["status"], shots["fix"]), ("FAIL", "configure"), shots)
+        self.assertIn("under 1280 (capture size)", shots["summary"])
 
 
 class MasterChoice(unittest.TestCase):

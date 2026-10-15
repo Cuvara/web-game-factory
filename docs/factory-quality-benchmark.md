@@ -60,6 +60,11 @@ Every bar records its `basis`:
 * `measured-2` - both calibration releases meet it;
 * `measured-1` - only one release could be measured on it, or one does not meet it;
 * `proposed` - a defensible default no release has been measured against.
+* `hypothesis` (1.7.0) - a market expectation no record in the research corpus measures yet,
+  with its `confidence` (at most 0.6, as for a hypothesis claim) and the `evidence` it rests
+  on. The `design` block's designed play for a finite release (1800 s) and par calibration
+  (1.25 times the bot's time) are hypotheses: recalibrate them from teardown records
+  (`core/craft/competitive-teardown.md`) as the corpus grows, never to let a design pass.
 
 The dimension floors (`min_score`) and the criteria that read no benchmark bar
 (performance, the 3D lighting check, `no_debug` at 5) are new with the floor and marked
@@ -90,6 +95,18 @@ The dimension floors (`min_score`) and the criteria that read no benchmark bar
 
 ## Where it is enforced
 
+* The `design` step reads a release-tier design against the `design` block (1.7.0) as the run
+  pinned it: references to teardown records, the beat chart, signature moments, meta
+  systems, market designed play and par calibration (`scripts/wgf_design/beats.py`, the
+  design-consistency rules `design.*`). **Advisory**: each rule is a `warning`, classified
+  `advisory` in `core/reference/check-tiers.yaml`; a breach is carried to G3 and never refuses,
+  repairs or routes a design. No release has been measured against these bars and the
+  Factory ships no teardown corpus, so a default run reports `design.references_grounded`
+  UNKNOWN. What would make a rule blocking: a release measured against its bar (basis
+  `measured-1` or better) - and for the references, a teardown corpus the default research
+  carries plus a route back to research that is tested - then a new version of the benchmark
+  and of the ruleset raising the rule's severity to `blocking`, with the golden runs and the
+  QUALITY suite showing it refuses what it should and nothing else.
 * The `quality-gate` step scores the build before G4 and routes a dimension below its floor
   back to design, assets or develop.
 * G4 is decided on the quality-report and shows its scorecard.

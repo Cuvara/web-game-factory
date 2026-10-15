@@ -28,7 +28,7 @@ golden run is outside every step's process tree - and resumes. Its note says it 
 harness operator's pass of a known-good port (`harness.G4_NOTE`). `games.EXPECTED_STEPS`
 lists all 27 steps, `greybox`, both playability steps, `production-quality`, `visual-qa`,
 `content-sufficiency`, `level-design`, `quality-gate`, `prototype-review` and `sdk-review`
-included. `level-design` is advisory (core/reference/check-tiers.yaml 1.6.0): no golden port
+included. `level-design` is advisory (core/reference/check-tiers.yaml 1.8.0): no golden port
 implements the probe's `play.policy` and the golden configuration names no level critic, so
 its checks are SKIPPED and it succeeds ([level-design-critic.md](level-design-critic.md)). A golden
 run is an `mvp` run of endless (parametric) ports, so `content-sufficiency` counts no unit

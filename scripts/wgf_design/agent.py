@@ -61,6 +61,7 @@ import os
 
 from wgflib import agentenv, genre_models, paths, permpath, procs, quality_bar
 
+from . import beats as beat_rules
 from . import commitments as brief_commitments
 from . import content as content_rules
 from . import features as feature_check
@@ -173,6 +174,32 @@ PROMPT_CONTENT = (
       " `art`), and score secondary goals in"
       " build_spec.content.secondary_goals. A design short of its tier fails; it is never"
       " passed at a lower tier than the strategy committed to."
+)
+# Appended at a quality tier the benchmark states `design` bars for (release): the design
+# contract beyond the counts (beats.py, quality-benchmark `design`), ADVISORY. Every line is
+# subordinate to the rules that bind - content.introductions_one_at_a_time (one debut per unit
+# after the opening one), the content escalation and relief bars - and none asks for a field
+# the game-design schema does not have. The bars are in the request's `design_rules`.
+PROMPT_BEATS = (
+    " The request's `design_rules` are advisory (" + ", ".join(rule_id for rule_id, _ in
+                                                              beat_rules.RULES)
+    + "): they are reported to G3 as warnings, never refuse the design, and never outrank a"
+      " rule above - never break one to meet them. State what they read where the design"
+      " supports it. `references`: only the teardown records the request's"
+      " `design_rules.teardowns` lists; when it lists fewer than the bar, write"
+      " `references.status` `unknown` with the reason and name no game - never a game the"
+      " research did not tear down. Give each unit a `beat`: a `claim` a playtest could"
+      " falsify, the observation that would (`test`), the player's most frequent `decision`"
+      " (a choice, not an input) and how often it recurs in seconds (`every_s`), the"
+      " signature moment it stages where it stages one, a harder line for a payoff where it"
+      " offers one (`risk_reward`), and for a climax the `climax.change` (phase, state, rule,"
+      " arena or objective) - a new drawing alone is not a climax. The opening unit teaches"
+      " the core verb and at most one more mechanic; after it a unit debuts one new element"
+      " or mechanic at most (content.introductions_one_at_a_time, binding), on a teach,"
+      " breather or twist unit. Declare build_spec.content.signature_moments (an end-of-unit"
+      " payoff, a combo escalation, a rare spectacle) and build_spec.content.meta_systems"
+      " (each included for what the player gets from it, or declined with why), and give a"
+      " timed secondary goal its `par` calibration."
 )
 # Appended when the request carries the Factory's knowledge (wgf_design/knowledge.py): the
 # rules that apply to this game, each with its principle and the checks that hold it, and the
@@ -364,7 +391,11 @@ def _repair_list(problems):
 KEEP = ("identity", "palette", "fonts", "assets", "controls", "ui")
 
 DEFAULTS = {"argv": [], "timeout_seconds": 1800, "idle_timeout_seconds": 600,
-            "draft_from": "file"}
+            "draft_from": "file",
+            # The advisory design-contract prompt (PROMPT_BEATS) is opt-in: it asks the
+            # author for more per design (a beat per unit, references, signature moments)
+            # against bars that are hypotheses, so a run does not pay for it by default.
+            "beats_prompt": False}
 # The order a gap's keys are written in: what to find and change first.
 _GAP_KEYS = ("id", "field", "question", "severity", "observed", "bar", "assumed", "unit",
              "finding")
@@ -401,6 +432,32 @@ def _tier_request(design, strategy):
     return {"quality_tier": tier, "where": where, "budget": budget or None,
             "benchmark": bars,
             "rules": list(content_rules.TIER_RULES)}
+
+
+def _design_request(design, strategy):
+    """What the advisory design.* rules (beats.py) read at the run's quality tier: the rules,
+    the benchmark's `design` bars at the tier (`binding` false and the release's bars, as
+    advice, below it), and the teardown records the strategy's research carries at teardown
+    depth - the only games `references` may name (fixture records are test data)."""
+    tier, _where = content_rules.quality_tier(design, strategy)
+    benchmark = content_rules.load_benchmark()
+    stated = beat_rules.design_bars(benchmark, tier) if tier else {}
+    bars = {}
+    for (section, key), value in sorted(
+            (stated or beat_rules.design_bars(benchmark, "release")).items()):
+        bars.setdefault(section, {})[key] = value
+    research = (strategy or {}).get("research") or {}
+    teardowns = [{"game": c.get("game"), "name": c.get("name"), "role": c.get("role")}
+                 for c in research.get("competitors") or []
+                 if isinstance(c, dict) and c.get("depth") == "teardown"
+                 and not c.get("fixture")]
+    return {"advisory": True,
+            "rules": [{"id": rule_id, "meaning": meaning}
+                      for rule_id, meaning in beat_rules.RULES],
+            "quality_tier": tier, "binding": bool(stated), "bars": bars,
+            "teardowns": teardowns,
+            "teardown_craft": os.path.join(paths.CORE, "craft", "competitive-teardown.md"),
+            "loop_craft": os.path.join(paths.CORE, "craft", "core-loop-and-difficulty.md")}
 
 
 def _feature_candidates(strategy, family, platforms):
@@ -690,6 +747,9 @@ class AgentAuthor(DesignAuthor):
                        },
                        "content_craft": os.path.join(paths.CORE, "craft",
                                                      "content-and-level-design.md"),
+                       # The advisory design contract beyond the counts (beats.py): the
+                       # rules, the benchmark's `design` bars, and the teardowns to rest on.
+                       "design_rules": _design_request(starting, brief.get("strategy")),
                        # The features the design must evaluate (features.py), with what the
                        # catalogue and the required platforms say of each.
                        "feature_catalogue": feature_check.CATALOGUE_PATH,
@@ -778,8 +838,10 @@ class AgentAuthor(DesignAuthor):
         values["prompt"] += PROMPT_CONCEPT + PROMPT_SCHEMA + PROMPT_ART
         if not revision and not gaps:
             values["prompt"] += PROMPT_ART_KIT
-        values["prompt"] += (PROMPT_DEPTH + PROMPT_CONTENT + PROMPT_FEATURES
-                             + PROMPT_COMMITMENTS)
+        values["prompt"] += PROMPT_DEPTH + PROMPT_CONTENT
+        if request["design_rules"]["binding"] and settings.get("beats_prompt") is True:
+            values["prompt"] += PROMPT_BEATS
+        values["prompt"] += PROMPT_FEATURES + PROMPT_COMMITMENTS
         if knowledge:
             values["prompt"] += PROMPT_KNOWLEDGE
         if adoption:

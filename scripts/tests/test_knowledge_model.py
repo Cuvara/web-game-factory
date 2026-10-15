@@ -703,7 +703,8 @@ class Weakening(unittest.TestCase):
 
     def test_a_widened_scope_and_a_stronger_level_pass(self):
         current = self.current()
-        _lesson(current, "L15").update(scope="global", revision=2)
+        l15 = _lesson(current, "L15")
+        l15.update(scope="global", revision=l15["revision"] + 1)
         _lesson(current, "L23").update(level="blocking", classification="BLOCKING",
                                        revision=2)
         self.assertEqual(self.weak(LESSONS, current), [])

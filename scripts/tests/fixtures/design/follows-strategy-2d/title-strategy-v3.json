@@ -17,7 +17,7 @@
         "content_hash": "sha256:ccc1b9d4f0bc70887a7761de5b883f558161f25e9edcd598305e21f977bc4a7b"
       }
     ],
-    "content_hash": "sha256:827d5d3d894973ecaa65f0a419297000e54df17915a083a4a73c4b6588c6993c",
+    "content_hash": "sha256:be84f0f7cb912040d2c7d80c5b1aeda28c2d4581b73c4999f3773cebd02cb775",
     "status": "draft"
   },
   "title_id": "brick-breaker-worlds",
@@ -27,7 +27,7 @@
   "platform_set": [
     {
       "id": "yandex",
-      "profile_version": "1.3.0",
+      "profile_version": "1.4.0",
       "role": "required",
       "rationale": "Primary: chosen first by a person among yandex, crazygames, y8; the title is not shippable without it."
     },
@@ -292,7 +292,7 @@
   "platform_compatibility": [
     {
       "id": "yandex",
-      "profile_version": "1.3.0",
+      "profile_version": "1.4.0",
       "compatible": true,
       "issues": [
         "profile figures are unverified"

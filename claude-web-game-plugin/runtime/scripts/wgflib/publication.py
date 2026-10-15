@@ -41,7 +41,9 @@ __all__ = ["PUBLICATION_DIR", "GUARDS", "RELEASE_GUARDS", "PLATFORM_GUARDS", "QU
            "required_all_live", "none_permanently_rejected", "human_reason",
            "unmet_prerequisites", "readiness",
            "idempotency_key", "GuardResult", "DENY_VOCABULARY", "FORBIDDEN_INTENT_WORDS",
-           "INTENT_CLASSES", "deny_vocabulary", "flow_problems"]
+           "INTENT_CLASSES", "deny_vocabulary", "flow_problems", "PUBLISHING_WORKFLOW",
+           "KEY_COMPONENTS", "load_publishing_workflow", "publication_key",
+           "publishing_workflow_problems"]
 
 PUBLICATION_DIR = os.path.join(paths.REFERENCE, "publication")
 
@@ -546,3 +548,83 @@ def idempotency_key(run_id, manifest_hash, platform_id):
     import hashlib
     digest = hashlib.sha256(f"{run_id}|{manifest_hash}|{platform_id}".encode()).hexdigest()
     return f"wgf-{platform_id}-{digest[:16]}"
+
+
+# -- the publishing workflow (core/reference/publishing-workflow.yaml) -----------------------
+#
+# Here, beside idempotency_key and flow_problems, for the same reason they are: the key is
+# computed by the publish step and must be computed identically by anything that reads a
+# platform-publication later, and the referential rules are run by check-integrity.py and
+# by the tests - one implementation, never two that drift.
+
+PUBLISHING_WORKFLOW = os.path.join(paths.REFERENCE, "publishing-workflow.yaml")
+KEY_COMPONENTS = ("platform", "title", "release_manifest_hash", "artifact_hash", "portal_game_id")
+
+
+def load_publishing_workflow(path=None):
+    """The publishing workflow document; raises OSError / YamlError when it cannot be read."""
+    return load_file(path or PUBLISHING_WORKFLOW)
+
+
+def publication_key(platform_id, title_id, manifest_hash, artifact_hash, portal_game_id=None,
+                    absent="unassigned"):
+    """The publishing workflow's publication key: deterministic for one artifact (its hash and
+    its release manifest's) on one portal game of one title, across runs. A game the portal
+    has not issued an id for yet keys as `absent`, so the first upload and its retry agree."""
+    import hashlib
+    parts = (platform_id, title_id, manifest_hash, artifact_hash, portal_game_id or absent)
+    digest = hashlib.sha256("|".join(str(p or "") for p in parts).encode()).hexdigest()
+    return f"wgf-pub-{platform_id}-{digest[:16]}"
+
+
+def publishing_workflow_problems(doc, *, steps, gates, lifecycle, outcomes=(), waiting=(),
+                                 refusals=None, registry=None):
+    """What the schema cannot state about the publishing workflow: the key has exactly its
+    five components; CI never publishes; stage ids are unique; every stage's step is a
+    new-game step, its gate a gate, its lifecycle a machine state or stage procedure; an
+    irreversible automated stage names the decision it runs after; a state's outcomes and
+    waiting state are the publication record's, its refusal codes ones the publish step
+    raises and its registry status one the portal registry has. `refusals` / `registry`
+    None: not checked."""
+    problems = []
+    if not isinstance(doc, dict):
+        return ["the publishing workflow is not a mapping"]
+    key = doc.get("publication_key") or {}
+    if sorted(key.get("components") or []) != sorted(KEY_COMPONENTS):
+        problems.append(f"publication_key.components must be exactly {list(KEY_COMPONENTS)}")
+    if (doc.get("executor") or {}).get("ci_publishes") is not False:
+        problems.append("executor.ci_publishes must be false: CI/CD never publishes a game")
+    stage_ids = []
+    for stage in doc.get("stages") or []:
+        sid = stage.get("id")
+        if sid in stage_ids:
+            problems.append(f"stage {sid!r} appears twice")
+        stage_ids.append(sid)
+        if stage.get("step") is not None and stage["step"] not in steps:
+            problems.append(f"stage {sid!r}: step {stage['step']!r} is not a new-game step")
+        if stage.get("gate") and stage["gate"] not in gates:
+            problems.append(f"stage {sid!r}: gate {stage['gate']!r} is not in gates.yaml")
+        if stage.get("lifecycle") and stage["lifecycle"] not in lifecycle:
+            problems.append(f"stage {sid!r}: lifecycle {stage['lifecycle']!r} is neither a "
+                            "machine state nor a stage procedure")
+        if stage.get("irreversible") and stage.get("kind") == "automated" \
+                and not stage.get("after_decision"):
+            problems.append(f"stage {sid!r}: an irreversible automated stage names the human "
+                            "decision it runs after (after_decision)")
+    state_ids = []
+    for state in doc.get("states") or []:
+        name = state.get("id")
+        if name in state_ids:
+            problems.append(f"state {name} appears twice")
+        state_ids.append(name)
+        for word in state.get("outcome") or []:
+            if outcomes and word not in outcomes:
+                problems.append(f"state {name}: {word!r} is not a publication outcome")
+        if waiting and state.get("waiting") and state["waiting"] not in waiting:
+            problems.append(f"state {name}: {state['waiting']!r} is not a waiting state")
+        for code in state.get("refusal") or []:
+            if refusals is not None and code not in refusals:
+                problems.append(f"state {name}: {code!r} is not a refusal the publish step raises")
+        if registry is not None and state.get("registry") and state["registry"] not in registry:
+            problems.append(f"state {name}: {state['registry']!r} is not a portal registry status")
+    return problems

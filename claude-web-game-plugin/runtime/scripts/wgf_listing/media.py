@@ -208,7 +208,9 @@ def _mp4_codec(data, boxes, start, end):
 # -- the one entry point ------------------------------------------------------------------
 
 def describe(path):
-    """{"format", "width", "height", "bytes", "duration_s", "codec"} of the file at `path`."""
+    """{"format", "width", "height", "bytes", "duration_s", "codec"} of the file at `path`,
+    and for a still image "alpha": whether it carries an alpha channel (a PNG of colour type
+    4 or 6, or one with a tRNS chunk; a JPEG never does) - "24-bit PNG" asks for none."""
     size = os.path.getsize(path)
     with open(path, "rb") as handle:
         data = handle.read()
@@ -218,6 +220,11 @@ def describe(path):
     if detected is not None and detected.format in ("png", "jpeg", "webp", "gif"):
         out.update(format=_FORMAT_NAMES.get(detected.format, detected.format),
                    width=detected.width, height=detected.height)
+        if detected.format == "png":
+            idat = data.find(b"IDAT")
+            out["alpha"] = len(data) > 25 and (data[25] in (4, 6) or b"tRNS" in data[:max(idat, 0)])
+        elif detected.format == "jpeg":
+            out["alpha"] = False
         return out
     if data[:4] == b"\x1a\x45\xdf\xa3":
         try:

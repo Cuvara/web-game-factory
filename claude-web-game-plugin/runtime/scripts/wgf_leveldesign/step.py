@@ -15,7 +15,7 @@ greedy policies show whether an optional risk exists and pays.
              risk.reward    greedy earns measurably more at a measurably higher failure rate
                             on the rubric's share of units (core/reference/risk-reward.yaml)
 
-The checks are ADVISORY (core/reference/check-tiers.yaml 1.6.0): no pinned template or golden
+The checks are ADVISORY (core/reference/check-tiers.yaml 1.8.0): no pinned template or golden
 port implements the probe's play.policy, no critic is configured by default, and the bars are
 `basis: proposed`. Unless the installation holds the build to them (factory.leveldesign.hold),
 every result is reported `required: false` - WARNING, or SKIPPED with the reason - and the
@@ -136,7 +136,7 @@ class LevelDesignStep(WorkflowStep):
         except ValueError as exc:
             return StepResult.failed(str(exc), retryable=False)
         # Advisory unless the installation holds the build to these checks
-        # (factory.leveldesign.hold, core/reference/check-tiers.yaml 1.6.0): reported, never
+        # (factory.leveldesign.hold, core/reference/check-tiers.yaml 1.8.0): reported, never
         # required, never a FAILED or BLOCKED step on their account.
         strict = strict_tier and settings.hold
         title_id = play.get("title_id") or design.get("title_id")

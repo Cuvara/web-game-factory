@@ -13,7 +13,7 @@ and its content counted: it hands a critic - an agent able to read images, confi
 frames of every sampled unit (start, middle, end) with core/reference/level-design-rubric.yaml
 and the design's own words for each unit, and holds the bot's risk record to
 core/reference/risk-reward.yaml. Its checks are ADVISORY as shipped (core/reference/
-check-tiers.yaml 1.6.0): no pinned template implements the probe's play.policy and no critic is
+check-tiers.yaml 1.8.0): no pinned template implements the probe's play.policy and no critic is
 configured by default. Unless the installation holds the build to them
 (factory.leveldesign.hold), a strict tier is treated like any other. The step decides:
 

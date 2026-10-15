@@ -63,8 +63,12 @@
 # 1.1.0: the baseline comparison's families (accepted-content, accepted-on-screen,
 #        accepted-play, accepted-timing).
 # 1.2.0: feedback-effects - production-quality's vfx checks (core/reference/vfx.yaml).
-# 1.3.0: the level critic's families (level-critic, risk-reward).
-version: 1.3.0
+# 1.3.0: accepted-replacement and accepted-look - the baseline comparison's advisory checks
+#        (baseline-compare.yaml 1.1.0): supporting only, they decide no dimension.
+# 1.4.0: model-craft-lint and model-craft-judge - the model review's craft lint and its opt-in
+#        judge (core/reference/model-review-rubric.yaml); both advisory, so supporting.
+# 1.5.0: the level critic's families (level-critic, risk-reward).
+version: 1.5.0
 
 statuses: [PASS, FAIL, INCONCLUSIVE, NOT_SUPPORTED]
 
@@ -454,6 +458,27 @@ families:
     method: Rendered and measured by the model checks.
     limits: Bars, not taste.
     cannot_justify: That the model reads well in play.
+  - id: model-craft-lint
+    label: 3D model craft lint
+    dimension: player_facing
+    class: heuristic
+    when: reported
+    checks: [model-review:model.lint]
+    measures: Parts that float off what carries them, parts no view shows, faces of two materials fighting on one plane, glow beyond the identity's limits, a compact role stretched thin.
+    method: Measured on each GLB's geometry by the craft lint (scripts/wgf_assets/model_lint.py) against core/reference/model-review-rubric.yaml `lint`.
+    limits: Advisory - bars calibrated on one reference library and one validation run; reads geometry, not a render.
+    cannot_justify: That the model reads as what it names, or looks good.
+  - id: model-craft-judge
+    label: 3D model craft judge
+    dimension: player_facing
+    class: ai-judged
+    when: reported
+    checks: [model-review:model.craft]
+    judge: {report: asset-manifest}
+    measures: An independent judge's 0-5 scores of an authored model's renders on the model review rubric's dimensions, held to its pass bars.
+    method: The opt-in model judge (scripts/wgf_assets/model_judge.py) - an agent reading contact sheets and the in-context sheet, or the baseline judge against approved renders. Skipped when none is configured.
+    limits: One AI judgment of still renders; opt-in, so most runs carry it skipped.
+    cannot_justify: That the model looks good in play to a person.
   - id: audio-balance
     label: Audio balance
     dimension: player_facing
@@ -508,6 +533,28 @@ families:
     method: The bot's first-session timing, the act test's before/after frames and the page's requestAnimationFrame count over the win test, on both builds on one host.
     limits: Software rendering on the build host; frames are counted, not timed per input - no input-to-photon latency is measured.
     cannot_justify: That the game feels as responsive on a player's device.
+  # Advisory (baseline-compare.yaml 1.1.0, check-tiers `advisory`): listed as supporting,
+  # never deciding a dimension - their bars are uncalibrated.
+  - id: accepted-replacement
+    label: How much of the accepted build was replaced
+    dimension: design_validity
+    class: deterministic
+    when: reported
+    checks: [baseline-compare:baseline.source_rewrite]
+    measures: The share of the accepted content data file's units the candidate removed or altered, of the accepted source files (under the configured roots) it deleted or rewrote, and of the accepted source lines it deleted.
+    method: Read from git objects between the accepted and the candidate commit in the playability step's own clone - the content data file at each commit, and `git diff --numstat` with renames off.
+    limits: A share is not a judgement - a rewrite can improve a game and a small change can ruin one; a moved file counts as deleted; the bars are proposed, not calibrated by this step.
+    cannot_justify: That the candidate is better or worse than the accepted build.
+  - id: accepted-look
+    label: The look against the accepted build
+    dimension: player_facing
+    class: deterministic
+    when: reported
+    checks: [baseline-compare:baseline.frame_metrics]
+    measures: The mean luminance and contrast of the compared frames (first-session-1s, play-2s) against the accepted build's frames of the same states.
+    method: The same pixel statistics frames.readable reports, computed on both builds' frames from the same bot and settings on one host.
+    limits: A brighter or flatter frame is a change, not a defect; a frame the bot captured at another moment of play differs for that reason alone; the bars are proposed, not calibrated by this step.
+    cannot_justify: That the game looks as good as, or better than, the accepted one.
   # ------------------------------------------------------- the level critic (1.3.0)
   # core/reference/level-design-rubric.yaml and risk-reward.yaml, the level-design step.
   - id: level-critic
@@ -518,7 +565,7 @@ families:
     checks: [level-design:level.frames, level-design:level.critic]
     judge: {report: level-design-report, kind: judge.kind, runs: judge_runs}
     measures: Every sampled unit captured at its start, middle and end, and each unit's scores on the rubric's dimensions - play space used, a recognisable layout, more than one viable line, a reveal, a climax that is an event, distinct from the unit before.
-    method: The level-design step's critic - an agent reading the survey's level frames against core/reference/level-design-rubric.yaml; a `baseline` critic measures entity boxes and frame signatures and carries approved scores. Advisory (check-tiers 1.6.0): no critic is configured by default.
+    method: The level-design step's critic - an agent reading the survey's level frames against core/reference/level-design-rubric.yaml; a `baseline` critic measures entity boxes and frame signatures and carries approved scores. Advisory (check-tiers 1.8.0): no critic is configured by default.
     limits: An AI judge reading three still frames a unit - it can be fooled, is not stable between runs, and does not see how a unit plays between them.
     cannot_justify: That a level is well designed or fun to play.
   - id: risk-reward
@@ -528,7 +575,7 @@ families:
     when: reported
     checks: [level-design:risk.measured, level-design:risk.reward]
     measures: Under the game's own oracle, the greedy policy earns measurably more than the safe one at a measurably higher failure rate, on the sampled units.
-    method: The playability bot's risk test (play-realism.yaml `risk`, the probe's play.policy), judged by the level-design step against core/reference/risk-reward.yaml. Advisory (check-tiers 1.6.0) - no pinned template implements play.policy yet.
+    method: The playability bot's risk test (play-realism.yaml `risk`, the probe's play.policy), judged by the level-design step against core/reference/risk-reward.yaml. Advisory (check-tiers 1.8.0) - no pinned template implements play.policy yet.
     limits: What `greedy` and `safe` mean is the game's own word; the bars are proposed, not calibrated on measured builds.
     cannot_justify: That a player sees the risk, or finds taking it worth it.
 

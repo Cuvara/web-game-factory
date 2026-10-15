@@ -17,6 +17,12 @@ the background into `<id>.sheet.png`. A view with `pixels` smaller than the shee
 sheet shows the pixels a player gets. The set lineup puts every model side by side at its
 real size, on the floor, and renders it from the set's views stacked into one image.
 
+With a `context` in the job, each model is also rendered IN CONTEXT to `<id>.context.png`:
+standing on a ground plane of the play surface's colour, the player's model (when the job
+names one, and the model is not the player) beside it at its real size, under the same rig,
+from the game's camera, over the backdrop colour - what a player sees of it, which the model
+judge reads (core/reference/model-review-rubric.yaml, `camera_view`).
+
 Collision proxies and LOD1+ levels are hidden: they are not what a player sees. The render
 is deterministic in its settings (fixed samples, a fixed seed, no denoiser, no motion blur,
 the Standard view transform so the palette's colours come out as authored); the PNG bytes
@@ -316,6 +322,24 @@ def save(canvas, path):
     bpy.data.images.remove(image)
 
 
+def ground(colour, size, height):
+    """A square plane of the play surface's colour, `size` metres across, at Blender z
+    `height` - what the game's camera sees behind a model standing on the play."""
+    mesh = bpy.data.meshes.new("context-ground")
+    half = size / 2.0
+    mesh.from_pydata([(-half, -half, height), (half, -half, height), (half, half, height),
+                      (-half, half, height)], [], [(0, 1, 2, 3)])
+    material = bpy.data.materials.new("context-ground")
+    material.use_nodes = True
+    shader = material.node_tree.nodes.get("Principled BSDF")
+    shader.inputs["Base Color"].default_value = linear(colour) + [1.0]
+    shader.inputs["Roughness"].default_value = 0.9
+    mesh.materials.append(material)
+    obj = bpy.data.objects.new("context-ground", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    return obj
+
+
 def flatten(pixels, background):
     alpha = pixels[:, :, 3:4]
     out = pixels.copy()
@@ -325,6 +349,56 @@ def flatten(pixels, background):
 
 
 # -- the job ------------------------------------------------------------------------------------
+
+def in_context(scene, camera, model, player, context, path, tile):
+    """The model on the play surface beside the player, from the game's camera, flattened
+    over the backdrop: `path`, and how much of the frame the model covers."""
+    lo, hi = bounds(model["meshes"])
+    beside = player is not None and model["spec"]["id"] != player["spec"]["id"]
+    moved = []
+    if beside:
+        p_lo, p_hi = bounds(player["meshes"])
+        width = (hi.x - lo.x) / 2 + (p_hi.x - p_lo.x) / 2
+        gap = 0.25 * max(hi.x - lo.x, p_hi.x - p_lo.x, 0.1)
+        shift = Vector(((lo.x + hi.x) / 2 - (p_lo.x + p_hi.x) / 2 - width - gap,
+                        (lo.y + hi.y) / 2 - (p_lo.y + p_hi.y) / 2, lo.z - p_lo.z))
+        for root in player["roots"]:
+            moved.append((root, root.location.copy()))
+            root.location = root.location + shift
+    isolate_for_context(model, player if beside else None)
+    meshes = model["meshes"] + (player["meshes"] if beside else [])
+    box_lo, box_hi = bounds(meshes)
+    span = max((box_hi - box_lo).length, 0.5)
+    plane = ground(context["surface"], span * 40.0, lo.z - 1e-3 * span)
+    view = dict(context["view"], margin=context["view"].get("margin", 0.7))
+    place_camera(camera, box_lo, box_hi, view, 1.0, vertices(meshes))
+    camera.data.clip_end = max(camera.data.clip_end, span * 80.0)
+    pixels = render(scene, camera, path, tile, tile)
+    save(flatten(pixels, context["backdrop"]), path)
+    bpy.data.objects.remove(plane, do_unlink=True)
+    for root, location in moved:
+        root.location = location
+    return {"path": path, "beside": model_id(player) if beside else None}
+
+
+def model_id(model):
+    return model["spec"]["id"]
+
+
+def isolate_for_context(model, player):
+    for obj in bpy.data.objects:
+        if obj.type in ("MESH", "EMPTY") and obj.name != "context-ground":
+            obj.hide_render = True
+    for group in [model] + ([player] if player else []):
+        for obj in group["objects"]:
+            node, hide = obj, False
+            while node is not None:
+                if hidden(node):
+                    hide = True
+                    break
+                node = node.parent
+            obj.hide_render = hide
+
 
 def run(job):
     scene = reset()
@@ -343,13 +417,20 @@ def run(job):
         model = import_model(spec["glb"])
         model.update(spec=spec)
         models.append(model)
-    own_hidden = {id(m): {o.name: o.hide_render for o in m["objects"]} for m in models}
+    context = job.get("context")
+    player = None
+    if context and context.get("player"):
+        player = import_model(context["player"])
+        player.update(spec={"id": context.get("player_id") or "player"})
+    own_hidden = {id(m): {o.name: o.hide_render for o in m["objects"]}
+                  for m in models + ([player] if player else [])}
 
-    def isolate(keep):
-        for model in models:
+    def isolate(keep, also=()):
+        for model in models + ([player] if player else []):
             for obj in model["objects"]:
-                obj.hide_render = (own_hidden[id(model)][obj.name]
-                                   if keep is None or model is keep else True)
+                shown = keep is None and model is not player or model is keep \
+                    or model in also
+                obj.hide_render = own_hidden[id(model)][obj.name] if shown else True
 
     report = {"engine": used, "models": {}}
     for model in models:
@@ -369,6 +450,10 @@ def run(job):
         compose(tiles, background, spec["sheet"])
         report["models"][spec["id"]] = {"sheet": spec["sheet"], "views": views,
                                         "bounds": {"min": list(lo), "max": list(hi)}}
+        if context:
+            path = os.path.join(spec["dir"], f"{spec['id']}.context.png")
+            report["models"][spec["id"]]["context"] = in_context(
+                scene, camera, model, player, context, path, tile)
 
     lineup = job.get("set")
     if lineup and models:

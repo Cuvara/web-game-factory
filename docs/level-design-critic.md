@@ -29,7 +29,7 @@ configured by path (`factory.leveldesign.rubric`) is read as configured.
 
 ## Checks
 
-| Check | Tier (`check-tiers.yaml` 1.6.0) | Means |
+| Check | Tier (`check-tiers.yaml` 1.8.0) | Means |
 |---|---|---|
 | `level.frames` | advisory | every sampled unit has its start, middle and end frame |
 | `level.critic` | advisory | every unit at or above the rubric's bars, no blocker, the mean at its bar |

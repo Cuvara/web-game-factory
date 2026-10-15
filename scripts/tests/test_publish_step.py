@@ -29,6 +29,7 @@ from test_release_module import NOW, Context, Inputs, seal, step as release_step
 from wgf_publish import PlatformValidateStep, PublishStep, common, identity, outcomes  # noqa: E402
 from wgf_publish import registry as portal_registry  # noqa: E402
 from wgf_publish.adapters import Publication, PublicationAdapter  # noqa: E402
+from wgflib import publication as pub  # noqa: E402
 from wgflib.workflow import StepOutcome  # noqa: E402
 from wgflib.workflow.definition import StepDefinition  # noqa: E402
 
@@ -42,7 +43,7 @@ GAME_CONFIG = textwrap.dedent("""\
       output: dist
     platforms:
       - { id: y8, profile: y8@1.3.0, role: required }
-      - { id: yandex, profile: yandex@1.3.0, role: required }
+      - { id: yandex, profile: yandex@1.4.0, role: required }
       - { id: crazygames, profile: crazygames@1.3.0, role: required }
     """)
 IDS = {"external_game_id": "y8-4711", "app_id": "app-0042"}
@@ -523,7 +524,7 @@ class CreateBeforeBuild(MultiCase):
         with open(self.game.path("game.config.yaml"), encoding="utf-8") as handle:
             text = handle.read()
         self.assertIn("game_id: y8-4711", text)
-        self.assertIn("{ id: yandex, profile: yandex@1.3.0, role: required }", text)
+        self.assertIn("{ id: yandex, profile: yandex@1.4.0, role: required }", text)
         self.assertEqual(identity.sync(self.game.root, "fixture-game", profiles, self.titles), [])
         self.game.commit("game.config.yaml", text, "sdk: portal ids")
         self.draft()
@@ -535,6 +536,14 @@ class CreateBeforeBuild(MultiCase):
         self.assertEqual(job.required_ids, [])
         self.assertEqual(self.records["y8"]["outcome"], "UPLOAD_COMPLETE")
         self.assertEqual(self.records["y8"]["submission"]["portal_game_id"], "y8-4711")
+        # The publishing workflow's key (platform-publication 1.4.0): this package on this
+        # portal game of this title, the same in any run.
+        workflow = pub.load_publishing_workflow()
+        record = self.records["y8"]
+        self.assertEqual(record["submission"]["publishing_workflow"], workflow["version"])
+        self.assertEqual(record["submission"]["publication_key"], pub.publication_key(
+            "y8", record["title_id"], record["submission"]["authorized_by"]["release_manifest_hash"],
+            record["package"]["checksum"], "y8-4711"))
 
     def guard(self, pid):
         instance = PlatformValidateStep(StepDefinition(

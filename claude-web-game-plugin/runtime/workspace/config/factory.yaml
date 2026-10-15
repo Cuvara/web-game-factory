@@ -423,6 +423,20 @@ factory:
     #   idle_timeout_seconds: null
     #   max_repair_rounds: 2
     #   review_rounds: 1
+    #   # The craft review (docs/blender-pipeline.md "Craft review", core/reference/
+    #   # model-review-rubric.yaml). OFF as shipped: judge kind none - the model.craft check
+    #   # is skipped (never passed), and the last spec that passed its checks ships, as
+    #   # before. A judge reads every model's renders; a refusal goes back to the author for
+    #   # `rounds` craft rounds, and a model no spec of which passes is BLOCKED (no file
+    #   # ships; the assets step ends BLOCKED). Each judgement and craft round is one more
+    #   # agent call. kind: none | command (an agent that reads images; argv placeholders
+    #   # {images} {brief} {verdict} {prompt}) | baseline (approved renders, baseline_dir).
+    #   judge:
+    #     kind: none
+    #     rounds: 2
+    #   # Whether the craft lint's errors (model.lint, advisory in check-tiers.yaml) refuse
+    #   # a spec: blocking when a judge is configured, advisory otherwise; set to override.
+    #   lint: advisory
     placeholders:
       enabled: true
       # Tried in order; the procedural backend is always last and always works. An
@@ -751,7 +765,7 @@ factory:
   # critic reads the start, middle and end frame of every unit playability surveyed against
   # core/reference/level-design-rubric.yaml, and the oracle's safe and greedy policies are held
   # to core/reference/risk-reward.yaml. Its checks are ADVISORY (core/reference/check-tiers.yaml
-  # 1.6.0): no pinned template implements the probe's play.policy the risk test needs, and the
+  # 1.8.0): no pinned template implements the probe's play.policy the risk test needs, and the
   # bars are proposed, so the step reports and never holds a build. `hold: true` holds it at a
   # strict tier (every check required, unmeasured not passed, no judge BLOCKED): for an
   # installation whose games implement play.policy and that configures a critic. `none`
@@ -855,6 +869,9 @@ factory:
     author: archetype
     # agent:
     #   draft_from: file           # edits {draft} in place; stdout overflows a host's reply
+    #   beats_prompt: false        # true: also ask for the advisory design contract (beats,
+    #                              # references, signature moments; design.* rules), whose
+    #                              # bars are hypotheses - more output per design visit
     #   argv:
     #     - claude
     #     - -p

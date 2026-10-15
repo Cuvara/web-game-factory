@@ -163,8 +163,13 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
    the browser's encoder during the capture; PNG from the Factory), a locale no writer
    produces, an age rating nobody stated (`factory.listing.age_rating`). The age rating
    is the platform's, not a locale's: the rendition carries it (`age_rating`) even when no
-   copy could be written in a required locale. A required locale with no copy leaves that
-   platform's texts and categories empty; validation names the locale as the cause and
+   copy could be written in a required locale. Screenshots follow the block's `aspects`
+   (cropped to the proportion of the capture's own orientation), are downscaled to
+   `max_long_side` (a capture under `min_long_side` is a `size-below-minimum` problem, never
+   upscaled), and are written as RGB "24-bit" PNGs where `transparent: false` (so is an
+   image whose requirement says `transparent: false`). A portal's own instructions field
+   (`how_to_play`) is filled from the copy's controls text. A required locale with no copy
+   leaves that platform's texts and categories empty; validation names the locale as the cause and
    marks those checks `fix: configure`, so the run blocks for a person instead of routing
    back to `listing` until the loop limit.
 8. **Validation** (`validation.py`). The judge, shared with `scripts/wgf-listing.py`: every
@@ -172,10 +177,31 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
    sentence not an article; the screenshots present, in an allowed state, readable, distinct;
    the trailer a video within bounds (or an honestly reported fallback, which fails only
    where a platform requires a video); no unbacked claim in any text that reaches a platform;
-   every platform rendition against its requirement list. A requirement a profile leaves
+   every platform rendition against its requirement list - a text within its `max_chars`
+   in every locale (its `min_chars` and a derived field's presence are advisory, below),
+   screenshots against `aspects` and the long-side bounds (a frame below the long side is
+   `fix: configure`: the capture size), and the alpha rule as a separate advisory check
+   (`platforms.<id>.screenshots.alpha`). A requirement a profile leaves
    `null` is **UNKNOWN**: listed per platform in `unknown`, never counted as passed. The
    copy is judged against the build at the run's tier (below): its counts, its controls,
    each required locale's full description, its subtitle and its writer.
+
+### Advisory platform text checks
+
+Since yandex@1.4.0 (issue #75) three platform checks are **advisory**: reported as WARNING
+in the listing-validation-report's `warnings`, never in `failed`, so they never hold a
+listing, route it back or block a run.
+
+| Check | Why advisory today | What would make it blocking |
+|---|---|---|
+| a stated `min_chars` on a platform text (`platforms.<id>.text:<field>`, "under N in <locale>") | a locale written from the game's own strings (`ru` for most games) is the objective or rules line, not written to a portal minimum - the copy is not calibrated to it | the copywriter (or the release-tier writer) writes every required locale to the platform minimum, shown on both golden runs and a real game |
+| a portal field filled from another listing text missing (`how_to_play` from `controls`) | a locale written from the game's strings carries no controls text | every required locale's copy carries controls text, shown the same way |
+| a screenshot with an alpha channel where `transparent: false` (`platforms.<id>.screenshots.alpha`) | the portal states "JPEG or 24-bit PNG" and that such a PNG MAY be refused, not that it is; the package already writes RGB PNGs | a portal source stating a refusal |
+
+A text over its `max_chars`, a non-derived required text missing, and screenshots outside
+`aspects` or the long-side bounds still FAIL: the default capture (1920x1080 and 1080x1920,
+`core/reference/store-listing.yaml` `renditions.screenshots`) meets them, so they hold only a
+listing a project configured below the portal's bounds.
 
 ## Copy grounded in the build (WS-9)
 

@@ -9,6 +9,43 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**The publishing workflow, the publication key, and the Yandex listing rules of the
+2026-10-05 read** (issue #75, publish-yandex; ported onto 2.8.1, the parts main had since
+landed - yandex 1.3.0 / publication 2.3.0, the artifact-lock refusals, the readiness matrix -
+left as main has them). `core/reference/publishing-workflow.yaml` 1.0.0 (schema
+`core/artifacts/shared/publishing-workflow.schema.json`) states the platform-neutral stages
+from research to a live listing, who acts in each, the state vocabulary a publication is
+reported in (each state mapped to the outcome, refusal, waiting state or registry status it
+is read from) and the publication key; `check-integrity.py` holds every name it uses to exist
+(`wgflib.publication.publishing_workflow_problems` - a wgflib change, because the key is
+computed by the submit step and must be computed the same by every later reader, and the
+rules are run by both the integrity check and the tests). Per-portal status stays in one
+place, the readiness matrix of `docs/portal-publishing-architecture.md`. platform-publication
+1.4.0 records `submission.publication_key` (platform, title, release-manifest hash, package
+checksum, portal game id or `unassigned`) and `submission.publishing_workflow` - recorded
+only, never a lookup. `wgf-publish.py readiness --platform ID` reports `platform_packaged`
+RED for a targeted platform the release did not package. Platform profile schema:
+`store_listing.how_to_play`, and screenshots `aspects`, `min_long_side`, `max_long_side`,
+`transparent`. yandex 1.4.0: how to play (100-1000, filled from the listing's controls text),
+screenshots 16:9 or 9:16 with a long side of 1280-2560 px and no alpha, the rewarded-button
+wording and 2 s ad rule in notes, four official rejections; publication yandex 2.4.0: the text
+limits, the contract-before-moderation, 2 h withdrawal, reload-before-status and 100-day
+rules. The MP4 video rule is main's (1.3.0), unchanged. The store-listing package crops
+screenshots to the capture's proportion, downscales above `max_long_side` and writes RGB
+PNGs where `transparent: false`; listing validation fails a screenshot outside `aspects` or
+the long-side bounds (the default 1920x1080 / 1080x1920 capture meets them) and keeps failing
+a text over its maximum. **Advisory** (WARNING, never a failure, so no default run is held or
+routed by them): a text under a stated `min_chars`, a missing portal field filled from another
+text (`how_to_play` from `controls`) - a locale written from the game's own strings has
+neither yet - and a screenshot with an alpha channel (the portal says such a PNG "may" be
+refused). They become blocking when every required locale's copy is written to the minimum
+and carries controls text (shown on both golden runs and a real game), and, for alpha, when a
+portal source states a refusal (`docs/store-listing-module.md`, "Advisory platform text
+checks"). Nothing here runs before G4. Bringing forward: a game pinned to `yandex@1.3.0`
+re-plans to 1.4.0 as with any profile bump; an existing platform-publication stays valid
+(the two fields are optional); a listing re-validated under 1.4.0 may gain warnings, not
+failures, unless its screenshots fall outside the portal's proportions or long side.
+
 **Two advisory measurements against the accepted build** (issue #75, the accepted-baseline
 part; `core/reference/baseline-compare.yaml` 1.1.0, `check-tiers.yaml` 1.6.0,
 `quality-assessment.yaml` 1.3.0). A run that adopted a game now also reports

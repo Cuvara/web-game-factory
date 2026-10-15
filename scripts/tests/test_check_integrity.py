@@ -183,6 +183,7 @@ class PlatformCheckTest(unittest.TestCase):
                           "check_bindings", "check_binding_workflows", "check_charters",
                           "check_templates",
                           "check_platforms", "check_portal_sdks",
+                          "check_publishing_workflow",
                           "check_provider_independence",
                           "check_no_readme_only_dirs", "check_plugin_version",
                           "check_plugin_runtime", "check_template_pin"):

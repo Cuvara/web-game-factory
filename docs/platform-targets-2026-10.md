@@ -335,6 +335,30 @@ tech-plan, init and sdk refuse the old pin until the title re-plans. Both valida
 `yandex@1.2.0` and `crazygames@1.2.0`; their retarget (Part 2) re-plans anyway. Do not move a
 mid-run Factory checkout to this commit.
 
+### Part 1d - Yandex, read 2026-10-05: yandex@1.4.0, publication yandex@2.4.0
+
+The Yandex pages were also read on 2026-10-05, as the markdown the documentation publishes
+(`https://yandex.com/dev/games/doc/en/llms-full.txt`, every page also at `<url>.md`), on a
+branch that landed only after Part 1c (issue #75, publish-yandex). Part 1c's facts stand
+(the required 16:9 MP4 video is 1.3.0's, unchanged); the rows below are what that read adds.
+Only OFFICIAL facts changed a profile.
+
+| Profile | Field | Was | Docs say (read 2026-10-05) | Now |
+|---|---|---|---|---|
+| yandex@1.3.0 | `store_listing.how_to_play` | no field ("how to play" in notes) | required, 100-1000 chars (draft form) | **1.4.0**: `{required: true, min_chars: 100, max_chars: 1000}`, judged on the listing's controls text; presence and minimum advisory (`docs/store-listing-module.md`) |
+| yandex@1.3.0 | `store_listing.screenshots` | proportions and long side in notes | 16:9 or 9:16, long side 1280-2560 px, "JPEG or 24-bit PNG" (a PNG with alpha "may" be refused) | **1.4.0**: `aspects`, `min_long_side`, `max_long_side`, `transparent: false` (new platform-profile schema fields); the package crops to the capture's proportion, downscales above 2560 and writes RGB PNGs; validation fails the proportion and long side, warns on alpha |
+| yandex@1.3.0 | `ads.notes` | 4.5: the button names the reward | the button says it shows an ad AND names the reward (4.5.1), granted only in onRewarded; at most 2 s from the action to the ad (4/4); only sticky banners besides fullscreen and rewarded (4.6); no imitation of ad units (1.16) | **1.4.0**: in notes |
+| yandex@1.3.0 | `review.common_rejections` | 13 entries | the official list also names the system video player (1.6.1.6), launch failures, JS errors and freezes (1.14, 1.15), a misleading title (8.2.2), the rewarded button wording (4.5.1) | **1.4.0**: added |
+| yandex@1.3.0 | `requirements.external_requests` | restricted | not a ban: hosts declared on the draft's CSP tab, https/wss, almost all data in the archive | stays `restricted` (the Factory's builds make none), commented |
+| publication yandex@2.3.0 | `fields` text limits | `max: null` | title <= 50; description 100-1000; how to play required 100-1000; short description <= 70 and optional; SEO 50-160 optional | **2.4.0**: stated; the media sizes stay in the platform block (2.3.0's choice) |
+| publication yandex@2.3.0 | `restrictions`, `unknowns` | - | a signed contract (licensing contract or YAN) before moderation; withdrawal within 2 h; a status shows only after a reload; a submission older than 100 days warns | **2.4.0**: restrictions; unknowns: the title minimum, categories and tag vocabulary, whether alpha is refused |
+
+Not modelled (a person's): revenue terms (50% of in-app purchase revenue, no fixed ad
+share, minimum payout 150 USD / 100 EUR, legal/licensegames/en, 21.04.2026). COMMUNITY
+(app2top.ru, gamedevx.ru: most rejection remarks are UI, SDK or technical) informs the
+preflight checks and is no rule. UNKNOWN, still null: archive file count, a load-time limit
+beyond 1.19.2, the maximum screenshot count, image byte limits.
+
 ### GamePix: a profile, refused until the pin carries its adapter
 
 GamePix now has `core/reference/platforms/gamepix.yaml` (1.0.0, from the table above: ads

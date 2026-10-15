@@ -105,6 +105,40 @@ def _aspect_ok(width, height, aspect):
     return abs(width / height - a / b) < 0.02
 
 
+def _screenshot_bounds(sid, info, req):
+    """A screenshot against the proportions and long-side bounds the profile states
+    (`aspects`, `min_long_side`, `max_long_side`); a null bound is not checked. The alpha rule
+    (`transparent: false`) is judged apart, as advisory: `_screenshot_alpha`."""
+    problems = []
+    width, height = info.get("width"), info.get("height")
+    if not (width and height):
+        return [f"{sid} has no measurable size"] if any(
+            req.get(k) for k in ("aspects", "min_long_side", "max_long_side")) else []
+    aspects = req.get("aspects") or []
+    if aspects and not any(_aspect_ok(width, height, a) for a in aspects):
+        problems.append(f"{sid} is {width}x{height}, not {' or '.join(aspects)}")
+    long_side = max(width, height)
+    if req.get("min_long_side") and long_side < req["min_long_side"]:
+        problems.append(f"{sid} long side {long_side} px, under {req['min_long_side']} (capture size)")
+    if req.get("max_long_side") and long_side > req["max_long_side"]:
+        problems.append(f"{sid} long side {long_side} px, over {req['max_long_side']}")
+    return problems
+
+
+def _screenshot_alpha(made, req, run_dir):
+    """The screenshots that carry an alpha channel where the profile says the portal takes
+    none (`transparent: false`). Advisory: the portal states "JPEG or 24-bit PNG" and that a
+    PNG with alpha MAY be refused, not that it is (platforms/yandex.yaml 1.4.0)."""
+    if req.get("transparent") is not False:
+        return []
+    found = []
+    for f in made:
+        exists, intact, info = _file_ok(f, run_dir)
+        if exists and intact and info.get("alpha"):
+            found.append(f["id"])
+    return found
+
+
 def _video_problems(made, req, run_dir, trailer):
     """What keeps an included video from meeting the platform's own stated bounds - its
     length, file size, resolution and aspect. A bound the profile leaves null is not checked.
@@ -419,25 +453,48 @@ def validate(listing, run_dir, reference, profiles, facts=None, publication_prof
                                    f"{pid}: texts in {req['locale']} {'present' if present else 'missing'}",
                                    platform_id=pid, locale=req["locale"], fix="configure")
             elif req["kind"] == "text":
-                present_any = any(isinstance((t or {}).get(req["field"]), str) and (t or {}).get(req["field"]).strip()
+                # The listing text a portal field is filled from (how_to_play: the controls).
+                field = req.get("text_field") or req["field"]
+                derived = field != req["field"]
+                present_any = any(isinstance((t or {}).get(field), str) and (t or {}).get(field).strip()
                                   for t in judged.values())
                 if not req.get("required") and not present_any:
                     continue
+                named = req["field"] if not derived else f"{req['field']} ({field})"
+                # ADVISORY (a WARNING, never a failure) until calibrated: a portal field filled
+                # from another listing text (how_to_play from the controls), because a locale
+                # written from the game's own strings carries no controls text yet; and a
+                # stated minimum length, because the copy of such a locale is not written to
+                # one. Both become failures once every required locale's copy is written to
+                # them (docs/store-listing-module.md, "Advisory platform text checks").
+                advisory_missing = derived and not present_any
                 if req.get("max_chars") is None:
                     entry = checks.add(cid, "platforms", present_any,
-                                       f"{pid}: {req['field']} {'present' if present_any else 'missing' + gap}; the "
+                                       f"{pid}: {named} {'present' if present_any else 'missing' + gap}; the "
                                        "profile states no length limit (UNKNOWN)",
-                                       platform_id=pid, unknown=present_any, fix="configure" if present_any else empty_fix)
+                                       platform_id=pid, unknown=present_any, warning=advisory_missing,
+                                       fix="configure" if present_any else empty_fix)
                     if present_any:
                         unknown.append(req["id"])
                 else:
                     over = [loc for loc, t in (rendition.get("text") or {}).items()
-                            if len((t or {}).get(req["field"]) or "") > req["max_chars"]]
-                    entry = checks.add(cid, "platforms", present_any and not over,
-                                       f"{pid}: {req['field']} within {req['max_chars']} chars"
+                            if len((t or {}).get(field) or "") > req["max_chars"]]
+                    # A stated minimum, measured in every judged locale that carries the text.
+                    minimum = req.get("min_chars")
+                    under = [loc for loc, t in judged.items()
+                             if isinstance((t or {}).get(field), str) and (t or {}).get(field).strip()
+                             and len((t or {}).get(field)) < minimum] if minimum else []
+                    bounds = f"{minimum}-{req['max_chars']}" if minimum else f"within {req['max_chars']}"
+                    hard = (present_any or derived) and not over
+                    entry = checks.add(cid, "platforms", present_any and not over and not under,
+                                       f"{pid}: {named} {bounds} chars"
                                        + (f"; over in {', '.join(over)}" if over else "")
-                                       + ("" if present_any else "; missing" + gap),
-                                       platform_id=pid, expected={"max_chars": req["max_chars"]},
+                                       + (f"; under {minimum} in {', '.join(under)} (advisory)" if under else "")
+                                       + ("" if present_any else "; missing" + gap
+                                          + (" (advisory)" if derived else "")),
+                                       platform_id=pid, warning=hard,
+                                       expected={"min_chars": minimum, "max_chars": req["max_chars"]}
+                                       if minimum else {"max_chars": req["max_chars"]},
                                        fix="rewrite" if present_any else empty_fix)
             elif req["kind"] == "list":
                 counts = {loc: len((t or {}).get(req["field"]) or []) for loc, t in judged.items()}
@@ -519,11 +576,27 @@ def validate(listing, run_dir, reference, profiles, facts=None, publication_prof
                         problems.append(f"{f['id']} is {info['format']}")
                     if req.get("max_kb") and info["bytes"] > req["max_kb"] * 1024:
                         problems.append(f"{f['id']} over {req['max_kb']} KB")
+                    problems.extend(_screenshot_bounds(f["id"], info, req))
                 entry = checks.add(cid, "platforms", not problems,
                                    f"{pid}: {len(made)} screenshot(s)" + ("" if not problems else "; " + "; ".join(problems)),
                                    platform_id=pid, measured=len(made),
                                    expected={"min": req.get("min"), "max": req.get("max"), "sizes": req.get("sizes")},
-                                   fix="recapture" if any("<" in p for p in problems) else "rerender")
+                                   # Fewer shots: capture again. A frame below the portal's long
+                                   # side: the capture size is configuration (never upscaled).
+                                   fix="recapture" if any("<" in p for p in problems) else
+                                   "configure" if any("(capture size)" in p for p in problems) else "rerender")
+                if req.get("transparent") is False:
+                    if entry["status"] == "FAIL":
+                        failed.append(cid)
+                    elif entry["status"] == "WARNING":
+                        warnings.append(cid)
+                    alpha = _screenshot_alpha(made, req, run_dir)
+                    cid = f"{cid}.alpha"
+                    entry = checks.add(cid, "platforms", not alpha,
+                                       f"{pid}: screenshots without an alpha channel"
+                                       + (f"; {', '.join(alpha)} carry one (the portal takes JPEG or "
+                                          "24-bit PNG and may refuse alpha; advisory)" if alpha else ""),
+                                       platform_id=pid, warning=True, fix="rerender")
             elif req["kind"] == "video":
                 made = files.get("video") or []
                 if req.get("required") is None and not req["known"]:

@@ -110,7 +110,13 @@
 #        (quality: held to a share ceiling) - the design's interaction effects (vfx.yaml).
 # 1.6.0: baseline-compare baseline.source_rewrite and baseline.frame_metrics (advisory: bars
 #        uncalibrated, baseline-compare.yaml 1.1.0).
-version: 1.6.0
+# 1.7.0: model-review model.lint and model.craft (core/reference/model-review-rubric.yaml),
+#        both advisory - the craft lint's bars are calibrated on one reference library and one
+#        validation run, and the model judge is opt-in (factory.assets.model_author.judge,
+#        kind none as shipped). A model the configured judge refuses is held by the assets
+#        step's BLOCKED outcome, not by this check: a refused model never ships, so a manifest
+#        only ever carries model.craft pass or skipped.
+version: 1.7.0
 
 applies_at: release
 
@@ -421,6 +427,14 @@ sources:
       model.palette: quality
       model.contrast: quality
       model.silhouette: quality
+      # The craft lint (model_lint.py): floating, hidden or z-fighting parts, glow beyond the
+      # identity, a compact role stretched thin. Advisory: a failing model.lint never fails
+      # a model's verdict. Blocking for every GLB only by a new version, once it is shown
+      # clean on both golden runs and on real games' accepted models.
+      model.lint: advisory
+      # The opt-in model judge's verdict on an authored model's renders: pass, or skipped
+      # when no judge is configured (never a pass).
+      model.craft: advisory
 
 # `<source>:<id>: <tier>` - a classification the source's rule gets wrong, stated with why.
 # Empty as shipped.

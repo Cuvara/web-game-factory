@@ -480,6 +480,74 @@ scoped Edit rule ([autonomous-runs.md](autonomous-runs.md)); a read-only per-mod
 ([claude-capabilities.md](claude-capabilities.md), "The asset authors and the visual-QA
 judge").
 
+### Craft review
+
+A live 3D run shipped a marble whose swirl band was sunk inside its shell, a needle for a gem,
+a disc-stack bumper that vanished on the track and lanterns hanging in the air beside a gate -
+each the last spec that passed the measured checks, graded by its own author (lesson L15).
+The craft review (`core/reference/model-review-rubric.yaml` 1.0.0) adds two layers. Both are
+**off or advisory as shipped**, so a default run - and both golden runs - build, judge and ship
+exactly what they did before.
+
+**The craft lint** (`scripts/wgf_assets/model_lint.py`, the `model.lint` check of
+`model_quality.assess`) runs on every GLB the assets step judges, whoever made it. From the
+geometry and the spec it finds parts that float off what carries them (`floating`), parts no
+view shows (`hidden`), faces of two materials fighting on one plane (`coplanar`), glow beyond
+the identity's limits (`emissive`: `lit` or `neon` from the identity's own words), a compact
+role stretched thin (`aspect`), and - as warnings only - raw chunky boxes and smooth shading on
+coarse shapes (`bevel`, `smooth`). Its bars are calibrated on the 3D reference game's library
+(clean) and the 3D validation run's rounds (caught). It is **advisory**
+(`core/reference/check-tiers.yaml` `model-review:model.lint`): an error makes the check
+`fail` with `advisory, not held` in its summary, but never a model's verdict, never a
+`quality-failed` issue and never a held build. A lint that cannot run is `skipped`, never a
+pass. The model author refuses a spec on a lint error only when `lint: blocking` - the
+default when a judge is configured. It becomes blocking for every GLB only by a new version
+of check-tiers.yaml, once it is shown clean on both golden runs and on real games' accepted
+models.
+
+**The model judge** (`scripts/wgf_assets/model_judge.py`) is opt-in:
+`factory.assets.model_author.judge`, `kind: none` as shipped. With `none` the authored model's
+`model.craft` check is `skipped` ("the renders were not judged" - never a pass), there is no
+in-context render, and a review revision that breaks a check is dropped: **the last spec that
+passed its checks ships**, as before. With a judge - `command` (an agent that reads images,
+run through `wgflib.procs` with the allowlisted environment in a directory holding only its
+brief and copies of the images; changed images or a touched guarded path refuse its verdict)
+or `baseline` (each render against approved renders, for golden runs and tests) - every model
+whose checks pass is judged from its contact sheet, its **in-context sheet**
+(`<id>.context.png`: on a ground plane of the palette's play-surface colour, beside the
+player at its real size, from the game's camera, over the backdrop) and the role's reference
+images, on the rubric's eight dimensions. The step decides, not the judge: a dimension below
+`pass_bar` (3), a mean below `mean_pass_bar` (3.5), `reads_as: false` or a `blocker` finding
+fails. A failing verdict goes back to the author (the request's `craft_review`: failures,
+notes, renders, previous spec) for `judge.rounds` craft rounds (2). When they are spent - or
+the author revised a model it judged unreadable and the revision fails its checks - the model
+is **BLOCKED**: no file ships, not the last passing spec, not a placeholder; the manifest
+carries a `model-craft-blocked` error, the assets step ends `BLOCKED` with a quality finding
+(`environment-3d`, owner the environment artist, route `assets`), and a person decides.
+
+```yaml
+factory:
+  assets:
+    model_author:
+      kind: command
+      # ...
+      judge:
+        kind: command            # none (default) | command | baseline
+        argv: [...]              # {images} {brief} {verdict} {prompt}
+        rounds: 2
+      lint: blocking             # default: blocking with a judge, advisory without
+```
+
+**The node contract.** A model spec may declare `contract: {nodes, materials}` - the names
+game code looks up (`gap-chunk-*` is a family). A delivered GLB lacking one is a
+`model-nodes-missing` error, whichever source made it, and the author is told to name its
+parts so. Only a design that declares a contract is held to one.
+
+What is not covered yet: `model.contrast` is still measured against the backdrop, not the
+play surface (only the judge's in-context sheet shows the surface); the judge is one AI
+judgment of still renders; and the lint has not been run on real games' accepted models
+(L15's `gap`).
+
 ## Runtime integration (three.js)
 
 Blender is not in the bundle; the game receives GLBs, listed like every other asset in the

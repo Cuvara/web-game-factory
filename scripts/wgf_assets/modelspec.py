@@ -579,9 +579,12 @@ def expectations(spec, kind_policy=None):
 
     {clips: {name: duration or None}, lods: int or None, collision: shape or None,
      fit: {size, axis} or None, pivot, max_triangles, max_texture_edge,
-     budget_declared: {key: bool}}"""
+     budget_declared: {key: bool}, nodes: [name or family*], materials: [name]}
+
+    `nodes` and `materials` are the spec's `contract`: the names game code looks up."""
     spec = spec if isinstance(spec, dict) else {}
     budget = spec.get("budget") or {}
+    contract = spec.get("contract") if isinstance(spec.get("contract"), dict) else {}
     clips = {}
     for clip in spec.get("animations") or []:
         if isinstance(clip, dict) and clip.get("name"):
@@ -603,4 +606,6 @@ def expectations(spec, kind_policy=None):
         "max_bytes": budget.get("max_bytes"),
         "budget_declared": {k: k in budget for k in ("max_triangles", "max_texture_edge",
                                                      "max_bytes")},
+        "nodes": [n for n in contract.get("nodes") or [] if isinstance(n, str) and n],
+        "materials": [m for m in contract.get("materials") or [] if isinstance(m, str) and m],
     }

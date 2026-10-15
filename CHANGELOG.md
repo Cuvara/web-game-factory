@@ -9,6 +9,36 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**The 3D model craft review: a craft lint on every GLB, an opt-in model judge, a node
+contract** (L15; `core/reference/model-review-rubric.yaml` 1.0.0, `scripts/wgf_assets/
+model_lint.py`, `model_judge.py`; [docs/blender-pipeline.md](docs/blender-pipeline.md),
+"Craft review"). Nothing changes for a default run or a golden run, by design:
+- `model.lint` (floating, hidden and z-fighting parts, glow beyond the identity, a stretched
+  compact role) is reported on every GLB the assets step judges, and is **advisory**
+  (check-tiers 1.7.0 `model-review:model.lint`): an error fails the check, never a model's
+  verdict or a build. Its bars are calibrated on one reference library and one validation
+  run; it becomes blocking only by a new check-tiers version, once it is shown clean on both
+  golden runs and on real games' accepted models. `factory.assets.model_author.lint:
+  blocking` makes the model author refuse a spec on it (the default when a judge is set).
+- The model judge is **opt-in**: `factory.assets.model_author.judge.kind` is `none` as
+  shipped, and the authored model's `model.craft` check (check-tiers 1.7.0, advisory) is
+  `skipped`. Without a judge the model author still ships the last spec that passed its
+  checks when a later revision breaks one (the WIP's "a refused revision blocks" is now the
+  judged behaviour only), and renders no in-context sheet. With a judge, a model it refuses
+  through `judge.rounds` craft rounds is BLOCKED: no file ships, a `model-craft-blocked`
+  error (asset-manifest 1.6.0), the assets step ends `BLOCKED` with an `environment-3d`
+  finding. The autonomous profile does not configure a judge.
+- A model spec's `contract: {nodes, materials}` names what game code looks up; a GLB lacking
+  one is `model-nodes-missing` (asset-manifest 1.6.0). Only designs that declare one.
+- A craft round's judge feedback reaches the author as the request's `craft_review` (the WIP
+  wrote it over `craft`, the craft-guide list, so an author lost its guides in that round).
+- quality-assessment 1.4.0 groups the two checks (`model-craft-lint`, `model-craft-judge`);
+  lessons 2.2.1 raises L15 to r2 with a gap that says why neither holds it yet - an advisory
+  check would derive the rule down to recommended, and declaring it blocking would make an
+  uncalibrated lint block every 3D build.
+Bringing forward: an asset-manifest 1.5.0 stays valid (1.6.0 only adds issue codes); a model
+spec without `contract` is unchanged; nothing to re-run.
+
 **The design-contract prompt is opt-in** (`factory.design.agent.beats_prompt`, default false).
 The advisory `design.*` rules still run on every design and are reported at G3; only the extra
 prompt asking the agent author for beats, references and signature moments waits for a project

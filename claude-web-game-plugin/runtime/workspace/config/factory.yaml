@@ -421,6 +421,20 @@ factory:
     #   idle_timeout_seconds: null
     #   max_repair_rounds: 2
     #   review_rounds: 1
+    #   # The craft review (docs/blender-pipeline.md "Craft review", core/reference/
+    #   # model-review-rubric.yaml). OFF as shipped: judge kind none - the model.craft check
+    #   # is skipped (never passed), and the last spec that passed its checks ships, as
+    #   # before. A judge reads every model's renders; a refusal goes back to the author for
+    #   # `rounds` craft rounds, and a model no spec of which passes is BLOCKED (no file
+    #   # ships; the assets step ends BLOCKED). Each judgement and craft round is one more
+    #   # agent call. kind: none | command (an agent that reads images; argv placeholders
+    #   # {images} {brief} {verdict} {prompt}) | baseline (approved renders, baseline_dir).
+    #   judge:
+    #     kind: none
+    #     rounds: 2
+    #   # Whether the craft lint's errors (model.lint, advisory in check-tiers.yaml) refuse
+    #   # a spec: blocking when a judge is configured, advisory otherwise; set to override.
+    #   lint: advisory
     placeholders:
       enabled: true
       # Tried in order; the procedural backend is always last and always works. An

@@ -668,6 +668,8 @@ validate` reports the runtime-side codes):
 | `invalid-tileset` | error | the image does not divide into its tiles |
 | `duplicate-path` | error | two assets claim one file |
 | `not-served` | warning | a delivered file outside `public/`, which the runtime manifest cannot list |
+| `model-nodes-missing` | error | a GLB lacks a node or material name its model spec's `contract` declares - the game<->asset node contract ([blender-pipeline.md](blender-pipeline.md), "Craft review"); only a design that declares a contract is held to one |
+| `model-craft-blocked` | error | with a model judge configured, no spec of the model passed its checks, the craft lint and the judge within the author's craft rounds: nothing ships for it (not the last passing spec, not a placeholder) and the step ends `BLOCKED`. Never raised without a judge |
 | `too-large`, `not-power-of-two`, `duplicate-content`, `license-*`, `provenance-missing`, `missing`, ... | | as before |
 
 Malformed requirements - duplicate id, unknown kind, bad `atlas`/`scale`/`animations`/tile
@@ -691,7 +693,7 @@ build still loads); every other error FAILs.
 |---|---|---|
 | `root` | the run's game repository checkout | files go under `<root>/public/assets/`; see below |
 | `libraries` | `[]` | directories with a `library.json` and/or an `index.json` (see `library.py`); relative to the project directory |
-| `model_author` | `{kind: none}` | the 3D model author (`model_author.py`): `{kind: command, mode: each\|set, argv, spec_from: file\|stdout, max_repair_rounds: 2, review_rounds: 1, render: {enabled: true}}`; only a configured one is asked |
+| `model_author` | `{kind: none}` | the 3D model author (`model_author.py`): `{kind: command, mode: each\|set, argv, spec_from: file\|stdout, max_repair_rounds: 2, review_rounds: 1, render: {enabled: true}, judge: {kind: none}, lint}`; only a configured one is asked. `judge` (opt-in, `none` as shipped) and `lint` (`advisory` without a judge, `blocking` with one) are the craft review ([blender-pipeline.md](blender-pipeline.md), "Craft review") |
 | `author` | `{kind: none}` | `{kind: command, mode: asset\|set, argv, ...}`. `asset` (default): `svg_from: file\|stdout, timeout_seconds: 600, idle_timeout_seconds: 300, repair_rounds: 2`, placeholders `{request} {output} {prompt}`. `set`: `timeout_seconds: 2400, idle_timeout_seconds: null, repair_rounds: 1`, placeholders `{request} {out} {preview} {sheet} {prompt}` ([The set author](#the-set-author)). A misconfigured author - an unknown mode, a placeholder the mode does not provide, `svg_from: stdout` with `set` - fails the step, not retryably. The verified Claude Code set author is commented in `factory.yaml` and set in the autonomous profile ([autonomous-runs.md](autonomous-runs.md)) |
 | `producers` | `[]` | `fonts`, `audio`: final fonts and audio made from the design itself, after libraries and authors, before placeholders (see "Fonts and audio: the producers"). The autonomous profile turns both on |
 | `placeholders` | `{enabled: true, backends: [2d-assets-mcp, procedural]}` | plus a settings block per backend |
@@ -725,6 +727,7 @@ root). Without a scaffold-record, or before the checkout exists, the files go to
 | An issue in `fail_on`, or any error with `strict` | `FAILED`, not retryable, with the manifest as evidence |
 | Re-entry from a failed gate, and no configured author can remake what it concerns | `BLOCKED`: configure an author or replace the files by hand, and resume ([Re-entry](#re-entry)) |
 | Re-entry from a failed gate, and the authors delivered nothing | `FAILED`, retryable, with the manifest as evidence |
+| A model judge is configured and refused a model until its craft rounds were spent (`model-craft-blocked`) | `BLOCKED`, with the manifest and the quality findings (`data.findings`, owner the environment artist): nothing ships for that model; fix the spec, the design or the judge's bar, and resume. Never without a judge |
 
 Re-execution is idempotent: files are deterministic and written only when their bytes change,
 so a retry, resume or loop reuses everything (`metadata.writes`; `removed` counts pruned

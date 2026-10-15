@@ -27,6 +27,16 @@ by unit, against core/reference/baseline-compare.yaml:
     accepted_changes(config)  a person's recorded reasons for changing accepted content
                               (factory.init.accepted_changes)
 
+and two advisory measurements (1.1.0; check-tiers `advisory`, never required, not in `IDS`):
+
+    source_rewrite(git, accepted, candidate, rules, content_path)
+                              baseline.source_rewrite: the share of accepted units replaced, of
+                              accepted files rewritten and of accepted lines deleted between
+                              the two commits, read from git (GitReader, measure_rewrite)
+    frame_metrics(accepted, candidate, rules)
+                              baseline.frame_metrics: each compared frame's mean luminance and
+                              contrast against the accepted build's (frame_profile)
+
 Every quantity is measured the same way on both builds, from what the bot recorded or the
 content data file each commit ships; a quantity one of them does not report is unmeasured,
 never a pass. A change to accepted content is a failure unless a person recorded why
@@ -52,7 +62,8 @@ __all__ = ["RULES_PATH", "RULES_REF", "IDS", "load_rules", "accepted_of", "play_
            "profile", "compare", "accepted_changes", "NO_BASELINE", "ACCEPTED_NONE",
            "ACCEPTED_UNMEASURED", "UNDETERMINED",
            "UNREPORTED", "DEGRADED", "NOT_PLAYED", "UNIT_SCOPED", "strength_for", "identical",
-           "degraded_records"]
+           "degraded_records", "ADVISORY_IDS", "GitReader", "RewriteError",
+           "measure_rewrite", "source_rewrite", "frame_profile", "frame_metrics"]
 
 RULES_PATH = os.path.join(paths.REFERENCE, "baseline-compare.yaml")
 RULES_REF = "core/reference/baseline-compare.yaml"
@@ -1117,3 +1128,269 @@ def _responsiveness(accepted, candidate, rules, changes, strength, project):
                                                 or a.get("acknowledged") or a.get("fps")) else
                    "neither its start, its actions' acknowledgement nor its frame rate was "
                    "recorded")
+
+
+# -- advisory measurements (baseline-compare.yaml 1.1.0) -----------------------------------------
+#
+# Two more quantities of the candidate against the accepted build, reported and never held
+# (check-tiers.yaml `advisory`): their bars are not calibrated against builds measured with this
+# step, so a WARNING beyond them is information for the person at G4, not a defect sent to
+# develop. Both are always `required: false` whatever the run's tier (`ADVISORY`): a change
+# beyond a bar is a WARNING, an unmeasured one a WARNING saying why, never a pass. Neither is in
+# `IDS`, which floor.accepted_baseline and a blocked comparison enumerate.
+
+ADVISORY_IDS = ("baseline.source_rewrite", "baseline.frame_metrics")
+ADVISORY = Strength(None, False, None)
+REWRITE_QUANTITIES = ("units_replaced_share", "files_rewritten_share", "lines_deleted_share")
+# The empty tree: `git diff --numstat <EMPTY_TREE> <commit>` counts every text file's lines.
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+_HELD_PREFIX = "QUALITY REGRESSION against the accepted build"
+
+
+class RewriteError(RuntimeError):
+    """The repository cannot answer: a commit is missing, or git failed."""
+
+
+class GitReader:
+    """Commit reads of a checkout the Factory cloned itself: through wgflib.procs, with
+    gitsafe-hardened argv, and only commands that run nothing the repository defines
+    (`cat-file`; `diff --numstat` with renames, external diffs and textconv off). `run(argv)`
+    replaces the process call (tests)."""
+
+    def __init__(self, root, run=None, timeout=300):
+        self.root = root
+        self._run = run
+        self.timeout = timeout
+
+    def _git(self, *args):
+        from wgflib import gitsafe, procs
+        argv = gitsafe.hardened(list(args), self.root, drivers=())
+        if self._run is not None:
+            return self._run(argv)
+        return procs.run(argv, cwd=self.root, env=gitsafe.safe_env(), timeout=self.timeout,
+                         heartbeat_seconds=0, grace_seconds=1.0, poll_seconds=0.02)
+
+    def has_commit(self, sha):
+        return bool(sha) and self._git("cat-file", "-e", f"{sha}^{{commit}}").ok
+
+    def file_at(self, sha, path):
+        done = self._git("cat-file", "blob", f"{sha}:{path}")
+        return done.stdout if done.ok else None
+
+    def numstat(self, a, b, roots):
+        done = self._git("diff", "--numstat", "--no-renames", "--no-ext-diff", "--no-textconv",
+                         a, b, "--", *roots)
+        if not done.ok:
+            raise RewriteError(f"git diff --numstat {a[:12]} {b[:12]} failed: "
+                               f"{done.tail(5).strip()}")
+        out = {}
+        for line in (done.stdout or "").splitlines():
+            parts = line.split("\t", 2)
+            if len(parts) != 3 or parts[0] == "-" or parts[1] == "-":
+                continue  # a binary file: no lines to count
+            try:
+                out[parts[2]] = (int(parts[0]), int(parts[1]))
+            except ValueError:
+                continue
+        return out
+
+    def line_counts(self, sha, roots):
+        return {path: added for path, (added, _deleted)
+                in self.numstat(EMPTY_TREE, sha, roots).items()}
+
+
+def _content_units(text):
+    if text is None:
+        return None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None
+    units = data.get("units") if isinstance(data, dict) else None
+    if not isinstance(units, list):
+        return None
+    return {str(u.get("id")): u for u in units if isinstance(u, dict) and u.get("id")}
+
+
+def _altered(old, new):
+    """Whether `new` drops or alters anything `old` had: a key it adds is an extension."""
+    if isinstance(old, dict):
+        if not isinstance(new, dict):
+            return True
+        return any(key not in new or _altered(value, new[key]) for key, value in old.items())
+    if isinstance(old, list):
+        if not isinstance(new, list) or len(new) < len(old):
+            return True
+        return any(_altered(a, b) for a, b in zip(old, new))
+    if isinstance(old, bool) or isinstance(new, bool):
+        return old is not new
+    if isinstance(old, (int, float)) and isinstance(new, (int, float)):
+        return float(old) != float(new)
+    return old != new
+
+
+def _ratio(part, whole):
+    return round(part / float(whole), 4) if whole else None
+
+
+def measure_rewrite(git, accepted, candidate, rules, content_path):
+    """How much of the accepted commit the candidate commit replaced, read from git objects,
+    never a working tree: {units_*, files_*, lines_*, the three shares, unmeasured}.
+
+        units  the accepted content data file's units the candidate removed or altered (a key
+               the accepted unit had is gone or holds another value; a key added is an
+               extension)
+        files  the accepted text files under `roots` the candidate deleted, or rewrote:
+               deleted lines >= `file_rewritten_share` of the file's accepted lines
+        lines  the accepted lines under `roots` the candidate deleted (renames off: a moved
+               file is a deleted one)
+
+    Shares are of what the accepted commit shipped; a quantity it does not ship is None and
+    named in `unmeasured`, never 0. RewriteError when the repository cannot answer."""
+    rules = rules or {}
+    roots = [str(r) for r in rules.get("roots") or ["src"]]
+    rewritten_at = float(rules.get("file_rewritten_share", 0.5))
+    for sha, what in ((accepted, "accepted"), (candidate, "candidate")):
+        if not sha or not git.has_commit(sha):
+            raise RewriteError(f"the {what} commit {str(sha or '')[:12] or '(none)'} is not in "
+                               "the checkout")
+    out = {"roots": roots, "content_path": content_path, "unmeasured": []}
+    before = _content_units(git.file_at(accepted, content_path))
+    if before is None:
+        out.update(units_accepted=None, units_removed=[], units_changed=[],
+                   units_replaced_share=None)
+        out["unmeasured"].append(f"units: the accepted commit ships no readable {content_path}")
+    else:
+        after = _content_units(git.file_at(candidate, content_path)) or {}
+        removed = sorted(u for u in before if u not in after)
+        changed = sorted(u for u in before if u in after and _altered(before[u], after[u]))
+        out.update(units_accepted=len(before), units_removed=removed[:40],
+                   units_changed=changed[:40],
+                   units_replaced_share=_ratio(len(removed) + len(changed), len(before)))
+    lines = git.line_counts(accepted, roots)
+    stat = git.numstat(accepted, candidate, roots)
+    deleted, rewritten = 0, []
+    for path, count in sorted(lines.items()):
+        gone = min((stat.get(path) or (0, 0))[1], count)
+        deleted += gone
+        if count and gone / float(count) >= rewritten_at:
+            rewritten.append({"path": path, "lines": count, "deleted": gone})
+    if not lines:
+        out["unmeasured"].append("files: the accepted commit ships no text file under "
+                                 + ", ".join(roots))
+    rewritten.sort(key=lambda f: (-f["deleted"], f["path"]))
+    total = sum(lines.values())
+    out.update(files_accepted=len(lines), files_rewritten=len(rewritten),
+               files_rewritten_share=_ratio(len(rewritten), len(lines)),
+               rewritten_files=rewritten[:20], lines_accepted=total, lines_deleted=deleted,
+               lines_deleted_share=_ratio(deleted, total))
+    return out
+
+
+def _advisory(cid, project, items, note, expected, why, **kw):
+    """One advisory check from its items (_result, never required): a change beyond its bar
+    is a WARNING whose summary says it is not held."""
+    found = _result(cid, project, ADVISORY, items, note, expected, why, **kw)
+    if found["summary"].startswith(_HELD_PREFIX):
+        found["summary"] = ("ADVISORY, not held - beyond the advisory bar against the accepted "
+                            "build" + found["summary"][len(_HELD_PREFIX):])
+    found["measured"]["advisory"] = True
+    return found
+
+
+def _waivers(items):
+    return [{"unit": i.get("unit"), "quantity": i.get("quantity"), "reason": i["reason"],
+             "decided_by": i["decided_by"]} for i in items if i["verdict"] == "accepted-change"]
+
+
+def source_rewrite(git, accepted, candidate, rules, content_path, changes=None,
+                   project="desktop"):
+    """baseline.source_rewrite (advisory): the share of accepted units replaced, of accepted
+    files rewritten and of accepted lines deleted, each against `source_rewrite.maximum`."""
+    section = (rules or {}).get("source_rewrite") or {}
+    maximum = section.get("maximum") or {}
+    expected = {q: f"<= {maximum[q]}" for q in REWRITE_QUANTITIES if maximum.get(q) is not None}
+    cid = "baseline.source_rewrite"
+    try:
+        measured = measure_rewrite(git, accepted, candidate, section, content_path)
+    except (RewriteError, OSError) as exc:
+        return _check(cid, project, False,
+                      f"unmeasured: the replacement of the accepted build could not be read "
+                      f"from git ({exc}) - advisory, not held", required=False,
+                      measured={"unmeasured": UNREPORTED, "reason": str(exc)[:300],
+                                "advisory": True}, expected=expected)
+    items = []
+    for quantity in REWRITE_QUANTITIES:
+        value, bar = measured.get(quantity), maximum.get(quantity)
+        if value is None or bar is None:
+            continue
+        items.append(_item("regressed" if _beyond(value - float(bar), 0.0) else "kept",
+                           f"{quantity} {value} (advisory maximum {bar})", changes, cid, "*",
+                           quantity, accepted=None, candidate=value, maximum=bar))
+    unmeasured = "; ".join(measured["unmeasured"])
+    return _advisory(cid, project, items, "replacement share(s)", expected,
+                     unmeasured or "no quantity has a maximum", waived=_waivers(items),
+                     extra={"rewrite": measured},
+                     accepted_unmeasured=None if items else
+                     (unmeasured or "no quantity has a maximum"))
+
+
+def frame_profile(frames_dir, frame_ids, lit_luminance=64):
+    """{frame id: {mean_luminance, contrast}} of the frames of `frame_ids` a build captured
+    (analysis.frame_stats, the numbers frames.readable reports). A frame missing or unreadable
+    is left out, never zero."""
+    from .analysis import frame_stats
+    out = {}
+    for fid in frame_ids or []:
+        path = os.path.join(frames_dir or "", f"{fid}.png")
+        if not frames_dir or not os.path.isfile(path):
+            continue
+        try:
+            mean, contrast, _lit = frame_stats(path, lit_luminance)
+        except Exception:  # an unreadable frame measures nothing  # noqa: BLE001
+            continue
+        out[str(fid)] = {"mean_luminance": mean, "contrast": contrast}
+    return out
+
+
+def frame_metrics(accepted, candidate, rules, changes=None, project="desktop", degraded=None,
+                  not_played=None):
+    """baseline.frame_metrics (advisory): for each compared frame both builds captured, the
+    candidate's mean luminance and contrast against the accepted build's, within
+    `frame_metrics.max_luminance_delta` / `max_contrast_delta` either way. `accepted`,
+    `candidate`: frame_profile()s."""
+    section = (rules or {}).get("frame_metrics") or {}
+    bars = {"mean_luminance": float(section.get("max_luminance_delta", 0)),
+            "contrast": float(section.get("max_contrast_delta", 0))}
+    expected = {"max_luminance_delta": bars["mean_luminance"],
+                "max_contrast_delta": bars["contrast"],
+                "frames": list(section.get("frames") or [])}
+    cid = "baseline.frame_metrics"
+    if not_played or degraded:
+        why = (f"the accepted build could not be played ({not_played})" if not_played else
+               f"the {degraded} recording of one of the builds was made on a degraded host")
+        return _check(cid, project, False, f"unmeasured: {why} - advisory, not held",
+                      required=False, expected=expected,
+                      measured={"unmeasured": NOT_PLAYED if not_played else DEGRADED,
+                                "reason": why[:300], "advisory": True})
+    items = []
+    for fid in sorted(accepted or {}):
+        a, c = accepted[fid], (candidate or {}).get(fid)
+        if c is None:
+            items.append(_item(UNREPORTED, f"{fid}: captured on the accepted build, not on the "
+                               "candidate", changes, cid, fid, "frame", accepted=a,
+                               candidate=None))
+            continue
+        for quantity, bar in bars.items():
+            av, cv = _number(a.get(quantity)), _number(c.get(quantity))
+            if av is None or cv is None:
+                continue
+            delta = round(cv - av, 2)
+            items.append(_item("regressed" if _beyond(abs(delta), bar) else "kept",
+                               f"{fid}: {quantity} {av} -> {cv} ({delta:+}; at most {bar} "
+                               "either way)", changes, cid, fid, quantity, accepted=av,
+                               candidate=cv, delta=delta))
+    return _advisory(cid, project, items, "frame quantity(ies)", expected,
+                     "no compared frame was captured on both builds", waived=_waivers(items),
+                     accepted_unmeasured=None if accepted else
+                     "it captured none of the compared frames")

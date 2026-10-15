@@ -923,5 +923,337 @@ class TheRealGames(unittest.TestCase):
         self.assertEqual(regressed(order), [("hairpin-rise", "precision")])
 
 
+# -- the advisory measurements (baseline-compare.yaml 1.1.0) ------------------------------------
+#
+# baseline.source_rewrite and baseline.frame_metrics are reported and never held: whatever they
+# find, they are `required: false` at every tier, check-tiers.yaml lists them `advisory`, and
+# floor.accepted_baseline does not read them.
+
+ADVISORY_REAL = os.path.join(REAL, "advisory", "real-measurements.json")
+
+
+def _git(root, *args):
+    import subprocess
+    return subprocess.run(["git", "-C", root, *args], check=True, capture_output=True,
+                          text=True).stdout.strip()
+
+
+def _commit(root, units, files, message="c"):
+    if units is not None:
+        os.makedirs(os.path.join(root, "public", "content"), exist_ok=True)
+        with open(os.path.join(root, "public", "content", "units.json"), "w",
+                  encoding="utf-8", newline="\n") as handle:
+            json.dump({"units": units}, handle)
+    for path, text in files.items():
+        full = os.path.join(root, *path.split("/"))
+        if text is None:
+            if os.path.exists(full):
+                os.remove(full)
+            continue
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", message)
+    return _git(root, "rev-parse", "HEAD")
+
+
+REWRITE_UNITS = [{"id": f"w1-l{i}", "objective": f"break {10 + i} bricks", "speed": 0.1 * i}
+                 for i in range(1, 9)]
+REWRITE_CODE = {f"src/m{i}.ts": "".join(f"line {i}.{n}\n" for n in range(40)) for i in range(6)}
+CONTENT_PATH = "public/content/units.json"
+
+
+def _advisory_held(test, check):
+    """Every advisory check, whatever it found: never required, marked advisory."""
+    test.assertFalse(check["required"], check["summary"])
+    test.assertNotEqual(check["status"], "FAIL")
+    test.assertTrue(check["measured"]["advisory"])
+
+
+class TheSourceRewrite(unittest.TestCase):
+    """baseline.source_rewrite: how much of the accepted commit a candidate replaced, from git."""
+
+    def setUp(self):
+        self.repo = tempfile.mkdtemp(prefix="wgf-rewrite-")
+        self.addCleanup(shutil.rmtree, self.repo, ignore_errors=True)
+        _git(self.repo, "init", "-q")
+        _git(self.repo, "config", "user.email", "t@example.com")
+        _git(self.repo, "config", "user.name", "t")
+        _git(self.repo, "config", "core.autocrlf", "false")
+        self.accepted = _commit(self.repo, REWRITE_UNITS, REWRITE_CODE)
+        self.git = baseline.GitReader(self.repo)
+
+    def check(self, candidate, changes=None, accepted=None):
+        return baseline.source_rewrite(self.git, accepted or self.accepted, candidate, RULES,
+                                       CONTENT_PATH, changes)
+
+    def test_an_extension_of_the_accepted_build_passes(self):
+        units = copy.deepcopy(REWRITE_UNITS) + [{"id": "w2-l1", "objective": "new"}]
+        units[0]["art"] = "sprite"   # a key added to an accepted unit is an extension
+        candidate = _commit(self.repo, units, {
+            "src/m0.ts": REWRITE_CODE["src/m0.ts"] + "added\n", "src/new.ts": "x\n"})
+        got = self.check(candidate)
+        self.assertEqual(got["status"], "PASS")
+        _advisory_held(self, got)
+        rewrite = got["measured"]["rewrite"]
+        self.assertEqual((rewrite["units_removed"], rewrite["units_changed"]), ([], []))
+        self.assertEqual((rewrite["units_replaced_share"], rewrite["lines_deleted"]), (0.0, 0))
+        self.assertEqual(rewrite["files_accepted"], 6)
+
+    def test_a_rewrite_of_units_and_code_is_an_advisory_warning_never_a_failure(self):
+        units = [dict(u, objective="different") for u in REWRITE_UNITS[:6]]
+        candidate = _commit(self.repo, units, {"src/m0.ts": "short\n", "src/m1.ts": None,
+                                               "src/m2.ts": "short\n"})
+        got = self.check(candidate)
+        self.assertEqual(got["status"], "WARNING")
+        _advisory_held(self, got)
+        self.assertTrue(got["summary"].startswith("ADVISORY, not held"), got["summary"])
+        rewrite = got["measured"]["rewrite"]
+        self.assertEqual(rewrite["units_removed"], ["w1-l7", "w1-l8"])
+        self.assertEqual(len(rewrite["units_changed"]), 6)
+        self.assertEqual(rewrite["units_replaced_share"], 1.0)
+        self.assertEqual((rewrite["files_rewritten"], rewrite["files_rewritten_share"]), (3, 0.5))
+        self.assertEqual((rewrite["lines_deleted"], rewrite["lines_deleted_share"]), (120, 0.5))
+        self.assertEqual({i["quantity"] for i in got["measured"]["items"]
+                          if i["verdict"] == "regressed"}, set(baseline.REWRITE_QUANTITIES))
+
+    def test_no_content_data_file_leaves_units_unmeasured_never_zero(self):
+        os.remove(os.path.join(self.repo, "public", "content", "units.json"))
+        bare = _commit(self.repo, None, {}, "no data")
+        candidate = _commit(self.repo, None, {"src/m0.ts": "short\n"})
+        got = self.check(candidate, accepted=bare)
+        rewrite = got["measured"]["rewrite"]
+        self.assertIsNone(rewrite["units_replaced_share"])
+        self.assertTrue(any(u.startswith("units:") for u in rewrite["unmeasured"]))
+        # The files and lines are still measured: one rewritten file of six.
+        self.assertEqual(rewrite["files_rewritten"], 1)
+        self.assertEqual(got["status"], "PASS")
+        self.assertNotIn("units_replaced_share",
+                         {i["quantity"] for i in got["measured"]["items"]})
+
+    def test_a_commit_the_checkout_does_not_hold_is_unmeasured_never_a_pass(self):
+        got = self.check("f" * 40)
+        self.assertEqual(got["status"], "WARNING")
+        _advisory_held(self, got)
+        self.assertEqual(got["measured"]["unmeasured"], baseline.UNREPORTED)
+        self.assertIn("not in the checkout", got["summary"])
+
+    def test_a_persons_recorded_change_is_listed_never_hidden(self):
+        candidate = _commit(self.repo, [dict(u, objective="x") for u in REWRITE_UNITS], {})
+        changes, invalid = baseline.accepted_changes({"init": {"accepted_changes": [
+            {"check": "baseline.source_rewrite", "quantity": "units_replaced_share",
+             "reason": "every objective reworded on purpose", "decided_by": "a-person"}]}})
+        self.assertEqual(invalid, [])
+        got = self.check(candidate, changes)
+        self.assertEqual(got["status"], "PASS")
+        self.assertEqual(got["measured"]["accepted_changes"][0]["reason"],
+                         "every objective reworded on purpose")
+
+    def test_git_runs_hardened_and_runs_nothing_the_repository_defines(self):
+        seen = []
+
+        class Done:
+            ok, stdout = True, ""
+
+            @staticmethod
+            def tail(_n=5):
+                return ""
+
+        reader = baseline.GitReader(self.repo, run=lambda argv: seen.append(argv) or Done())
+        reader.has_commit("a" * 40)
+        reader.file_at("a" * 40, CONTENT_PATH)
+        reader.numstat("a" * 40, "b" * 40, ["src"])
+        for argv in seen:
+            self.assertEqual(argv[0], "git")
+            self.assertIn(f"core.hooksPath={os.devnull}", argv)
+            self.assertIn("core.fsmonitor=false", argv)
+        self.assertEqual([a[a.index(f"--work-tree={self.repo}") + 1] for a in seen],
+                         ["cat-file", "cat-file", "diff"])
+        for flag in ("--no-ext-diff", "--no-textconv", "--no-renames"):
+            self.assertIn(flag, seen[2])
+
+    def test_the_proposed_maximum_against_the_real_replacements(self):
+        # The shares the accepted-baseline branch measured on the validation games
+        # (fixtures/real/baseline-compare/advisory): every replacement a person rejected
+        # exceeds the maximum on one share, the largest improving visit on none - and no one
+        # share separates them, which is part of why the check is advisory.
+        with open(ADVISORY_REAL, encoding="utf-8") as handle:
+            rewrite = json.load(handle)["rewrite"]
+        maximum = RULES["source_rewrite"]["maximum"]
+
+        def over(shares):
+            return {q for q in baseline.REWRITE_QUANTITIES
+                    if shares.get(q) is not None and shares[q] > maximum[q]}
+        exceeded = {game: over(shares) for game, shares in rewrite["rejected"].items()}
+        self.assertEqual(exceeded, {"2d": {"units_replaced_share"},
+                                    "3d": {"lines_deleted_share"},
+                                    "3d-head": {"lines_deleted_share"}})
+        self.assertEqual(over(rewrite["improving_max"]), set())
+
+
+def _png(path, rgb, size=(32, 24), stripe=None):
+    from wgf_assets.raster import Image, encode_png
+    image = Image(*size)
+    for k in range(size[0] * size[1]):
+        colour = stripe if stripe and (k % size[0]) < size[0] // 2 else rgb
+        image.pixels[4 * k:4 * k + 4] = bytes((*colour, 255))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as handle:
+        handle.write(encode_png(image))
+
+
+FRAMES = RULES["frame_metrics"]["frames"]
+
+
+class TheFrameMetrics(unittest.TestCase):
+    """baseline.frame_metrics: each compared frame's luminance and contrast against the
+    accepted build's."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix="wgf-frames-")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+
+    def frames(self, name, rgb, stripe=None, ids=FRAMES):
+        where = os.path.join(self.base, name)
+        for fid in ids:
+            _png(os.path.join(where, f"{fid}.png"), rgb, stripe=stripe)
+        return baseline.frame_profile(where, FRAMES)
+
+    def test_the_same_look_passes(self):
+        accepted = self.frames("a", (40, 40, 40), stripe=(200, 200, 200))
+        self.assertEqual(sorted(accepted), sorted(FRAMES))
+        got = baseline.frame_metrics(accepted, self.frames("c", (40, 40, 40),
+                                                           stripe=(200, 200, 200)), RULES)
+        self.assertEqual(got["status"], "PASS")
+        _advisory_held(self, got)
+
+    def test_a_much_brighter_frame_is_an_advisory_warning_never_a_failure(self):
+        accepted = self.frames("a", (30, 30, 30), stripe=(80, 80, 80))
+        candidate = self.frames("c", (150, 150, 150), stripe=(200, 200, 200))
+        got = baseline.frame_metrics(accepted, candidate, RULES)
+        self.assertEqual(got["status"], "WARNING")
+        _advisory_held(self, got)
+        self.assertTrue(got["summary"].startswith("ADVISORY, not held"), got["summary"])
+        self.assertEqual({i["quantity"] for i in got["measured"]["items"]
+                          if i["verdict"] == "regressed"}, {"mean_luminance"})
+
+    def test_a_frame_the_candidate_did_not_capture_is_unmeasured(self):
+        accepted = self.frames("a", (40, 40, 40))
+        candidate = self.frames("c", (40, 40, 40), ids=FRAMES[:1])
+        got = baseline.frame_metrics(accepted, candidate, RULES)
+        self.assertEqual((got["status"], got["measured"]["unmeasured"]),
+                         ("WARNING", baseline.UNREPORTED))
+        _advisory_held(self, got)
+
+    def test_an_accepted_build_without_the_frames_or_unplayed_or_degraded_holds_nothing(self):
+        got = baseline.frame_metrics({}, self.frames("c", (40, 40, 40)), RULES)
+        self.assertEqual(got["measured"]["unmeasured"], baseline.ACCEPTED_UNMEASURED)
+        _advisory_held(self, got)
+        got = baseline.frame_metrics({}, {}, RULES, not_played="pnpm build failed")
+        self.assertEqual((got["status"], got["measured"]["unmeasured"]),
+                         ("WARNING", baseline.NOT_PLAYED))
+        _advisory_held(self, got)
+        got = baseline.frame_metrics({}, {}, RULES, degraded="win")
+        self.assertEqual((got["status"], got["measured"]["unmeasured"]),
+                         ("WARNING", baseline.DEGRADED))
+        _advisory_held(self, got)
+
+    def test_the_real_builds_a_person_judged_worse_are_flagged(self):
+        # The frames.readable measurements of the validation games' real reports: the build a
+        # person accepted at G4 against the one they then judged worse, desktop.
+        with open(ADVISORY_REAL, encoding="utf-8") as handle:
+            frames = json.load(handle)["frames"]
+        for game in ("2d", "3d"):
+            accepted = frames[f"{game}-accepted"]["projects"]["desktop"]
+            worse = frames[f"{game}-candidate"]["projects"]["desktop"]
+            got = baseline.frame_metrics(accepted, worse, RULES)
+            self.assertEqual(got["status"], "WARNING", game)
+            flagged = {(i["unit"], i["quantity"]) for i in got["measured"]["items"]
+                       if i["verdict"] == "regressed"}
+            # Luminance on every compared frame (2D +70.1 / +63.1, 3D +61.8 / +62.0); contrast
+            # only on the 2D first frame (26.45 -> 51.78, +25.3; its play-2s moved +16.2).
+            self.assertEqual(flagged, {(f, "mean_luminance") for f in FRAMES} | (
+                {("first-session-1s", "contrast")} if game == "2d" else set()), game)
+            # Each accepted build against itself passes.
+            self.assertEqual(baseline.frame_metrics(accepted, accepted, RULES)["status"],
+                             "PASS", game)
+
+
+class TheAdvisoryStep(unittest.TestCase):
+    """The step reports the advisory checks beside the comparison, and they never hold it."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix="wgf-advisory-")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.step = PlayabilityStep(types.SimpleNamespace(params={}, id="playability"))
+        self.context = types.SimpleNamespace(run_dir=self.base, config={}, environment=None,
+                                             current_step="playability")
+
+    class _Reader:
+        def has_commit(self, sha):
+            return True
+
+        def file_at(self, sha, path):
+            units = REWRITE_UNITS if sha.startswith("a") else REWRITE_UNITS[:2]
+            return json.dumps({"units": units})
+
+        def line_counts(self, sha, roots):
+            return {"src/a.ts": 100}
+
+        def numstat(self, a, b, roots):
+            return {"src/a.ts": (5, 90)}
+
+    def test_an_unplayed_accepted_build_still_measures_the_rewrite_and_holds_nothing(self):
+        found = self.step._baseline_advisory(
+            {"commit": "a" * 40, "by": "test", "unit_ids": []},
+            {"blocked": "pnpm build failed", "records": {}}, "b" * 40, self.base,
+            os.path.join(self.base, "out"), {}, RULES, self.context, git=self._Reader())
+        self.assertEqual([c["id"] for c in found], list(baseline.ADVISORY_IDS))
+        rewrite, frames = found
+        self.assertEqual(rewrite["status"], "WARNING")
+        self.assertEqual(rewrite["measured"]["rewrite"]["units_replaced_share"], 0.75)
+        self.assertEqual(frames["measured"]["unmeasured"], baseline.NOT_PLAYED)
+        for check in found:
+            _advisory_held(self, check)
+        # Only advisory warnings: the step passes.
+        self.step.clock = lambda: "2026-10-14T00:00:00Z"
+        self.context.execution = 1
+        self.context.logger = types.SimpleNamespace(warning=lambda *a, **k: None,
+                                                    error=lambda *a, **k: None,
+                                                    info=lambda *a, **k: None)
+        inputs = types.SimpleNamespace(refs={}, load=lambda t: None)
+        result = self.step._finish(self.context, inputs, "t", "b" * 40, found, [], {}, None)
+        self.assertEqual(result.artifacts[0].content["verdict"], "PASS")
+
+    def test_the_frames_of_both_plays_are_compared(self):
+        out = os.path.join(self.base, "out")
+        accepted_out = os.path.join(self.base, "accepted")
+        for fid in FRAMES:
+            _png(os.path.join(accepted_out, "desktop", "frames", f"{fid}.png"), (30, 30, 30))
+            _png(os.path.join(out, "desktop", "frames", f"{fid}.png"), (160, 160, 160))
+        found = self.step._baseline_advisory(
+            {"commit": "a" * 40, "by": "test", "unit_ids": []},
+            {"blocked": None, "out": accepted_out, "records": {"desktop": {}}}, "b" * 40,
+            self.base, out, {}, RULES, self.context, git=self._Reader())
+        frames = found[1]
+        self.assertEqual(frames["status"], "WARNING")
+        self.assertEqual(frames["measured"]["regressed"], len(FRAMES))
+        _advisory_held(self, frames)
+
+    def test_the_advisory_checks_are_classified_advisory_and_never_held_by_the_floor(self):
+        from wgflib.yamllite import load_file
+        reference = os.path.join(SCRIPTS, "..", "core", "reference")
+        tiers = load_file(os.path.join(reference, "check-tiers.yaml"))
+        found = tiers["sources"]["baseline-compare"]["checks"]
+        floor = load_file(os.path.join(reference, "quality-floor.yaml"))
+        held = next(c for c in floor["universal"] if c.get("id") == "floor.accepted_baseline")
+        for cid in baseline.ADVISORY_IDS:
+            self.assertEqual(found[cid], "advisory", cid)
+            self.assertNotIn(cid, baseline.IDS)
+            self.assertNotIn(cid, held["evaluate"]["checks"])
+        self.assertEqual(sorted(held["evaluate"]["checks"]), sorted(baseline.IDS))
+
+
 if __name__ == "__main__":
     unittest.main()

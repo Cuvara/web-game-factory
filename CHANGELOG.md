@@ -15,13 +15,13 @@ model_lint.py`, `model_judge.py`; [docs/blender-pipeline.md](docs/blender-pipeli
 "Craft review"). Nothing changes for a default run or a golden run, by design:
 - `model.lint` (floating, hidden and z-fighting parts, glow beyond the identity, a stretched
   compact role) is reported on every GLB the assets step judges, and is **advisory**
-  (check-tiers 1.6.0 `model-review:model.lint`): an error fails the check, never a model's
+  (check-tiers 1.7.0 `model-review:model.lint`): an error fails the check, never a model's
   verdict or a build. Its bars are calibrated on one reference library and one validation
   run; it becomes blocking only by a new check-tiers version, once it is shown clean on both
   golden runs and on real games' accepted models. `factory.assets.model_author.lint:
   blocking` makes the model author refuse a spec on it (the default when a judge is set).
 - The model judge is **opt-in**: `factory.assets.model_author.judge.kind` is `none` as
-  shipped, and the authored model's `model.craft` check (check-tiers 1.6.0, advisory) is
+  shipped, and the authored model's `model.craft` check (check-tiers 1.7.0, advisory) is
   `skipped`. Without a judge the model author still ships the last spec that passed its
   checks when a later revision breaks one (the WIP's "a refused revision blocks" is now the
   judged behaviour only), and renders no in-context sheet. With a judge, a model it refuses
@@ -32,12 +32,98 @@ model_lint.py`, `model_judge.py`; [docs/blender-pipeline.md](docs/blender-pipeli
   one is `model-nodes-missing` (asset-manifest 1.6.0). Only designs that declare one.
 - A craft round's judge feedback reaches the author as the request's `craft_review` (the WIP
   wrote it over `craft`, the craft-guide list, so an author lost its guides in that round).
-- quality-assessment 1.3.0 groups the two checks (`model-craft-lint`, `model-craft-judge`);
+- quality-assessment 1.4.0 groups the two checks (`model-craft-lint`, `model-craft-judge`);
   lessons 2.2.1 raises L15 to r2 with a gap that says why neither holds it yet - an advisory
   check would derive the rule down to recommended, and declaring it blocking would make an
   uncalibrated lint block every 3D build.
 Bringing forward: an asset-manifest 1.5.0 stays valid (1.6.0 only adds issue codes); a model
 spec without `contract` is unchanged; nothing to re-run.
+
+**The design-contract prompt is opt-in** (`factory.design.agent.beats_prompt`, default false).
+The advisory `design.*` rules still run on every design and are reported at G3; only the extra
+prompt asking the agent author for beats, references and signature moments waits for a project
+to turn it on, so a default release-tier run does not pay for bars that are hypotheses.
+
+**The design contract beyond the counts, advisory** (issue #75, design-contract). Two
+release-tier designs met every content count and still played like a genre's first draft. A
+release-tier design is now also read for its references to teardown records of the genre's
+leaders, a beat per unit (a falsifiable claim and its test, the player's decision and how
+often it recurs, a harder line for a payoff, what a climax changes), a twist and a closing
+climax per group, signature moments, meta systems decided, market designed play for a finite
+game and par calibration: game-design 1.18.0 (`references`, units' `beat`,
+`build_spec.content.signature_moments`, `.meta_systems`, secondary goals' `par`, all
+optional), quality-benchmark 1.7.0 `design` (every 1.6.0 bar unchanged; a new basis,
+`hypothesis`), design-consistency-rules 2.6.0 (twelve `design.*` rules,
+`scripts/wgf_design/beats.py`). **Every rule is a warning, so advisory** in check-tiers: it is
+carried to G3 and never refuses, repairs or routes a design, and a run at the mvp tier (the
+golden runs) is breached on none. The bars are uncalibrated - `proposed`, and 1800 s of
+designed play and a 1.25x par ratio are hypotheses at confidence 0.5. The Factory ships no
+teardown corpus, so a default release-tier run reports `design.references_grounded` as
+UNKNOWN (never a pass, never filled in by the designer). How many elements a unit after the
+opening one debuts stays `content.introductions_one_at_a_time`'s (L29, blocking);
+`design.introductions_placed` holds only the opening unit, which L29 exempts, and where later
+debuts land. The agent author is shown the rules and bars (`design_rules`) and, at a tier with
+design bars, an advisory prompt subordinate to every binding rule. What would make a rule
+blocking is in `docs/factory-quality-benchmark.md`. Bringing an artifact forward: nothing; a
+run pinned before these versions is held to none of it.
+
+**The publishing workflow, the publication key, and the Yandex listing rules of the
+2026-10-05 read** (issue #75, publish-yandex; ported onto 2.8.1, the parts main had since
+landed - yandex 1.3.0 / publication 2.3.0, the artifact-lock refusals, the readiness matrix -
+left as main has them). `core/reference/publishing-workflow.yaml` 1.0.0 (schema
+`core/artifacts/shared/publishing-workflow.schema.json`) states the platform-neutral stages
+from research to a live listing, who acts in each, the state vocabulary a publication is
+reported in (each state mapped to the outcome, refusal, waiting state or registry status it
+is read from) and the publication key; `check-integrity.py` holds every name it uses to exist
+(`wgflib.publication.publishing_workflow_problems` - a wgflib change, because the key is
+computed by the submit step and must be computed the same by every later reader, and the
+rules are run by both the integrity check and the tests). Per-portal status stays in one
+place, the readiness matrix of `docs/portal-publishing-architecture.md`. platform-publication
+1.4.0 records `submission.publication_key` (platform, title, release-manifest hash, package
+checksum, portal game id or `unassigned`) and `submission.publishing_workflow` - recorded
+only, never a lookup. `wgf-publish.py readiness --platform ID` reports `platform_packaged`
+RED for a targeted platform the release did not package. Platform profile schema:
+`store_listing.how_to_play`, and screenshots `aspects`, `min_long_side`, `max_long_side`,
+`transparent`. yandex 1.4.0: how to play (100-1000, filled from the listing's controls text),
+screenshots 16:9 or 9:16 with a long side of 1280-2560 px and no alpha, the rewarded-button
+wording and 2 s ad rule in notes, four official rejections; publication yandex 2.4.0: the text
+limits, the contract-before-moderation, 2 h withdrawal, reload-before-status and 100-day
+rules. The MP4 video rule is main's (1.3.0), unchanged. The store-listing package crops
+screenshots to the capture's proportion, downscales above `max_long_side` and writes RGB
+PNGs where `transparent: false`; listing validation fails a screenshot outside `aspects` or
+the long-side bounds (the default 1920x1080 / 1080x1920 capture meets them) and keeps failing
+a text over its maximum. **Advisory** (WARNING, never a failure, so no default run is held or
+routed by them): a text under a stated `min_chars`, a missing portal field filled from another
+text (`how_to_play` from `controls`) - a locale written from the game's own strings has
+neither yet - and a screenshot with an alpha channel (the portal says such a PNG "may" be
+refused). They become blocking when every required locale's copy is written to the minimum
+and carries controls text (shown on both golden runs and a real game), and, for alpha, when a
+portal source states a refusal (`docs/store-listing-module.md`, "Advisory platform text
+checks"). Nothing here runs before G4. Bringing forward: a game pinned to `yandex@1.3.0`
+re-plans to 1.4.0 as with any profile bump; an existing platform-publication stays valid
+(the two fields are optional); a listing re-validated under 1.4.0 may gain warnings, not
+failures, unless its screenshots fall outside the portal's proportions or long side.
+
+**Two advisory measurements against the accepted build** (issue #75, the accepted-baseline
+part; `core/reference/baseline-compare.yaml` 1.1.0, `check-tiers.yaml` 1.6.0,
+`quality-assessment.yaml` 1.3.0). A run that adopted a game now also reports
+`baseline.source_rewrite` - the share of the accepted content units removed or altered, of the
+accepted `src/` files rewritten and of the accepted lines deleted between the accepted and the
+candidate commit, read from git in the playability step's own clone - and
+`baseline.frame_metrics` - each compared frame's mean luminance and contrast against the
+accepted build's frames. Both are **ADVISORY**: always `required: false`, never read by
+`floor.accepted_baseline`, never routed by triage, and they never change the step's verdict.
+Their bars (0.25 per share; 32 luminance, 24 contrast) are proposed from the unmerged
+accepted-baseline branch's measurements of the two validation games
+(`scripts/tests/fixtures/real/baseline-compare/advisory/`) and are not calibrated by this step.
+A default run adopts nothing and reports neither; the golden runs adopt nothing. They become
+blocking only with bars measured by this step on builds a person judged, a new
+baseline-compare version, the tier moved to `quality` and the checks named in
+`floor.accepted_baseline`. Not ported, with why (docs/baseline-comparison.md "Not ported"):
+the paired visual judgement and visual-QA score drops (an LLM judge per adopted run), the
+playtest-notes CLI with approve/restore (a new human-decision surface), and finding the
+accepted build from a G4 decision-record (the record pins reports, not a commit; it would make
+the design step read other runs' stores). Nothing to bring forward: existing reports are valid.
 
 **The development brief and the GDD carry the design's visual effects** (review of the
 craft-identity-vfx merge, F1). `build_spec.vfx` is now a build-spec section of the brief and of

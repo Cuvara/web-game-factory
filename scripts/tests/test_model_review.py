@@ -532,6 +532,13 @@ if mode.startswith("set"):
         answer = {{k: (json.loads(box) if mode.startswith("set-never") else
                       keeper if k == "keeper" else json.loads(box))
                   for k in request["problems"]}}
+    elif stage == "craft":
+        # A craft round: revise each model the judge refused (a part a little larger).
+        answer = {{}}
+        for k in request["craft_review"]:
+            spec = json.loads(json.dumps(request["previous"][k]))
+            spec["parts"][0]["size"] = [v * 1.02 for v in spec["parts"][0]["size"]]
+            answer[k] = spec
     else:
         answer = {{}}
     if mode.endswith("-file"):
@@ -624,20 +631,13 @@ class ReviewRounds(AuthorCase):
         self.assertEqual(result["quality"]["verdict"], "pass")
         self.assertEqual([h["stage"] for h in result["history"]], ["author", "review"])
 
-    def test_a_revision_that_breaks_a_check_blocks_the_model(self):
-        # The author judged its passing spec unreadable and its revision fails: neither
-        # passes, so nothing ships - never the spec its own author refused (L15).
-        with self.assertRaises(model_author.ModelAuthorError) as caught:
-            self.produce("break", max_repair_rounds=0)
-        error = caught.exception
-        self.assertTrue(error.blocked)
-        self.assertFalse(error.retryable)
-        self.assertIn("BLOCKED", str(error))
-        self.assertIn("the author judged its renders unreadable", str(error))
-        self.assertEqual(error.finding["dimension"], "environment-3d")
-        self.assertEqual(error.finding["owner"], "environment-artist")
-        self.assertEqual(error.finding["route"], "assets")
-        self.assertFalse(os.path.exists(os.path.join(self.out, "keeper.glb")))
+    def test_a_revision_that_breaks_a_check_is_dropped(self):
+        # Without a model judge (the default), the last spec that passed its checks ships;
+        # with one, the same rounds block the model (test_model_craft.py).
+        result = self.produce("break", max_repair_rounds=0)
+        self.assertEqual(len(result["spec"]["parts"]), len(base.keeper_spec()["parts"]))
+        self.assertIn("dropped", result["notes"])
+        self.assertEqual(result["quality"]["verdict"], "pass")
 
     def test_a_broken_revision_is_repaired_while_repairs_remain(self):
         result = self.produce("break", max_repair_rounds=1)

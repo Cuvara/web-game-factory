@@ -109,7 +109,12 @@
 #        (backfilled on L1-L28, no rule changed); L29.
 # 2.2.0: L8 partial - the baseline comparison (baseline-compare.yaml) holds a candidate to
 #        the build a person accepted.
-version: 2.2.0
+# 2.2.1: L15 r2 - its gap says what the model craft review (core/reference/
+#        model-review-rubric.yaml) now measures and why it does not hold the rule yet: the
+#        craft lint and the model judge are advisory and opt-in, so they are not among its
+#        checks (an advisory check would derive the rule down to recommended; declaring it
+#        blocking would make an uncalibrated lint block every 3D build). No rule changed.
+version: 2.2.1
 
 statuses: [enforced, partial, gap, process]
 
@@ -638,7 +643,7 @@ lessons:
     category: art_3d
     domain: art-direction
     classification: BLOCKING
-    revision: 1
+    revision: 2
     principle: >-
       A model is judged by someone other than its author, and a spec its author calls bad
       does not ship, because self-grading passes detail nobody can see.
@@ -666,7 +671,16 @@ lessons:
         - scripts/tests/test_model_review.py::test_a_lone_sphere_is_still_a_placeholder
       passes: []
       generalizes: []
-    gap: no independent model-craft judge, contrast measured against the sky rather than the play surface, no game-to-asset node contract.
+    gap: >-
+      The model craft review exists but does not hold this rule yet. The craft lint
+      (model-review:model.lint - floating, hidden and z-fighting parts, glow, proportion) runs on
+      every GLB but is advisory, its bars calibrated on one reference library and one validation
+      run; the independent model judge (model-review:model.craft) is opt-in
+      (factory.assets.model_author.judge, none as shipped), and only with it does a spec its
+      author or the judge refused never ship. model.contrast is still measured against the
+      backdrop, not the play surface (only the judge's in-context render shows the surface). The
+      game-to-asset node contract (a model spec's `contract`, model-nodes-missing) holds only the
+      models whose design declares one.
 
   - id: L16
     title: Interactions had no required visual feedback

@@ -63,7 +63,9 @@
 # 1.1.0: the baseline comparison's families (accepted-content, accepted-on-screen,
 #        accepted-play, accepted-timing).
 # 1.2.0: feedback-effects - production-quality's vfx checks (core/reference/vfx.yaml).
-version: 1.2.0
+# 1.3.0: model-craft-lint and model-craft-judge - the model review's craft lint and its opt-in
+#        judge (core/reference/model-review-rubric.yaml); both advisory, so supporting.
+version: 1.3.0
 
 statuses: [PASS, FAIL, INCONCLUSIVE, NOT_SUPPORTED]
 
@@ -453,6 +455,27 @@ families:
     method: Rendered and measured by the model checks.
     limits: Bars, not taste.
     cannot_justify: That the model reads well in play.
+  - id: model-craft-lint
+    label: 3D model craft lint
+    dimension: player_facing
+    class: heuristic
+    when: reported
+    checks: [model-review:model.lint]
+    measures: Parts that float off what carries them, parts no view shows, faces of two materials fighting on one plane, glow beyond the identity's limits, a compact role stretched thin.
+    method: Measured on each GLB's geometry by the craft lint (scripts/wgf_assets/model_lint.py) against core/reference/model-review-rubric.yaml `lint`.
+    limits: Advisory - bars calibrated on one reference library and one validation run; reads geometry, not a render.
+    cannot_justify: That the model reads as what it names, or looks good.
+  - id: model-craft-judge
+    label: 3D model craft judge
+    dimension: player_facing
+    class: ai-judged
+    when: reported
+    checks: [model-review:model.craft]
+    judge: {report: asset-manifest}
+    measures: An independent judge's 0-5 scores of an authored model's renders on the model review rubric's dimensions, held to its pass bars.
+    method: The opt-in model judge (scripts/wgf_assets/model_judge.py) - an agent reading contact sheets and the in-context sheet, or the baseline judge against approved renders. Skipped when none is configured.
+    limits: One AI judgment of still renders; opt-in, so most runs carry it skipped.
+    cannot_justify: That the model looks good in play to a person.
   - id: audio-balance
     label: Audio balance
     dimension: player_facing

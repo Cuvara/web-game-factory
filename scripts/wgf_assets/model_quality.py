@@ -797,7 +797,7 @@ def round_body(requirement, pieces, outline, bars=None):
 
 def assess(data, *, role=None, visual_identity=None, spec=None, kind="model", name="model",
            bars=None, policy=None, author=None, inspection=None, requirement=None,
-           camera=None, lint_rules=None):
+           camera=None, lint_rules=None, lint_blocking=False):
     """{quality, geometry, findings}: the manifest `quality` block for a GLB, the geometry it
     was judged on, and the inspector's and the spec's findings [(code, severity, message)].
 
@@ -805,8 +805,15 @@ def assess(data, *, role=None, visual_identity=None, spec=None, kind="model", na
     and part count are held against the file. `policy` is the asset policy (for the kind's
     budgets; optional). `requirement` is the design's asset requirement (description,
     readability, spec): what tells a round body from a blob (`round_body`). `camera` is the
-    design's camera statement: what the game camera sees behind the model (`model.contrast`).
-    `lint` in the result is the craft lint's findings (model_lint.py)."""
+    design's camera statement (accepted for the callers that have it; `model.contrast` is
+    still measured against the backdrop, never the play surface). `lint` in the result is the
+    craft lint's findings (model_lint.py).
+
+    `model.lint` is ADVISORY unless `lint_blocking` (core/reference/check-tiers.yaml
+    model-review:model.lint): its errors make the check `fail`, honestly, but only a blocking
+    lint makes the verdict fail. The lint's bars are calibrated on one reference library and
+    one validation run (core/reference/model-review-rubric.yaml); the model author makes it
+    blocking only inside the opt-in craft review (a judge configured)."""
     bars = dict(DEFAULT_BARS, **(bars or load_bars()))
     inspection = inspection or gltf.inspect(data, name=name, kind=kind)
     kind_policy = policy.kind(kind) if policy is not None else None
@@ -975,22 +982,33 @@ def assess(data, *, role=None, visual_identity=None, spec=None, kind="model", na
 
     # The craft lint (model_lint.py, core/reference/model-review-rubric.yaml `lint`): what a
     # careful modeller never ships - floating, hidden or z-fighting parts, glow beyond the
-    # identity, a compact role stretched thin. Errors fail; warnings are reported.
+    # identity, a compact role stretched thin. Errors fail the check; they fail the verdict
+    # only when the lint is blocking (`lint_blocking`). Warnings are reported.
     lint_findings = []
+    lint_crash = None
+    if geometry is not None and geometry.get("decoded") and not styled:
+        from . import model_lint
+        try:
+            lint_findings = model_lint.lint(geometry, spec=spec, role=role,
+                                            visual_identity=visual_identity,
+                                            rules=lint_rules or model_lint.load_rules())
+        except Exception as exc:  # an advisory check never breaks the judgement of a GLB
+            lint_crash = f"{type(exc).__name__}: {exc}"[:200]
     if geometry is None or not geometry.get("decoded"):
         check("model.lint", "skipped" if geometry is not None else "fail",
               "the geometry could not be decoded (compressed or quantised)"
               if geometry is not None else "the geometry could not be read")
     elif styled:
         check("model.lint", "skipped", "the visual identity states primitive_style")
+    elif lint_crash:
+        # Never a pass: what did not run is skipped (advisory) or a failure (blocking).
+        check("model.lint", "fail" if lint_blocking else "skipped",
+              f"the craft lint could not run: {lint_crash}")
     else:
-        from . import model_lint
-        lint_findings = model_lint.lint(geometry, spec=spec, role=role,
-                                        visual_identity=visual_identity,
-                                        rules=lint_rules or model_lint.load_rules())
         lint_errors = [f for f in lint_findings if f["severity"] == "error"]
         if lint_errors:
-            check("model.lint", "fail", f"{len(lint_errors)} craft error(s): " + "; ".join(
+            check("model.lint", "fail", ("" if lint_blocking else "advisory, not held: ")
+                  + f"{len(lint_errors)} craft error(s): " + "; ".join(
                 f"{f['code']} {', '.join(f['parts'][:4])}".strip() for f in lint_errors[:4]))
         else:
             warnings = [f for f in lint_findings if f["severity"] == "warning"]
@@ -1002,7 +1020,9 @@ def assess(data, *, role=None, visual_identity=None, spec=None, kind="model", na
     if geometry is not None:
         geometry.pop("_faces", None)
 
-    verdict ="fail" if any(c["status"] == "fail" for c in checks) else "pass"
+    # An advisory lint never decides the verdict (check-tiers.yaml model-review:model.lint).
+    verdict = "fail" if any(c["status"] == "fail" for c in checks
+                            if lint_blocking or c["id"] != "model.lint") else "pass"
     quality = {"verdict": verdict, "checks": checks, "primitive_only": only,
                "parts": len(pieces) if geometry is not None else None,
                "triangles": triangles if summary is not None else None,

@@ -72,6 +72,16 @@ keep (a game may compose the model's parts by node name). `settings`:
     review_rounds         1: asks to look at the renders after every model passes
     render                {enabled: true, engines, samples, tile, timeout_seconds} (render.py)
     blender               {executable, timeout_seconds, allow_unpinned} as the backend's
+    judge                 the craft review's independent judge (model_judge.py; core/reference/
+                          model-review-rubric.yaml): {kind: none (default) | command |
+                          baseline, rounds, ...}. With one, each model whose checks pass is
+                          judged from its renders; a refusal goes back to the author for
+                          `rounds` craft rounds, and a model no spec of which passes is
+                          BLOCKED - nothing ships for it, not the last passing spec. Without
+                          one, nothing changes: the last spec that passed its checks ships.
+    lint                  advisory | blocking: whether the craft lint's errors (model_lint.py,
+                          the `model.lint` check) refuse a spec. Default: blocking with a
+                          judge, advisory without - reported, never a refusal
 
 `context`: `run_dir` (requests, specs, renders and logs; default `<out_dir>/.model-author`),
 `config` (the factory section: `factory.agents.env_passthrough` names the host's
@@ -105,6 +115,7 @@ SCHEMA_PATH = os.path.join(paths.ARTIFACTS, "shared", "model-spec.schema.json")
 MAX_REPAIR_ROUNDS = 2
 REVIEW_ROUNDS = 1
 MODES = ("each", "set")
+LINT_MODES = ("advisory", "blocking")
 DEFAULTS = {"kind": "command", "mode": "each", "argv": [], "spec_from": "file",
             "timeout_seconds": 900, "idle_timeout_seconds": 300,
             "max_repair_rounds": MAX_REPAIR_ROUNDS, "review_rounds": REVIEW_ROUNDS,
@@ -175,7 +186,7 @@ PROMPT_REVIEW_FILE = (
 
 PROMPT_CRAFT = (
     " An independent judge looked at the renders of your spec and refused it: the request's "
-    "`craft` holds its reasons (`failures`), its notes and the renders it saw (`renders`: open "
+    "`craft_review` holds its reasons (`failures`), its notes and the renders it saw (`renders`: open "
     "them). Revise the spec so what the judge names is fixed - the same spec is refused again."
 )
 
@@ -224,7 +235,7 @@ PROMPT_SET_REVIEW = (
 )
 PROMPT_SET_CRAFT = (
     " This is a craft round: an independent judge looked at the renders and refused the "
-    "models named in the request's `craft` - their reasons (`failures`), its notes and the "
+    "models named in the request's `craft_review` - their reasons (`failures`), its notes and the "
     "renders it saw (open them). Revise each refused spec so what the judge names is fixed; "
     "leave every other spec exactly as it is."
 )
@@ -547,6 +558,17 @@ class _Session:
             except ValueError as exc:
                 raise ModelAuthorError(str(exc)) from exc
         self.judgings = 0
+        # Whether the craft lint's errors refuse a spec (core/reference/check-tiers.yaml
+        # model-review:model.lint is advisory). Default: blocking only inside the opt-in craft
+        # review (a judge configured); without one the lint is reported, never a refusal, so a
+        # run without a judge ships what it shipped before the lint existed.
+        lint_mode = config.get("lint")
+        if lint_mode is None:
+            lint_mode = "blocking" if self.judge["kind"] != "none" else "advisory"
+        if lint_mode not in LINT_MODES:
+            raise ModelAuthorError(f"the model author's lint must be one of "
+                                   f"{', '.join(LINT_MODES)}, not {lint_mode!r}")
+        self.lint_mode = lint_mode
         self.models = [_Model(r) for r in reqs]
         self.builds = {}             # spec hash -> (data, report, key) or problem text
         self.asks = 0
@@ -582,15 +604,21 @@ class _Session:
                                       spec=spec, kind=req["build_kind"],
                                       name=f"{req['id']}.glb", bars=self.bars,
                                       policy=self.policy, author="author:command",
-                                      requirement=req, camera=self.design.get("camera"))
+                                      requirement=req, camera=self.design.get("camera"),
+                                      lint_blocking=self.lint_mode == "blocking")
         problems = [f"{code}: {message}" for code, severity, message in judged["findings"]
                     if severity == "error"]
         problems += _expectation_problems(judged["summary"], req["expectations"], data,
                                           f"{req['id']}.glb")
-        # The craft lint's errors one by one, each with what to change.
+        # The craft lint's errors one by one, each with what to change - refusals only when
+        # the lint is blocking; advisory, every finding is a hint for the judge (if any).
         lint = judged.get("lint") or []
-        problems += [f"{f['code']}: {f['message']}" for f in lint if f["severity"] == "error"]
-        model.lint = [f for f in lint if f["severity"] != "error"]
+        if self.lint_mode == "blocking":
+            problems += [f"{f['code']}: {f['message']}" for f in lint
+                         if f["severity"] == "error"]
+            model.lint = [f for f in lint if f["severity"] != "error"]
+        else:
+            model.lint = list(lint)
         # model.valid restates the error findings already listed above, model.lint the
         # lint's.
         problems += [f"quality {c['id']}: {c['summary']}" for c in judged["quality"]["checks"]
@@ -642,7 +670,11 @@ class _Session:
     def _scene(self, entries):
         """What the in-context render stands each model in: the play surface's colour, the
         backdrop's, and the player's model - this session's, else the one the game ships
-        (`context["player_glb"]`). None when the palette names no play surface."""
+        (`context["player_glb"]`). None when the palette names no play surface, and when no
+        model judge is configured: the in-context sheet is the judge's `camera_view`, and a
+        run without a judge renders exactly what it rendered before the craft review."""
+        if self.judge["kind"] == "none":
+            return None
         surface, _token = model_quality.surface_colour(self.look)
         if not surface:
             return None
@@ -782,7 +814,7 @@ class _Session:
                                  "measured": self._measured(model),
                                  "previous_spec": model.spec}
         elif stage == "craft":
-            request["craft"] = self._craft_block(model, round_index)
+            request["craft_review"] = self._craft_block(model, round_index)
             if model.renders:
                 request["renders"] = model.renders
         if stage != "author" and not stdout_mode and model.spec is not None:
@@ -851,7 +883,7 @@ class _Session:
         if stage == "repair":
             request["problems"] = {m.req["id"]: m.problems for m in self.models if m.problems}
         if stage == "craft":
-            request["craft"] = {m.req["id"]: self._craft_block(m, round_index)
+            request["craft_review"] = {m.req["id"]: self._craft_block(m, round_index)
                                 for m in self.models if m.verdict is not None
                                 and m.verdict["status"] == "fail" and not m.problems}
         if stdout_mode and stage != "author":
@@ -1021,8 +1053,12 @@ class _Session:
                 and m.verdict["spec"] == modelspec.spec_hash(m.spec)]
 
     def _passed(self, model):
-        """The current build, when it ships: every check passes and - with a judge - the
-        judge passed exactly this spec."""
+        """The build that ships. Without a judge: the last spec that passed every check (a
+        later revision that broke one is dropped, as before the craft review existed). With
+        a judge: the current build, only when every check passes and the judge passed
+        exactly this spec - otherwise nothing (`_blocked`)."""
+        if self.judge["kind"] == "none":
+            return model.best
         if model.data is None or model.problems or model.best is None:
             return None
         if self.judge["kind"] != "none":
@@ -1092,12 +1128,17 @@ class _Session:
                      f"({'set' if self.mode == 'set' else 'own'} session, {self.asks} "
                      f"ask(s)), built by Blender {self.info.version_string}, key "
                      f"{best['key']}.")
+            dropped = model.spec is not best["spec"] and bool(model.problems)
             if review:
                 notes += (" Self-reviewed from renders: "
                           + ("the author judged that it reads." if review["reads"] else
+                             "the review rounds ended with a revision; the last passing "
+                             "spec is the model." if dropped else
                              "the author revised it; the revision passed."))
             elif self.render_note:
                 notes += f" Not rendered: {self.render_note[:200]}"
+            if dropped:
+                notes += " The last revision failed its checks and was dropped."
             quality = dict(best["quality"], checks=list(best["quality"]["checks"]))
             craft = None
             if self.judge["kind"] == "none":

@@ -405,8 +405,8 @@ text = open(brief).read()
 ids = re.findall(r"^### ([a-z0-9-]+) \(", text, re.M)
 dims = {dims!r}
 log = os.path.join(os.path.dirname(state), "judge.log")
-seen = sorted(os.path.relpath(os.path.join(r, f), images) for r, _d, fs in os.walk(images)
-              for f in fs)
+seen = sorted(os.path.relpath(os.path.join(r, f), images).replace(os.sep, "/")
+              for r, _d, fs in os.walk(images) for f in fs)
 open(log, "a").write(json.dumps({{"call": calls, "ids": ids, "images": seen}}) + "\n")
 def entry(ok):
     return {{"scores": {{d: (4 if ok else 2) for d in dims}}, "reads_as": ok,
@@ -432,12 +432,13 @@ mode, request_path, spec_path = sys.argv[1:4]
 request = json.load(open(request_path))
 keeper = json.load(open({keeper!r}))
 log = {log!r}
-stage = ("craft" if "craft" in request else "review" if "review" in request else
+stage = ("craft" if "craft_review" in request else "review" if "review" in request else
          "repair" if "repair" in request else "author")
-open(log, "a").write(json.dumps({{"stage": stage, "craft": request.get("craft")}}) + "\n")
+open(log, "a").write(json.dumps({{"stage": stage, "craft": request.get("craft_review"),
+                                "guides": request.get("craft")}}) + "\n")
 spec = keeper
 if stage == "craft":
-    previous = request["craft"]["previous_spec"]
+    previous = request["craft_review"]["previous_spec"]
     n = sum(1 for p in previous["parts"] if p["id"].startswith("visor"))
     spec = dict(previous, parts=previous["parts"] + [
         {{"id": "visor-%d" % n, "shape": "box", "size": [0.3, 0.06, 0.05],
@@ -504,6 +505,10 @@ class JudgeLoop(CraftCase):
         stages = [c["stage"] for c in self.author_calls()]
         self.assertEqual(stages, ["author", "craft"])
         craft = self.author_calls()[1]["craft"]
+        # The judge's block has its own key: the craft round still names the craft guides
+        # (`craft`), which every other round reads too.
+        guides = self.author_calls()[1]["guides"]
+        self.assertTrue(guides and all(g.endswith(".md") for g in guides), guides)
         self.assertIn("blocker attachment: the visor floats off the head", craft["notes"])
         self.assertTrue(any("attachment scored 2" in f for f in craft["failures"]))
         self.assertTrue(os.path.isfile(craft["renders"]["sheet"]))
@@ -533,14 +538,36 @@ class JudgeLoop(CraftCase):
                          ("environment-artist", "assets", "blocker"))
         self.assertIn("the visor floats off the head", finding["task"]["change"])
 
+    def test_with_a_judge_a_review_revision_that_breaks_a_check_blocks_the_model(self):
+        # The author judged its passing spec unreadable and its revision fails: with a judge
+        # configured neither ships - never the spec its own author refused (L15). Without
+        # one the last passing spec ships, as before (test_model_review.py
+        # test_a_revision_that_breaks_a_check_is_dropped).
+        settings = dict(self.craft_settings(), review_rounds=1, max_repair_rounds=0)
+        settings["argv"] = [self.author, "break", "{request}", "{spec}", "{dir}", "{prompt}"]
+        with self.assertRaises(model_author.ModelAuthorError) as caught:
+            model_author.produce_model(KEEPER_REQ, LOOK, self.out, settings, self.context)
+        error = caught.exception
+        self.assertTrue(error.blocked)
+        self.assertFalse(error.retryable)
+        self.assertIn("BLOCKED", str(error))
+        self.assertIn("the author judged its renders unreadable", str(error))
+        self.assertEqual(error.finding["dimension"], "environment-3d")
+        self.assertEqual(error.finding["owner"], "environment-artist")
+        self.assertEqual(error.finding["route"], "assets")
+        self.assertFalse(os.path.exists(os.path.join(self.out, "keeper.glb")))
+
     def test_a_craft_revision_that_breaks_a_check_is_repaired_then_judged(self):
         with self.assertRaises(model_author.ModelAuthorError) as caught:
             self.produce(author_mode="craft-breaks", judge_mode="fail",
                          judge={"rounds": 1}, max_repair_rounds=0)
         self.assertTrue(caught.exception.blocked)
-        self.assertIn("the judge refused it", str(caught.exception))
+        # The repair brought back the spec the judge had refused; it is not judged again.
+        self.assertIn("the model judge (command) refused it after 1 craft round(s)",
+                      str(caught.exception))
         self.assertEqual([c["stage"] for c in self.author_calls()],
                          ["author", "craft", "repair"])
+        self.assertEqual(len(self.judge_calls()), 1)
 
     def test_a_malformed_verdict_goes_back_to_the_judge(self):
         result = self.produce(judge_mode="malformed")
@@ -575,7 +602,9 @@ class JudgeLoop(CraftCase):
         self.assertEqual(sorted(made["results"]), ["crate", "keeper"])
         self.assertEqual(self.judge_calls()[0]["ids"], ["keeper", "crate"])
         stages = [c["stage"] for c in self.calls()]
-        self.assertEqual(stages, ["author", "author"])  # a craft round reads as an ask
+        self.assertEqual(stages, ["author", "craft"])
+        self.assertEqual([c["ids"] for c in self.judge_calls()],
+                         [["keeper", "crate"], ["keeper", "crate"]])
         for result in made["results"].values():
             self.assertEqual(result["craft"]["rounds"], 1)
 
@@ -617,7 +646,7 @@ opts = dict(zip(args[args.index("--") + 1::2], args[args.index("--") + 2::2]))
 if "--job" in opts:
     sys.exit(3)                        # no renders: the replay judges the measured checks
 table = json.load(open({table!r}))
-key = hashlib.sha256(open(opts["--spec"], "rb").read()).hexdigest()
+key = hashlib.sha256(open(opts["--spec"], "rb").read().replace(b"\r\n", b"\n")).hexdigest()
 if key not in table:
     json.dump({{"ok": False, "error": "replay: an unrecorded spec"}}, open(opts["--report"], "w"))
     sys.exit(3)
@@ -709,10 +738,11 @@ class Replay(unittest.TestCase):
     def test_the_marble_s_rounds_ship_nothing_now(self):
         # The run: round 0 refused (schema), round 1 passed and SHIPPED (its band sunk
         # inside the shell), round 2 - the author's own review revision - refused (aspect
-        # 1.23), round 3 refused. Now round 1 fails the lint too: no round passes, and
-        # nothing ships.
+        # 1.23), round 3 refused. Now round 1 fails the round-body check (its band shows
+        # nowhere) and, with the lint blocking, the lint too: no round passes, and nothing
+        # ships.
         with self.assertRaises(model_author.ModelAuthorError) as caught:
-            self.replay("marble")
+            self.replay("marble", lint="blocking")
         self.assertFalse(caught.exception.blocked)
         self.assertTrue(any("lint.hidden" in p or "model." in p
                             for p in caught.exception.problems), caught.exception.problems)
@@ -720,13 +750,36 @@ class Replay(unittest.TestCase):
 
     def test_the_bumper_s_rounds_ship_nothing_now(self):
         # The run: round 2 passed and SHIPPED (dome and gap sunk); round 3, the author's
-        # review "a stack of flat discs" revision, was dropped and round 2 shipped. Now
-        # round 2 fails the lint: no round passes, and nothing ships.
+        # review "a stack of flat discs" revision, was dropped and round 2 shipped. With the
+        # lint blocking, round 2 fails the lint: no round passes, and nothing ships.
         with self.assertRaises(model_author.ModelAuthorError) as caught:
-            self.replay("bumper")
+            self.replay("bumper", lint="blocking")
+        self.assertFalse(caught.exception.blocked)
         self.assertFalse(os.path.exists(os.path.join(self.scratch, "out", "bumper.glb")))
         problems = " ".join(caught.exception.problems)
         self.assertIn("lint.", problems)
+
+    def test_by_default_the_lint_is_advisory_and_the_bumper_ships_as_it_did(self):
+        # No judge, no lint setting: the lint is advisory (check-tiers.yaml
+        # model-review:model.lint). The run's round 2 ships exactly as it did, the revision
+        # that broke a check is dropped, and the lint's errors are in its quality - failing
+        # the model.lint check, never the verdict.
+        result = self.replay("bumper")
+        self.assertTrue(os.path.isfile(os.path.join(self.scratch, "out", "bumper.glb")))
+        self.assertEqual(modelspec.spec_hash(result["spec"]),
+                         modelspec.spec_hash(recorded("bumper", 2)))
+        self.assertEqual(result["quality"]["verdict"], "pass")
+        lint_check = check(result["quality"], "model.lint")
+        self.assertEqual(lint_check["status"], "fail")
+        self.assertIn("advisory, not held", lint_check["summary"])
+        self.assertIn("lint.hidden dome", lint_check["summary"])
+        self.assertEqual(check(result["quality"], "model.craft")["status"], "skipped")
+        self.assertIsNone(result["craft"])
+
+    def test_an_unknown_lint_mode_is_refused(self):
+        with self.assertRaises(model_author.ModelAuthorError) as caught:
+            self.replay("bumper", lint="strict")
+        self.assertIn("lint must be one of advisory, blocking", str(caught.exception))
 
 
 @unittest.skipUnless(enabled("WGF_BLENDER_TEST"), "real Blender: set WGF_BLENDER_TEST=1")

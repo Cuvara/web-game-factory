@@ -1,0 +1,30 @@
+{
+  "title_id": "mock-title",
+  "commit": "0000000000000000000000000000000000000000",
+  "measurement_class": "automation-agent",
+  "quality_tier": "mvp",
+  "judge": {"kind": "none"},
+  "rubric": {"path": "core/reference/level-design-rubric.yaml", "version": "1.0.0", "sha256": "sha256:mock"},
+  "units": [],
+  "risk": {"applies": false, "measured": false, "reason": "mock", "units": []},
+  "checks": [
+    {
+      "id": "level.critic",
+      "status": "PASS",
+      "required": true,
+      "summary": "every sampled unit at the rubric's bars (mock)"
+    },
+    {
+      "id": "risk.reward",
+      "status": "PASS",
+      "required": true,
+      "summary": "greedy earns more at a higher failure rate (mock)"
+    }
+  ],
+  "findings": [],
+  "failed": [],
+  "routes": [],
+  "skipped_checks": [],
+  "blocked_reason": null,
+  "verdict": "PASS"
+}

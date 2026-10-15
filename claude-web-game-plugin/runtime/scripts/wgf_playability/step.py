@@ -304,6 +304,7 @@ class PlayabilityStep(WorkflowStep):
             if measuring:
                 settings["max_units"] = max(settings["max_units"], self._probe_max_units())
             settings.update(self._survey_settings(design, self.params))
+            settings.update(self._level_frame_settings(self.params, settings))
             comparing = bool(accepted_build) and not baseline.identical(
                 accepted_build["commit"], commit)
             settings.update(self._naive_settings(design, realism_rules, scope_tiers,
@@ -665,6 +666,14 @@ class PlayabilityStep(WorkflowStep):
             "contact_max_step": float(bars.get("max_step_px") or 120),
             "contact_tolerance": float(bars.get("tolerance_px") or 6),
         }
+
+    @staticmethod
+    def _level_frame_settings(params, settings):
+        """The level critic's frames (core/reference/level-design-rubric.yaml `moments`, read
+        by the level-design step): with `with: survey: true`, every surveyed unit is captured
+        at its start, middle and end. No unit surveyed: no frame, and the record says so."""
+        return {"level_frames": bool((params or {}).get("survey"))
+                and bool(settings.get("survey_units"))}
 
     @staticmethod
     def _risk_settings(design, rules, params, scope_tiers=None):
@@ -1038,7 +1047,9 @@ class PlayabilityStep(WorkflowStep):
         ramp_starts = ((settings.get("ramp_samples") or 0)
                        + int((settings.get("ramp_extend_ms") or 0) // ramp_ms)) if ramp_ms else 0
         survey = (len(settings.get("survey_projects") or [])
-                  * (survey_s + survey_units * (settings["start_timeout_ms"] / 1000.0 + 2) + 60)
+                  * (survey_s + survey_units * (settings["start_timeout_ms"] / 1000.0 + 2) + 60
+                     # the level critic's two extra frames per unit, outside the unit's window
+                     + (survey_units * 4 if settings.get("level_frames") else 0))
                   if survey_units else 0)
         timeout = int(2 * (bot_total_s or 0) + 2 * (SHOWCASE_S + 45) + 120 + survey
                       + 2 * (extend_s or 0) + 2 * self._again_s(settings)

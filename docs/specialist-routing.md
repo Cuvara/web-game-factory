@@ -91,6 +91,7 @@ No consumer branches on a game, an engine name or a family id.
 | production-quality-report | each required FAIL check (`assets.*` to art, `scene.contrast` to lighting, `ui.*`, `audio.*`) | the check's own (assets or develop) |
 | visual-qa-report | every judge finding (blockers, and the majors and minors that travel with them), each failed score, each failed state answer, the look; a failed mean, as each dimension below 4 | the finding's own, or the rubric's for the dimension or question |
 | content-sufficiency-report | each typed finding (FAIL and WARNING checks) in its own dimension - content, level-design, difficulty, progression - with its observed value, bar and evidence | develop; `design` for a `design-gap` finding, whose `design_gap` the design step reads from the report |
+| level-design-report | read like content-sufficiency's, only when the report FAILs - which it does only for an installation that holds the build to its checks (`factory.leveldesign.hold`); as shipped it is advisory and never fails | develop (the level-designer); `design` for a `design-gap` finding |
 | review-report | each blocker (gameplay) | develop |
 | qa-report | each blocking defect (gameplay; `platform` when it names a platform), each failed suite, else the verdict | develop |
 | listing-validation-report | each required FAIL check, by section (`metadata` and `grounding` to store-copy, `platforms` to platform, `screenshots`, `video` and `assets` to art-2d) | listing |
@@ -188,7 +189,7 @@ Review reads the whole chain: the next specialist's brief carries the first one'
 
 | Bound | Where | Limit |
 |---|---|---|
-| How often each gate may send the build back | `triage.max_visits_by_route` | `playability.fail`, `production-quality.develop`, `visual-qa.develop`, `content-sufficiency.develop`, `review.request-changes`, `sdk-review.request-changes`, `verify.fail`, `iterate`: 2 each; `content-sufficiency.design-gap`: 1 |
+| How often each gate may send the build back | `triage.max_visits_by_route` | `playability.fail`, `production-quality.develop`, `visual-qa.develop`, `content-sufficiency.develop`, `review.request-changes`, `sdk-review.request-changes`, `verify.fail`, `iterate`, `level-design.develop`: 2 each; `content-sufficiency.design-gap`, `level-design.design-gap`: 1 |
 | How often each specialist may be visited | `develop.max_visits_by_route` | `triage.gameplay`: 16 (it takes review's, sdk-review's and verify's blockers, G4 iterations without typed findings and anything unowned: every sending route's budget, so it is never cut before a gate's own); every other specialist: 4 |
 | Asset remakes triage routes | `assets.max_visits_by_route` | `triage.assets`: 2 |
 | Scope increases | `design.max_visits_by_route` | `triage.design`: 2 (content-sufficiency's design gaps, and a person's or the scorecard's) |

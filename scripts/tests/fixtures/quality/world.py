@@ -1062,12 +1062,14 @@ def register(registry, world):
     from wgf_quality import register as quality_gate
     from wgf_sufficiency import register as sufficiency
     from wgf_knowledge import register as knowledge
+    from wgf_leveldesign import register as leveldesign
     from wgf_triage import register as triage
     from wgf_visualqa import register as visualqa
     mock.register(registry)
     # The real knowledge step: each world's contract is resolved from its own design and
     # strategy, as a real run's is - never the placeholder's.
-    for module in (production, quality_gate, sufficiency, triage, visualqa, knowledge):
+    for module in (production, quality_gate, sufficiency, triage, visualqa, knowledge,
+                   leveldesign):
         module(registry)
     for cls in (FixtureReviewStep, FixtureListingValidationStep):
         registry.register(cls.type, cls)

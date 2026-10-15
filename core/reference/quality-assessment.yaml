@@ -67,7 +67,8 @@
 #        (baseline-compare.yaml 1.1.0): supporting only, they decide no dimension.
 # 1.4.0: model-craft-lint and model-craft-judge - the model review's craft lint and its opt-in
 #        judge (core/reference/model-review-rubric.yaml); both advisory, so supporting.
-version: 1.4.0
+# 1.5.0: the level critic's families (level-critic, risk-reward).
+version: 1.5.0
 
 statuses: [PASS, FAIL, INCONCLUSIVE, NOT_SUPPORTED]
 
@@ -554,6 +555,29 @@ families:
     method: The same pixel statistics frames.readable reports, computed on both builds' frames from the same bot and settings on one host.
     limits: A brighter or flatter frame is a change, not a defect; a frame the bot captured at another moment of play differs for that reason alone; the bars are proposed, not calibrated by this step.
     cannot_justify: That the game looks as good as, or better than, the accepted one.
+  # ------------------------------------------------------- the level critic (1.3.0)
+  # core/reference/level-design-rubric.yaml and risk-reward.yaml, the level-design step.
+  - id: level-critic
+    label: Level critic
+    dimension: player_facing
+    class: ai-judged
+    when: reported
+    checks: [level-design:level.frames, level-design:level.critic]
+    judge: {report: level-design-report, kind: judge.kind, runs: judge_runs}
+    measures: Every sampled unit captured at its start, middle and end, and each unit's scores on the rubric's dimensions - play space used, a recognisable layout, more than one viable line, a reveal, a climax that is an event, distinct from the unit before.
+    method: The level-design step's critic - an agent reading the survey's level frames against core/reference/level-design-rubric.yaml; a `baseline` critic measures entity boxes and frame signatures and carries approved scores. Advisory (check-tiers 1.8.0): no critic is configured by default.
+    limits: An AI judge reading three still frames a unit - it can be fooled, is not stable between runs, and does not see how a unit plays between them.
+    cannot_justify: That a level is well designed or fun to play.
+  - id: risk-reward
+    label: An optional risk that pays
+    dimension: player_facing
+    class: heuristic
+    when: reported
+    checks: [level-design:risk.measured, level-design:risk.reward]
+    measures: Under the game's own oracle, the greedy policy earns measurably more than the safe one at a measurably higher failure rate, on the sampled units.
+    method: The playability bot's risk test (play-realism.yaml `risk`, the probe's play.policy), judged by the level-design step against core/reference/risk-reward.yaml. Advisory (check-tiers 1.8.0) - no pinned template implements play.policy yet.
+    limits: What `greedy` and `safe` mean is the game's own word; the bars are proposed, not calibrated on measured builds.
+    cannot_justify: That a player sees the risk, or finds taking it worth it.
 
 # Floor criteria no family names: each aggregates checks a family already maps (or, for the
 # `kinds` listed, reads a report whose own checks a family maps), so counting it again would

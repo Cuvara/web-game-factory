@@ -40,8 +40,8 @@ from wgflib.workflow.store import RunStore  # noqa: E402
 NEW_GAME = ["research", "strategy", "strategy-review", "design", "knowledge-contract", "tech-plan",
             "tech-plan-review",
             "init", "greybox", "greybox-playability", "assets", "triage", "develop", "playability",
-            "production-quality", "visual-qa", "content-sufficiency", "review", "sdk", "sdk-review", "verify",
-            "quality-gate", "prototype-review", "prototype-review", "store-listing", "listing-validation", "release"]
+            "production-quality", "visual-qa", "content-sufficiency", "level-design", "review", "sdk",
+            "sdk-review", "verify", "quality-gate", "prototype-review", "prototype-review", "store-listing", "listing-validation", "release"]
 SCHEMATIZED = {
     "research": "opportunity",
     "strategy": "title-strategy",
@@ -269,9 +269,9 @@ class FailureAndResume(CliCase):
         self.assertEqual(state["status"], "COMPLETED")
         self.assertEqual([t["step"] for t in state["trail"]][11:],
                          ["triage", "develop", "playability", "production-quality", "visual-qa", "content-sufficiency",
-                          "review", "sdk", "sdk-review", "verify",
+                          "level-design", "review", "sdk", "sdk-review", "verify",
                           "triage", "develop", "playability", "production-quality", "visual-qa", "content-sufficiency",
-                          "review", "sdk", "sdk-review", "verify",
+                          "level-design", "review", "sdk", "sdk-review", "verify",
                           "quality-gate", "prototype-review", "prototype-review", "store-listing", "listing-validation", "release"])
         self.assertEqual(self.artifact(state, "qa-report", 1)["verdict"], "fail")
         self.assertEqual(self.artifact(state, "qa-report", 2)["verdict"], "pass")
@@ -288,8 +288,8 @@ class FailureAndResume(CliCase):
         self.assertEqual(state["status"], "COMPLETED")
         self.assertEqual([t["step"] for t in state["trail"]][11:],
                          ["triage", "develop", "playability", "triage", "develop", "playability",
-                          "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
-                          "sdk-review", "verify", "quality-gate", "prototype-review", "prototype-review",
+                          "production-quality", "visual-qa", "content-sufficiency", "level-design", "review",
+                          "sdk", "sdk-review", "verify", "quality-gate", "prototype-review", "prototype-review",
                           "store-listing", "listing-validation", "release"])
         # v1 is the greybox's (passed); v2 and v3 are the production build's two plays.
         self.assertEqual(self.artifact(state, "playability-report", 2)["verdict"], "FAIL")
@@ -332,7 +332,7 @@ class FailureAndResume(CliCase):
                 first_gate = gated[:4] if "production-quality" in plan else gated
                 self.assertEqual([t["step"] for t in state["trail"]][10:],
                                  ["assets"] + first_gate + back + gated
-                                 + ["content-sufficiency", "review", "sdk", "sdk-review", "verify",
+                                 + ["content-sufficiency", "level-design", "review", "sdk", "sdk-review", "verify",
                                     "quality-gate", "prototype-review", "prototype-review", "store-listing", "listing-validation", "release"])
                 gate = route.split(".")[0]
                 report = f"{gate}-report"
@@ -396,9 +396,9 @@ class FailureAndResume(CliCase):
         self.assertEqual(state["status"], "COMPLETED")
         self.assertEqual([t["step"] for t in state["trail"]][11:],
                          ["triage", "develop", "playability", "production-quality", "visual-qa", "content-sufficiency",
-                          "review", "sdk", "sdk-review",
+                          "level-design", "review", "sdk", "sdk-review",
                           "triage", "develop", "playability", "production-quality", "visual-qa", "content-sufficiency",
-                          "review", "sdk", "sdk-review", "verify",
+                          "level-design", "review", "sdk", "sdk-review", "verify",
                           "quality-gate", "prototype-review", "prototype-review", "store-listing", "listing-validation", "release"])
         rejected = self.artifact(state, "review-report", 2)
         self.assertEqual(rejected["verdict"], "request-changes")
@@ -601,7 +601,7 @@ class RunStatesThroughTheCli(CliCase):
         self.assertEqual(succeeded(after), sorted(succeeded(before) +
                                                   ["develop", "playability",
                                                    "production-quality", "visual-qa", "content-sufficiency",
-                                                   "review", "sdk", "sdk-review", "verify",
+                                                   "level-design", "review", "sdk", "sdk-review", "verify",
                                                    "quality-gate", "prototype-review", "store-listing",
                                                    "listing-validation", "release"]))
 

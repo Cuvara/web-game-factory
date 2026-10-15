@@ -170,6 +170,11 @@ probe. The developer brief embeds the schema, so a developer knows how the build
   reach in time is recorded as not entered, with the reason. Both values are
   `core/reference/content-sufficiency.yaml`'s. No playability check reads it: the
   content-sufficiency step counts it ([content-sufficiency-module.md](content-sufficiency-module.md)).
+  Since new-game 19 the survey also keeps three frames of every surveyed unit - its start,
+  middle and end as the oracle played it (`level_frames`, under `<project>/level/`, each with
+  its sha256 and the entities the probe reported) - for the level-design step's critic
+  ([level-design-critic.md](level-design-critic.md)). The capture time is added to the unit's
+  and the survey's windows, so the survey reaches as many units as without it.
   The step also keeps the played commit's `public/content/units.json` beside the records
   (`<records_dir>/content/units.json`), so that step measures exactly the build that was
   played.

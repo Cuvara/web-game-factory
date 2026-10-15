@@ -9,6 +9,41 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**The level-design step: a level critic and risk and reward, advisory** (`new-game` workflow
+19, `scripts/wgf_leveldesign/`, [docs/level-design-critic.md](docs/level-design-critic.md);
+issue #75). After content-sufficiency, a critic reads the start, middle and end frame of every
+sampled unit against the new `core/reference/level-design-rubric.yaml` 1.0.0, and the step holds
+the playability risk test's safe and greedy policies to the new `core/reference/risk-reward.yaml`
+1.0.0: greedy must earn measurably more at a measurably higher failure rate. The new
+`level-design-report` 1.0.0 carries the checks `level.frames`, `level.critic`, `risk.measured`
+and `risk.reward`. Playability's survey keeps the critic's frames (`level_frames`: two more
+screenshots per surveyed unit, outside the unit's window), and the playability step asks for
+the risk test (`with: risk: true`, settings in `play-realism.yaml` `risk`), which stops after
+one page load on a probe without `play.policy`.
+**Advisory: it never holds a default run.** No pinned template or golden port implements the
+probe's `play.policy`, no critic is configured by default (`factory.leveldesign.judge.kind:
+none`, and the autonomous profile adds none - a critic is a paid agent session per visit), and
+every bar is `basis: proposed`. So the four checks are tier `advisory` (check-tiers 1.8.0), the
+step reports them `required: false` and succeeds at every tier - no critic and no
+`play.policy` are SKIPPED, a shortfall a WARNING, a critic that cannot judge a SKIPPED
+`level.critic` - and the quality floor reads them as release **warnings** (quality-floor
+1.4.0, `floor.level_design` on variety, `floor.risk_reward` on gameplay) with
+`required_only: passed`, so a check that failed or measured nothing never lowers a score.
+`factory.leveldesign.hold: true` (default false) holds the build to them at a strict tier:
+required, unmeasured not passed, FAILED through triage to the level-designer (`develop`) or to
+design (`design-gap`, new triage budgets `level-design.develop: 2`, `level-design.design-gap: 1`,
+triage `max_visits` 128), no critic BLOCKED. Making them blocking for every run waits on a
+template that implements `play.policy`, measured bars and a configured critic; the doc lists the
+version changes it takes. Nothing existing is weakened: quality-policy is unchanged and
+`level-design` is not a required step. Other versions: specialist-routing 1.10.0
+(`level-design-report`), quality-assessment 1.5.0 (families `level-critic`, `risk-reward`);
+triage and its ledger read the report, the quality gate takes it as an optional input. The
+`wgflib/workflow/mock.py` change (a core change) adds the mock level-design step a `--mock`
+run needs for the new step type. Bringing a run forward: a run started before this has neither
+the step nor its pins and is judged as it started; a new run's G4 and release are what they
+were, plus the report. The work comes from wip/level-critic-risk (2026-10-07), reworked onto
+main's play realism (integration bb417a3), then made advisory.
+
 **The 3D model craft review: a craft lint on every GLB, an opt-in model judge, a node
 contract** (L15; `core/reference/model-review-rubric.yaml` 1.0.0, `scripts/wgf_assets/
 model_lint.py`, `model_judge.py`; [docs/blender-pipeline.md](docs/blender-pipeline.md),
@@ -105,7 +140,7 @@ re-plans to 1.4.0 as with any profile bump; an existing platform-publication sta
 failures, unless its screenshots fall outside the portal's proportions or long side.
 
 **Two advisory measurements against the accepted build** (issue #75, the accepted-baseline
-part; `core/reference/baseline-compare.yaml` 1.1.0, `check-tiers.yaml` 1.6.0,
+part; `core/reference/baseline-compare.yaml` 1.1.0, `check-tiers.yaml` 1.8.0,
 `quality-assessment.yaml` 1.3.0). A run that adopted a game now also reports
 `baseline.source_rewrite` - the share of the accepted content units removed or altered, of the
 accepted `src/` files rewritten and of the accepted lines deleted between the accepted and the

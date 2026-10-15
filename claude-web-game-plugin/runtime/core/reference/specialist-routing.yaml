@@ -38,7 +38,8 @@
 #        in playability-report.
 # 1.9.0: the visual effect checks (production-quality `vfx.*`, visual-qa `feedback_visible`,
 #        `celebration_visible`).
-version: 1.9.0
+# 1.10.0: level-design-report (workflow 19).
+version: 1.10.0
 
 # The quality dimensions, as the quality-finding schema enumerates them.
 dimensions: [content, level-design, difficulty, progression, gameplay, art-2d, environment-3d, lighting-material, ui, audio, feel, store-copy, platform, art-direction, performance, browser, compliance]
@@ -269,6 +270,17 @@ producers:
       content.: content
     default: content
     acceptance: content-sufficiency counts the next build and `{check}` PASSes{bar_clause}.
+
+  level-design-report:
+    step: level-design
+    # Its findings name their own dimension (level-design) and route: the level critic's
+    # units and the risk the oracle's policies measured are the level designer's; a
+    # `design-gap` finding routes `design` with the gap it carries.
+    checks:
+      level.: level-design
+      risk.: level-design
+    default: level-design
+    acceptance: level-design judges the next build's units and `{check}` PASSes{bar_clause}.
 
   review-report:
     step: review

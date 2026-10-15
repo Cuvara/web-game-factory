@@ -23,6 +23,7 @@ It plays nothing, renders nothing and never touches the checkout.
 | `production-quality-report` | yes | assets present/loaded/used, no primitives, UI layout per viewport, audio, every check |
 | `visual-qa-report` | yes | rubric scores, blocker/major/minor findings |
 | `content-sufficiency-report` | yes | content, variety, progression, difficulty, drift, skipped checks |
+| `level-design-report` | no | `floor.level_design` (variety) and `floor.risk_reward` (gameplay): release **warnings** that count only a passed check unless the step holds it (`required_only: passed`); advisory until a template implements `play.policy` ([level-design-critic.md](level-design-critic.md)) |
 | `qa-report` | yes | verdict, blocking defects, performance |
 | `verification-report` | yes | verdict, platform readiness, the bundle digest |
 | `prototype-report` | yes | the development commit |

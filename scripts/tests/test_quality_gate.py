@@ -615,7 +615,10 @@ class Pinning(unittest.TestCase):
                           "core/reference/platforms/generic-web.yaml",
                           "core/reference/platforms/poki.yaml",
                           "core/reference/platforms/y8.yaml",
-                          "core/reference/platforms/yandex.yaml"])
+                          "core/reference/platforms/yandex.yaml",
+                          # 19: the level critic's rubric and the risk-reward bars.
+                          "core/reference/level-design-rubric.yaml",
+                          "core/reference/risk-reward.yaml"])
 
     def test_a_mid_run_benchmark_edit_does_not_apply_to_the_run(self):
         root = os.path.join(self.base, "factory")

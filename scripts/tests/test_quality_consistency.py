@@ -265,6 +265,16 @@ class MultiGenreConsistency(_Case):
             self.assertEqual(report["verdict"], "PASS", f"{artifact_type}: "
                              f"{self.failed_ids(artifact_type, report)}")
         self.assertEqual(self.newest(api, state, "qa-report")["verdict"], "pass")
+        # The level-design step (workflow 19) ran on the same build and held nothing: no
+        # critic configured and no play.policy - advisory (check-tiers 1.8.0), never a pass.
+        self.assertIn("level-design", ran)
+        level = self.newest(api, state, "level-design-report")
+        played = self.newest(api, state, "playability-report")["commit"]
+        self.assertTrue(played)
+        self.assertEqual(level["commit"], played)
+        self.assertEqual(level["failed"], [])
+        self.assertTrue(all(c["required"] is False for c in level["checks"]), level["checks"])
+        self.assertNotEqual(level["verdict"], "PASS")
         dev, ship = self.assert_same_build(api, state)
         play = self.newest(api, state, "playability-report")
         self.assertEqual(play["skipped_checks"], [], "a skipped check is never a pass")

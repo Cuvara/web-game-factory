@@ -9,6 +9,10 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.8.2] - 2026-10-15
+
+Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.2".
+
 **The level-design step: a level critic and risk and reward, advisory** (`new-game` workflow
 19, `scripts/wgf_leveldesign/`, [docs/level-design-critic.md](docs/level-design-critic.md);
 issue #75). After content-sufficiency, a critic reads the start, middle and end frame of every

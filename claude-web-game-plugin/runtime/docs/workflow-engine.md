@@ -54,11 +54,13 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
 
   research → strategy → [G2] → design → tech-plan → [G3] → init → greybox → greybox-playability
     → assets → triage → develop → playability → production-quality → visual-qa
-    → content-sufficiency → review → sdk → sdk-review → verify → quality-gate → [G4]
+    → content-sufficiency → level-design → review → sdk → sdk-review → verify → quality-gate
+    → [G4]
     → store-listing → listing-validation → release
 
   greybox, develop     design-gap       → design (then tech-plan, [G3], greybox again)
   content-sufficiency  develop / design-gap → triage (design-gap findings route `design`)
+  level-design         develop / design-gap → triage (only when factory.leveldesign.hold)
   quality-gate         develop / assets / design-gap → triage (by the findings' owners)
   greybox-playability  fail             → greybox
   listing-validation   listing          → store-listing
@@ -547,6 +549,8 @@ new-game bounds the routes that send the build back this way, on `triage` since
 workflow 10 (they all go through it, [specialist-routing.md](specialist-routing.md)):
 `playability.fail: 2`, `production-quality.develop: 2`, `visual-qa.develop: 2`,
 `content-sufficiency.develop: 2`, `content-sufficiency.design-gap: 1`,
+`level-design.develop: 2`, `level-design.design-gap: 1` (workflow 19; taken only by an
+installation that holds the build to the level-design checks),
 `review.request-changes: 2`, `sdk-review.request-changes: 2`, `verify.fail: 2` and
 `iterate: 2` (G4) - and the production gates' asset failures on `assets`:
 `production-quality.assets: 2`, `visual-qa.assets: 2`, plus triage's own `triage.assets: 2`
@@ -573,7 +577,8 @@ for more content or scope than the design states (`triage.design: 2`, design's
 four returns) and develop's is 59 - the first visit, the specialists' budgets, assets' (each
 pass through assets enters develop once more) and the four design returns - and it is never
 what a loop meets first; every step after develop (playability, production-quality,
-visual-qa, content-sufficiency, review, sdk, sdk-review, verify, prototype-review), each
+visual-qa, content-sufficiency, level-design, review, sdk, sdk-review, verify,
+prototype-review), each
 visited at most once per develop visit, carries 59 as well, and so do store-listing and
 listing-validation, which add listing-validation's own route back into store-listing -
 through `listing-triage` since workflow 12 (`listing-triage.listing: 2` on store-listing,

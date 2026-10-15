@@ -60,8 +60,9 @@ class ParsesValidDefinitions(unittest.TestCase):
             definition.step_ids,
             ["research", "strategy", "strategy-review", "design", "knowledge-contract",
              "tech-plan", "tech-plan-review", "init", "greybox", "greybox-playability", "assets", "triage", "develop",
-             "playability", "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
-             "sdk-review", "verify", "quality-gate", "prototype-review", "store-listing",
+             "playability", "production-quality", "visual-qa", "content-sufficiency", "level-design",
+             "review", "sdk", "sdk-review", "verify", "quality-gate", "prototype-review",
+             "store-listing",
              "listing-validation", "release", "listing-triage", "platform-validate", "release-review",
              "publish-review", "submit"],
         )
@@ -311,7 +312,10 @@ class RouteScopedVisitLimits(unittest.TestCase):
         self.assertEqual(triage.max_visits_by_route,
                          {"playability.fail": 2, "production-quality.develop": 2,
                           "visual-qa.develop": 2, "content-sufficiency.develop": 2,
-                          "content-sufficiency.design-gap": 1, "review.request-changes": 2,
+                          "content-sufficiency.design-gap": 1,
+                          # 19: the level-design step, when an installation holds it.
+                          "level-design.develop": 2, "level-design.design-gap": 1,
+                          "review.request-changes": 2,
                           "sdk-review.request-changes": 2, "verify.fail": 2, "iterate": 2,
                           "quality-gate.develop": 2, "quality-gate.assets": 2,
                           "quality-gate.design-gap": 1})
@@ -349,7 +353,8 @@ class RouteScopedVisitLimits(unittest.TestCase):
         greybox = definition.step("greybox")
         self.assertEqual(greybox.max_visits, 1 + sum(greybox.max_visits_by_route.values())
                          + sum(design.max_visits_by_route.values()))
-        for step_id in ("playability", "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
+        for step_id in ("playability", "production-quality", "visual-qa", "content-sufficiency",
+                        "level-design", "review", "sdk",
                         "sdk-review", "verify", "quality-gate", "prototype-review",
                         "store-listing", "listing-validation"):
             self.assertGreaterEqual(definition.step(step_id).max_visits, develop.max_visits,

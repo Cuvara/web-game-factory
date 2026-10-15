@@ -15,13 +15,16 @@ greedy policies show whether an optional risk exists and pays.
              risk.reward    greedy earns measurably more at a measurably higher failure rate
                             on the rubric's share of units (core/reference/risk-reward.yaml)
 
-At a strict tier (core/reference/quality-policy.yaml skipped_checks, the release tier as
-shipped) every check is required and one that measured nothing is not passed: FAILED, route
-`design-gap` when a failure routes there, else `develop`, not retryable; no judge configured
-is BLOCKED. Below it the same results are reported - WARNING, or SKIPPED with the reason -
-and the step succeeds: the quality floor holds a release build to them, a development build
-is told. The checks are not reported at all for a design that authors no units (level.*) -
-there are no levels to judge - but risk.* always is.
+The checks are ADVISORY (core/reference/check-tiers.yaml 1.6.0): no pinned template or golden
+port implements the probe's play.policy, no critic is configured by default, and the bars are
+`basis: proposed`. Unless the installation holds the build to them (factory.leveldesign.hold),
+every result is reported `required: false` - WARNING, or SKIPPED with the reason - and the
+step succeeds; a critic that cannot judge (its frames, the judge failing) is a SKIPPED
+level.critic, never the run's outcome. With `hold` at a strict tier (core/reference/
+quality-policy.yaml skipped_checks, the release tier as shipped) every check is required and
+one that measured nothing is not passed: FAILED, route `design-gap` when a failure routes
+there, else `develop`, not retryable; no judge configured is BLOCKED. The checks are not reported at all for a design that
+authors no units (level.*) - there are no levels to judge - but risk.* always is.
 
 The rubric and the risk rules are the copies the run pinned when it started (new-game
 `pinned_references`); a rubric configured by path (factory.leveldesign.rubric) is read as
@@ -82,6 +85,11 @@ def _model_of(argv):
     return None
 
 
+class _Unjudged(Exception):
+    """The critic could not judge (its frames, or the judge itself): advisory, the check is
+    SKIPPED with the reason and the step goes on."""
+
+
 def _status(ok, strict):
     """A check's (status, required) from its result: True passed, False fell short, None
     measured nothing. At a strict tier nothing but a pass is passed."""
@@ -124,13 +132,18 @@ class LevelDesignStep(WorkflowStep):
         tier = (run_tier(getattr(context, "environment", None))
                 or quality_tier(design, strategy)[0])
         try:
-            strict = check_strength.for_tier(tier).strict
+            strict_tier = check_strength.for_tier(tier).strict
         except ValueError as exc:
             return StepResult.failed(str(exc), retryable=False)
+        # Advisory unless the installation holds the build to these checks
+        # (factory.leveldesign.hold, core/reference/check-tiers.yaml 1.6.0): reported, never
+        # required, never a FAILED or BLOCKED step on their account.
+        strict = strict_tier and settings.hold
         title_id = play.get("title_id") or design.get("title_id")
         commit = play.get("commit") or "0" * 40
         self._ctx = dict(context=context, inputs=inputs, title_id=title_id, commit=commit,
-                         rubric=rubric, rules=rules, settings=settings, tier=tier)
+                         rubric=rubric, rules=rules, settings=settings, tier=tier,
+                         strict_tier=strict_tier)
 
         run_dir = context.run_dir
         units, project, no_units = sample(rubric, play, run_dir, design)
@@ -172,43 +185,57 @@ class LevelDesignStep(WorkflowStep):
                                "images (docs/level-design-critic.md) and resume.")
             elif units:
                 try:
-                    frames_dir = stage(units, workdir)
-                except FrameError as exc:
-                    if exc.kind == "missing":
-                        return self._blocked(f"{exc}; the playability evidence is gone - play "
-                                             "the build again", tier, units)
-                    return StepResult.failed(str(exc), retryable=False)
-                try:
-                    guarded = isolation.guarded_paths(context.config)
-                except ValueError as exc:
-                    return StepResult.failed(str(exc), retryable=False)
-                if settings.kind == "baseline":
-                    outcome = Outcome()
                     try:
-                        outcome.verdict, measures = baseline.judge(
-                            rubric, units, settings.baseline_dir, settings.min_similarity)
-                        outcome.runs.append({"kind": "baseline"})
-                    except baseline.BaselineError as exc:
-                        outcome.failure = {"code": "baseline-unusable", "message": str(exc),
-                                           "retryable": False}
-                    with open(os.path.join(workdir, "baseline.json"), "w",
-                              encoding="utf-8") as handle:
-                        json.dump({"measures": measures}, handle, indent=2)
-                        handle.write("\n")
-                else:
-                    outcome = run_judge(settings, rubric, workdir, units, frames_dir,
-                                        title_id=title_id, commit=commit, guarded=guarded,
-                                        logger=context.logger, stem=self.id)
-                if outcome.failure is not None:
-                    failure = outcome.failure
-                    context.logger.error("level-design critic failed", code=failure["code"])
-                    return StepResult("FAILED", retryable=failure["retryable"],
-                                      error=f"{failure['code']}: {failure['message']} "
-                                            f"(see {workdir})",
-                                      data={"output_tail": failure.get("output_tail")})
-                verdict_data = outcome.verdict
-                checks.append(self._critic_check(verdict_data, rubric, units, strict,
-                                                 findings))
+                        frames_dir = stage(units, workdir)
+                    except FrameError as exc:
+                        if not strict:
+                            raise _Unjudged(f"the critic's frames cannot be staged: {exc}")
+                        if exc.kind == "missing":
+                            return self._blocked(f"{exc}; the playability evidence is gone - "
+                                                 "play the build again", tier, units)
+                        return StepResult.failed(str(exc), retryable=False)
+                    try:
+                        guarded = isolation.guarded_paths(context.config)
+                    except ValueError as exc:
+                        return StepResult.failed(str(exc), retryable=False)
+                    if settings.kind == "baseline":
+                        outcome = Outcome()
+                        try:
+                            outcome.verdict, measures = baseline.judge(
+                                rubric, units, settings.baseline_dir, settings.min_similarity)
+                            outcome.runs.append({"kind": "baseline"})
+                        except baseline.BaselineError as exc:
+                            outcome.failure = {"code": "baseline-unusable", "message": str(exc),
+                                               "retryable": False}
+                        with open(os.path.join(workdir, "baseline.json"), "w",
+                                  encoding="utf-8") as handle:
+                            json.dump({"measures": measures}, handle, indent=2)
+                            handle.write("\n")
+                    else:
+                        outcome = run_judge(settings, rubric, workdir, units, frames_dir,
+                                            title_id=title_id, commit=commit, guarded=guarded,
+                                            logger=context.logger, stem=self.id)
+                    if outcome.failure is not None and not strict:
+                        failure = outcome.failure
+                        context.logger.warning("level-design critic failed",
+                                               code=failure["code"])
+                        raise _Unjudged(f"the level critic failed ({failure['code']}: "
+                                        f"{failure['message']}; see {workdir})")
+                    if outcome.failure is not None:
+                        failure = outcome.failure
+                        context.logger.error("level-design critic failed", code=failure["code"])
+                        return StepResult("FAILED", retryable=failure["retryable"],
+                                          error=f"{failure['code']}: {failure['message']} "
+                                                f"(see {workdir})",
+                                          data={"output_tail": failure.get("output_tail")})
+                    verdict_data = outcome.verdict
+                    checks.append(self._critic_check(verdict_data, rubric, units, strict,
+                                                     findings))
+                except _Unjudged as exc:
+                    # Advisory: a critic that could not judge is reported, never the
+                    # run's outcome (factory.leveldesign.hold).
+                    verdict_data, outcome, measures = None, None, {}
+                    checks.append(self._skipped_critic(strict, str(exc)))
         else:
             notes.append("the design authors no units: there are no levels to critique "
                          "(level.* not reported)")
@@ -254,11 +281,12 @@ class LevelDesignStep(WorkflowStep):
 
     # -- the critic's check -----------------------------------------------------------------
 
-    def _skipped_critic(self, strict):
+    def _skipped_critic(self, strict, why=None):
         status, required = _status(None, strict)
         return {"id": "level.critic", "status": status, "required": required,
-                "summary": "no level critic configured (factory.leveldesign.judge.kind none): "
-                           "nothing was judged - not a pass", "route": "develop"}
+                "summary": ((why + ": nothing was judged - not a pass") if why else
+                            "no level critic configured (factory.leveldesign.judge.kind none): "
+                            "nothing was judged - not a pass"), "route": "develop"}
 
     def _critic_check(self, verdict, rubric, units, strict, findings):
         decided = decide(verdict, rubric, units)
@@ -271,7 +299,8 @@ class LevelDesignStep(WorkflowStep):
             findings.append(self._finding(
                 f"level.critic:{name}", f"{name}@{uid}", "major",
                 f"unit {uid}: {name} scored {value} (bar {bar})"
-                + (f" - {reason}" if reason else "") + f". {rubric['dimensions'][name]['question']}",
+                + (f" - {reason}" if reason else "")
+                + f". {rubric['dimensions'][name]['question']}",
                 route, unit=uid, observed=value, bar=bar, evidence=frames.get(uid)))
         for item in verdict.get("findings") or []:
             uid = item.get("unit")
@@ -443,6 +472,8 @@ class LevelDesignStep(WorkflowStep):
                               error=f"level design failed {ctx['commit'][:12]} ({summary})"
                                     + (" - " + "; ".join(lead) if lead else ""))
         tail = ("" if strict or status == "PASS" else
+                " - advisory (factory.leveldesign.hold is off), reported and not held: not a pass"
+                if ctx.get("strict_tier") else
                 f" - below a strict tier ({ctx['tier']}), reported and not held: not a pass")
         return StepResult.success([artifact], message=(
             f"level design {status} on {ctx['commit'][:12]}: {summary or 'nothing to judge'}"

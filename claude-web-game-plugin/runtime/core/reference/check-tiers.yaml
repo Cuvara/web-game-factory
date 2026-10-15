@@ -108,7 +108,8 @@
 # 1.4.0: baseline-compare - the candidate against the build a person accepted (playability).
 # 1.5.0: production-quality vfx.fires (hard: pass/fail), vfx.screen_share and vfx.celebration
 #        (quality: held to a share ceiling) - the design's interaction effects (vfx.yaml).
-version: 1.5.0
+# 1.6.0: level-design - the level critic and the risk test (level-design-report), advisory.
+version: 1.6.0
 
 applies_at: release
 
@@ -389,6 +390,32 @@ sources:
       baseline.clear_rate: quality
       baseline.entity_size: quality
       baseline.responsiveness: quality
+  level-design:
+    producer: level-design-report
+    defined_in: scripts/wgf_leveldesign
+    # The level critic and the risk test (core/reference/level-design-rubric.yaml,
+    # core/reference/risk-reward.yaml; docs/level-design-critic.md). level.* is reported only
+    # for a design that authors units - a design without levels has none to judge - and the
+    # risk checks always. ADVISORY (1.6.0): no template or golden port implements the probe's
+    # play.policy the risk test needs, no level critic is configured by default, and every
+    # bar of both files is `basis: proposed`. The step reports them `required: false` and
+    # never holds a build unless an installation opts in (factory.leveldesign.hold). They
+    # become hard (level.frames, risk.measured) and quality (level.critic, risk.reward) in a
+    # new version, once a pinned template implements play.policy and the bars are measured.
+    status_at:
+      list: checks
+      id: id
+      status: status
+      not_reported:
+        - checks: [level.frames, level.critic]
+          verdict: [PASS, FAIL]
+          ran: risk.
+          why: reported only for a design that authors its units; a design without levels has none to judge
+    checks:
+      level.frames: advisory
+      level.critic: advisory
+      risk.measured: advisory
+      risk.reward: advisory
   browser-qa-run:
     producer: verification-report
     findings_via: [qa-report]

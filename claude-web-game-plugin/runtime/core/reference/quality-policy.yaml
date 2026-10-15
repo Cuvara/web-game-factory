@@ -92,9 +92,7 @@
 # 1.1.0: skipped_checks (check strength); 1.2.0: quality-gate is in new-game (workflow 11), no longer pending.
 # 1.3.0: rule 6 (independent review, `independent_review`) and rule 7 (no bypass for a small game).
 # 1.4.0: rule 8 (the knowledge a run is held to, `knowledge`).
-# 1.5.0: level-design is a required step (workflow 19); a baseline level critic or an
-# installation's level-design rubric makes a run development.
-version: 1.5.0
+version: 1.4.0
 
 # Rule 8: the knowledge files whose versions a run records at start (and refuses to start
 # without). Their meaning is the knowledge module's (scripts/wgf_knowledge,
@@ -131,7 +129,6 @@ floor:
     - verify
     - listing-validation
     - content-sufficiency
-    - level-design
     - quality-gate
   # 1.2.0: quality-gate is in new-game (workflow 11): no longer pending.
   pending: []
@@ -162,12 +159,6 @@ development_when:
   - config: visualqa.judge.kind
     in: [baseline]
     why: visual QA compares frames with approved frames instead of judging them against the rubric (factory.visualqa.judge.kind baseline)
-  - config: leveldesign.judge.kind
-    in: [baseline]
-    why: the level critic measures entity boxes and frame signatures and carries approved scores instead of judging units against the rubric (factory.leveldesign.judge.kind baseline)
-  - config: leveldesign.rubric
-    set: true
-    why: the level critic judges against an installation's rubric instead of core/reference/level-design-rubric.yaml (factory.leveldesign.rubric)
   - config: develop.checks
     lacks: [install, conformance, typecheck, lint, unit, build, smoke]
     why: develop runs fewer than the Factory's build checks (factory.develop.checks)

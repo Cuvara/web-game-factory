@@ -9,25 +9,40 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
-**The level-design step: a level critic and risk and reward** (`new-game` workflow 19,
-`scripts/wgf_leveldesign/`, [docs/level-design-critic.md](docs/level-design-critic.md)).
-After content-sufficiency, a critic reads the start, middle and end frame of every sampled unit
-against the new `core/reference/level-design-rubric.yaml` 1.0.0. The step also holds the
-playability risk test's safe and greedy policies to the new `core/reference/risk-reward.yaml`
+**The level-design step: a level critic and risk and reward, advisory** (`new-game` workflow
+19, `scripts/wgf_leveldesign/`, [docs/level-design-critic.md](docs/level-design-critic.md);
+issue #75). After content-sufficiency, a critic reads the start, middle and end frame of every
+sampled unit against the new `core/reference/level-design-rubric.yaml` 1.0.0, and the step holds
+the playability risk test's safe and greedy policies to the new `core/reference/risk-reward.yaml`
 1.0.0: greedy must earn measurably more at a measurably higher failure rate. The new
 `level-design-report` 1.0.0 carries the checks `level.frames`, `level.critic`, `risk.measured`
-and `risk.reward`. The judge is `factory.leveldesign.judge` and ships as `none`, so at the
-release tier the step BLOCKS until an installation configures one, the same as visual QA.
-Playability's survey captures the critic's frames (`level_frames`), and the step asks for the
-risk test (`with: risk: true`), whose settings stay in `play-realism.yaml` `risk`.
-Versions: quality-floor 1.4.0 (`floor.level_design`, `floor.risk_reward`, release blockers),
-quality-policy 1.5.0 (level-design is a required step; a baseline critic or an installation
-rubric makes a run development), specialist-routing 1.9.0, check-tiers 1.5.0,
-quality-assessment 1.2.0 (families `level-critic`, `risk-reward`). Bringing a run forward:
-a run started before this has neither the step nor its pins, and is judged as it started. A
-new release-tier run needs a level critic configured and a probe with `play.policy`, or it
-does not pass the floor. The work comes from wip/level-critic-risk (2026-10-07), reworked
-onto main's play realism.
+and `risk.reward`. Playability's survey keeps the critic's frames (`level_frames`: two more
+screenshots per surveyed unit, outside the unit's window), and the playability step asks for
+the risk test (`with: risk: true`, settings in `play-realism.yaml` `risk`), which stops after
+one page load on a probe without `play.policy`.
+**Advisory: it never holds a default run.** No pinned template or golden port implements the
+probe's `play.policy`, no critic is configured by default (`factory.leveldesign.judge.kind:
+none`, and the autonomous profile adds none - a critic is a paid agent session per visit), and
+every bar is `basis: proposed`. So the four checks are tier `advisory` (check-tiers 1.6.0), the
+step reports them `required: false` and succeeds at every tier - no critic and no
+`play.policy` are SKIPPED, a shortfall a WARNING, a critic that cannot judge a SKIPPED
+`level.critic` - and the quality floor reads them as release **warnings** (quality-floor
+1.4.0, `floor.level_design` on variety, `floor.risk_reward` on gameplay) with
+`required_only: passed`, so a check that failed or measured nothing never lowers a score.
+`factory.leveldesign.hold: true` (default false) holds the build to them at a strict tier:
+required, unmeasured not passed, FAILED through triage to the level-designer (`develop`) or to
+design (`design-gap`, new triage budgets `level-design.develop: 2`, `level-design.design-gap: 1`,
+triage `max_visits` 128), no critic BLOCKED. Making them blocking for every run waits on a
+template that implements `play.policy`, measured bars and a configured critic; the doc lists the
+version changes it takes. Nothing existing is weakened: quality-policy is unchanged and
+`level-design` is not a required step. Other versions: specialist-routing 1.10.0
+(`level-design-report`), quality-assessment 1.3.0 (families `level-critic`, `risk-reward`);
+triage and its ledger read the report, the quality gate takes it as an optional input. The
+`wgflib/workflow/mock.py` change (a core change) adds the mock level-design step a `--mock`
+run needs for the new step type. Bringing a run forward: a run started before this has neither
+the step nor its pins and is judged as it started; a new run's G4 and release are what they
+were, plus the report. The work comes from wip/level-critic-risk (2026-10-07), reworked onto
+main's play realism (integration bb417a3), then made advisory.
 
 **The development brief and the GDD carry the design's visual effects** (review of the
 craft-identity-vfx merge, F1). `build_spec.vfx` is now a build-spec section of the brief and of

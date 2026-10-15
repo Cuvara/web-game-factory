@@ -55,7 +55,7 @@
 # 1.3.0: floor.accepted_baseline - the candidate against the build a person accepted
 #        (baseline-compare.yaml).
 # 1.4.0: floor.level_design and floor.risk_reward - the level-design-report (workflow 19),
-#        at the release tier.
+#        warnings at the release tier (advisory: no default critic, no play.policy yet).
 version: 1.4.0
 
 references:
@@ -555,14 +555,19 @@ universal:
   # The level critic (core/reference/level-design-rubric.yaml): every sampled unit's start,
   # middle and end frame captured, and every unit at the rubric's bars on play space, identity,
   # route choice, reveal, climax and distinctness. Reported only for a design that authors
-  # units; a design without levels has none to judge. No report at all is unmeasured.
+  # units; a design without levels has none to judge.
+  # 1.4.0: a WARNING, never a floor. No level critic is configured by default and the rubric's
+  # bars are `basis: proposed`, so the step reports its checks optional (`required: false`) and
+  # only a PASS counts here (`required_only: passed`); a check the step holds
+  # (factory.leveldesign.hold) counts whatever its status. A blocker in a new version once a
+  # critic is configured by default and the bars are calibrated (docs/level-design-critic.md).
   - id: floor.level_design
     dimension: variety
     metric: share of the level critic's checks that pass - every unit's frames captured, every unit at the rubric's bars
-    evaluate: {kind: checks, report: level-design-report, checks: [level.frames, level.critic], applies: reported}
+    evaluate: {kind: checks, report: level-design-report, checks: [level.frames, level.critic], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
-    severity: {release: blocker}
+    severity: {release: warning}
     owner: level-design
     route: develop
     evidence: level-design-report level.frames and level.critic
@@ -570,14 +575,17 @@ universal:
     basis: proposed
   # An optional risk that pays (core/reference/risk-reward.yaml): greedy earns measurably more
   # than safe at a measurably higher failure rate. A probe without play.policy measures
-  # nothing - a FAIL of risk.measured at the release tier, never a pass.
+  # nothing - unmeasured, never a pass.
+  # 1.4.0: a WARNING, never a floor, read like floor.level_design: no pinned template or golden
+  # port implements play.policy yet, and the bars are `basis: proposed`. A blocker in a new
+  # version once a pinned template implements play.policy and the bars are measured.
   - id: floor.risk_reward
     dimension: gameplay
     metric: share of the risk checks that pass - both oracle policies measured, greedy earning more at a higher failure rate
-    evaluate: {kind: checks, report: level-design-report, checks: [risk.measured, risk.reward]}
+    evaluate: {kind: checks, report: level-design-report, checks: [risk.measured, risk.reward], required_only: passed, applies: reported}
     minimum: 1.0
     preferred: 1.0
-    severity: {release: blocker}
+    severity: {release: warning}
     owner: level-design
     route: develop
     evidence: level-design-report risk.measured and risk.reward

@@ -10,8 +10,11 @@ first unit scored on its previous one (coerced), a malformed verdict repaired, n
 its frames. The `baseline` critic is measured on synthetic entity boxes and frames. The risk
 record is held to core/reference/risk-reward.yaml for every policy outcome: greedy pays and
 risks, pays without risk, risks without pay, no play.policy, too few attempts, a `lower`
-metric, the probe's own measures. Then the wiring: playability's settings, triage, the
-quality floor, the mock step and the workflow.
+metric, the probe's own measures. Those outcomes are the ones an installation that holds the
+build to the checks gets (factory.leveldesign.hold); the shipped configuration holds nothing -
+every check advisory, the step never FAILED or BLOCKED on their account (TheAdvisoryDefault).
+Then the wiring: playability's settings, triage, the quality floor (warnings that count only a
+pass), check-tiers (advisory), the mock step and the workflow.
 
     python -m unittest scripts.tests.test_level_design
 """
@@ -177,14 +180,18 @@ class Base(unittest.TestCase):
         with open(path, "w") as handle:
             json.dump(record, handle)
 
-    def config(self, plan=None, kind="command", **judge):
+    def config(self, plan=None, kind="command", hold=True, **judge):
+        """The step's configuration. `hold` (factory.leveldesign.hold): the rubric's and the
+        risk test's outcomes below are the ones a held build gets; TheAdvisoryDefault runs
+        the shipped configuration, which holds nothing (`hold=None`: the key absent)."""
         scenario = os.path.join(self.base, "scenario.json")
         with open(scenario, "w") as handle:
             json.dump(plan or [], handle)
         self.counter = os.path.join(self.base, "count")
         if os.path.exists(self.counter):
             os.remove(self.counter)
-        return {"leveldesign": {"judge": {
+        held = {} if hold is None else {"hold": hold}
+        return {"leveldesign": {**held, "judge": {
                     "kind": kind, "timeout_seconds": 60,
                     "argv": [sys.executable, self.judge, scenario, self.counter, "{verdict}",
                              "{frames_dir}"] if kind == "command" else [], **judge}},
@@ -384,6 +391,108 @@ class TheRubricOutcomes(Base):
         self.assertEqual(self.check(report, "level.frames")["status"], "FAIL")
 
 
+class TheAdvisoryDefault(Base):
+    """The shipped configuration (no `hold`): at the release tier every check is reported
+    `required: false`, and nothing the critic or the risk test finds - or cannot measure -
+    makes the step FAILED or BLOCKED. A default run and a golden run go on."""
+
+    def assertAdvisory(self, result):
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        report = self.report(result)
+        self.assertTrue(all(c["required"] is False for c in report["checks"]), report["checks"])
+        self.assertEqual(report["failed"], [])
+        self.assertIsNone(report["blocked_reason"])
+        return report
+
+    def test_no_judge_and_no_play_policy_at_release_go_on(self):
+        self.write_risk({"applies": True, "declared": False, "attempts": [],
+                         "reason": "the probe declares no play.policy"})
+        result = self.run_step(self.config(kind="none", hold=None))
+        report = self.assertAdvisory(result)
+        self.assertEqual(self.check(report, "level.critic")["status"], "SKIPPED")
+        self.assertEqual(self.check(report, "risk.measured")["status"], "SKIPPED")
+        self.assertEqual(self.check(report, "risk.reward")["status"], "SKIPPED")
+        self.assertEqual(report["verdict"], "WARNING")
+        self.assertIn("advisory", result.message)
+        self.assertIn("not a pass", result.message)
+
+    def test_a_failing_critic_and_risk_are_warnings_with_their_findings(self):
+        self.write_risk(risk_record({"w1-l1": ([(3, False)] * 3, [(3, True)] * 3)}))
+        bad = {"w1-l2": scores(4, play_space=1)}
+        result = self.run_step(self.config([verdict(bad)], hold=None))
+        report = self.assertAdvisory(result)
+        self.assertEqual(self.check(report, "level.critic")["status"], "WARNING")
+        self.assertEqual(self.check(report, "risk.reward")["status"], "WARNING")
+        self.assertEqual(report["verdict"], "WARNING")
+        self.assertTrue(any(f["unit"] == "w1-l2" for f in report["findings"]))
+        self.assertTrue(any(f["check"] == "risk.reward" for f in report["findings"]))
+
+    def test_hold_false_is_the_same_as_the_default(self):
+        result = self.run_step(self.config([verdict({"w1-l2": scores(4, play_space=1)})],
+                                           hold=False))
+        self.assertAdvisory(result)
+
+    def test_a_critic_that_cannot_judge_is_a_skipped_check_not_the_runs_outcome(self):
+        with open(os.path.join(self.desktop, "level", "w1-l2-middle.png"), "ab") as handle:
+            handle.write(b"tampered")
+        report = self.assertAdvisory(self.run_step(self.config([verdict()], hold=None)))
+        critic = self.check(report, "level.critic")
+        self.assertEqual(critic["status"], "SKIPPED")
+        self.assertIn("not the frame the playability bot recorded", critic["summary"])
+        self.write_survey()
+        report = self.assertAdvisory(self.run_step(self.config(["touch-frame", verdict()],
+                                                               hold=None)))
+        self.assertIn("judge-isolation-violation", self.check(report, "level.critic")["summary"])
+
+    def test_a_passing_build_still_passes(self):
+        report = self.assertAdvisory(self.run_step(self.config([verdict()], hold=None)))
+        self.assertEqual(report["verdict"], "PASS")
+
+    def test_the_quality_floor_never_scores_an_advisory_shortfall(self):
+        """What the step reports is what the quality gate scores: an advisory report's
+        failures and gaps lower nothing; a held one's failures count."""
+        from wgf_quality import scoring
+        from wgf_quality.step import load_contract
+        spec, _record = load_contract()
+        criteria = {c["id"]: c for c in spec["floor"]["universal"]}
+
+        def floor(report):
+            return {cid: scoring._evaluate("universal", criteria[cid],
+                                           {"level-design-report": report}, {}, "release",
+                                           spec["references"], ())
+                    for cid in ("floor.level_design", "floor.risk_reward")}
+
+        # No critic, no play.policy: the risk measured nothing and does not apply; the
+        # frames the survey captured are the one pass there is.
+        self.write_risk({"applies": True, "declared": False, "attempts": [],
+                         "reason": "the probe declares no play.policy"})
+        scored = floor(self.report(self.run_step(self.config(kind="none", hold=None))))
+        self.assertIsNone(scored["floor.risk_reward"])
+        self.assertEqual(scored["floor.level_design"]["status"], "PASS")
+        self.write_survey(moments=["start"])
+        scored = floor(self.report(self.run_step(self.config(kind="none", hold=None))))
+        self.assertEqual(scored, {"floor.level_design": None, "floor.risk_reward": None})
+        self.write_survey()
+        # The critic finds a unit short and the risk does not pay: still nothing held, while
+        # the frames that were captured count as the pass they are.
+        self.write_risk(risk_record({"w1-l1": ([(3, False)] * 3, [(3, True)] * 3)}))
+        bad = {"w1-l2": scores(4, play_space=1)}
+        scored = floor(self.report(self.run_step(self.config([verdict(bad)], hold=None))))
+        self.assertEqual(scored["floor.level_design"]["status"], "PASS")
+        self.assertEqual(scored["floor.level_design"]["score"], 100)
+        self.assertEqual(scored["floor.risk_reward"]["status"], "PASS")
+        # Held, the same build fails both.
+        scored = floor(self.report(self.run_step(self.config([verdict(bad)], hold=True))))
+        self.assertEqual(scored["floor.level_design"]["status"], "FAIL")
+        self.assertEqual(scored["floor.risk_reward"]["status"], "FAIL")
+        self.assertEqual(scored["floor.risk_reward"]["severity"], "warning")
+
+    def test_hold_must_be_true_or_false(self):
+        result = self.run_step(self.config([verdict()], hold="yes"))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertIn("factory.leveldesign.hold", result.error)
+
+
 class TheBaselineCritic(Base):
     def test_it_measures_space_and_distinctness_and_leaves_taste_unmeasured(self):
         boxes = {"w1-l1": [["player", None, 0, 700, 100, 20], ["target", "b", 0, 0, 800, 90]]}
@@ -573,14 +682,32 @@ class TheWiring(unittest.TestCase):
         self.assertEqual([f["route"] for f in found], ["develop", "design"])
         self.assertEqual(found[1]["task"]["design_field"], "build_spec.content.units[u2]")
 
-    def test_the_quality_floor_reads_it_at_release(self):
+    def test_the_quality_floor_reads_it_at_release_as_a_warning(self):
         from wgf_quality.step import load_contract
         spec, _record = load_contract()
         criteria = {c["id"]: c for c in spec["floor"]["universal"]}
-        self.assertEqual(criteria["floor.level_design"]["severity"], {"release": "blocker"})
-        self.assertEqual(criteria["floor.risk_reward"]["evaluate"]["report"],
-                         "level-design-report")
+        for criterion_id in ("floor.level_design", "floor.risk_reward"):
+            criterion = criteria[criterion_id]
+            # Advisory until a template implements play.policy and the bars are measured:
+            # never a release blocker, and only a pass counts unless the step holds it.
+            self.assertEqual(criterion["severity"], {"release": "warning"})
+            self.assertEqual(criterion["evaluate"]["report"], "level-design-report")
+            self.assertEqual(criterion["evaluate"]["required_only"], "passed")
+            self.assertEqual(criterion["evaluate"]["applies"], "reported")
         self.assertIn("level-design-report", spec["floor"]["build_evidence"])
+
+    def test_check_tiers_hold_its_checks_advisory(self):
+        tiers = load_file(os.path.join(ROOT, "core", "reference", "check-tiers.yaml"))
+        self.assertEqual(tiers["sources"]["level-design"]["checks"],
+                         {"level.frames": "advisory", "level.critic": "advisory",
+                          "risk.measured": "advisory", "risk.reward": "advisory"})
+
+    def test_the_shipped_configuration_holds_nothing(self):
+        from wgf_leveldesign.settings import Settings
+        shipped = load_file(os.path.join(ROOT, "workspace", "config", "factory.yaml"))
+        settings = Settings.resolve(shipped["factory"])
+        self.assertFalse(settings.hold)
+        self.assertEqual(settings.kind, "none")
 
     def test_the_workflow_runs_it_after_content_sufficiency(self):
         data = load_file(os.path.join(ROOT, "core", "workflows", "new-game.workflow.yaml"))

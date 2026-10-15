@@ -97,7 +97,7 @@ class Sandbox(unittest.TestCase):
              # K6.3: the quality assessment places every declared check.
              "core/reference/quality-assessment.yaml")
     TREES = ("scripts/wgf_playability", "scripts/wgf_production", "scripts/wgf_assets",
-             "scripts/wgf_verification", "scripts/tests")
+             "scripts/wgf_verification", "scripts/wgf_leveldesign", "scripts/tests")
     # Copied whole (every file, not only .py): the platform profiles a scope names, and the
     # artifact schemas a check's `status_at` is held against.
     DATA_TREES = ("core/reference/platforms", "core/artifacts")
@@ -396,7 +396,7 @@ def _with_result(source, check, failing):
             "id": check + (":mobile" if source == "browser-qa" else ""), "category": "gameplay",
             "title": check, "status": status, "required": True, "message": "measured",
             "evidence": [{"kind": "observation", "summary": "measured"}]})
-    elif source == "content-sufficiency":
+    elif source in ("content-sufficiency", "level-design"):
         report["checks"].append({"id": check, "status": status, "required": True,
                                  "summary": "measured"})
     elif source in ("playability", "play-realism", "baseline-compare"):

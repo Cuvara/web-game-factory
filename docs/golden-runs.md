@@ -16,7 +16,8 @@ Factory is renderer-agnostic.
 ```
 research -> strategy -> G2 -> design -> tech-plan -> G3 -> init -> greybox
          -> greybox-playability -> assets -> develop -> playability -> production-quality
-         -> visual-qa -> content-sufficiency -> review -> sdk -> sdk-review -> verify
+         -> visual-qa -> content-sufficiency -> level-design -> review -> sdk -> sdk-review
+         -> verify
          -> quality-gate -> G4 -> store-listing -> listing-validation -> release
 ```
 
@@ -25,8 +26,11 @@ stops there `WAITING`; the harness answers it `pass` through the API `wgf decide
 with `decided_by` left to `default_decider()` - `human`, because the person running the
 golden run is outside every step's process tree - and resumes. Its note says it is the
 harness operator's pass of a known-good port (`harness.G4_NOTE`). `games.EXPECTED_STEPS`
-lists all 24 steps, `greybox`, both playability steps, `production-quality`, `visual-qa`,
-`content-sufficiency`, `quality-gate`, `prototype-review` and `sdk-review` included. A golden
+lists all 27 steps, `greybox`, both playability steps, `production-quality`, `visual-qa`,
+`content-sufficiency`, `level-design`, `quality-gate`, `prototype-review` and `sdk-review`
+included. `level-design` is advisory (core/reference/check-tiers.yaml 1.6.0): no golden port
+implements the probe's `play.policy` and the golden configuration names no level critic, so
+its checks are SKIPPED and it succeeds ([level-design-critic.md](level-design-critic.md)). A golden
 run is an `mvp` run of endless (parametric) ports, so `content-sufficiency` counts no unit
 list: its unit checks are SKIPPED with that reason and it passes
 ([content-sufficiency-module.md](content-sufficiency-module.md)). At `mvp` the quality gate
@@ -465,7 +469,8 @@ develop (visit 2)       entered as triage.ui: briefed as the UI specialist with 
                         findings (brief.json specialist.findings); the replay reads them and
                         leaves the defect out                        -> commit B
 playability             PASS restart.works, measured
-production-quality -> visual-qa -> content-sufficiency -> review -> sdk -> sdk-review ->
+production-quality -> visual-qa -> content-sufficiency -> level-design -> review -> sdk ->
+sdk-review ->
 verify -> quality-gate  advances the ledger: implemented (B) -> verified (playability on B)
                         -> closed (every gate measured B)
 G4 (the harness passes it, as in every golden) -> store-listing -> listing-validation -> release

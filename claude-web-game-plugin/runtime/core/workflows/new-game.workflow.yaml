@@ -114,9 +114,12 @@ workflow:
   # start, middle and end frames against core/reference/level-design-rubric.yaml (play space,
   # identity, route choice, reveal, climax, distinct from the previous unit), and the
   # playability bot's safe and greedy oracle policies (`with: risk`) show an optional risk
-  # that pays (core/reference/risk-reward.yaml). Its failures go through triage to the
-  # level-designer (`develop`) or to design (`design-gap`); the quality gate reads its checks
-  # at the release tier.
+  # that pays (core/reference/risk-reward.yaml). ADVISORY (check-tiers 1.6.0): no pinned
+  # template implements the probe's play.policy and no critic is configured by default, so
+  # the step reports and never holds a build; the quality gate reads its checks as warnings
+  # that count only a pass. An installation may hold the build to them
+  # (factory.leveldesign.hold): its failures then go through triage to the level-designer
+  # (`develop`) or to design (`design-gap`).
   version: 19
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
@@ -547,16 +550,18 @@ workflow:
     # than one viable line or order, a reveal, a climax that is an event, and a unit distinct
     # from the one before; the step decides from the rubric. From the same play, the oracle's
     # safe and greedy policies must show an optional risk that pays: greedy earns measurably
-    # more at a measurably higher failure rate (core/reference/risk-reward.yaml). At the release
-    # tier every check is required and unmeasured is not passed: FAILED with route `develop`
-    # goes through triage to the level-designer, `design-gap` through triage to design; no
-    # judge configured is BLOCKED. Below it the results are reported and the run continues.
+    # more at a measurably higher failure rate (core/reference/risk-reward.yaml). Advisory as
+    # shipped: every result is reported (`required: false`), no judge (`none`, the shipped
+    # one) and no play.policy are SKIPPED, and the run continues at every tier. Held
+    # (factory.leveldesign.hold) at the release tier, every check is required and unmeasured
+    # is not passed: FAILED with route `develop` goes through triage to the level-designer,
+    # `design-gap` through triage to design; no judge configured is BLOCKED.
     - id: level-design
       type: level-design
       stage: title:prototype
       inputs: [playability-report, game-design, title-strategy]
       outputs: [level-design-report]
-      max_visits: 59
+      max_visits: 71
       on:
         develop: triage
         design-gap: triage

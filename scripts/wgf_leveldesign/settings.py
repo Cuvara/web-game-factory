@@ -12,6 +12,7 @@
           baseline_dir: null         # baseline only: approved unit frames and approved.json
           min_similarity: null       # baseline only: default the rubric's baseline.min_similarity
         rubric: null                 # default core/reference/level-design-rubric.yaml (pinned)
+        hold: false                  # hold the build to the checks at a strict tier (opt-in)
 
 `argv` placeholders, substituted per element: {frames_dir} (a directory holding only the
 frames to judge, as <unit id>/<moment>.png - copies, verified against the sha256 the
@@ -19,8 +20,13 @@ playability bot recorded), {brief}, {verdict} and {prompt}. The judge runs with 
 holding the frames and the brief as its working directory, never in the game checkout, with
 the allowlisted environment (factory.agents.env_passthrough).
 
-`kind: baseline` is no agent (baseline.py). `kind: none` judges nothing: SKIPPED below a strict
-tier, BLOCKED at one - never a silent pass.
+`kind: baseline` is no agent (baseline.py). `kind: none` judges nothing: SKIPPED, never a
+silent pass - and BLOCKED at a strict tier when the installation holds the build to the checks.
+
+`hold` (default false): the level-design checks are advisory (core/reference/check-tiers.yaml
+1.6.0) - reported, never holding a build - until a pinned template implements the probe's
+play.policy and the bars are calibrated. An installation that has both may opt in: at a
+strict tier the checks are then required, unmeasured is not passed, and no judge is BLOCKED.
 """
 
 import copy
@@ -36,6 +42,7 @@ DEFAULTS = {
     "judge": {"kind": "none", "argv": [], "timeout_seconds": 900,
               "idle_timeout_seconds": None, "verdict_from": "file", "repair_rounds": 2},
     "rubric": None,
+    "hold": False,
 }
 
 
@@ -91,6 +98,10 @@ class Settings:
                                 f"number 0-10, not {rounds!r}")
         self.repair_rounds = rounds
         self.rubric_path = data.get("rubric")
+        self.hold = data.get("hold", False)
+        if not isinstance(self.hold, bool):
+            raise SettingsError(f"factory.leveldesign.hold must be true or false, not "
+                                f"{self.hold!r}")
         self.baseline_dir = judge.get("baseline_dir")
         self.min_similarity = judge.get("min_similarity")
         if self.kind == "baseline":

@@ -518,7 +518,7 @@ families:
     checks: [level-design:level.frames, level-design:level.critic]
     judge: {report: level-design-report, kind: judge.kind, runs: judge_runs}
     measures: Every sampled unit captured at its start, middle and end, and each unit's scores on the rubric's dimensions - play space used, a recognisable layout, more than one viable line, a reveal, a climax that is an event, distinct from the unit before.
-    method: The level-design step's critic - an agent reading the survey's level frames against core/reference/level-design-rubric.yaml; the baseline critic of a golden run measures entity boxes and frame signatures and carries approved scores.
+    method: The level-design step's critic - an agent reading the survey's level frames against core/reference/level-design-rubric.yaml; a `baseline` critic measures entity boxes and frame signatures and carries approved scores. Advisory (check-tiers 1.6.0): no critic is configured by default.
     limits: An AI judge reading three still frames a unit - it can be fooled, is not stable between runs, and does not see how a unit plays between them.
     cannot_justify: That a level is well designed or fun to play.
   - id: risk-reward
@@ -528,7 +528,7 @@ families:
     when: reported
     checks: [level-design:risk.measured, level-design:risk.reward]
     measures: Under the game's own oracle, the greedy policy earns measurably more than the safe one at a measurably higher failure rate, on the sampled units.
-    method: The playability bot's risk test (play-realism.yaml `risk`, the probe's play.policy), judged by the level-design step against core/reference/risk-reward.yaml.
+    method: The playability bot's risk test (play-realism.yaml `risk`, the probe's play.policy), judged by the level-design step against core/reference/risk-reward.yaml. Advisory (check-tiers 1.6.0) - no pinned template implements play.policy yet.
     limits: What `greedy` and `safe` mean is the game's own word; the bars are proposed, not calibrated on measured builds.
     cannot_justify: That a player sees the risk, or finds taking it worth it.
 

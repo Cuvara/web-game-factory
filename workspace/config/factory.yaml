@@ -750,11 +750,17 @@ factory:
   # The level-design module (scripts/wgf_leveldesign, docs/level-design-critic.md): a level
   # critic reads the start, middle and end frame of every unit playability surveyed against
   # core/reference/level-design-rubric.yaml, and the oracle's safe and greedy policies are held
-  # to core/reference/risk-reward.yaml. `none` judges nothing: SKIPPED below the release tier,
-  # BLOCKED at it - never a silent pass. `command` runs like visual QA's judge (the same
-  # placeholders, read-only, isolated); `baseline` measures what entity boxes and frame
-  # signatures can and leaves the rest unmeasured.
+  # to core/reference/risk-reward.yaml. Its checks are ADVISORY (core/reference/check-tiers.yaml
+  # 1.6.0): no pinned template implements the probe's play.policy the risk test needs, and the
+  # bars are proposed, so the step reports and never holds a build. `hold: true` holds it at a
+  # strict tier (every check required, unmeasured not passed, no judge BLOCKED): for an
+  # installation whose games implement play.policy and that configures a critic. `none`
+  # judges nothing (SKIPPED - never a silent pass) and costs nothing. `command` runs like
+  # visual QA's judge (the same placeholders, read-only, isolated) and is a paid agent session
+  # per visit; `baseline` measures what entity boxes and frame signatures can and leaves the
+  # rest unmeasured.
   leveldesign:
+    hold: false
     judge:
       kind: none                # none | command | baseline
       argv: []                  # command only: {frames_dir} {brief} {verdict} {prompt}

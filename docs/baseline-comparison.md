@@ -9,12 +9,12 @@ what got worse beyond a stated tolerance. It is deterministic and uses no AI jud
 |---|---|
 | Producer | the `playability` step type (both `greybox-playability` and `playability` in `new-game`) |
 | Measurement | `scripts/wgf_playability/baseline.py` (`play_settings`, `profile`, `compare`) |
-| Reference data | `core/reference/baseline-compare.yaml` (1.0.0), pinned by new-game 18 |
+| Reference data | `core/reference/baseline-compare.yaml` (1.1.0), pinned by new-game 18 |
 | Report | `playability-report` 1.5.0: the `baseline.*` checks and `baseline_comparison` |
-| Check tiers | `core/reference/check-tiers.yaml` 1.4.0, source `baseline-compare` |
+| Check tiers | `core/reference/check-tiers.yaml` 1.6.0, source `baseline-compare` (since 1.4.0; the two advisory checks since 1.6.0) |
 | Routing | `core/reference/specialist-routing.yaml` 1.8.0 (`baseline.` prefixes) |
 | Quality gate | `core/reference/quality-floor.yaml` 1.3.0 `floor.accepted_baseline` (content, blocker) |
-| Assessment | `core/reference/quality-assessment.yaml` 1.1.0 families `accepted-content`, `accepted-on-screen`, `accepted-play`, `accepted-timing` |
+| Assessment | `core/reference/quality-assessment.yaml` 1.1.0 families `accepted-content`, `accepted-on-screen`, `accepted-play`, `accepted-timing`; 1.3.0 `accepted-replacement`, `accepted-look` (advisory: supporting only) |
 | Lesson | L8 (`core/reference/lessons.yaml`) |
 | Tests | `scripts/tests/test_baseline_compare.py`; real fixtures in `scripts/tests/fixtures/real/baseline-compare/` |
 
@@ -136,6 +136,77 @@ a pass, and says why:
 | `environment-degraded` | a recording read was made on a degraded host | BLOCKED, required: measured again on a quiet host (the step is BLOCKED) |
 | `accepted-not-played` | the accepted commit could not be built or played | BLOCKED, required; the step is BLOCKED |
 
+## Advisory measurements (1.1.0)
+
+Two more quantities, ported from the unmerged accepted-baseline work (issue #75). Both are
+**advisory** (`check-tiers.yaml` 1.6.0): always `required: false`, at every tier. A change beyond
+a bar is a WARNING whose summary starts `ADVISORY, not held`; an unmeasured one is a WARNING that
+says why. Neither is in `baseline.IDS`, so neither is in `floor.accepted_baseline`, neither
+reaches triage (which reads required checks only), and neither changes the step's verdict. Both
+are reported only where the other `baseline.*` checks are: a run that adopted a game, on a visit
+that did not play the accepted build itself. A default run adopts nothing and reports neither.
+
+| Check | Measured from | Reported beyond |
+|---|---|---|
+| `baseline.source_rewrite` | git objects of the step's own clone, between the accepted and the candidate commit (`baseline.GitReader`: gitsafe-hardened argv through `wgflib.procs`; `cat-file`, and `diff --numstat` with renames, external diffs and textconv off). Units: the accepted `public/content/units.json` units removed or altered (a key added is an extension). Files and lines: the accepted text files under `source_rewrite.roots` (`src`) deleted or rewritten (deleted lines >= `file_rewritten_share` 0.5 of the file), and the accepted lines deleted | any share above `source_rewrite.maximum` (0.25 each) |
+| `baseline.frame_metrics` | the compared frames both builds captured (`frame_metrics.frames`: `first-session-1s`, `play-2s`, the frames `frames.readable` reads), each frame's mean luminance and contrast (`analysis.frame_stats`) | a change either way above `max_luminance_delta` 32 or `max_contrast_delta` 24 |
+
+`source_rewrite` is measured even when the accepted build could not be played (it needs only
+git). `frame_metrics` is then unmeasured (`accepted-not-played`), and is unmeasured too
+(`environment-degraded`) when a first-session or win recording of either build was made on a
+degraded host. A share the accepted commit does not ship (no content data file) is unmeasured,
+never 0. A person's recorded change (`factory.init.accepted_changes` naming
+`baseline.source_rewrite` with a `quantity`, or `baseline.frame_metrics` with a frame as its
+`unit`) is listed as an accepted change, as for the other checks.
+
+**Why advisory.** The bars are proposed, not calibrated by this step. What exists
+(`scripts/tests/fixtures/real/baseline-compare/advisory/real-measurements.json`, carried over
+from the accepted-baseline branch and replayed by `test_baseline_compare.py`
+`TheSourceRewrite` and `TheFrameMetrics`):
+
+| Quantity | Builds a person judged worse | Accepted / improving | Note |
+|---|---|---|---|
+| Replacement shares (max 0.25) | 2D 96f5cea -> 68a12b7: units 1.0, files 0.026, lines 0.115. 3D 64ff4c6 -> b6b9edb: files 0.190, lines 0.462; -> 1c6b099: files 0.172, lines 0.460 (units unmeasured: no content data file) | largest improving visit: units 0.0625, files 0.0556, lines 0.0842 | each rejected replacement exceeds one share only; no single share separates them |
+| Luminance (32) | 2D desktop +70.1 / +63.1, mobile +83.8; 3D desktop +61.8 / +62.0 | two plays of one commit: at most 0.6 (as the branch recorded) | plays from separate runs, not this step's same-run plays |
+| Contrast (24) | 2D desktop +25.3 / +16.2, mobile +31.9; 3D +1.1 | at most 0.6 | catches one 2D desktop frame of two, no 3D frame |
+
+The replacement shares were measured by the branch on the games' repositories and are recorded
+here, not re-measured; the frame numbers are copies of the real reports' `frames.readable`. A
+brighter or flatter frame, or a rewritten file, is a change, not a defect - a person judges it
+at G4. What would make either blocking: its bars measured by this step on builds a person judged
+(each accepted build against its own repeat, and the builds judged worse), a new version of
+`baseline-compare.yaml` stating them, the check moved to `quality` in `check-tiers.yaml`, named
+in `floor.accepted_baseline`, and routed in `specialist-routing.yaml`.
+
+### Not ported, and why
+
+The accepted-baseline branch (9159015) built a second baseline system beside this one (its own
+`accepted-baseline` and `baseline-regression` steps and artifacts). This comparison stays the
+single source of truth for the accepted build. Of the branch's other pieces:
+
+- **Paired visual judgement** (the accepted and the candidate frame of one state shown to a
+  judge, better / same / worse per visual-qa rubric dimension) - not ported: it needs an LLM
+  judge call per pair, which adds cost to every adopted run, from a judge whose verdicts on such
+  pairs have not been measured. L8's gap stays open.
+- **Visual-QA score drops** against the accepted build - not ported: this comparison plays the
+  accepted build but does not judge it, so no visual-qa score of the accepted build exists in
+  the run (the branch copied one from an earlier run's store). Producing one is a visual-qa
+  judge run of the accepted build - the same cost as the paired judgement.
+- **Playtest notes CLI with approve / restore** (`wgf-playtest.py`: a person's findings that
+  block until re-measured or confirmed; a replacement above the maximum waiting for a person's
+  `approve` or `restore`) - not ported: it is a new human-decision surface (a new checkpoint
+  and CLI), outside this measurement.
+- **The accepted build from a person's G4 pass decision-record** - not ported. A G4
+  decision-record pins its reports by artifact id and content hash, not a commit, so the commit
+  is found only by opening the pinned prototype-report in the run store of the run that decided
+  it; `workspace/titles/<id>/decisions/` holds the record only with `factory.lifecycle.sync`,
+  and never the report. The accepted commit is resolved by the design step
+  (`wgf_design/existing.py`, the existing-content floor), so this would make the design step
+  read other runs' engine-internal state (or need a `scripts/wgflib` reader of the run store),
+  and would change which commit every adopted run without `factory.init.accepted_baseline`
+  compares with. `factory.init.accepted_baseline` (a tag or sha a person names) remains the way
+  to name the commit a person accepted; see the first known limitation below.
+
 ## Findings and routing
 
 Triage reads the checks like every playability check (specialist-routing 1.8.0): `baseline.`
@@ -240,7 +311,7 @@ The current candidates, as measured (not tuned to pass; `test_K7_the_2d_candidat
 ## What it does not claim
 
 - It does not judge frames: a paired frame judgement against the accepted build is the gap L8
-  still names.
+  still names. `baseline.frame_metrics` compares two pixel statistics, advisory only.
 - It compares only what both builds report. An accepted build that predates the content
   contract (no content data file, no unit link, no entity kinds) can be compared on its opening
   unit's play, its drawn sizes and its timings only; the rest is `accepted-unmeasured`.

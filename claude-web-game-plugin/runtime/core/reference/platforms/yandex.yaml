@@ -15,7 +15,16 @@
 
 id: yandex
 name: Yandex Games
-version: 1.3.0  # 1.3.0: re-read 2026-10-07 - the horizontal 16:9 MP4 video is required, screenshots
+version: 1.4.0  # 1.4.0: from the 2026-10-05 read of the draft form, requirements and SDK pages
+                #        as markdown (issue #75, publish-yandex): store_listing.how_to_play
+                #        (100-1000, filled from the listing's controls text); the screenshot
+                #        bounds as data - aspects 16:9 or 9:16, long side 1280-2560, no alpha
+                #        (transparent: false; listing-validation judges alpha as advisory, the
+                #        page says such a PNG "may be refused"); the rewarded-button wording
+                #        (4.5.1), 2 s to the ad (4/4), banners (4.6), no ad imitation (1.16);
+                #        rejections: system video player (1.6.1.6), JS errors and freezes
+                #        (1.14, 1.15), misleading title (8.2.2), rewarded button (4.5.1)
+                # 1.3.0: re-read 2026-10-07 - the horizontal 16:9 MP4 video is required, screenshots
                 #        per platform and per mobile orientation (notes; the block counts a total),
                 #        Game Ready within 90 s (1.19.2, a blocking assertion), the docs'
                 #        recommended languages, the listing copy rules (5.x), rejections: context menu (1.6.1.8), Game Ready
@@ -61,6 +70,9 @@ requirements:
   loading_api: required
   offline_start: false
   https_only: true
+  # Not a ban: an external host is declared on the draft's CSP tab with a reason, https/wss
+  # only, and "almost all game data" ships in the archive (console/add-new-game, read
+  # 2026-10-05). The Factory's builds make none, so restricted stays the binding value.
   external_requests: restricted
 
 ads:
@@ -76,8 +88,11 @@ ads:
     sound stops when the game loses focus). The portal shows a startup ad by itself with no
     callbacks; only game_api_pause / game_api_resume cover it. 4.4: ads only at logical
     pauses - in a real-time game with levels under 5 minutes, never during play. 4.5:
-    rewarded is optional for the player, the button names the reward, and the reward is a
-    bonus that never gates the core game. 4.3: every ad unit's orientation matches the
+    rewarded is optional for the player, the button states that it shows an ad AND names the
+    reward (4.5.1), the reward is a bonus that never gates the core game (4.5.2), and it is
+    granted only in onRewarded (sdk-adv). At most 2 s from the triggering action to the ad
+    (requirements/4/4); only sticky banners besides fullscreen and rewarded (4.6); no
+    imitation of ad units (1.16) (read 2026-10-05). 4.3: every ad unit's orientation matches the
     game's orientation. An ad called during active play risks an accidental click, which
     the portal counts as ad fraud (https://yandex.com/dev/games/doc/en/sdk/sdk-adv, read
     2026-10-07). Sticky banners are a console switch (Advertising tab), shown by default once
@@ -121,6 +136,11 @@ review:
       (1.9, 1.2.2).
     - Ads during active play in a real-time game (4.4), or sound audible during an ad (4.7).
     - External links, store links or redirects (8.4); third-party ads (4.1).
+    # From the official "Common reasons for rejection" and the requirements, read 2026-10-05.
+    - Video played through the system player (1.6.1.6, 1.6.2.5).
+    - Game does not launch, JS errors, freezes or lags (1.14, 1.15).
+    - Misleading title - "free", "top", "best" (8.2.2).
+    - A rewarded button that does not say it shows an ad and what it grants (4.5.1).
 
 # What the portal's listing takes, read from the draft form documentation on 2026-10-04 and
 # re-read on 2026-10-07 - the English page and its Russian original
@@ -135,16 +155,18 @@ store_listing:
   notes: >
     Required fields (5.2): title, description, how to play, version, categories, icon,
     cover, archive, platforms, orientation, screenshots - version, platforms and orientation
-    are a person's entries in the draft. "How to play" (100-1000 chars), the SEO description
-    (50-160, starting with a keyword and ending with punctuation) and keywords (at most 100
-    chars, lowercase, comma-separated) have no field in this block; the long description
-    stands for the description. Title: starts with a capital, no full caps, no "free" or
+    are a person's entries in the draft. "How to play" (100-1000 chars) is `how_to_play`
+    below, filled from the listing's controls text (1.4.0). The SEO description (50-160,
+    starting with a keyword and ending with punctuation) and keywords (at most 100 chars,
+    lowercase, comma-separated) have no field in this block; the long description stands for
+    the description. Title: starts with a capital, no full caps, no "free" or
     "best"; unique across the selected languages (5.12) and identical in the game and every
     material of a language (5.1.3). Short description: starts with a capital, does not repeat
     the game's name, no "free" or "in English". Repeated spaces or hyphens never pad a text to
     its minimum (5.11). Screenshots: at least 2 for each selected platform - mobile at least 2
     PER ORIENTATION, desktop at least 2 in 16:9 landscape only - 16:9 or 9:16 with a long side
-    of 1280-2560 px, JPEG or 24-bit PNG (a PNG with an alpha channel may be refused); `min`
+    of 1280-2560 px, JPEG or 24-bit PNG (a PNG with an alpha channel may be refused) - since
+    1.4.0 `aspects`, `min_long_side`, `max_long_side` and `transparent: false` below; `min`
     below is the one-platform, one-orientation floor because the block counts a total. Video:
     the horizontal one is required (16:9 MP4, height at least 400 px, at most 28 s and 100 MB);
     a vertical 9:16 one with the same bounds and up to 20 advertising videos are optional.
@@ -154,6 +176,7 @@ store_listing:
   title: {required: true, max_chars: 50}
   short_description: {required: true, max_chars: 70}
   long_description: {required: true, min_chars: 100, max_chars: 1000}
+  how_to_play: {required: true, min_chars: 100, max_chars: 1000}
   tags: {required: false, min: null, max: 20, allowed: null}
   categories: {required: true, min: 1, max: 2, allowed: null}
   locales: [ru]
@@ -162,7 +185,7 @@ store_listing:
   covers:
     - {id: cover, label: Cover image, required: true, sizes: [{width: 800, height: 470}], aspect: null, formats: [png], max_kb: null, source: thumbnail}
     - {id: hero, label: Hero image, required: false, sizes: [{width: 1560, height: 520}], aspect: "3:1", formats: [png, jpg], max_kb: null, source: promo}
-  screenshots: {required: true, min: 2, max: null, sizes: null, aspect: null, formats: [png, jpg], max_kb: null}
+  screenshots: {required: true, min: 2, max: null, sizes: null, aspect: null, aspects: ["16:9", "9:16"], min_long_side: 1280, max_long_side: 2560, transparent: false, formats: [png, jpg], max_kb: null}
   video: {required: true, formats: [mp4], min_seconds: null, max_seconds: 28, max_mb: 100, min_height: 400, aspect: "16:9", orientation: [landscape]}
 
 assertions:

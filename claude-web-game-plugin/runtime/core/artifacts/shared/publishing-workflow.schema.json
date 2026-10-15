@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/publishing-workflow.schema.json",
+  "title": "Publishing Workflow",
+  "description": "Validates core/reference/publishing-workflow.yaml: the platform-neutral stages a release goes through to reach a portal, the state vocabulary a publication is reported in, and the publication key that identifies one artifact on one portal game across runs. Per-portal status is not here: it has one home, the readiness matrix in docs/portal-publishing-architecture.md. Referential rules the schema cannot state (every step, gate, lifecycle state, outcome, waiting state, refusal code and registry status exists) are wgflib.publication.publishing_workflow_problems, run by scripts/check-integrity.py.",
+
+  "x-wgf": {
+    "id": "publishing-workflow",
+    "kind": "reference",
+    "format": "yaml",
+    "version": "1.0.0",
+    "instance_path": "core/reference/publishing-workflow.yaml",
+    "consumers": ["release:validating", "release:submitting"]
+  },
+
+  "type": "object",
+  "required": ["version", "executor", "states", "publication_key", "stages"],
+  "properties": {
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "executor": {
+      "type": "object",
+      "required": ["portal", "ci_publishes"],
+      "properties": {
+        "portal": { "enum": ["playwright"], "description": "What drives a portal console: the profile's intents run by Playwright in a headed browser window the publish step opens, where a person logs in live." },
+        "ci_publishes": { "const": false, "description": "CI/CD never publishes a game: no pipeline uploads, submits or holds a portal session." },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "states": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "meaning"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+          "meaning": { "type": "string", "minLength": 1 },
+          "outcome": { "type": "array", "items": { "type": "string" }, "description": "The platform-publication outcomes reported as this state." },
+          "refusal": { "type": "array", "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }, "description": "The publish step's refusal codes reported as this state." },
+          "waiting": { "type": "string", "description": "The platform-publication waiting state reported as this state." },
+          "readiness": { "enum": ["READY", "BLOCKED", "HUMAN_REQUIRED", "UNKNOWN"] },
+          "registry": { "type": "string", "description": "The portal registry status reported as this state." }
+        },
+        "additionalProperties": false
+      }
+    },
+    "publication_key": {
+      "type": "object",
+      "required": ["components", "absent_portal_game_id", "format"],
+      "properties": {
+        "components": {
+          "type": "array",
+          "items": { "enum": ["platform", "title", "release_manifest_hash", "artifact_hash", "portal_game_id"] },
+          "minItems": 5,
+          "uniqueItems": true
+        },
+        "absent_portal_game_id": { "type": "string", "minLength": 1 },
+        "format": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "step"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "kind": { "enum": ["automated", "human", "mixed"] },
+          "step": { "type": ["string", "null"], "description": "The new-game workflow step that carries it out; null: a person, or a command outside the run." },
+          "command": { "type": "string" },
+          "gate": { "type": "string", "pattern": "^G[0-9]+$" },
+          "decision": { "type": "array", "items": { "type": "string" } },
+          "after_decision": { "type": "string" },
+          "irreversible": { "type": "boolean" },
+          "lifecycle": { "type": "string", "pattern": "^[a-z-]+:[a-z-]+$", "description": "machine:state or machine:stage-procedure." },
+          "produces": { "type": "string" },
+          "note": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

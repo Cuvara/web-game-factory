@@ -85,6 +85,10 @@ takes the same path; GameDistribution's Game ID is entered by a person in game.c
 
 ### Readiness matrix
 
+This matrix is the one home of per-portal status. The platform-neutral stages, the state
+vocabulary and the publication key are `core/reference/publishing-workflow.yaml`
+(docs/publish-module.md, "The publishing workflow"); a portal's rules are its profiles.
+
 Vocabulary: IMPLEMENTED (code exists), FIXTURE_VALIDATED (passes against the fixture portal
 in real headless Chromium), DRY_RUN_VALIDATED (a dry run against the REAL console reached
 its last read-only phase with the profile's locators), REAL_CONSOLE_VERIFIED (a person

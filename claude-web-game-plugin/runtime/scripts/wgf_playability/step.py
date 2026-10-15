@@ -367,6 +367,16 @@ class PlayabilityStep(WorkflowStep):
                     accepted_build, accepted_play, commit, out, played, design, rules,
                     realism_rules, baseline_rules, tier, context)
                 checks += found
+                if not comparison.get("same_build"):
+                    # Advisory (baseline-compare.yaml 1.1.0): reported, never required - and
+                    # never the reason a visit fails to report the rest.
+                    try:
+                        checks += self._baseline_advisory(accepted_build, accepted_play,
+                                                          commit, repo, out, rules,
+                                                          baseline_rules, context)
+                    except Exception as exc:  # noqa: BLE001
+                        context.logger.warning("baseline advisory checks not measured",
+                                               error=str(exc)[:300])
             if not blocked and not any(p["ran"] for p in projects):
                 blocked = "the bot produced no records on any viewport; see " + os.path.join(logs, "bot.log")
             records_dir = (os.path.relpath(out, context.run_dir).replace(os.sep, "/")
@@ -857,6 +867,43 @@ class PlayabilityStep(WorkflowStep):
                                  difficulty_tolerance=tolerance)
         info["regressed"] = sorted({c["id"] for c in found if c["status"] == "FAIL"})
         return found, info
+
+    def _baseline_advisory(self, accepted_build, accepted_play, commit, repo, out, rules,
+                           baseline_rules, context, git=None):
+        """The advisory comparisons (baseline.ADVISORY_IDS), never required: how much of the
+        accepted commit the candidate replaced, read from the scratch clone's git objects
+        (the clone holds both commits: the accepted one is played from the same checkout),
+        and the compared frames' luminance and contrast against the accepted build's."""
+        project = self._compared_project(baseline_rules)
+        changes, _invalid = baseline.accepted_changes(context.config)
+        reader = git or baseline.GitReader(repo)
+        found = [baseline.source_rewrite(reader, accepted_build["commit"], commit,
+                                         baseline_rules, CONTENT_DATA, changes, project)]
+        section = (baseline_rules or {}).get("frame_metrics") or {}
+        frame_ids = section.get("frames") or []
+        lit = ((rules or {}).get("frames") or {}).get("lit_luminance", 64)
+        not_played = (None if accepted_play and not accepted_play.get("blocked") else
+                      ((accepted_play or {}).get("blocked") or "the accepted build was not played"))
+        degraded = None
+        if not not_played:
+            env_bars = (rules or {}).get("environment") or {}
+            records = {"accepted": (accepted_play.get("records") or {}).get(project) or {},
+                       "candidate": self._records(os.path.join(out, project))}
+            # The frames are the first session's (first-session-1s) and the win test's
+            # (play-2s): a recording made on a degraded host there measured the host.
+            bad = sorted({entry.split(":", 1)[1] for entry in baseline.degraded_records(
+                {name: {n: r.get(n) for n in ("first-session", "win") if r.get(n)}
+                 for name, r in records.items()}, env_bars)})
+            degraded = ", ".join(bad) or None
+        accepted_frames = (baseline.frame_profile(
+            os.path.join(accepted_play["out"], project, "frames"), frame_ids, lit)
+            if not not_played else {})
+        candidate_frames = baseline.frame_profile(os.path.join(out, project, "frames"),
+                                                  frame_ids, lit)
+        found.append(baseline.frame_metrics(accepted_frames, candidate_frames, baseline_rules,
+                                            changes, project, degraded=degraded,
+                                            not_played=not_played))
+        return found
 
     @staticmethod
     def _baseline_blocked(cid, project, why):

@@ -20,7 +20,14 @@
 # 96f5cea, 3D 64ff4c6), the regressed loop heads (2D 68a12b7, 3D 1c6b099) and the current
 # candidates (2D 0db72b6, 3D 43c08e2), and each accepted build measured twice: the accepted
 # build passes against its own second measurement, the regressed heads fail.
-version: 1.0.0
+#
+# 1.1.0: two ADVISORY measurements (check-tiers.yaml 1.6.0 `advisory`: reported, never
+#        required, never routed, not read by floor.accepted_baseline): `source_rewrite` - the
+#        share of accepted units replaced, files rewritten and lines deleted between the
+#        accepted and the candidate commit, from git - and `frame_metrics` - each compared
+#        frame's mean luminance and contrast against the accepted build's. Ported from the
+#        unmerged accepted-baseline work (issue #75); its bars are uncalibrated here.
+version: 1.1.0
 
 # A measured regression holds the build at every tier: an accepted game made worse is never a
 # development detail. An unmeasured comparison follows quality-policy.yaml skipped_checks (not
@@ -115,3 +122,57 @@ responsiveness:
   start_slack_ms: 1000
   min_ack_fraction: 0.002
   min_fps_ratio: 0.6
+
+# -- advisory (1.1.0) ---------------------------------------------------------------------------
+# Neither section below holds a build at any tier: their checks are always `required: false`
+# (a change beyond a bar is a WARNING whose summary starts "ADVISORY, not held"), and
+# check-tiers.yaml lists them `advisory`. What would make one blocking: its bars measured
+# with this step on builds a person judged - accepted builds against their own repeats (noise)
+# and builds a person judged worse (the regression) - and a new version here stating them,
+# with the check moved to `quality` in check-tiers and named in floor.accepted_baseline.
+
+# How much of the accepted commit the candidate commit replaced, read from git objects of the
+# step's own clone (baseline.source_rewrite): the accepted content data file's units removed or
+# altered (a key the accepted unit had gone or changed; a key added is an extension), the
+# accepted text files under `roots` deleted or rewritten (deleted lines >= file_rewritten_share
+# of the file's accepted lines), and the accepted lines under `roots` deleted. Shares are of what
+# the accepted commit shipped; a quantity it does not ship is unmeasured, never 0.
+#
+# Bars: proposed, not calibrated by this step. The unmerged accepted-baseline branch measured,
+# from the two validation games' repositories (scripts/tests/fixtures/real/baseline-compare/
+# advisory/real-measurements.json `rewrite`): an improving visit of the accepted runs replaced
+# at most 0.0625 of the units, rewrote at most 0.0556 of the files and deleted at most 0.0842
+# of the lines; the replacements a person rejected - 2D 96f5cea -> 68a12b7: units 1.0, files
+# 0.0256, lines 0.1145; 3D 64ff4c6 -> b6b9edb (greybox:1): units unmeasured (no content data
+# file), files 0.1897, lines 0.4618; 3D 64ff4c6 -> 1c6b099: files 0.172, lines 0.460. 0.25 is
+# about three times the largest improving visit; each rejected replacement exceeds it on one
+# share only (2D units, 3D lines), so no single share separates them.
+source_rewrite:
+  roots: [src]
+  file_rewritten_share: 0.5
+  maximum:
+    units_replaced_share: 0.25
+    files_rewritten_share: 0.25
+    lines_deleted_share: 0.25
+  basis: proposed
+
+# Each compared frame both builds captured (the frames frames.readable reads: the first
+# session's first-session-1s, the win test's play-2s), the candidate's mean luminance and
+# contrast (0-255, analysis.frame_stats) against the accepted build's, either way
+# (baseline.frame_metrics). A brighter or flatter frame is not worse in itself - that is why it
+# is advisory: it says the look changed, for a person to judge.
+#
+# Bars: proposed. Real measurements (scripts/tests/fixtures/real/baseline-compare/advisory/
+# real-measurements.json `frames`, from the validation games' playability reports): the
+# builds a person judged worse moved each frame's luminance +62 to +84 (desktop: 2D
+# first-session-1s 25.79 -> 95.9, play-2s 25.71 -> 88.8; 3D 121.8 -> 183.6 / 183.8; 2D mobile
+# 28.4 -> 112.2) and its contrast +25.3 / +16.2 (2D desktop), +31.9 (2D mobile), +1.1 (3D) - the
+# contrast bar alone catches one 2D frame of two, and no 3D frame.
+# The accepted-baseline branch recorded that two plays of one commit (2D f55653dc, 3D
+# db651f92) moved both by at most 0.6. Those were plays of separate runs, not the same-run
+# plays this step makes, and no build a person judged has been measured by this step.
+frame_metrics:
+  frames: [first-session-1s, play-2s]
+  max_luminance_delta: 32
+  max_contrast_delta: 24
+  basis: proposed

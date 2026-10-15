@@ -22,6 +22,7 @@ sys.path.insert(0, HERE)
 
 import test_design_module as design_tests  # noqa: E402
 from wgf_design import AgentAuthor, AgentRunFailed  # noqa: E402
+from wgf_design import beats as beat_rules  # noqa: E402
 from wgf_design import content as content_rules  # noqa: E402
 from wgf_design.agent import BUILD_SPEC_KEYS, REQUIRED_KEYS, check_shape  # noqa: E402
 from wgf_design.platforms import load_platforms  # noqa: E402
@@ -375,6 +376,76 @@ class TheModuleStillJudges(AgentCase):
         self.assertEqual(tier["benchmark"]["elements"]["min_distinct"],
                          bars["elements"]["min_distinct"]["release"])
         self.assertEqual(tier["rules"], list(content_rules.TIER_RULES))
+
+    def release_strategy(self, competitors=None):
+        concept = dict(design_tests.load_strategy().get("concept") or {})
+        concept["content_model"] = {"family": "arcade", "source": "default",
+                                    "quality_tier": "release",
+                                    "budget": {"units": 12, "designed_play_s": 300}}
+        strategy = design_tests.variant(concept=concept)
+        if competitors is not None:
+            strategy["research"] = dict(strategy.get("research") or {},
+                                        competitors=competitors)
+        return strategy
+
+    def prompt_for(self, strategy, beats_prompt=True):
+        config = self.config("improve")
+        config["design"]["agent"]["argv"].append("{prompt}")
+        if beats_prompt is not None:
+            config["design"]["agent"]["beats_prompt"] = beats_prompt
+        AgentAuthor().draft(self.brief(strategy=strategy, config=config))
+        with open(os.path.join(self.scratch, "run", "design", "argv.json"),
+                  encoding="utf-8") as handle:
+            return json.load(handle)[0]
+
+    def test_request_carries_the_advisory_design_rules(self):
+        # The design contract beyond the counts (beats.py): its rules, its bars at the tier,
+        # and only the research's own teardown-depth records - fixture records never.
+        competitors = [
+            {"game": "game-leader-a", "name": "Leader A", "role": "leader", "depth": "teardown",
+             "claim_refs": []},
+            {"game": "game-fixture-b", "name": "Fixture B", "role": "leader",
+             "depth": "teardown", "fixture": True, "claim_refs": []},
+            {"game": "game-listed-c", "name": "Listed C", "role": "listed", "depth": "listing",
+             "claim_refs": []}]
+        AgentAuthor().draft(self.brief(strategy=self.release_strategy(competitors),
+                                       config=self.config("improve")))
+        design = self.request_of()["design_rules"]
+        self.assertTrue(design["advisory"])
+        self.assertTrue(design["binding"])
+        self.assertEqual([r["id"] for r in design["rules"]],
+                         [rule_id for rule_id, _ in beat_rules.RULES])
+        self.assertEqual(design["bars"]["beats"]["opening_max_new_mechanics"], 1)
+        self.assertEqual(design["bars"]["references"]["min_teardowns"], 3)
+        self.assertEqual([t["game"] for t in design["teardowns"]], ["game-leader-a"])
+        self.assertTrue(os.path.isfile(design["teardown_craft"]))
+        self.assertTrue(os.path.isfile(design["loop_craft"]))
+
+    def test_the_beats_prompt_is_advisory_and_only_at_a_tier_with_design_bars(self):
+        from wgf_design.agent import PROMPT_BEATS
+        for rule_id, _meaning in beat_rules.RULES:
+            self.assertIn(rule_id, PROMPT_BEATS)
+        self.assertIn("advisory", PROMPT_BEATS)
+        self.assertIn("never break one to meet them", PROMPT_BEATS)
+        # One debut per unit after the opening: the binding rule is named, never contradicted.
+        self.assertIn("content.introductions_one_at_a_time", PROMPT_BEATS)
+        self.assertIn("unknown", PROMPT_BEATS)
+        self.assertNotIn("research for the records", PROMPT_BEATS)
+        self.assertIn(PROMPT_BEATS, self.prompt_for(self.release_strategy()))
+        # The worked example states no quality tier: no bars bind, the prompt is not grown.
+        self.assertNotIn(PROMPT_BEATS, self.prompt_for(design_tests.load_strategy()))
+
+    def test_the_beats_prompt_is_opt_in(self):
+        # Asked only when factory.design.agent.beats_prompt is true: by default a release-tier
+        # run does not pay for the advisory contract (hypothesis bars), and the request still
+        # carries design_rules for an author that reads them.
+        from wgf_design.agent import PROMPT_BEATS
+        self.assertNotIn(PROMPT_BEATS, self.prompt_for(self.release_strategy(),
+                                                       beats_prompt=None))
+        self.assertNotIn(PROMPT_BEATS, self.prompt_for(self.release_strategy(),
+                                                       beats_prompt=False))
+        self.assertIn(PROMPT_BEATS, self.prompt_for(self.release_strategy(),
+                                                    beats_prompt=True))
 
     def test_the_prompt_names_the_content_rules(self):
         from wgf_design.agent import PROMPT_CONTENT

@@ -69,7 +69,7 @@ from wgflib.workflow import references as pinned_references
 from wgflib.yamllite import load as load_yaml
 from wgflib.workflow.contracts import ArtifactContracts
 
-from . import (commitments, consistency, content, depth, existing, experience, inherit,
+from . import (beats, commitments, consistency, content, depth, existing, experience, inherit,
                presentation)
 from . import features as feature_check
 from . import knowledge as design_knowledge
@@ -159,6 +159,9 @@ class DesignStep(WorkflowStep):
     # Builds the git reader of the adopted checkout (existing.read_floor); None: the hardened
     # git of the develop module.
     floor_git = None
+    # core/reference/quality-benchmark.yaml for the advisory design.* rules (beats.py); None:
+    # the run's pinned copy (the live file for a run that pinned none).
+    benchmark = None
 
     def execute(self, inputs, context):
         if "title-strategy" in inputs.missing:
@@ -188,6 +191,16 @@ class DesignStep(WorkflowStep):
             return StepResult.blocked(f"the design consistency rules this run started under "
                                       f"cannot be read ({exc}): no design is judged against "
                                       "rules edited after the start")
+
+        # The quality benchmark the advisory design.* rules read (beats.py), as the run pinned
+        # it. Advisory: a copy that cannot be read is reported on those rules, never a refusal.
+        try:
+            self._benchmark = self.benchmark if self.benchmark is not None \
+                else self._run_benchmark(context)
+        except (pinned_references.PinError, ValueError) as exc:
+            context.logger.warning("the run's quality benchmark cannot be read; the design.* "
+                                   "rules are not measured", error=str(exc))
+            self._benchmark = beats.Unreadable(exc)
 
         # The existing-content floor: what an adopted repository already ships. Measured on
         # every visit at the commit the checkout ships (HEAD less this run's own commits): a
@@ -437,6 +450,14 @@ class DesignStep(WorkflowStep):
             getattr(context, "environment", None) or {}, getattr(context, "run_dir", None))
 
     @staticmethod
+    def _run_benchmark(context):
+        """core/reference/quality-benchmark.yaml as the run pinned it, else live."""
+        text, _digest, _pinned = pinned_references.read(
+            beats.BENCHMARK_PATH, getattr(context, "environment", None),
+            getattr(context, "run_dir", None))
+        return load_yaml(text)
+
+    @staticmethod
     def pinned_rules(context):
         """core/reference/design-consistency-rules.yaml as the run pinned it, else live."""
         text, _digest, _pinned = pinned_references.read(
@@ -514,8 +535,9 @@ class DesignStep(WorkflowStep):
         # decision trace is held against (consistency knowledge.trace_matches_design).
         given = self.given_knowledge(author, design, strategy, context)
         ruleset = getattr(self, "_run_rules", None) or self.rules
-        block, blocking, warnings = consistency.evaluate(design, strategy, platforms, now,
-                                                         ruleset, knowledge=given)
+        block, blocking, warnings = consistency.evaluate(
+            design, strategy, platforms, now, ruleset, knowledge=given,
+            benchmark=getattr(self, "_benchmark", None))
         if blocking:
             # A breached blocking rule is `descope` for an author that cannot repair; one
             # that can is told which rule it breached, what was measured against what

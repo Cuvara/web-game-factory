@@ -831,6 +831,9 @@ factory:
     author: archetype
     # agent:
     #   draft_from: file           # edits {draft} in place; stdout overflows a host's reply
+    #   beats_prompt: false        # true: also ask for the advisory design contract (beats,
+    #                              # references, signature moments; design.* rules), whose
+    #                              # bars are hypotheses - more output per design visit
     #   argv:
     #     - claude
     #     - -p

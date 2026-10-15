@@ -58,6 +58,7 @@ factory:
       # a permission rule names it (`//` and the POSIX form, `//c/Users/...` on Windows).
       # Glob and Grep are read-only and let the agent search a request too large to page.
       draft_from: file
+      beats_prompt: false
       argv:
         - claude
         - -p

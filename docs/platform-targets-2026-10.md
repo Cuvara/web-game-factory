@@ -395,6 +395,18 @@ carrying the adapter is pinned (golden runs at the new commit, then the lock and
 `platform_adapters` in one commit). The exclusivity default (gamepix.com only unless "Allow
 Distribution") stays a person's choice at submission.
 
+**Update 2026-10-18: GamePix is a target.** Template v1.2.2 (`e103cf1`, a contract-1 patch
+release cut from v1.2.1) carries the main's adapter unchanged and the documented tag first and
+synchronous in `<head>` of a gamepix build only; the lock pins it and `platform_adapters` lists
+`gamepix`, so strategy and tech-plan plan it (the refusal above still applies to a lock without
+the adapter, and is tested so). `gamepix@1.0.1` (header only) is byte-identical to the
+template's `config/platforms/gamepix.yaml`, so `check-integrity.py` neither warns nor notes.
+`core/reference/portal-sdks.yaml` 1.1.0 adds the gamepix `loader`. The 2026-10-18 re-read of
+GamePix's public pages found the v3 script's pause/resume/sound hooks a GamePix frame can drive
+(documented for Construct 3, not in the JavaScript reference), which the adapter does not
+register; that, the frame's handling of `loaded()`, ads and the test tool are unverified, and
+are the person's checks before a submission (the template's `docs/platforms/gamepix.md`).
+
 ### The pinned template's adapters against the docs
 
 | Adapter | Disagreement | Effect |
@@ -457,7 +469,7 @@ golden runs with `WGF_TEMPLATE_COMMIT`, then the lock) is what clears it.
   `config/platforms/gamepix.yaml`; merged 2026-10-04). The Factory now has the profiles
   (`core/reference/platforms/gamepix.yaml`, `core/reference/publication/gamepix.yaml`), and
   strategy and tech-plan refuse the platform until the Factory pins a template release that
-  carries the adapter (the lock's `platform_adapters`).
+  carries the adapter (the lock's `platform_adapters`). Done 2026-10-18: v1.2.2 is pinned.
 - **Platform prerequisites:** a publication profile may name what a person must have done or
   obtained first (`prerequisites`); readiness reports an applicable one HUMAN_REQUIRED until a
   person records it in `factory.publish.platforms.<id>.prerequisites_confirmed`.
@@ -667,7 +679,7 @@ dearer: it re-runs develop and every gate after it.
 | CrazyGames | Its own bundle since 2.8.0, with the CrazyGames head script (gap 1) - but on the pinned template that bundle carries Poki, Yandex, Y8, GameDistribution and GameMonetize code, the template's own audit FAILs it and platform-validate refuses it (`portal_sdk_isolated`) until the pin moves (above). The listing now needs a 1080p trailer under 20 s (store-listing 1.1.0) and a portrait video (manual) | Developer Portal account, Progress Save toggle, Basic Launch (ads disabled, expected) and CrazyGames' Full Launch decision |
 | Y8 | Its own bundle since 2.8.0 (gap 1), but on the pinned template it carries every other portal's SDK (Y8: "no ads from another company") and platform-validate refuses it (`portal_sdk_isolated`) until the pin moves. The build needs `WGF_Y8_APP_ID` / `WGF_Y8_GAME_ID` passed through, or it ships SDK-less: verify reports `platform.sdk-loaded:y8` BLOCKED, platform-validate refuses the upload once the ids exist (gap 4) | Developer account and approved Studio, the App ID and Game ID from the portal, review, the listing fields (undocumented) |
 | GameDistribution | Tech plan blocks without a registered Game ID; with one, packageable alongside the others (its own bundle) | Account (no domain needed; Company required), Game ID from the panel before the build, rewarded flag, pre-roll viewed once from the upload view, publication request button; self-hosting only for real multiplayer with written consent and one's own HTTPS host |
-| GamePix | Profile added; no adapter at the pinned template (template#23 on main), so strategy and tech-plan refuse it: HUMAN_ACTION_REQUIRED, a template release carrying the adapter, then the pin | Account (18+, no domain); exclusivity default ("Allow Distribution"); child-directed and AI declarations on every upload |
+| GamePix | Since 2026-10-18 a target: the pinned template v1.2.2 carries the adapter, and a gamepix build is its own bundle with the SDK first in `<head>`. Real SDK in GamePix's frame and its test tool unverified | Account (18+, no domain); exclusivity default ("Allow Distribution"); child-directed and AI declarations on every upload |
 | Poki | Deferred: the current r1 package stays as it is | - |
 
 ### Publication adapter status per portal
@@ -685,7 +697,7 @@ hypothesis), HUMAN_ACTION_REQUIRED (something a person must do before it can run
 | CrazyGames | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED (zip vs files upload: both modeled) |
 | Y8 | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED; HUMAN_ACTION_REQUIRED: the Studio |
 | GameDistribution | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED; HUMAN_ACTION_REQUIRED: the account, the terms, the Game ID entered in game.config.yaml |
-| GamePix | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED; HUMAN_ACTION_REQUIRED: a template release carrying the GamePix SDK adapter, and the pin moved to it (the adapter refuses BLOCKED until a build carries the SDK) |
+| GamePix | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED; the template release carrying the GamePix SDK adapter is pinned (v1.2.2, 2026-10-18); HUMAN_ACTION_REQUIRED: the account, the declarations and the test tool (the adapter still refuses BLOCKED a package without the SDK) |
 
 For every portal: `automation_terms: unverified` in its publication profile, so the publish
 step stops HUMAN_REQUIRED before the adapter runs until a person records the terms finding

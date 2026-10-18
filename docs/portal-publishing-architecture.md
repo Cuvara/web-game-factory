@@ -97,7 +97,7 @@ Nothing below is "supported": every real-portal column is UNVERIFIED until a per
 
 | | Yandex | CrazyGames | Y8 | GameDistribution | GamePix |
 |---|---|---|---|---|---|
-| build (own bundle) | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED (SDK-less without its ids) | IMPLEMENTED; Game ID: HUMAN_ACTION_REQUIRED | HUMAN_ACTION_REQUIRED (no SDK adapter in the pinned template: template release + pin) |
+| build (own bundle) | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED (SDK-less without its ids) | IMPLEMENTED; Game ID: HUMAN_ACTION_REQUIRED | IMPLEMENTED (since the v1.2.2 pin, 2026-10-18; the SDK first in `<head>`) |
 | adapter | FIXTURE_VALIDATED | FIXTURE_VALIDATED | FIXTURE_VALIDATED | FIXTURE_VALIDATED | FIXTURE_VALIDATED (its BLOCKED path) |
 | campaign / media mapping | FIXTURE_VALIDATED (field names UNVERIFIED) | FIXTURE_VALIDATED (field names UNVERIFIED) | FIXTURE_VALIDATED (field names UNVERIFIED) | FIXTURE_VALIDATED (field names UNVERIFIED) | FIXTURE_VALIDATED (field names UNVERIFIED) |
 | create-game / Game ID + App ID / rebuild | - | - | FIXTURE_VALIDATED (end to end through the engine; verify and the sdk write are test doubles) | UNVERIFIED | - |
@@ -259,7 +259,7 @@ gh-pages or a portal HTTP API.
 | `demo:yandex:package` | `build/yandex/*.zip` | Demo only |
 
 SDK selection: adapters in `packages/platform-sdk/src/adapters/` (generic-web, yandex, poki,
-crazygames, gamevui, y8, gamedistribution, gamemonetize; **gamepix on T only**). Portal IDs
+crazygames, gamevui, y8, gamedistribution, gamemonetize, gamepix - gamepix on the pinned release since v1.2.2, on T before it). Portal IDs
 come from `game.config.yaml` entries (`game_id`, `app_id`) or `WGF_Y8_APP_ID`,
 `WGF_Y8_GAME_ID`, `WGF_GAMEMONETIZE_GAME_ID` at build time (T `game-config.ts:294-314`).
 
@@ -903,11 +903,11 @@ to moderators: a person writes it or leaves it empty).
 | No public developer agreement; an older page names a separate "Game Uploading Agreement" (date unknown) | https://gamepix.blob.core.windows.net/gpxlib/docs/tos.html |
 
 **A person must log in to learn:** the whole dashboard form, image sizes, the upload widget,
-statuses, the developer agreement, payment and tax forms, CAPTCHA or 2FA. GamePix is also
-blocked in code: no SDK adapter at the pinned template (template#23 on main). Its platform
+statuses, the developer agreement, payment and tax forms, CAPTCHA or 2FA. Its platform
 and publication profiles exist since 2026-10-04 (the developer agreement, sign-up and
-declarations: `docs/platform-targets-2026-10.md`, GamePix), and strategy and tech-plan refuse
-the platform until a template release carrying the adapter is pinned.
+declarations: `docs/platform-targets-2026-10.md`, GamePix). Until 2026-10-18 GamePix was also
+blocked in code (no SDK adapter at the pinned template); the pin is now template v1.2.2, which
+carries it, so strategy and tech-plan plan the platform.
 
 **Human intents:** the agreement, "Allow Distribution" (a commercial choice), payment and tax.
 

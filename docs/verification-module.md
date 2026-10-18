@@ -195,8 +195,8 @@ CrazyGames, Y8, GameDistribution and GameMonetize code in every bundle, and the 
 CrazyGames audit FAILs their crazygames bundles on `unexpected_dependencies`
 ([platform-targets-2026-10.md](platform-targets-2026-10.md#portal-sdks-in-each-bundle)). A
 required check would fail every verification of a game on that template - the golden runs'
-included - and route to a developer, who cannot change template code. The current pin, v1.2.1
-(4b74b08), builds each platform with its own adapter only (and generic-web), which real builds
+included - and route to a developer, who cannot change template code. Since v1.2.1
+(4b74b08; the pin is now v1.2.2) a build carries each platform's own adapter only (and generic-web), which real builds
 of both validation games at 4b74b08 show; making the checks required is a separate decision,
 not made here. So each is reported on its platform:
 a FAIL makes that platform `not-ready` in `platform_readiness` (a BLOCKED one `unverified`)
@@ -420,7 +420,7 @@ Lessons L24-L28 (`core/reference/lessons.yaml`) name these checks.
 context menu in `bindPlatform` (web-game-template PR #27), so a game made from a template
 release that carries it passes `context-menu` without code of its own; a game made from an
 earlier pin (v1.2.0) does not, which is what the calibration games show; the current pin
-(v1.2.1, `workspace/config/template.lock.json`) carries it. Nothing here duplicates the template's handler: the check only
+(v1.2.2, `workspace/config/template.lock.json`; since v1.2.1) carries it. Nothing here duplicates the template's handler: the check only
 measures it.
 
 **Calibration (2026-10-07).** The spec was run on the two validation games at their accepted

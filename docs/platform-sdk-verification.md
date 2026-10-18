@@ -4,9 +4,9 @@ The `sdk` workflow step (`scripts/wgf_sdk/`) produces the `sdk-report`. It does 
 SDK code and it never publishes; it establishes, per targeted platform and per feature,
 whether the build's integration works and how that was observed.
 
-Written 2026-10-10 against template v1.2.0 (b106261). The pin is now v1.2.1 (4b74b08,
-`workspace/config/template.lock.json`, whose `platform_adapters` lists the same ids): the same
-adapters, with the fixes its CHANGELOG lists - one adapter per build, Yandex rewarded video
+Written 2026-10-10 against template v1.2.0 (b106261). The pin is now v1.2.2 (e103cf1,
+`workspace/config/template.lock.json`): v1.2.1's adapters plus GamePix's (`platform_adapters`
+gains `gamepix`), and v1.2.1 (4b74b08) brought the fixes its CHANGELOG lists - one adapter per build, Yandex rewarded video
 shown without `onClose(wasShown)`, a Y8 capped break not counted as shown. Where a row below
 describes one of those behaviours, it describes v1.2.0:
 
@@ -23,12 +23,14 @@ Game (web-game-template src/)
  ├── crazygames        crazygames/                (on the pinned release since v1.2.0)
  ├── y8                y8/
  ├── gamedistribution  gamedistribution/
- └── gamemonetize      gamemonetize.ts
+ ├── gamemonetize      gamemonetize.ts
+ └── gamepix           gamepix.ts                 (on the pinned release since v1.2.2)
 ```
 
-GamePix has a Factory profile but no adapter at the pin (strategy and tech-plan refuse it).
-At v1.2.0 every adapter is compiled into every bundle, whichever one boots; at v1.2.1 (the
-pin) a build carries only its platform's adapter and generic-web: see
+GamePix: the adapter is on the pin since v1.2.2; its real SDK inside GamePix's frame is
+unverified (the template's `docs/platforms/gamepix.md`).
+At v1.2.0 every adapter is compiled into every bundle, whichever one boots; since v1.2.1 (the
+pin is v1.2.2) a build carries only its platform's adapter and generic-web: see
 [Portal SDKs in each bundle](platform-targets-2026-10.md#portal-sdks-in-each-bundle) and
 [verification-module.md](verification-module.md#portal-sdks-in-a-bundle).
 

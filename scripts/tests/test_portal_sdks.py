@@ -272,6 +272,32 @@ class Guards(Scanner):
         self.assertIs(portal_sdks.loader_status(scan, "crazygames")[1], False)
         self.assertIs(portal_sdks.loaded_guard("crazygames", scan).value, False)
 
+    def test_a_gamepix_package_must_load_the_documented_script(self):
+        # Template v1.2.2: the documented tag, first in <head>, in a gamepix build only. The
+        # adapter also names the URL in its code (a runtime fallback for a page without the
+        # tag), so a GamePix signature alone is not a loaded SDK.
+        url = "https://integration.gamepix.com/sdk/v3/gamepix.sdk.js"
+        fallback = f'const GAMEPIX_SDK_URL="{url}";class GamePixPlatform{{}}\n'
+        loaded = portal_sdks.Scan(self.reference, "fixture")
+        loaded.add("index.html", f'<html><head><script src="{url}"></script>'
+                                 '<script type="module" src="./assets/index.js"></script>'
+                                 '</head></html>')
+        loaded.add("assets/index.js", fallback)
+        self.assertEqual(portal_sdks.loader_status(loaded, "gamepix"), (url, True, []))
+        green = portal_sdks.loaded_guard("gamepix", loaded)
+        self.assertIs(green.value, True, green.reason)
+        self.assertIs(portal_sdks.isolated_guard("gamepix", loaded).value, True)
+        untagged = portal_sdks.Scan(self.reference, "fixture")
+        untagged.add("index.html", '<html><head><script type="module" '
+                                   'src="./assets/index.js"></script></head></html>')
+        untagged.add("assets/index.js", fallback)
+        self.assertIn("gamepix", untagged.found)  # the signature is there
+        red = portal_sdks.loaded_guard("gamepix", untagged)
+        self.assertIs(red.value, False)
+        self.assertIn(url, red.reason)
+        # The gamepix page in another portal's package is that portal's foreign SDK.
+        self.assertIs(portal_sdks.isolated_guard("yandex", loaded).value, False)
+
     def test_a_package_without_its_own_portals_code_is_red(self):
         # The backported yandex bundle, presented as a crazygames package: no CrazyGames SDK.
         result = portal_sdks.loaded_guard("yandex", self.zip_of("43c08e2+backport-crazygames"))

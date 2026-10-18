@@ -12,7 +12,7 @@ Games live in their own repositories, created from `web-game-template`
 (https://github.com/Cuvara/web-game-template) — the source of truth for template code, the
 example games (Tower Merge Rush, PixiJS; Neon Drift Arena, Three.js), platform adapters and
 engine support (2D: `pixijs` or `phaserjs`; 3D: `threejs`). The Factory never copies any of it. It pins **one template commit** - the
-latest template *release*, by tag and commit (1.2.1: `v1.2.1`, `4b74b08`) - in
+latest template *release*, by tag and commit (1.2.2: `v1.2.2`, `e103cf1`) - in
 `workspace/config/template.lock.json`; init creates every game at exactly that tree, and the
 golden runs' replay ports, which the release does not ship, are pinned separately there as
 test fixtures (`golden_ports`). Everything that reads template files (golden runs,

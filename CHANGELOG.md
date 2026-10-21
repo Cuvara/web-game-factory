@@ -59,6 +59,14 @@ examples in `workspace/config/factory.yaml` switch those agents from `--output-f
 budget; the rest is reported. Nothing existing needs bringing forward: a project still running
 text output keeps working and records its sessions with an unknown cost.
 
+**A portal build that no release-manifest pins is reported as UNGATED** (P0-06,
+`scripts/wgf_publish/registry.py` `PortalRegistry.ungated`, `wgf-publish.py registry show`). An
+entry the portal reviewed, verified, published or rejected that records no `release_id` and no
+`build_hash` reached the portal outside the release step and G6. Builds that were packaged and
+submitted by hand left no trace on the Factory's side before. `registry show` now names each
+one; `--json` adds `ungated` only when there is one. It reports and refuses nothing. Nothing
+existing needs bringing forward.
+
 ## [2.8.2] - 2026-10-15
 
 Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.2".

@@ -126,8 +126,14 @@ def cmd_registry_show(args):
     except registry.RegistryError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    ungated = reg.ungated()
     if args.json:
-        print(json.dumps(reg.document, indent=2, ensure_ascii=False))
+        document = dict(reg.document)
+        if ungated:
+            # Only when there is some: the JSON keeps the registry's own shape otherwise.
+            document["ungated"] = [{"platform": p, "status": s, "reason": registry.UNGATED}
+                                   for p, s in ungated]
+        print(json.dumps(document, indent=2, ensure_ascii=False))
         return 0
     print(f"{reg.title_id}: {reg.path}")
     if not reg.platforms():
@@ -138,6 +144,8 @@ def cmd_registry_show(args):
         print(f"  {platform:<16} {entry['status']:<15} id={entry.get('external_game_id') or '-'}"
               f"  {entry.get('association') or '-'}  release={entry.get('release_id') or '-'}"
               f"  last change {last['at']} by {last['by']}")
+    for platform, status in ungated:
+        print(f"  UNGATED {platform}: {status}, {registry.UNGATED}")
     return 0
 
 

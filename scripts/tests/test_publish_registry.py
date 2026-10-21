@@ -247,6 +247,44 @@ class Identity(RegistryTestCase):
             reg.associate("y8", " ", note="x")
 
 
+class Ungated(RegistryTestCase):
+    """P0-06: a build the portal holds that no release-manifest pins is reported, never
+    refused - the registry records what the portal shows."""
+
+    def test_a_factory_upload_pins_its_release_and_build(self):
+        reg = self.created()
+        reg.record("y8", release_id="r1", build_hash="sha256:" + "a" * 64, by="automation",
+                   run_id="run-1", now=NOW)
+        self.walk(reg, "y8", "PENDING_REVIEW", "PUBLISHED")
+        self.assertEqual(reg.ungated(), [])
+
+    def test_a_draft_holds_no_reviewed_build_yet(self):
+        self.assertEqual(self.created().ungated(), [])
+
+    def test_a_portal_status_with_nothing_pinned_is_ungated(self):
+        for path in (("PENDING_REVIEW",), ("PENDING_REVIEW", "REJECTED"),
+                     ("PENDING_REVIEW", "VERIFIED", "PUBLISHED")):
+            with self.subTest(path=path):
+                reg = self.created(self.load(f"t-{len(path)}"))
+                self.walk(reg, "y8", *path)
+                self.assertEqual(reg.ungated(), [("y8", path[-1])])
+
+    def test_a_release_id_without_the_build_is_not_enough(self):
+        reg = self.created()
+        reg.record("y8", release_id="r1", by="automation", run_id="run-1", now=NOW)
+        self.walk(reg, "y8", "PENDING_REVIEW")
+        self.assertEqual(reg.ungated(), [("y8", "PENDING_REVIEW")])
+
+    def test_entries_are_judged_one_platform_at_a_time(self):
+        reg = self.created()
+        reg.record("y8", release_id="r1", build_hash="sha256:" + "b" * 64, by="automation",
+                   run_id="run-1", now=NOW)
+        self.walk(reg, "y8", "PENDING_REVIEW")
+        self.created(reg, platform="gamepix", game_id="gp-1")
+        self.walk(reg, "gamepix", "PENDING_REVIEW")
+        self.assertEqual(reg.ungated(), [("gamepix", "PENDING_REVIEW")])
+
+
 class Lookup(RegistryTestCase):
     def test_registry_first_then_game_config(self):
         reg = self.created(game_id="g-1")
@@ -373,6 +411,22 @@ class Cli(RegistryTestCase):
         self.assertEqual(shown.returncode, 0, shown.stderr)
         self.assertEqual(json.loads(shown.stdout)["portals"]["y8"]["external_game_id"], "y8-42")
         self.assertIn("y8-42", self.run_cli("registry", "show", "tower-merge").stdout)
+
+    def test_show_flags_a_build_on_the_portal_that_no_release_manifest_pins(self):
+        # P0-06: a game a person linked by hand, then reviewed by the portal, holds a build
+        # that came through no release step and no G6.
+        self.assertEqual(self.run_cli("registry", "associate", "tower-merge", "y8", "y8-42",
+                                      "--note", "submitted by hand").returncode, 0)
+        reg = registry.load("tower-merge",
+                            titles_dir=os.path.join(self.project, "workspace", "titles"))
+        reg.record("y8", status="PENDING_REVIEW", by="human", now=NOW,
+                   evidence=status_text("In review"))
+        shown = self.run_cli("registry", "show", "tower-merge")
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        self.assertIn("UNGATED y8: PENDING_REVIEW", shown.stdout)
+        as_json = json.loads(self.run_cli("registry", "show", "tower-merge", "--json").stdout)
+        self.assertEqual([(u["platform"], u["status"]) for u in as_json["ungated"]],
+                         [("y8", "PENDING_REVIEW")])
 
     def test_associate_refuses_an_unknown_platform_and_needs_a_note(self):
         self.assertEqual(self.run_cli("registry", "associate", "tower-merge", "nowhere", "1",

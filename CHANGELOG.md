@@ -9,6 +9,20 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Y8's pause rule is portal data: the game pauses inside the ad's own callbacks there**
+(P0-04, `factory.sdk.pause_inside_ad_callbacks: [y8]`, docs/platform-architecture.md). Y8 wants
+the game paused and muted inside `beforeAd` and resumed inside `afterAd`, never around the
+request: a break Y8 caps or skips fires neither and must leave the game running. The Factory's
+gameplay layer (`scripts/wgf_sdk/game/src/platform/gameplay.ts`) paused around every request,
+so a regenerated Y8 build broke the rule that the hand-fixed games follow. The sdk step now
+writes `pauseInsideAdCallbacks` into the integration plan for the targets the setting names.
+On those targets the request itself neither pauses nor mutes, and the adapter's
+`foreground:lost` / `foreground:gained` (raised from beforeAd / afterAd) do. Every other target
+is paused around the request as before; GamePix asks for exactly that. A plan for a build with
+no such target keeps the shape it had. To bring a game forward, re-run the `sdk` step: Brick
+Breaker Worlds and Sky Marble carry the same behaviour by hand (`pauseOnAdStart` /
+`pauseInsideAdCallbacks`), and the regenerated plan names it `pauseInsideAdCallbacks`.
+
 **Ads on every target platform** (lesson L30; [docs/platform-architecture.md](docs/platform-architecture.md#ads-on-every-target-platform-since-283)).
 On 2026-10-21 Y8 returned a game the Factory built: "the game is missing ads". Its integration
 plan listed placements for the platforms of the original design (crazygames, yandex, poki);

@@ -793,6 +793,16 @@ The `submit` step reads it before every adapter run and records what each visit 
 (above, "The portal registry around the adapter"); `platform-validate` and `sdk` read the
 ids a create-before-build portal issued.
 
+**Builds that came through no release gate are reported as UNGATED.** An entry the portal
+holds a build for (PENDING_REVIEW, VERIFIED, PUBLISHED or REJECTED) that pins no `release_id`
+and no `build_hash` did not come through the release step and G6. The `submit` step records
+both on every upload, and `associate` records neither. `registry show` prints one
+`UNGATED <platform>: <status>, ...` line per such entry; `--json` adds an `ungated` list,
+and only when there is one. It reports and never refuses: the registry records what the
+portal shows, and a person's own submission is theirs to make. It exists because builds were
+packaged and submitted by hand outside G4, G5, G6 and the quality gate
+(docs/monetization/factory-audit.md §3, P0-06), and nothing on the Factory's side could tell.
+
 ## Configuration
 
 ```yaml

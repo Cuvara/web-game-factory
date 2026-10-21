@@ -37,7 +37,7 @@ from wgflib.jsonschema_lite import Validator
 from wgflib.workflow.contracts import load_registry
 
 __all__ = ["RegistryError", "PortalRegistry", "load", "registry_path", "evidence_item",
-           "STATUSES", "TRANSITIONS", "EVIDENCE_REQUIRED", "EVIDENCE_KINDS"]
+           "STATUSES", "TRANSITIONS", "EVIDENCE_REQUIRED", "EVIDENCE_KINDS", "UNGATED"]
 
 FILENAME = "portals.json"
 SCHEMA = "portal-registry"
@@ -67,6 +67,14 @@ ANYWHERE = {"UNKNOWN", "BLOCKED"}
 EVIDENCE_REQUIRED = {"PENDING_REVIEW", "VERIFIED", "PUBLISHED", "REJECTED"}
 # Evidence that carries the portal's own status text.
 EVIDENCE_KINDS = {"portal-status", "console-text", "api-response"}
+
+# An entry the portal has a build for (it reviewed, verified, published or rejected one) that
+# names no release-manifest and no build the Factory uploaded: the build reached the portal
+# outside the release gates (G4, G5, G6 pinning the manifest), e.g. packaged and submitted by
+# hand. The submit step records both on every upload; `associate` (a person linking a game they
+# made by hand) records neither. Reported, never refused: the registry records what the portal
+# shows, and a person's own submission is theirs to make (docs/publish-module.md).
+UNGATED = "no release-manifest pinned: this build reached the portal outside the release gates"
 
 # Fields `record` may set. `status`, `evidence` and `history` have their own handling.
 FIELDS = ("portal", "game_title", "external_game_id", "app_id", "other_ids", "slug", "url",
@@ -145,6 +153,18 @@ class PortalRegistry:
         """A copy of the platform's entry, or None: no game is known there (NOT_CREATED)."""
         entry = self.document["portals"].get(platform)
         return copy.deepcopy(entry) if entry is not None else None
+
+    def ungated(self):
+        """[(platform, status)] for every entry the portal holds a build for (a status in
+        EVIDENCE_REQUIRED) that pins no `release_id` and no `build_hash`: a build that did not
+        come through the release step and G6."""
+        found = []
+        for platform in self.platforms():
+            entry = self.document["portals"][platform]
+            if entry.get("status") in EVIDENCE_REQUIRED and not (
+                    entry.get("release_id") and entry.get("build_hash")):
+                found.append((platform, entry["status"]))
+        return found
 
     def status(self, platform):
         entry = self.document["portals"].get(platform)

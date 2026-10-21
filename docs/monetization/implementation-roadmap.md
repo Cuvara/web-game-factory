@@ -167,6 +167,9 @@ Today:
 
 ### P0-04 Pause scope as profile data
 
+> **As built (PR #88):** configuration, not a profile field - `factory.sdk.pause_inside_ad_callbacks:
+> [y8]`, beside `break_on_continue`. See [p0-execution-plan.md](p0-execution-plan.md#execution-status-2026-10-22).
+
 - **Problem.** `scripts/wgf_sdk/game/src/platform/gameplay.ts` pauses around the request. Y8
   requires the pause inside `beforeAd`/`afterAd`. A regeneration would undo the game fixes.
 - **Objective.** Generated games follow each portal's pause rule.
@@ -215,6 +218,10 @@ Today:
 
 ### P0-06 Submissions only from the release path
 
+> **As built (PR #87):** no standalone release command (it would skip G4/G5/G6). `registry show`
+> reports a portal build that no release-manifest pins as UNGATED. See
+> [p0-execution-plan.md](p0-execution-plan.md#execution-status-2026-10-22).
+
 - **Problem.** What shipped was built by hand scripts and submitted outside G4/G5/G6 and the
   quality gate (`runs:release-prep-2026-10-18/`). One submission was by an unknown actor.
 - **Objective.** Every upload is traceable to a gated release manifest.
@@ -237,6 +244,10 @@ Today:
 - **Authorization.** The owner keeps submitting by hand in a live login.
 
 ### P0-07 Template ad and boot hangs; GamePix at the pin
+
+> **As found:** both fixes are already on template `main` (`3bdd83d`, `231e50a`) but in no release.
+> What remains is a template release and the pin move, which need approval. See
+> [p0-execution-plan.md](p0-execution-plan.md#execution-status-2026-10-22).
 
 - **Problem.** Three gaps in the template:
   - Yandex has no max duration after `onOpen`;

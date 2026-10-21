@@ -161,6 +161,14 @@ class IntegrationPhase:
         substitutes = self._substitutes(sdk, target_ids, notes)
         break_on_continue = [t for t in (self._setting("break_on_continue", []) or [])
                              if t in target_ids]
+        # Portals whose rule is to pause and mute inside the ad's own start callback and resume
+        # in its end callback, never around the request (factory.sdk.pause_inside_ad_callbacks).
+        pause_inside = [t for t in (self._setting("pause_inside_ad_callbacks", []) or [])
+                        if t in target_ids]
+        if pause_inside:
+            notes.append(f"{', '.join(pause_inside)}: the game pauses and mutes inside the ad's "
+                         "own callbacks, not around the request "
+                         "(factory.sdk.pause_inside_ad_callbacks)")
         placements = design_placements(design)
         declared = (game_config.get("monetization") or {}).get("ad_kinds")
         self._cover_targets(placements, design, target_ids, notes, declared)
@@ -193,6 +201,9 @@ class IntegrationPhase:
             "adapterSubstitutes": substitutes,
             "breakOnContinue": break_on_continue,
         }
+        if pause_inside:
+            # Only when a target needs it: a plan without it brackets every request, as before.
+            plan["pauseInsideAdCallbacks"] = pause_inside
         source = (design.get("provenance") or {}).get("artifact_id", "the game-design")
         files = integrate.write_owned_files(repo)
         files.append(integrate.write_plan(repo, plan, source, target_ids))

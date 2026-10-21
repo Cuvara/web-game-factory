@@ -921,6 +921,13 @@ factory:
     # commercialBreak "only when exiting a pause and heading back into gameplay"
     # (developers.poki.com/guide/sdk-overview, /guide/requirements-quality).
     break_on_continue: [poki]
+    # Portals that want the game paused and muted INSIDE the ad's own start callback and
+    # resumed in its end callback, never around the request: a break the portal caps or skips
+    # fires neither and must leave the game running. Y8: "Pause and mute inside beforeAd,
+    # resume inside afterAd" (docs.y8.com/sdk/advertising/). Every other portal is paused
+    # around the request (GamePix asks for exactly that: "pause your game before calling
+    # interstitialAd() and resume it in the callback").
+    pause_inside_ad_callbacks: [y8]
     # Moments at which a portal forbids an interstitial. CrazyGames: "Do not show a midgame
     # ad on a navigational button (e.g. ... opening the settings)"
     # (docs.crazygames.com/requirements/ads).

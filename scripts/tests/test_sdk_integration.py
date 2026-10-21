@@ -346,6 +346,7 @@ class FakeLogger:
 SDK_CONFIG = {
     "adapter_substitutes": {"gamevui": "generic-web"},
     "break_on_continue": ["poki"],
+    "pause_inside_ad_callbacks": ["y8"],
     "interstitial_forbidden_moments": {"crazygames": ["pause-menu"]},
 }
 
@@ -550,6 +551,9 @@ class Integration(SdkCase):
         self.assertIn('platforms: ["yandex", "crazygames"]', plan)
         self.assertIn('gamevui: "generic-web"', plan)
         self.assertIn('breakOnContinue: ["poki"]', plan)
+        # y8 pauses inside its ad callbacks, but it is not a target here: the plan keeps the
+        # shape it had, every request bracketed.
+        self.assertNotIn("pauseInsideAdCallbacks", plan)
         self.assertNotIn("initTimeoutMs", plan)
 
         # Yandex: every needed feature working in both phases - the conformance suite's
@@ -699,6 +703,22 @@ class Integration(SdkCase):
         self.assertIn("gamevui is a target no design placement or constraint names", notes)
         self.assertIn("monetization placement",
                       self.feature(report, "poki", "rewarded")["required_by"])
+
+    def test_a_target_that_pauses_inside_its_ad_callbacks_is_named_in_the_plan(self):
+        # P0-04: Y8's rule (pause and mute inside beforeAd, resume inside afterAd) is portal
+        # data in factory.sdk, like break_on_continue; only targets of the build are named.
+        make_repo(self.repo)
+        sdk = dict(SDK_CONFIG, pause_inside_ad_callbacks=["crazygames", "not-a-target"])
+        report = self.report(self.execute(sdk=sdk))
+        plan = read(self.repo, "src/platform/integration-plan.ts")
+        self.assertIn('pauseInsideAdCallbacks: ["crazygames"]', plan)
+        self.assertNotIn("not-a-target", plan)
+        notes = " ".join(report["integration"].get("notes") or [])
+        self.assertIn("crazygames: the game pauses and mutes inside the ad's own callbacks", notes)
+        # A re-run converges on the file it wrote.
+        self.assertNotIn("src/platform/integration-plan.ts", [
+            f["path"] for f in self.report(self.execute(sdk=sdk))["integration"]["files"]
+            if f["action"] not in ("unchanged", "skipped")])
 
     def test_poki_needs_a_break_before_every_continue(self):
         make_repo(self.repo)

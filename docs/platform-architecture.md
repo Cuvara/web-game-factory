@@ -232,9 +232,15 @@ CrazyGames about 10 s, Yandex up to 10 s per call); replacing one on a timer wou
 working SDK mid-start and lose exactly the calls the portals check — Yandex `LoadingAPI.ready`,
 CrazyGames `loadingStop`/`gameplayStart`.
 
-Two portal rules are configuration, in `factory.sdk`, because they are data about a portal
-rather than code: `break_on_continue: [poki]` (an ad opportunity each time the player heads
-back into gameplay) and `interstitial_forbidden_moments: {crazygames: [pause-menu]}`.
+Three portal rules are configuration, in `factory.sdk`, because they are data about a portal
+rather than code:
+- `break_on_continue: [poki]`: an ad opportunity each time the player heads back into
+  gameplay.
+- `interstitial_forbidden_moments: {crazygames: [pause-menu]}`.
+- `pause_inside_ad_callbacks: [y8]`: the game pauses and mutes inside the ad's own start
+  callback and resumes in its end callback, never around the request, so a capped or skipped
+  break leaves the game running. The integration plan carries it as `pauseInsideAdCallbacks`.
+  Every other portal is paused around the request.
 
 The `sdk-report` records, per platform and per feature, the adapter used, the hooks that
 carry the feature and where the game calls them (`file:line`), what is unsupported and the

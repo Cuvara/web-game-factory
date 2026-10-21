@@ -22,6 +22,9 @@
 //   - no rewarded button that cannot work (CrazyGames ads requirements, Poki requirements)
 //   - Poki: a commercial break each time the player heads back into gameplay, and no local
 //     ad timer ("signal as many opportunities as possible"); driven by `breakOnContinue`
+//   - Y8: pause and mute inside beforeAd, resume inside afterAd, never around the request -
+//     a capped or skipped break fires neither (docs.y8.com/sdk/advertising/); driven by
+//     `pauseInsideAdCallbacks`
 
 import type { Game } from "@wgf/game-core";
 import {
@@ -62,6 +65,16 @@ export interface IntegrationPlan {
    * the design placed an interstitial. The portal decides whether an ad actually plays.
    */
   readonly breakOnContinue: readonly string[];
+  /**
+   * Targets whose portal requires the game to pause and mute INSIDE the ad's own start
+   * callback and resume in its end callback, never around the request — Y8: "pause your game
+   * inside the before-ad callback and resume it inside the after-ad callback"; a capped or
+   * skipped break fires neither and must leave the game running. On these the request itself
+   * does not pause or mute; the adapter's `foreground:lost` / `foreground:gained` (raised
+   * from beforeAd / afterAd) do. Input stays held for the whole request either way.
+   * Optional: a plan without it brackets every request, as before.
+   */
+  readonly pauseInsideAdCallbacks?: readonly string[];
 }
 
 /** Why the game is running without the platform it was built for. */
@@ -360,6 +373,10 @@ export class PlatformGameplay {
     return this.#plan.breakOnContinue.includes(this.#options.target);
   }
 
+  get #pauseInsideAdCallbacks(): boolean {
+    return this.#plan.pauseInsideAdCallbacks?.includes(this.#options.target) ?? false;
+  }
+
   // One truth for "gameplay is running": the adapter's own, where the SDK revision exposes
   // it (template bindPlatform reports the first input straight to the platform); this
   // object's otherwise.
@@ -426,17 +443,27 @@ export class PlatformGameplay {
   // Gameplay stops for the ad (Yandex lists ads among the interruptions) and resumes only if
   // it was running; the game is paused and muted for the whole break, from before the
   // request, so no frame of audio or input reaches an ad that does start.
+  //
+  // Except where the portal wants the pause inside its own ad callbacks
+  // (`pauseInsideAdCallbacks`, Y8): there the foreground:lost / foreground:gained pair the
+  // adapter raises from beforeAd / afterAd pauses and mutes (the constructor's listeners),
+  // and a break the portal skips or caps leaves the game running.
   async #break<T>(show: () => Promise<T>): Promise<T> {
     const wasPlaying = this.#playing;
+    const bracket = !this.#pauseInsideAdCallbacks;
     this.#inBreak = true;
-    this.#game.pause("ad");
-    this.#mute();
+    if (bracket) {
+      this.#game.pause("ad");
+      this.#mute();
+    }
     if (wasPlaying) this.#platform.gameplayStop();
     try {
       return await show();
     } finally {
-      this.#game.resume("ad");
-      this.#unmute();
+      if (bracket) {
+        this.#game.resume("ad");
+        this.#unmute();
+      }
       this.#inBreak = false;
       if (wasPlaying && !this.#game.paused) this.#platform.gameplayStart();
     }

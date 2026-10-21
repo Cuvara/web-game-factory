@@ -420,6 +420,65 @@ describe("pause-resume", () => {
     expect(sound.log).toEqual(["mute", "unmute"]);
   });
 
+  // A portal whose rule is to pause inside its own ad callbacks (factory.sdk
+  // pause_inside_ad_callbacks; Y8: pause and mute inside beforeAd, resume inside afterAd).
+  const INSIDE: IntegrationPlan = { ...PLAN, pauseInsideAdCallbacks: ["y8"] };
+
+  it("where the portal pauses inside its ad callbacks, a capped break never stops the game", async () => {
+    const game = new Game();
+    const sound = audio();
+    const seen: boolean[] = [];
+    const { platform } = portal(game, {
+      showInterstitial: () => {
+        seen.push(game.paused);
+        return Promise.resolve({ shown: false, reason: "too-soon" });
+      },
+    });
+    const gameplay = new PlatformGameplay(game, platform, INSIDE, { target: "y8", audio: sound });
+    await gameplay.naturalBreak("level-complete");
+    expect(seen).toEqual([false]);
+    expect(sound.log).toEqual([]);
+    expect(game.paused).toBe(false);
+    expect(gameplay.inputEnabled).toBe(true);
+  });
+
+  it("there, the ad's own start and end callbacks pause and mute the game", async () => {
+    const game = new Game();
+    const sound = audio();
+    const seen: boolean[] = [];
+    const rig = portal(game, {
+      showInterstitial: () => {
+        seen.push(game.paused); // the request: still running
+        rig.emit("foreground:lost"); // the ad starts (beforeAd)
+        seen.push(game.paused);
+        rig.emit("foreground:gained"); // the ad ends (afterAd)
+        return Promise.resolve({ shown: true });
+      },
+    });
+    const gameplay = new PlatformGameplay(game, rig.platform, INSIDE, {
+      target: "y8",
+      audio: sound,
+    });
+    await gameplay.naturalBreak("level-complete");
+    expect(seen).toEqual([false, true]);
+    expect(sound.log).toEqual(["mute", "unmute"]);
+    expect(game.paused).toBe(false);
+  });
+
+  it("every other target is still paused and muted around the request", async () => {
+    const game = new Game();
+    const sound = audio();
+    const { platform, pausedDuringAd } = portal(game);
+    const gameplay = new PlatformGameplay(game, platform, INSIDE, {
+      target: "yandex",
+      audio: sound,
+    });
+    await gameplay.naturalBreak("level-complete");
+    expect(pausedDuringAd).toEqual([true]);
+    expect(sound.log).toEqual(["mute", "unmute"]);
+    expect(game.paused).toBe(false);
+  });
+
   it("a player pause survives the portal giving the foreground back", () => {
     const game = new Game();
     const { platform, emit } = portal(game);

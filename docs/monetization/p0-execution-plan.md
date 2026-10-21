@@ -12,24 +12,25 @@ Rules for every item:
 - No gate or test is weakened to make a change pass.
 - No paid session, upload, submission, merge or release is part of this plan.
 
-## Status update (2026-10-21, later)
+## Execution status (2026-10-22)
 
-P0-03 is implemented by **PR #84** (`fix/ads-per-target-platform`, "per-target ad coverage
-gates"). It is open and was being completed in a separate session when this plan was resumed.
-It contains:
-- the profile field `ads.required_by_portal` (y8 1.4.0);
-- one shared coverage rule, `scripts/wgflib/ad_coverage.py`;
-- the verify Hard Gate `platform.ads-integrated:<id>`;
-- the platform-validate guard `ads_integrated`;
-- lesson L30 and `scripts/tests/test_ad_coverage.py`.
+What was done, where, and what code inspection changed relative to the plan below. Each
+item's evidence state is exact. "Locally tested" means run on this Windows machine; "CI"
+means the Linux acceptance workflow; neither means a real portal SDK.
 
-Its first CI run failed for two reasons:
-- test fixtures pin `y8@1.3.0` against the new 1.4.0 profile;
-- `test_core_security.Coupling` forbids portal names in `wgflib/ad_coverage.py`.
+| ID | State | Where | What changed from the plan |
+|---|---|---|---|
+| P0-01 | **Blocked externally** | - | Needs Y8's approval of Build 003, the owner's login and an email to Y8 |
+| P0-02 | Implemented and locally tested; **not pushed, not uploaded** | game repos, local branch `gamepix-ads`: BBW `04408fd`, SM `fdfe83c` | `gamepix` added to both placements. GamePix asks to pause before the call and resume in the callback, which is the default pause around the request, so it gets no pause-scope entry. 18 tests per game against the real `GamePixPlatform` over the repo's mock; 9 of them fail on the previous plan. Full suites pass (BBW 1262, SM 1338). The built GamePix bundles carry both placements and only the GamePix SDK tag. Upload, the Testing Toolkit run and submission belong to the owner |
+| P0-03 | PR #84 | `fix/ads-per-target-platform` | Its last CI failure (kernel coupling) was fixed by `5fee4bd`, pushed as a fast-forward |
+| P0-04 | PR #88, stacked on #84 | `feat/p0-04-pause-inside-ad-callbacks` | **Configuration, not a profile field:** `factory.sdk.pause_inside_ad_callbacks: [y8]`, beside `break_on_continue: [poki]`, because the docs keep portal rules in `factory.sdk`. That also avoids another y8 profile bump, which would re-break #84's fixture pins |
+| P0-05 | PR #86 | `feat/p0-05-agent-cost-metering` | As planned. One shared reader, `wgflib/agent_output.py`; nine agent sites; `wgf status --json` `cost`. Its end-to-end test found and fixed a reply hidden behind a progress line |
+| P0-06 | PR #87 | `feat/p0-06-ungated-portal-builds` | **Changed:** no standalone "release without a run". Such a command would skip G4/G5/G6, the very gates the item protects. Instead, `registry show` reports a portal build that no release-manifest pins as UNGATED. It reports and refuses nothing |
+| P0-07 | **No code needed; release blocked on approval** | web-game-template | Both fixes already exist on template `main`: `3bdd83d` (Yandex caps an open ad whose close is lost) and `231e50a` (CrazyGames bounds `sdk.init()`). No release carries them: v1.2.1 to v1.2.3 lack both. Releasing the template and moving the Factory pin (with both goldens) need a person's approval |
+| D2 | **Reproduced and verified fixed** | BBW | The fix commit's own `tests/e2e/load-failure.spec.ts` was run in an isolated worktree, desktop project. Pre-fix `21c212f`: 11/11 fail, the HUD stays `data-ready="false"` with `boot failed: Failed to fetch`. Fix `9374549`: 11/11 pass. Current code (`gamepix-ads`, which descends from the fix): 11/11 pass. Command: `pnpm build` then `pnpm exec playwright test tests/e2e/load-failure.spec.ts --project desktop --workers=1`. Logs: `C:/Users/duycu/wgf-runs/d2-repro/*.log` |
 
-That session is fixing both. P0-04 changes the same files (`core/reference/platforms/y8.yaml`,
-`scripts/wgf_sdk/integration.py`), so it is sequenced **after PR #84 merges**, never in
-parallel with it.
+None of this is verified against a real portal SDK. No portal approved anything, no live ad
+was observed, and no impression was monetized (ad evidence states A4-A7).
 
 ## Findings re-checked
 

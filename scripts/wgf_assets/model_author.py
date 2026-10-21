@@ -102,7 +102,8 @@ import json
 import os
 import re
 
-from wgflib import agentenv, isolation, jsonschema_lite, paths, permpath, procs, yamllite
+from wgflib import (agent_output, agentenv, isolation, jsonschema_lite, paths, permpath,
+                    procs, yamllite)
 
 from . import blender, gltf, model_judge, model_quality, modelspec, style_families
 from . import render as render_mod
@@ -773,11 +774,13 @@ class _Session:
                            idle_timeout=self.config.get("idle_timeout_seconds"),
                            log_path=log_path, heartbeat_seconds=15.0,
                            on_event=self.context.get("on_event"))
+        agent_reply = agent_output.read(result.stdout)
+        agent_output.note(self.context.get("logger"), "model-author", agent_reply, stem=stem)
         if not result.ok:
             raise ModelAuthorError(
                 f"the model author {os.path.basename(command[0])} ended {result.status} "
                 f"(exit {result.returncode}); log: {log_path}", retryable=True)
-        return result.stdout or ""
+        return agent_reply.text or ""
 
     @staticmethod
     def _craft_block(model, round_index):
@@ -1034,7 +1037,7 @@ class _Session:
                 self.judge, self.rubric, entries,
                 os.path.join(self.directory, f"judge-round{round_index}"),
                 identity=self.look, design=self.design, guarded=self.guarded or (),
-                on_event=self.context.get("on_event"))
+                on_event=self.context.get("on_event"), logger=self.context.get("logger"))
             if outcome.get("error"):
                 error = outcome["error"]
                 raise ModelAuthorError(f"the model judge ({self.judge['kind']}): "

@@ -44,7 +44,7 @@ import json
 import os
 import time
 
-from wgflib import agentenv, isolation, procs
+from wgflib import agent_output, agentenv, isolation, procs
 from wgflib import checkout as checkout_lock
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
@@ -259,6 +259,10 @@ class ReviewStep(WorkflowStep):
                            idle_timeout=settings.idle_timeout, log_path=log_path,
                            heartbeat_seconds=15.0)
         duration = time.monotonic() - began
+        # The reply, unwrapped from a json/stream-json envelope when the host printed one,
+        # and the session's cost on record (wgflib.agent_output).
+        agent_reply = agent_output.read(result.stdout)
+        agent_output.note(context.logger, "reviewer", agent_reply, commit=head)
         try:
             after = isolation.take(git, settings.guarded_paths, settings.fingerprint_ignored)
             violations = isolation.diff(before, after)
@@ -315,7 +319,7 @@ class ReviewStep(WorkflowStep):
         if settings.verdict_from == "stdout":
             # Saved where a file-writing reviewer would have put it, so every verdict has
             # the same record beside the run.
-            extracted = from_output(result.stdout)
+            extracted = from_output(agent_reply.text)
             if extracted is not None:
                 with open(verdict_path, "w", encoding="utf-8") as handle:
                     handle.write(extracted)

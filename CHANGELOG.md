@@ -44,6 +44,21 @@ The game-side guard is web-game-template 1.2.3 `pnpm sdk:check` (a local candida
 here: `workspace/config/template.lock.json` stays at v1.2.1 until 1.2.3 is released and both
 golden runs pass on it).
 
+**Every agent session is metered, not only the developer's** (P0-05,
+[docs/monetization/p0-execution-plan.md](docs/monetization/p0-execution-plan.md)). The design
+author, the reviewer, the 2D asset and set authors, the 3D model author and judge, the
+visual-qa judge, the level critic and the store copywriter now read what their agent printed
+through one reader, `scripts/wgflib/agent_output.py`. It accepts plain text, the host's json
+result object and stream-json, hands each consumer the reply unchanged (a verdict, an SVG, a
+draft), and records the session in the run's event log as `STEP_LOG data.budget: agent-cost`
+with its `role` and cost - `null` and `known: false` when the host reported none, never guessed.
+`wgf status --json` reports the run's `cost`: sessions and recorded cost per role, developer
+sessions included and nothing counted twice. The autonomous profile and the commented agent
+examples in `workspace/config/factory.yaml` switch those agents from `--output-format text` to
+`json`, which carries the cost; plain text still parses. Only the developer's spend is a
+budget; the rest is reported. Nothing existing needs bringing forward: a project still running
+text output keeps working and records its sessions with an unknown cost.
+
 ## [2.8.2] - 2026-10-15
 
 Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.2".

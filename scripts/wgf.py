@@ -875,7 +875,7 @@ def cmd_status(args):
         # decision that ended it. Reading them changes nothing.
         print(json.dumps(dict(state.to_dict(), liveness=live, pending=pending,
                               ended_by=ended_by_decision(state),
-                              quality=api.quality(state)),
+                              quality=api.quality(state), cost=api.cost(state)),
                          indent=2, ensure_ascii=False))
     else:
         print(render_status(state, definition, live, pending, quality=api.quality(state)))

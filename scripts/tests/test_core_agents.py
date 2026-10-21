@@ -170,6 +170,16 @@ elif mode == "print-detect":
     data = ({"verdict": "request-changes", "commit": commit, "blockers": blockers}
             if blockers else approve)
     print("Reviewed. Verdict:\n```json\n" + json.dumps(data, indent=2) + "\n```", flush=True)
+elif mode == "print-json-detect":
+    # The same reply, inside the result object an agent host prints with --output-format
+    # json: the verdict is in `result`, the session's cost beside it.
+    blockers = bug_blockers()
+    data = ({"verdict": "request-changes", "commit": commit, "blockers": blockers}
+            if blockers else approve)
+    reply = "Reviewed. Verdict:\n```json\n" + json.dumps(data, indent=2) + "\n```"
+    print(json.dumps({"type": "result", "subtype": "success", "is_error": False,
+                      "result": reply, "total_cost_usd": 0.25, "num_turns": 3,
+                      "duration_ms": 1200}), flush=True)
 elif mode == "no-file":
     pass
 elif mode == "crash":
@@ -486,6 +496,31 @@ class AgentLoop(unittest.TestCase):
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
         self.assertEqual([r["verdict"] for r in self.reports()],
                          ["request-changes", "approve", "approve"])
+
+    def test_a_reviewer_answering_in_a_json_result_object_is_unwrapped_and_metered(self):
+        # P0-05: the verdict inside the host's result object parses exactly like plain text,
+        # and every review session's cost reaches the run's event log.
+        state = self.run_workflow(reviewer_mode="print-json-detect", dev_mode="bug-then-fix",
+                                  reviewer={"verdict_from": "stdout"})
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        self.assertEqual([r["verdict"] for r in self.reports()],
+                         ["request-changes", "approve", "approve"])
+        events = self.api.store.read_events(state.run_id, [])
+        costs = [e["data"] for e in events if e.get("event") == "STEP_LOG"
+                 and (e.get("data") or {}).get("budget") == "agent-cost"]
+        self.assertEqual([(c["role"], c["cost"], c["known"]) for c in costs],
+                         [("reviewer", 0.25, True)] * 3)
+        summary = self.api.cost(state)["by_role"]["reviewer"]
+        self.assertEqual((summary["sessions"], summary["cost"], summary["unknown"]),
+                         (3, 0.75, 0))
+
+    def test_a_plain_text_reviewer_is_counted_with_an_unknown_cost(self):
+        state = self.run_workflow(reviewer_mode="print-detect", dev_mode="bug-then-fix",
+                                  reviewer={"verdict_from": "stdout"})
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        summary = self.api.cost(state)["by_role"]["reviewer"]
+        self.assertEqual((summary["sessions"], summary["cost"], summary["unknown"]),
+                         (3, 0.0, 3))
 
     def test_sdk_review_requesting_changes_goes_back_to_develop_never_to_verify(self):
         state = self.run_workflow(reviewer_mode="reject-sdk-once")
@@ -989,8 +1024,10 @@ class ShippedConfig(unittest.TestCase):
         self.assertFalse({"Edit", "Write", "NotebookEdit"} & set(tools))
         self.assertIn("dontAsk", review.argv)
         self.assertIn("--safe-mode", review.argv)
-        # stdout verdicts need plain text; json/stream-json output would wrap the verdict.
-        self.assertEqual(review.argv[review.argv.index("--output-format") + 1], "text")
+        # json: the host's result object carries the session's cost, and the step unwraps the
+        # verdict from it before parsing (wgflib.agent_output; test_agent_output covers both
+        # shapes). Plain text would parse too, but would leave the session unmetered.
+        self.assertEqual(review.argv[review.argv.index("--output-format") + 1], "json")
 
 
     def _opt_in_block(self):

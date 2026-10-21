@@ -59,7 +59,7 @@ import copy
 import json
 import os
 
-from wgflib import agentenv, genre_models, paths, permpath, procs, quality_bar
+from wgflib import agent_output, agentenv, genre_models, paths, permpath, procs, quality_bar
 
 from . import beats as beat_rules
 from . import commitments as brief_commitments
@@ -867,13 +867,16 @@ class AgentAuthor(DesignAuthor):
                            timeout=settings.get("timeout_seconds"),
                            idle_timeout=settings.get("idle_timeout_seconds"),
                            log_path=log_path, heartbeat_seconds=15.0)
+        agent_reply = agent_output.read(result.stdout)
+        # The design step hands its logger to the author it resolved (step.py).
+        agent_output.note(getattr(self, "logger", None), "design-author", agent_reply, stem=stem)
         if not result.ok:
             raise AgentRunFailed(
                 f"the design agent {os.path.basename(command[0])} ended {result.status} "
                 f"(exit {result.returncode}); log: {log_path}")
 
         if stdout_mode:
-            draft = _last_json_object(result.stdout or "")
+            draft = _last_json_object(agent_reply.text or "")
             if draft is None:
                 raise AuthorError("the design agent printed no JSON object")
         else:

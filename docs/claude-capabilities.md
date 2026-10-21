@@ -102,7 +102,7 @@ against `claude --help` for 2.1.281, and every flag appears in a live run below.
 | `--allowedTools` | reads, `Edit(./**)`, `Write(./**)`, `Bash(pnpm *)`, `Bash(node *)`, read-only git, the read-only filters `ls`/`head`/`tail`/`grep`/`wc`, `git clean -f` under `src/`, `tests/`, `public/` | reads, `Bash(git diff/log/show *)` | pre-approved without a prompt |
 | `--disallowedTools` | network tools; git that moves history, refs or config; `git * --output*` | `Edit,Write,NotebookEdit`, network tools, `git * --output*` | deny beats allow |
 | `--permission-mode dontAsk` | ✓ | ✓ | anything not pre-approved is refused, never prompted |
-| `--output-format` | `stream-json --verbose` | `text` | the developer's output keeps the idle timer honest. The reviewer's stdout must end with the bare or fenced verdict, and `json`/`stream-json` would wrap it and fail as `malformed-verdict` |
+| `--output-format` | `stream-json --verbose` | `json` | the developer's output keeps the idle timer honest. The reviewer's verdict arrives inside the host's result object; `wgflib.agent_output` unwraps it before the verdict is parsed (plain `text` still parses) and records the session's cost as an `agent-cost` event |
 | `--max-turns`, `--max-budget-usd` | ✓ | ✓ | the host's own bound, under the Factory's timeouts |
 | `--no-session-persistence` | ✓ | ✓ | no session files per run |
 
@@ -205,8 +205,9 @@ in the shipped `factory.yaml` beside each key and set verbatim in the autonomous
 `--safe-mode` (no hooks, plugins, MCP servers or CLAUDE.md), `--strict-mcp-config`,
 `--tools Read` and `--allowedTools Read` (the request, the craft playbooks it names, the
 model-spec schema, the frames), `--disallowedTools Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch`,
-`--permission-mode dontAsk`, `--no-session-persistence`, `--output-format text` (prints only at
-exit, hence `idle_timeout_seconds: null`). None of the three can write anything: what they
+`--permission-mode dontAsk`, `--no-session-persistence`, `--output-format json` (one result
+object at exit, hence `idle_timeout_seconds: null`; `wgflib.agent_output` unwraps the reply
+and records the session's cost). None of the three can write anything: what they
 print is written, validated and judged by the Factory. The 2D author could only deliver
 through a file at `{output}` before; `svg_from: stdout` was added so it needs no write tool.
 What the Factory enforces does not depend on the host: `wgflib.procs` (timeout, whole-tree

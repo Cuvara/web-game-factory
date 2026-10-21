@@ -694,6 +694,10 @@ artifact type): each kill criterion as `breached`, `not breached` (with its meas
 or `unmeasured`, a warning when any is unmeasured - `breached: false` on an unmeasured
 criterion is not evidence - the playtest sessions by `player_context`, and the verdict and
 `evidence_status` of each report that carries one (`status --json`: `pending.evidence`).
+`status --json` also carries `cost`: every agent session the run's event log records -
+developer sessions and the `agent-cost` events of every other agent step - with the recorded
+cost per role and the number of sessions whose host reported none (`wgflib.agent_output.summarize`;
+a cost is never guessed).
 Since workflow 8 it also prints what the inputs say about the content the design committed
 to: the design's `content.*` consistency rules and the genre model they were checked against,
 the prototype's `content_coverage` (built against designed units) and `design_gaps`, each

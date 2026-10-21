@@ -636,7 +636,10 @@ the production build.
 session's transcript (`<run_dir>/<step>/<visit>-<attempt>.log`, `greybox` or `develop`) that holds the key -
 reading only what this session appended. After each session develop records a `STEP_LOG`
 with `data.budget: developer-cost` and the cost; when the recorded total reaches `max_cost`,
-the next session is refused like the session limit. A session with no readable cost (killed
+the next session is refused like the session limit. Every other agent session - design
+author, reviewer, asset and model authors, judges, copywriter - is recorded the same way by
+`wgflib.agent_output` as `data.budget: agent-cost` with its `role`; those are reported
+(`wgf status --json`: `cost`), not budgeted. A session with no readable cost (killed
 by a timeout, a host or output mode that reports none) is counted as a session, recorded with
 `known: false` and a warning, and left out of the sum - never guessed, never a failure. The
 agent host's own per-session flag (a maximum spend per session) therefore remains the bound

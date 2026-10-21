@@ -285,6 +285,11 @@ class DesignStep(WorkflowStep):
                                     strategy_found=base["strategy_delta"]["found"])
         try:
             author = resolve_author(author_name)
+            # Where an author that runs an agent records the session's cost (wgflib.agent_output).
+            try:
+                author.logger = context.logger
+            except AttributeError:  # an author object that takes no attributes records none
+                pass
         except AuthorError as exc:
             return StepResult.failed(f"design author {author_name!r}: {exc}", retryable=False)
         revision = None

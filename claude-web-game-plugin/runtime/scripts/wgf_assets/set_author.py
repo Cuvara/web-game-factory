@@ -43,7 +43,7 @@ import shlex
 import shutil
 import sys
 
-from wgflib import agentenv, paths, permpath, procs
+from wgflib import agent_output, agentenv, paths, permpath, procs
 
 from . import preview as preview_mod
 from .author import AuthorError, AuthorRunFailed
@@ -163,6 +163,8 @@ class SetAuthor:
                            timeout=self.settings.get("timeout_seconds"),
                            idle_timeout=self.settings.get("idle_timeout_seconds"),
                            log_path=log_path, heartbeat_seconds=15.0)
+        agent_output.note(getattr(self, "logger", None), "asset-set-author",
+                          agent_output.read(result.stdout), round=round_)
         if not result.ok:
             raise AuthorRunFailed(
                 f"the set author {os.path.basename(command[0])} ended "
@@ -174,6 +176,8 @@ class SetAuthor:
         """Run sessions until every drawing passes `judge()` or the rounds are spent.
         Returns (review, [round record]). `judge()` -> preview.review()'s result; it renders
         the contact sheet. A failed host ends the rounds with what is in `out` judged."""
+        if logger is not None:
+            self.logger = logger  # where each session records its cost (wgflib.agent_output)
         job_path = layout["job"]
         preview_mod.write_job(job_path, job)
         rounds, review = [], None

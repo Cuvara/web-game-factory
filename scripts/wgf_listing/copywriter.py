@@ -32,7 +32,7 @@ import json
 import os
 import re
 
-from wgflib import agentenv, procs
+from wgflib import agent_output, agentenv, procs
 
 from wgf_review.verdict import from_output
 
@@ -638,12 +638,14 @@ class CommandWriter:
                 self.logger.info("store copy writer", argv0=os.path.basename(argv[0]), locale=locale, run=run)
             result = procs.run(argv, cwd=workdir, env=env, timeout=self.settings.get("timeout_seconds", 600),
                                idle_timeout=self.settings.get("idle_timeout_seconds"), log_path=log)
+            agent_reply = agent_output.read(result.stdout)
+            agent_output.note(self.logger, "copywriter", agent_reply, locale=locale, run=run)
             if not result.ok:
                 previous = [f"the writer did not finish ({result.status}, exit {result.returncode})"]
                 self.problems.append(previous[0])
                 continue
             if to_stdout:
-                extracted = from_output(result.stdout)
+                extracted = from_output(agent_reply.text)
                 if extracted is not None:
                     with open(output, "w", encoding="utf-8") as handle:
                         handle.write(extracted)

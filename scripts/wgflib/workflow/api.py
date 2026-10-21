@@ -13,7 +13,7 @@ import os
 import re
 import unicodedata
 
-from .. import budget, gate_evidence, paths, procs
+from .. import agent_output, budget, gate_evidence, paths, procs
 from . import checkpoint, integrity, mock, quality
 from .config import ConfigError, load_config
 from .definition import WORKFLOWS, load_definition
@@ -309,6 +309,11 @@ class WorkflowAPI:
         except quality.PolicyError as exc:
             raise ConfigError(f"the quality policy cannot be read: {exc}; no run is started "
                               f"or driven without it")
+
+    def cost(self, state):
+        """Agent sessions and their recorded cost, by role, from the run's event log
+        (wgflib.agent_output.summarize). Reading it changes nothing."""
+        return agent_output.summarize(self.store.read_events(state.run_id, []))
 
     def quality(self, state):
         """quality.report for `state`: its tier, class, why, and whether it is release-ready.

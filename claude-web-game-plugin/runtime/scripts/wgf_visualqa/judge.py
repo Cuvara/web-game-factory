@@ -24,7 +24,7 @@ import os
 import shutil
 import time
 
-from wgflib import agentenv, isolation, procs
+from wgflib import agent_output, agentenv, isolation, procs
 
 from wgf_review.verdict import from_output
 
@@ -210,6 +210,8 @@ def run_judge(settings, rubric, workdir, frames, frames_dir, *, title_id, commit
         result = procs.run(argv, cwd=workdir, env=env, timeout=settings.timeout,
                            idle_timeout=settings.idle_timeout, log_path=log_path,
                            heartbeat_seconds=15.0)
+        agent_reply = agent_output.read(result.stdout)
+        agent_output.note(logger, "visual-qa-judge", agent_reply, run=run, kind=kind)
         after = _snapshot(frames_dir, guarded)
         record = {"run": run, "kind": kind, "argv0": os.path.basename(argv[0]),
                   "exit_code": result.returncode, "status": result.status, "log": log_path}
@@ -234,7 +236,7 @@ def run_judge(settings, rubric, workdir, frames, frames_dir, *, title_id, commit
             outcome.failure = failure
             break
         if to_stdout:
-            extracted = from_output(result.stdout)
+            extracted = from_output(agent_reply.text)
             if extracted is not None:
                 with open(verdict_path, "w", encoding="utf-8") as handle:
                     handle.write(extracted)
@@ -255,7 +257,7 @@ def run_judge(settings, rubric, workdir, frames, frames_dir, *, title_id, commit
         if logger is not None:
             logger.warning("visual-qa judge verdict malformed", run=run, kind=kind,
                            problem=problem)
-        reply = _reply(verdict_path, result.stdout if to_stdout else None)
+        reply = _reply(verdict_path, agent_reply.text if to_stdout else None)
         if reply is not None and outcome.repairs < repair_budget:
             repair = {"reply": reply, "problems": errors}
         elif fresh < MAX_JUDGE_RUNS:

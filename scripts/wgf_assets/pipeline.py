@@ -1504,7 +1504,9 @@ class AssetPipeline:
             config, environ = getattr(self.context, "config", None), None
         context = {"run_dir": os.path.join(self.work_dir or tempfile.gettempdir(),
                                            "model-author"),
-                   "config": config, "policy": self.policy, "design": dict(self.design)}
+                   "config": config, "policy": self.policy, "design": dict(self.design),
+                   # Where the model author and judge record their sessions' cost.
+                   "logger": self.logger}
         if getattr(self, "_player_glb", None):
             context["player_glb"] = self._player_glb
         if environ is not None:

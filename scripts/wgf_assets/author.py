@@ -44,7 +44,7 @@ import json
 import os
 import re
 
-from wgflib import agentenv, procs
+from wgflib import agent_output, agentenv, procs
 
 __all__ = ["CommandAuthor", "AuthorError", "AuthorRunFailed", "build_author", "last_svg",
            "KINDS", "MODES", "SVG_FROM", "MAX_REPAIR_ROUNDS", "AUTHOR_CRAFT"]
@@ -164,13 +164,16 @@ class CommandAuthor:
                            timeout=self.settings.get("timeout_seconds"),
                            idle_timeout=self.settings.get("idle_timeout_seconds"),
                            log_path=log_path, heartbeat_seconds=15.0)
+        agent_reply = agent_output.read(result.stdout)
+        # The asset step hands its logger to the author it built (step.py).
+        agent_output.note(getattr(self, "logger", None), "asset-author", agent_reply, stem=stem)
         if not result.ok:
             raise AuthorRunFailed(
                 f"the asset author {os.path.basename(command[0])} ended "
                 f"{'timed out' if result.timed_out or result.idle_timed_out else 'with exit ' + str(result.returncode)}"
                 f"{'; ' + result.error if result.error else ''}; log: {log_path}")
         if self.svg_from == "stdout":
-            svg = last_svg(result.stdout or "")
+            svg = last_svg(agent_reply.text or "")
             if svg is None:
                 raise AuthorRunFailed(f"the asset author printed no SVG; log: {log_path}")
             data = svg.encode("utf-8")

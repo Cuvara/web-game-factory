@@ -300,7 +300,8 @@ factory:
     #   --tools                     Read (the brief, the craft, the contact sheet), Write and
     #                               Edit (only under {out}), Bash (only {preview})
     #   --permission-mode dontAsk   nothing is ever prompted; what no rule allows is refused
-    #   --output-format text        prints only at exit, so no idle timeout
+    #   --output-format json        one result object at exit (so no idle timeout), carrying
+    #                               the session's cost (wgflib.agent_output records it)
     #   --max-budget-usd            the host's own bound on ONE session (the whole set);
     #                               repair_rounds adds at most one more session each
     # author:
@@ -326,7 +327,7 @@ factory:
     #     - dontAsk
     #     - --no-session-persistence
     #     - --output-format
-    #     - text
+    #     - json
     #     - --max-turns
     #     - "150"
     #     - --max-budget-usd
@@ -359,7 +360,7 @@ factory:
     #     - dontAsk
     #     - --no-session-persistence
     #     - --output-format
-    #     - text
+    #     - json
     #     - --max-turns
     #     - "15"
     #     - --max-budget-usd
@@ -414,7 +415,7 @@ factory:
     #     - dontAsk
     #     - --no-session-persistence
     #     - --output-format
-    #     - text
+    #     - json
     #     - --max-turns
     #     - "80"
     #     - --max-budget-usd
@@ -648,10 +649,11 @@ factory:
     #   --disallowedTools           `git ... --output=<file>` is the one read-only git write
     #   --permission-mode dontAsk   every other command (echo >, sed -i, touch, git commit) is
     #                               refused without a prompt
-    #   --output-format text        verdict_from: stdout takes the last JSON object printed;
-    #                               json/stream-json would wrap it and fail as malformed.
-    #                               Text prints only at exit, so no idle timeout: rely on
-    #                               timeout_seconds
+    #   --output-format json        the reply arrives inside the host's result object;
+    #                               wgflib.agent_output unwraps it before verdict_from: stdout
+    #                               takes the last JSON object printed, and records the
+    #                               session's cost. Plain text still parses. Printed only at
+    #                               exit, so no idle timeout: rely on timeout_seconds
     # reviewer:
     #   kind: command
     #   verdict_from: stdout
@@ -673,7 +675,7 @@ factory:
     #     - dontAsk
     #     - --no-session-persistence
     #     - --output-format
-    #     - text
+    #     - json
     #     - --max-turns
     #     - "60"
     #     - --max-budget-usd
@@ -750,7 +752,7 @@ factory:
     #     - dontAsk
     #     - --no-session-persistence
     #     - --output-format
-    #     - text
+    #     - json
     #     - --max-turns
     #     - "10"
     #     - --max-budget-usd
@@ -810,10 +812,13 @@ factory:
     #                               brief and the PNG frames (images are read as images)
     #   --allowedTools Read         reads run without a prompt; everything else is refused
     #   --permission-mode dontAsk   nothing is ever prompted
-    #   --output-format text        verdict_from: stdout takes the last JSON object printed
+    #   --output-format json        unwrapped by wgflib.agent_output, then verdict_from:
+    #                               stdout takes the last JSON object printed; the result
+    #                               object carries the judgement's cost
     #   --max-budget-usd            the host's own bound on one judgement. The calibration
     #                               runs read 14-16 frames in one session in 80-215 s each
-    #                               (text output reports no cost; the cap was never reached)
+    #                               (those runs used text output, which reports no cost; the
+    #                               cap was never reached)
     # judge:
     #   kind: command
     #   verdict_from: stdout
@@ -835,7 +840,7 @@ factory:
     #     - dontAsk
     #     - --no-session-persistence
     #     - --output-format
-    #     - text
+    #     - json
     #     - --max-turns
     #     - "40"
     #     - --max-budget-usd
@@ -890,7 +895,7 @@ factory:
     #     - dontAsk
     #     - --no-session-persistence
     #     - --output-format
-    #     - text
+    #     - json
     #     - --max-turns
     #     - "80"
     #     - --max-budget-usd

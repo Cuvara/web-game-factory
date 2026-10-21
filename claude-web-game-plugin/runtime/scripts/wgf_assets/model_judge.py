@@ -54,7 +54,7 @@ import os
 import shutil
 import time
 
-from wgflib import agentenv, isolation, paths, procs
+from wgflib import agent_output, agentenv, isolation, paths, procs
 
 __all__ = ["JudgeError", "KINDS", "DEFAULTS", "configure", "judge", "decide", "parse",
            "load_rubric", "brief", "PROMPT", "PROMPT_STDOUT", "MAX_JUDGE_RUNS"]
@@ -337,7 +337,8 @@ def _failure(result, settings):
     return None
 
 
-def _command(settings, rubric, entries, workdir, identity, design, guarded, on_event, stem):
+def _command(settings, rubric, entries, workdir, identity, design, guarded, on_event, stem,
+             logger=None):
     from wgf_review.verdict import from_output
     images_dir = os.path.join(workdir, "images")
     staged = _stage(entries, settings, images_dir)
@@ -368,6 +369,8 @@ def _command(settings, rubric, entries, workdir, identity, design, guarded, on_e
                            timeout=settings.get("timeout_seconds"),
                            idle_timeout=settings.get("idle_timeout_seconds"),
                            log_path=log_path, heartbeat_seconds=15.0, on_event=on_event)
+        agent_reply = agent_output.read(result.stdout)
+        agent_output.note(logger, "model-judge", agent_reply, run=run, kind=kind)
         after = (_fingerprint(images_dir), isolation.take_guarded(guarded) if guarded else None)
         record = {"run": run, "kind": kind, "argv0": os.path.basename(argv[0]),
                   "exit_code": result.returncode, "status": result.status, "log": log_path}
@@ -385,7 +388,7 @@ def _command(settings, rubric, entries, workdir, identity, design, guarded, on_e
             return outcome
         text = None
         if to_stdout:
-            text = from_output(result.stdout)
+            text = from_output(agent_reply.text)
         elif os.path.isfile(verdict_path):
             with open(verdict_path, encoding="utf-8", errors="replace") as handle:
                 text = handle.read(_REPLY_CHARS + 1)
@@ -402,7 +405,7 @@ def _command(settings, rubric, entries, workdir, identity, design, guarded, on_e
             outcome["verdicts"] = {k: decide(v, rubric) for k, v in verdicts.items()}
             return outcome
         record["problem"] = "; ".join(errors)[:600]
-        reply = (text or result.stdout or "")[-_REPLY_CHARS:]
+        reply = (text or agent_reply.text or "")[-_REPLY_CHARS:]
         repairs = sum(1 for r in outcome["runs"] if r["kind"] == "repair")
         if reply.strip() and repairs < int(settings.get("repair_rounds") or 0):
             repair = {"reply": reply, "errors": errors}
@@ -467,7 +470,7 @@ def _baseline(settings, rubric, entries):
 
 
 def judge(settings, rubric, entries, workdir, *, identity=None, design=None, guarded=(),
-          on_event=None, stem="judge"):
+          on_event=None, stem="judge", logger=None):
     """Judge `entries` - [{id, role, description, readability, sheet, views {name: path},
     context, lint [warnings]}]. Never raises for the judge's own failure: `error` says why."""
     os.makedirs(workdir, exist_ok=True)
@@ -476,7 +479,7 @@ def judge(settings, rubric, entries, workdir, *, identity=None, design=None, gua
         outcome = _baseline(settings, rubric, entries)
     elif settings["kind"] == "command":
         outcome = _command(settings, rubric, entries, workdir, identity, design, guarded,
-                           on_event, stem)
+                           on_event, stem, logger=logger)
     else:
         outcome = {"verdicts": None, "runs": [], "error": {
             "code": "no-judge", "retryable": False, "message": "no model judge configured"},

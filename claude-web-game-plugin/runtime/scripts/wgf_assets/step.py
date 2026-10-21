@@ -253,6 +253,9 @@ class AssetsStep(WorkflowStep):
             return StepResult.failed(f"asset requirements: {exc}", retryable=False)
         try:
             author = build_author(settings["author"], context.config)
+            if author is not None:
+                # Where an author's sessions record their cost (wgflib.agent_output).
+                author.logger = context.logger
         except AuthorError as exc:
             return StepResult.failed(f"asset author: {exc}", retryable=False)
         reports = [(kind, inputs.load(kind)) for kind in REENTRY_REPORTS if kind in inputs]

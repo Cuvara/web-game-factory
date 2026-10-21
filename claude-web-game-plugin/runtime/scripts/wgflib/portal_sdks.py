@@ -21,11 +21,11 @@ import os
 import re
 import zipfile
 
-from . import paths
+from . import ad_coverage, paths
 from .yamllite import load_file
 
 __all__ = ["REFERENCE", "TEXT_EXTENSIONS", "Reference", "Scan", "load", "scan_directory",
-           "isolated_guard", "loaded_guard",
+           "isolated_guard", "loaded_guard", "ads_guard",
            "scan_zip", "scan_files", "foreign", "loader_status", "describe"]
 
 REFERENCE = os.path.join(paths.REFERENCE, "portal-sdks.yaml")
@@ -51,8 +51,10 @@ class Reference:
                 signatures.append((str(item["id"]), re.compile(str(item["pattern"]), flags)))
             loader = entry.get("loader") if isinstance(entry.get("loader"), dict) else None
             audit = entry.get("audit") if isinstance(entry.get("audit"), dict) else None
+            ad_calls = [(str(item["id"]), re.compile(str(item["pattern"])))
+                        for item in entry.get("ad_calls") or []]
             self.portals[str(pid)] = {"signatures": signatures, "loader": loader,
-                                      "audit": audit}
+                                      "audit": audit, "ad_calls": ad_calls}
 
     @property
     def label(self):
@@ -61,6 +63,11 @@ class Reference:
 
     def loader(self, platform_id):
         return (self.portals.get(platform_id) or {}).get("loader")
+
+    def ad_calls(self, platform_id):
+        """[(id, compiled pattern)]: how the portal's ad call looks in built code ([] when the
+        reference states none - the portal is then not judged on it)."""
+        return (self.portals.get(platform_id) or {}).get("ad_calls") or []
 
     def audit(self, platform_id):
         """The template's own audit of this platform's bundle ({cli, report, check}), or
@@ -84,6 +91,10 @@ class Scan:
         self.reference = reference
         self.label = label
         self.found = {}
+        # {portal: {ad call id: [files]}}, and the integration plan's placements as compiled
+        # into the bundle (wgflib.ad_coverage.bundle_placements), both read in the same pass.
+        self.ad_calls = {}
+        self.placements = []
         self.index_html = None
         self.files = 0
 
@@ -95,6 +106,14 @@ class Scan:
             for sid, pattern in entry["signatures"]:
                 if pattern.search(text):
                     self.found.setdefault(pid, {}).setdefault(sid, []).append(name)
+            for cid, pattern in entry.get("ad_calls") or []:
+                if pattern.search(text):
+                    self.ad_calls.setdefault(pid, {}).setdefault(cid, []).append(name)
+        if not name.endswith(".map"):
+            # A source map holds the plan's source too; the shipped code is what runs.
+            for entry in ad_coverage.bundle_placements([text]):
+                if entry not in self.placements:
+                    self.placements.append(entry)
 
     def portals(self):
         return sorted(self.found)
@@ -217,6 +236,56 @@ def isolated_guard(platform_id, scan, verified=None):
                            f"scan alone found no other portal's SDK, which does not decide it")
     return pub.green(f"{platform_id}: no other portal's SDK in the package "
                      f"({scan.files} text file(s), {scan.reference.label})", foreign=[])
+
+
+def ads_guard(platform_id, profile, scan, verified=None):
+    """ads_integrated: the package shows the ads its platform must show.
+
+    Read from verify's `platform.ads-integrated:<id>` for this commit (`verified`), which
+    judged the integration plan and the platform's bundle (wgflib.ad_coverage), and from the
+    package archive itself: where the portal requires ads, its ad call must be in the package.
+
+    `profile` is the Factory's current profile: whether a portal requires ads is a fact about
+    the portal, so a title pinned to a profile that predates `ads.required_by_portal` (where
+    verify's check was only a WARNING) is still refused here - the 2026-10-21 y8 build went
+    out with no ad call. A portal that does not require ads is GREEN whatever verify warned,
+    the warning named."""
+    from . import ad_coverage
+    from . import publication as pub
+    portal = ad_coverage.required_by_portal(profile)
+    check = f"platform.ads-integrated:{platform_id}"
+    status = (verified or {}).get("status")
+    message = (verified or {}).get("message")
+    if status == "FAIL":
+        return pub.red(f"{platform_id}: verify's {check} failed on this commit: {message}",
+                       check=check)
+    if not portal:
+        if status == "WARNING":
+            return pub.green(f"{platform_id}: the portal does not require ads; verify warned "
+                             f"({check}): {message}", check=check, advisory=True)
+        return pub.green(f"{platform_id}: the portal does not require ads"
+                         + (f" ({check} {status})" if status else ""), check=check)
+    if status == "WARNING":
+        return pub.red(f"{platform_id}: the portal requires ads (its profile's "
+                       f"ads.required_by_portal), and verify's {check} found a gap: {message}. "
+                       f"The pinned profile predates the requirement, which is why verify only "
+                       f"warned; re-plan against the current profile and run sdk again",
+                       check=check)
+    if status != "PASS":
+        return pub.unknown(f"{platform_id}: the portal requires ads, and verify's {check} is "
+                           + (f"{status} on this commit ({message})" if status
+                              else "not reported for this commit")
+                           + ": whether the package shows them is not established", check=check)
+    if scan is None:
+        return pub.unknown(f"{platform_id}: the package was not read, so whether it carries the "
+                           f"{platform_id} ad call is not established", check=check)
+    calls = scan.reference.ad_calls(platform_id)
+    if calls and platform_id not in scan.ad_calls:
+        return pub.red(f"{platform_id}: the portal requires ads, and the package carries no "
+                       f"{platform_id} ad call ({', '.join(i for i, _ in calls)}, "
+                       f"{scan.reference.label}): it would run with no ads", check=check)
+    return pub.green(f"{platform_id}: the portal requires ads; verify's {check} passed on this "
+                     f"commit and the package carries the {platform_id} ad call", check=check)
 
 
 def loaded_guard(platform_id, scan, ids_pending=False):

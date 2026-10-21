@@ -258,6 +258,18 @@ render, one rewrite, the copywriter briefed with the store-copy findings
 (`max_visits_by_route: listing-triage.listing: 2`) and on listing-triage
 (`listing-validation.listing: 2`).
 
+## Screens a portal refuses as screenshots (since 2.8.3)
+
+A profile's `store_listing.screenshots.excluded_states` names the play-probe states a portal
+refuses in a screenshot. Y8 (`y8@1.4.0`, https://docs.y8.com/studio/media/, read 2026-10-21):
+`[loading, title, paused, other]` - screenshots show gameplay, never a title, menu or loading
+screen. The platform rendition leaves the canonical screenshots captured in those states out
+while any other remains, and listing validation reports `<check>.content` as a WARNING
+(advisory, `fix: recapture`) for any that remains. Y8's other media rule - a promo image is
+never a logo alone on a plain background - is in the block's `notes`: no validator reads what
+an image shows, so a person checks it before upload. Both arrived with the Y8 return of
+2026-10-21 ("re-upload with correct promo images").
+
 ## Outcomes
 
 | Step | Outcome | When |

@@ -187,6 +187,9 @@ def requirements(profile, reference):
                     "aspects": shots.get("aspects"), "min_long_side": shots.get("min_long_side"),
                     "max_long_side": shots.get("max_long_side"),
                     "transparent": shots.get("transparent"),
+                    # Probe states the portal refuses in a screenshot (a title, menu or loading
+                    # screen): left out of the rendition, warned on if one remains.
+                    "excluded_states": shots.get("excluded_states"),
                     "known": shots.get("min") is not None or "screenshots_min" in meta})
         video = block.get("video") if isinstance(block.get("video"), dict) else {}
         out.append({"id": "video", "kind": "video", "required": video.get("required"),

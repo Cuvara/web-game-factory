@@ -117,7 +117,12 @@
 #        step's BLOCKED outcome, not by this check: a refused model never ships, so a manifest
 #        only ever carries model.craft pass or skipped.
 # 1.8.0: level-design - the level critic and the risk test (level-design-report), advisory.
-version: 1.8.0
+# 1.9.0: platform-ads - verify's platform.ads-integrated:<id> (hard): every ad kind the title
+#        commits to that a target's profile offers is reached on that target, in the
+#        integration plan and in its own bundle. Required - so a FAIL holds the build - only
+#        where the pinned profile records that the portal requires ads
+#        (ads.required_by_portal); elsewhere a gap is reported as a WARNING.
+version: 1.9.0
 
 applies_at: release
 
@@ -438,6 +443,14 @@ sources:
     status_at: {list: checks, id: id, id_split: ":", status: status}
     checks:
       browser.run: hard
+  platform-ads:
+    producer: verification-report
+    findings_via: [qa-report]
+    defined_in: scripts/wgf_verification
+    # Per target platform, reported as `platform.ads-integrated:<id>` (docs/verification-module.md).
+    status_at: {list: checks, id: id, id_split: ":", status: status}
+    checks:
+      platform.ads-integrated: hard
   model-review:
     producer: asset-manifest
     defined_in: scripts/wgf_assets

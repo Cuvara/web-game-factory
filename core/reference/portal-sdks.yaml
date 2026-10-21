@@ -36,8 +36,20 @@
 # WGF_Y8_APP_ID). `needs` names what the build must be given for it - an id a portal issues
 # only when a person creates the game is a person's act (create-before-build,
 # docs/publish-module.md), never the developer's.
+#
+# `ad_calls` (1.1.0): how the portal SDK's AD call looks in built code - the member the
+# template's adapter calls to request an ad, which the minifier keeps (a property name). Read
+# by verify's `platform.ads-integrated:<id>` and platform-validate's `ads_integrated` guard
+# (wgflib.ad_coverage): a target that must show ads (a kind the title commits to and its
+# profile offers) needs its portal's ad call in its own bundle, AND the integration plan,
+# compiled into the same bundle, must list the target for that kind. The ad call alone proves
+# only that the adapter's ad path is built in - the adapter is bundled whether or not the game
+# ever asks for an ad (2026-10-21: a y8 bundle carried the Y8 adapter and made no ad call,
+# because the plan listed no y8 placement). Measured on real template v1.2.2 builds, one per
+# platform: each pattern matches its own portal's bundle and no other's
+# (docs/platform-sdk-verification.md). A portal with no ad call here is not judged on it.
 
-version: 1.0.0
+version: 1.1.0
 
 portals:
   generic-web:
@@ -48,12 +60,18 @@ portals:
   poki:
     signatures:
       - {id: poki-sdk, pattern: 'game-cdn\.poki\.com|poki-sdk|PokiSDK'}
+    ad_calls:
+      - {id: poki-break, pattern: '\b(?:commercialBreak|rewardedBreak)\s*\('}
   yandex:
     signatures:
       - {id: yandex-games-sdk, pattern: 'yandex\.ru/games/sdk|YaGames\b'}
+    ad_calls:
+      - {id: yandex-adv, pattern: '\badv\s*\.\s*show(?:FullscreenAdv|RewardedVideo)\b'}
   crazygames:
     signatures:
       - {id: crazygames-sdk, pattern: 'sdk\.crazygames\.com|CrazyGames\.SDK'}
+    ad_calls:
+      - {id: crazygames-request-ad, pattern: '\bad\s*\.\s*requestAd\s*\('}
     loader:
       script: https://sdk.crazygames.com/crazygames-sdk-v3.js
     audit:
@@ -63,6 +81,8 @@ portals:
   y8:
     signatures:
       - {id: y8-sdk, pattern: 'cdn\.y8\.com/minimal-sdk'}
+    ad_calls:
+      - {id: y8-show-ad, pattern: '\.showAd\s*\('}
     loader:
       script: https://cdn.y8.com/minimal-sdk/2-0/y8.min.js
       needs: [WGF_Y8_APP_ID]
@@ -75,3 +95,5 @@ portals:
   gamepix:
     signatures:
       - {id: gamepix, pattern: 'gamepix\.com', ignore_case: true}
+    ad_calls:
+      - {id: gamepix-ad, pattern: '\b(?:interstitialAd|rewardAd)\s*\('}

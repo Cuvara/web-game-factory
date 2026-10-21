@@ -379,11 +379,11 @@ class Verify(VerificationCase):
         """Verify a [generic-web, <pid>] game whose <pid> bundle is the real one (variant
         `43c08e2` or `43c08e2+backport`); generic-web's is the backported yandex bundle with
         the yandex code left out, i.e. no portal SDK at all."""
-        profile = {"crazygames": "crazygames@1.3.0", "y8": "y8@1.3.0"}[pid]
+        profile = {"crazygames": "crazygames@1.3.0", "y8": "y8@1.4.0"}[pid]
         self.add_platform(f"- {{ id: {pid}, profile: {profile}, role: optional }}")
         sdk = fixture("inputs/sdk-report.json")
         sdk["platforms"].append(dict(sdk["platforms"][0], platform_id=pid,
-                                     profile_version="1.3.0"))
+                                     profile_version=profile.split("@")[1]))
         label = label or f"{variant}-{pid}"
 
         def build(command, cwd, env):

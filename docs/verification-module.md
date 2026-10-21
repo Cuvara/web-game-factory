@@ -236,6 +236,34 @@ ignores the proxy variables (Windows, macOS) the command runs with `-c` on a wra
 game's `playwright.config.ts`, written outside the checkout, that hands the browser the proxy
 itself (`netguard.guarded_playwright_config`); the game's config is never edited.
 
+### Ads integrated per target platform
+
+`platform.ads-integrated:<id>` (since 2.8.3; check-tiers `platform-ads`, **hard**; lesson L30)
+- per target, every ad kind `game.config.yaml` `monetization.ad_kinds` commits to that the
+pinned profile's `capabilities.ads` offers must be reached on that target
+(`wgflib/ad_coverage.py`):
+
+1. in the checkout's `src/platform/integration-plan.ts` (the sdk step's): a placement of the
+   kind whose `platforms` is `null` or lists `<id>` - the target id, never an adapter
+   substitute; an interstitial also when `<id>` is in `breakOnContinue`;
+2. in the platform's own bundle: its portal's ad call (`core/reference/portal-sdks.yaml`
+   `ad_calls`) is compiled in, and the plan's placements, where they can be read in the built
+   code, list `<id>` for the kind.
+
+| Result | When |
+|---|---|
+| PASS | nothing is required (no committed kind the profile offers), or every required kind reaches `<id>` in the plan and the bundle |
+| FAIL (required) | a gap, and the pinned profile records that the portal requires ads (`ads.required_by_portal`: Y8 from `y8@1.4.0`) - also no plan, an unreadable plan, or a bundle without the portal's ad call |
+| WARNING (optional) | the same gap on a platform whose profile does not record the requirement |
+| BLOCKED | the plan reaches `<id>`, but the bundle was not built (the check it depends on is named) |
+
+The message names the platform, the kinds, the platforms the plan's placements do list, and -
+when `game.config.yaml` targets other platforms than the plan's `// Targets:` header records -
+says the plan is stale; the fix is to run the sdk step again (`bin/wgf resume <run> --from
+sdk`), which regenerates the plan. A FAIL routes like every platform finding (triage, the
+`sdk` specialist's develop visit, then sdk again). The 2026-10-21 incident - a y8 build whose
+plan listed crazygames, yandex and poki - FAILs it (`scripts/tests/test_ad_coverage.py`).
+
 ### Which gameplay aspects are required
 
 Always `boot`, `loading`, `core-loop`, and `responsive` unless game.config.yaml sets

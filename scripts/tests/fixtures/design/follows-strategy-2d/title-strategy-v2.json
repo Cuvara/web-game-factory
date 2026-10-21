@@ -39,7 +39,7 @@
     },
     {
       "id": "y8",
-      "profile_version": "1.3.0",
+      "profile_version": "1.4.0",
       "role": "optional",
       "rationale": "Secondary: Y8 is compatible from the same build; not required to ship."
     }
@@ -346,7 +346,7 @@
     },
     {
       "id": "y8",
-      "profile_version": "1.3.0",
+      "profile_version": "1.4.0",
       "compatible": true,
       "issues": [
         "profile figures are unverified"

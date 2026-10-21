@@ -70,7 +70,7 @@ the check's tier moves first, by a new version of its source file.
 
 | Level | Lessons |
 |---|---|
-| blocking (7) | L3, L5, L10, L12, L15, L22, L29 |
+| blocking (8) | L3, L5, L10, L12, L15, L22, L29, L30 |
 | required (14) | L1, L2, L4, L7, L11, L13, L14, L20, L23, L24, L25, L26, L27, L28 |
 | experimental (6) | L8, L9, L16, L17, L18, L21 |
 | process (2) | L6, L19 |

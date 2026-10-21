@@ -10,7 +10,11 @@
 
 id: y8
 name: Y8
-version: 1.3.0  # 1.3.0: re-read 2026-10-07 - banners exist on Y8's approval (still off here),
+version: 1.4.0  # 1.4.0: ads.required_by_portal (2026-10-21: Y8 returned a game the Factory built
+                #        with "the game is missing ads"), the ad placement guidelines, and the
+                #        media rules (store_listing: no title, menu or loading screen as a
+                #        screenshot; no logo alone on a plain background as a promo)
+                # 1.3.0: re-read 2026-10-07 - banners exist on Y8's approval (still off here),
                 #        auto-save throttling, the per-game SDK checklist (UNKNOWN), the
                 #        published rejection grounds
                 # 1.2.0: no external links or foreign ads (developer.y8.com, read 2026-10-04),
@@ -61,10 +65,28 @@ ads:
   # Banners exist with Y8's per-game approval (https://docs.y8.com/sdk/advertising/, read
   # 2026-10-07); false until a person records the approval.
   banner_available: false
+  # Y8 reviews a game for ads and returns one that shows none (2026-10-21: "Dear Dev, the game
+  # is missing ads. Please fix it and re-upload with correct promo images"). A build for Y8
+  # must therefore reach every ad kind the title commits to with a placement: verify's
+  # platform.ads-integrated:y8 is a Hard Gate, platform-validate's ads_integrated guard is RED
+  # without it (docs/verification-module.md).
+  required_by_portal: true
+  required_by_portal_source:
+    urls:
+      - https://docs.y8.com/sdk/advertising/
+      - https://docs.y8.com/sdk/ad-placement-guidelines/
+    read: "2026-10-21"
+    evidence: >-
+      Y8's review returned a game with no ad calls ("the game is missing ads"); the advertising
+      page and the ad placement guidelines describe the placements a game is expected to make.
   notes: >
-    Pause and mute inside beforeAd, resume inside afterAd — a skipped or capped break fires
-    neither. Rewarded ads are never capped but restart the interstitial interval. Never
-    request the preroll placement; the platform runs it itself.
+    Interstitials (showAd type "next") only right after a player's click on Play, Next,
+    Retry or Continue - never during play. Rewarded (type "reward") is optional; grant the
+    reward only in adViewed. Pause and mute inside beforeAd, resume inside afterAd — a skipped
+    or capped break fires neither. Rewarded ads are never capped but restart the interstitial
+    interval. Never request the preroll placement (the platform runs it itself) and never call
+    adBreak; banners only with Y8's approval
+    (https://docs.y8.com/sdk/ad-placement-guidelines/, read 2026-10-21).
 
 review:
   # "While your game is in review, the platform serves Google's test creatives" — review
@@ -90,14 +112,23 @@ review:
 store_listing:
   status: unverified
   source: null
-  notes: Not documented at docs.y8.com; read the submission flow itself.
+  # 1.4.0: the media rules of https://docs.y8.com/studio/media/ (read 2026-10-21) - stated as
+  # rules, not figures: sizes and counts stay null (UNKNOWN) until read from the portal.
+  notes: >-
+    Sizes and counts are not documented at docs.y8.com; read the submission flow itself.
+    Media (https://docs.y8.com/studio/media/, read 2026-10-21): screenshots show gameplay -
+    never a title, menu or loading screen; a promo image is never a logo alone on a plain
+    background (it shows the game). The promo rule is a person's check before upload: no
+    validator reads what an image shows.
   title: {required: true, max_chars: null}
   short_description: {required: true, max_chars: null}
   long_description: {required: false, max_chars: null}
   locales: null
   icon: {id: icon, required: null, sizes: null, aspect: null, formats: null, max_kb: null, source: icon}
   covers: []
-  screenshots: {required: null, min: null, max: null, sizes: null, aspect: null, formats: null, max_kb: null}
+  # Gameplay only: a screenshot captured on the title, loading, pause or catch-all state is
+  # left out of the Y8 rendition, and listing validation warns if one remains.
+  screenshots: {required: null, min: null, max: null, sizes: null, aspect: null, formats: null, max_kb: null, excluded_states: [loading, title, paused, other]}
   video: {required: false, formats: null, min_seconds: null, max_seconds: null, max_mb: null}
 
 assertions:

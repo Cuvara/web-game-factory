@@ -157,7 +157,8 @@ def complete_build(family="arcade"):
             if (name, project) not in reported:
                 play["checks"].append(gate_fixture._check(name, project=project))
     verification = docs["verification-report"]
-    verification["checks"] = [{"id": "browser.run", "status": "PASS"}]
+    verification["checks"] = [{"id": "browser.run", "status": "PASS"},
+                              {"id": "platform.ads-integrated:yandex", "status": "PASS"}]
     for check_id in sorted(CHECKS):
         source, _, name = check_id.partition(":")
         if source == "browser-qa":

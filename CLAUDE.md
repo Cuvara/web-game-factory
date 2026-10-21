@@ -559,6 +559,12 @@ seen by the engine — validate what you write there with ajv.
   overlays, auto-approve), what each could skip, and how `core/reference/quality-policy.yaml`
   closes it: the run's quality snapshot, the floor at G4 and release, the development class
 - `docs/env-vars.md` — every `WGF_*` environment variable: runtime and test, who reads it, default
+- `docs/monetization/README.md` — the 2026-10-21 end-to-end factory and revenue plan: a
+  13-stage audit (research, design, levels, build, QA, monetization, publishing, post-launch;
+  code vs evidence maturity, defect escapes, unmetered spend), market research and the
+  opportunity scorecard, design and level-design changes against portal benchmarks,
+  multi-network distribution and AI policies, analytics and feedback loops, QA/CI tiers,
+  portfolio economics, and the P0-P3 roadmap. Planning only
 
 Documentation that contradicts a machine file is worse than none, because people believe it.
 Update `docs/` when a machine, contract or role changes.

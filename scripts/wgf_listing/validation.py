@@ -554,6 +554,22 @@ def validate(listing, run_dir, reference, profiles, facts=None, publication_prof
                 made = files.get("screenshots") or []
                 if req.get("required") is False:
                     continue
+                excluded = set(req.get("excluded_states") or ())
+                if excluded and made:
+                    # The portal refuses a title, menu or loading screen as a screenshot: one
+                    # captured in such a state (the canonical shot's probe state) is warned on.
+                    states = {s.get("id"): s.get("state") for s in listing.get("screenshots") or []}
+                    shown = [f["id"] for f in made if states.get(f.get("source")) in excluded]
+                    content = checks.add(
+                        f"{cid}.content", "platforms", not shown,
+                        f"{pid}: screenshots show play"
+                        + (f"; {', '.join(shown)} show a screen {pid} refuses as a screenshot "
+                           f"({', '.join(sorted(excluded))} - a title, menu or loading screen; "
+                           "advisory)" if shown else ""),
+                        platform_id=pid, warning=True, fix="recapture", files=shown or None,
+                        expected={"excluded_states": sorted(excluded)})
+                    if content["status"] == "WARNING":
+                        warnings.append(f"{cid}.content")
                 if req.get("required") is None and not req["known"]:
                     entry = checks.add(cid, "platforms", bool(made), f"{pid}: {len(made)} screenshot(s); the profile "
                                                                      "states no requirement (UNKNOWN)",

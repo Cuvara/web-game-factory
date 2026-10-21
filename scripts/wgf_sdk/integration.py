@@ -21,7 +21,7 @@ calls no portal; it does not clone, commit or push.
 import os
 import re
 
-from wgflib import paths, provenance
+from wgflib import ad_coverage, paths, provenance
 from wgflib.yamllite import YamlError, load_file
 
 from wgf_init.profiles import pin_identity
@@ -121,6 +121,14 @@ class SeamMissing(Exception):
     whoever broke the develop step's contract. Not retryable: nothing here changes it."""
 
 
+def _factory_profile(platform_id):
+    """The Factory's profile for a platform (its pin is checked by plan.py), or {}."""
+    try:
+        return load_file(os.path.join(paths.PLATFORMS, f"{platform_id}.yaml")) or {}
+    except (OSError, YamlError, ValueError):
+        return {}
+
+
 class IntegrationPhase:
     """One integration of one game repository. `setting(key, default)` reads factory.sdk."""
 
@@ -154,9 +162,9 @@ class IntegrationPhase:
         break_on_continue = [t for t in (self._setting("break_on_continue", []) or [])
                              if t in target_ids]
         placements = design_placements(design)
-        self._cover_targets(placements, design, target_ids, notes)
-        self._forbid_moments(placements, target_ids)
         declared = (game_config.get("monetization") or {}).get("ad_kinds")
+        self._cover_targets(placements, design, target_ids, notes, declared)
+        self._forbid_moments(placements, target_ids)
         placement_records, plan_placements = self._placements(placements, declared)
         problems = integrate.seam_problems(repo)
         if problems:
@@ -187,7 +195,7 @@ class IntegrationPhase:
         }
         source = (design.get("provenance") or {}).get("artifact_id", "the game-design")
         files = integrate.write_owned_files(repo)
-        files.append(integrate.write_plan(repo, plan, source))
+        files.append(integrate.write_plan(repo, plan, source, target_ids))
         files.extend(integrate.write_seam_files(repo))
         files.append(integrate.write_wiring(repo))
         hooks = integrate.scan_hooks(repo)
@@ -206,7 +214,8 @@ class IntegrationPhase:
 
         platforms = {
             target.get("id"): self._platform(target, sdk, substitutes, design, placements,
-                                             hooks, tests, break_on_continue)
+                                             hooks, tests, break_on_continue,
+                                             plan=plan, declared=declared)
             for target in targets
         }
         wanted_hooks = sorted({alt for r in platforms.values() for f in r["features"]
@@ -247,42 +256,76 @@ class IntegrationPhase:
         return used
 
     @staticmethod
-    def _cover_targets(placements, design, target_ids, notes):
-        """Give a placement every target the design never considered whose profile offers its
-        kind.
+    def _cover_targets(placements, design, target_ids, notes, declared=None):
+        """Give a placement every target its kind must reach and the design's lists miss.
 
         A placement that names its platforms names the ones its design knew of. A target
         added later - a retarget after the design, or a design written for other platforms -
         is in none of those lists, and would ship with no ads at all (both 2026-10 audits:
         the integration plan named crazygames, yandex and poki; a y8 build had zero
-        placements). Considered = the platforms the design's constraints or any placement
-        names: a target among them that a placement leaves out was left out on purpose and
-        stays out."""
+        placements). A target whose profile offers the placement's kind gets the placement
+        when the design never considered it (no constraint or placement names it), and -
+        whatever the design considered (2026-10-21: a y8 build returned by the portal for
+        missing ads) - when no placement of that kind reaches it and either:
+
+          * the kind's lists are stale: a placement of it names a platform that is not a
+            target any more (a retarget left the lists of the design it came from), or
+          * its profile records that the portal requires ads (`ads.required_by_portal`)
+            and the title commits to the kind (game.config.yaml monetization.ad_kinds).
+
+        Otherwise a considered target the lists leave out was left out on purpose and stays
+        out; the integration reports the gap (_ad_gaps, wgflib.ad_coverage)."""
         considered = {str(c.get("platform_id")) for c in
                       design.get("platform_constraints_applied") or [] if isinstance(c, dict)}
         for placement in placements:
             considered |= set(placement.platforms or ())
-        offered = {}
+        offered, portal_required = {}, {}
         for platform_id in target_ids:
-            try:
-                profile = load_file(os.path.join(paths.PLATFORMS, f"{platform_id}.yaml")) or {}
-            except (OSError, YamlError, ValueError):
-                profile = {}
-            offered[platform_id] = set((profile.get("capabilities") or {}).get("ads") or [])
-        added = {}
+            profile = _factory_profile(platform_id)
+            offered[platform_id] = set(ad_coverage.offered(profile))
+            portal_required[platform_id] = ad_coverage.required_by_portal(profile)
+        committed = None if declared is None else set(declared)
+        reached = {(t, p.kind) for p in placements for t in target_ids if p.applies_to(t)}
+        stale = {}
+        for placement in placements:
+            gone = set(placement.platforms or ()) - set(target_ids)
+            if gone:
+                stale.setdefault(placement.kind, set()).update(gone)
+        added, why = {}, {}
         for placement in placements:
             if placement.platforms is None:
                 continue  # every platform already
-            extra = [t for t in target_ids if t not in placement.platforms
-                     and t not in considered and placement.kind in offered.get(t, ())]
+            extra = []
+            for t in target_ids:
+                if t in placement.platforms or placement.kind not in offered.get(t, ()):
+                    continue
+                if t not in considered:
+                    reason = None
+                elif (t, placement.kind) in reached:
+                    continue
+                elif stale.get(placement.kind):
+                    reason = (f"the design's {placement.kind} lists predate the retarget: they "
+                              f"name {', '.join(sorted(stale[placement.kind]))}, not a target")
+                elif portal_required.get(t) and (committed is None
+                                                 or placement.kind in committed):
+                    reason = "its profile records that the portal requires ads"
+                else:
+                    continue
+                extra.append(t)
+                why.setdefault(t, reason)
             if extra:
                 placement.platforms = list(placement.platforms) + extra
                 for platform_id in extra:
                     added.setdefault(platform_id, []).append(placement.id)
         for platform_id, ids in sorted(added.items()):
-            notes.append(f"{platform_id} is a target no design placement or constraint names "
-                         f"(the design predates it): it gets {', '.join(ids)}, whose kinds its "
-                         "profile offers")
+            if why[platform_id] is None:
+                notes.append(f"{platform_id} is a target no design placement or constraint "
+                             f"names (the design predates it): it gets {', '.join(ids)}, whose "
+                             "kinds its profile offers")
+            else:
+                notes.append(f"{platform_id} is a target no design placement of its kind "
+                             f"reaches ({why[platform_id]}): it gets {', '.join(ids)}, whose "
+                             "kinds its profile offers")
 
     def _forbid_moments(self, placements, target_ids):
         """Narrow interstitial placements away from platforms that forbid their moment."""
@@ -409,7 +452,7 @@ class IntegrationPhase:
                 hooks.setdefault(name, []).append(where)
 
     def _platform(self, target, sdk, substitutes, design, placements, hooks, tests,
-                  break_on_continue):
+                  break_on_continue, plan=None, declared=None):
         platform_id = target.get("id")
         profile = str(target.get("profile") or "")
         profile_version = profile.split("@", 1)[1] if "@" in profile else "unknown"
@@ -441,6 +484,7 @@ class IntegrationPhase:
         features = [self._feature(name, why, adapter, sdk, placements, platform_id, hooks,
                                   tests, platform_id in break_on_continue)
                     for name, why in needed.items()]
+        features = self._ad_gaps(features, platform_id, plan, declared)
 
         statuses = {f["status"] for f in features}
         if not adapter.implemented:
@@ -544,6 +588,53 @@ class IntegrationPhase:
             record["note"] = ("local storage: the adapter has no cloud saves, so progress "
                               "stays on this device")
         return record
+
+    @staticmethod
+    def _ad_gaps(features, platform_id, plan, declared):
+        """A kind the title commits to, which this target's profile offers and no placement
+        of the generated plan reaches, is never silently `not-required` ("the design places
+        none"): that is how a y8 build shipped with no ad call and a clean sdk-report
+        (2026-10-21). Where the portal requires ads (`ads.required_by_portal`) it is
+        `not-started` - the platform is not working, and a required one fails the step;
+        elsewhere it stays `not-required` with the gap said, and verify reports it
+        (platform.ads-integrated:<id>)."""
+        if plan is None or declared is None:
+            return features
+        profile = _factory_profile(platform_id)
+        portal = ad_coverage.required_by_portal(profile)
+        config = {"platforms": [platform_id], "monetization": {"ad_kinds": list(declared)}}
+        missing = {r.kind for r in ad_coverage.gaps(
+            plan, ad_coverage.requirements(config, lambda _pid: profile))}
+        if not missing:
+            return features
+        out = []
+        for feature in features + [{"feature": k} for k in sorted(missing)
+                                   if k not in {f.get("feature") for f in features}]:
+            kind = feature.get("feature")
+            if kind not in missing:
+                out.append(feature)
+                continue
+            listed = ", ".join(ad_coverage.listed_for(plan, kind)) or "none"
+            gap = (f"game.config.yaml monetization.ad_kinds commits to {kind} and the "
+                   f"{platform_id} profile offers it, but no {kind} placement in "
+                   f"{ad_coverage.PLAN_FILE} reaches {platform_id} ({kind} placements list: "
+                   f"{listed}): the {platform_id} build would show no {kind} ads")
+            record = {k: v for k, v in feature.items()
+                      if k not in ("observed_by", "status", "note")}
+            if portal:
+                record.update(
+                    status="not-started",
+                    required_by=f"the {platform_id} portal requires ads (its profile's "
+                                "ads.required_by_portal)",
+                    note=gap + ". Give a design placement of this kind the platform and run "
+                               "sdk again")
+            else:
+                record.update(status="not-required",
+                              note=gap + f"; the design leaves {platform_id} out on purpose, "
+                                         f"verify reports it (platform.ads-integrated:"
+                                         f"{platform_id})")
+            out.append(record)
+        return out
 
     def _profile_identity(self, target):
         """The profile this platform was integrated against, by content hash - a version

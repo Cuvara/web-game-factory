@@ -56,7 +56,7 @@ BY_ID = {l["id"]: l for l in LESSONS["lessons"]}
 
 # The design's table (learning-enforcement design 2.3), computed from the integ registry.
 EXPECTED_LEVELS = {
-    "blocking": {"L3", "L5", "L10", "L12", "L15", "L22", "L29"},
+    "blocking": {"L3", "L5", "L10", "L12", "L15", "L22", "L29", "L30"},
     "required": {"L1", "L2", "L4", "L7", "L8", "L11", "L13", "L14", "L20", "L23", "L24",
                  "L25", "L26", "L27", "L28"},
     "experimental": {"L9", "L16", "L17", "L18", "L21"},

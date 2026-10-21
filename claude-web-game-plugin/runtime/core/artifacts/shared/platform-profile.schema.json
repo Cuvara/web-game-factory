@@ -106,8 +106,21 @@
         "interstitial_min_interval_s": { "type": ["number", "null"] },
         "rewarded_available": { "type": "boolean" },
         "banner_available": { "type": "boolean" },
+        "required_by_portal": { "type": "boolean", "description": "true: the portal itself requires a game to show ads (it reviews for them and returns a game that has none). Then every ad kind the title commits to (game.config.yaml monetization.ad_kinds) that `capabilities.ads` offers must be reached by a placement on this platform: verify's platform.ads-integrated:<id> is required for it (a Hard Gate), and platform-validate's ads_integrated guard is RED without it. Absent or false: a gap is reported, not blocking. Stated only with `required_by_portal_source`." },
+        "required_by_portal_source": {
+          "type": "object",
+          "description": "Where the portal says it requires ads, and when it was read.",
+          "required": ["urls", "read"],
+          "properties": {
+            "urls": { "type": "array", "minItems": 1, "items": { "type": "string", "format": "uri" } },
+            "read": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+            "evidence": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
         "notes": { "type": "string" }
       },
+      "dependentRequired": { "required_by_portal": ["required_by_portal_source"] },
       "additionalProperties": false
     },
 
@@ -224,7 +237,8 @@
             "aspects": { "type": ["array", "null"], "items": { "type": "string", "pattern": "^[0-9]+:[0-9]+$" }, "description": "Every proportion the portal takes, when it takes more than one (16:9 landscape and 9:16 portrait); a screenshot must match one. `aspect` still holds a single one." },
             "min_long_side": { "type": ["integer", "null"], "minimum": 1, "description": "The long side's lower bound in pixels; null: not stated." },
             "max_long_side": { "type": ["integer", "null"], "minimum": 1, "description": "The long side's upper bound in pixels; null: not stated. A larger capture is downscaled, never refused." },
-            "transparent": { "type": ["boolean", "null"], "description": "false: the portal takes no alpha channel (JPEG or 24-bit PNG), so screenshots are written without one; one that still carries an alpha channel is a listing-validation WARNING (advisory: the portal states the format, not a refusal); null: not stated." }
+            "transparent": { "type": ["boolean", "null"], "description": "false: the portal takes no alpha channel (JPEG or 24-bit PNG), so screenshots are written without one; one that still carries an alpha channel is a listing-validation WARNING (advisory: the portal states the format, not a refusal); null: not stated." },
+            "excluded_states": { "type": ["array", "null"], "items": { "enum": ["loading", "title", "playing", "paused", "won", "lost", "other"] }, "description": "Play-probe states the portal refuses in a screenshot (a title, menu or loading screen): the platform rendition leaves the canonical screenshots captured in them out while others remain, and listing validation WARNS for any that remains (advisory). null: not stated." }
           },
           "additionalProperties": false
         },

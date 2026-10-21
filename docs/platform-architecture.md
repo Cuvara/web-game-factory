@@ -164,7 +164,10 @@ changes nothing — and commits them (below):
   `canOfferReward`/`offerReward`, `naturalBreak`, `save`/`load`), built only on the
   `Platform` interface. Portal-specific calls stay in the template's adapters.
 - `src/platform/integration-plan.ts` — generated: each placement attached to a gameplay
-  moment (`game-over`, `level-complete`, `pause-menu`) by reading its trigger.
+  moment (`game-over`, `level-complete`, `pause-menu`) by reading its trigger. Its header
+  records the targets it was generated for (`// Targets: yandex, crazygames, y8`, since
+  2.8.3): verify names a plan whose targets differ from `game.config.yaml`'s stale. See
+  [Ads on every target platform](#ads-on-every-target-platform-since-283).
 - `tests/unit/platform/gameplay-integration.test.ts` — SDK-mock suite, one block per
   situation: SDK available, SDK unavailable, SDK initialization failure, ad unavailable, ad
   closed early, reward callback, pause/resume, platform not configured.
@@ -290,6 +293,35 @@ What the step does not do: write gameplay (the develop step places the hook call
 analytics sink, commit, push or submit.
 
 ---
+
+### Ads on every target platform (since 2.8.3)
+
+On 2026-10-21 Y8 returned a game the Factory built with *"Dear Dev, the game is missing ads. Please fix it and re-upload with correct promo images"*. Its integration plan listed its placements for the platforms of
+the original design (crazygames, yandex, poki); the title was retargeted to yandex,
+crazygames and y8 with `monetization.ad_kinds: [interstitial, rewarded]`, nothing regenerated
+the plan, and the y8 build made no ad call: the runtime (`gameplay.ts`) shows a placement only
+on a target its `platforms` lists (or every target, `null`). The sdk step reported y8's
+interstitial `not-required` ("the design places none"); nothing after it asked. Two more
+titles had the same flaw. The rule, in one module (`scripts/wgflib/ad_coverage.py`) read in
+four places:
+
+> For every target platform and every ad kind K: K is in `game.config.yaml`
+> `monetization.ad_kinds` and in the pinned profile's `capabilities.ads` ⇒ a placement of
+> kind K reaches the target (by the target id, never an adapter substitute; an interstitial
+> also through `breakOnContinue`).
+
+| Where | What it does |
+|---|---|
+| sdk step, plan | `_cover_targets` gives a target the design's placements of a kind it offers when the design never considered it (2.8.0), and - whatever the design considered - when no placement of that kind reaches it and either the kind's lists name a platform that is no longer a target (lists older than the retarget) or the portal requires ads (`ads.required_by_portal`) and the title commits to the kind. The plan header records the targets. |
+| sdk step, report | `_ad_gaps`: a committed, offered kind no placement reaches is never `not-required` on a portal that requires ads - `not-started`, so the platform is not working and a required one fails the step. Elsewhere it stays `not-required` with the gap stated. |
+| verify | `platform.ads-integrated:<id>` ([verification-module.md](verification-module.md#ads-integrated-per-target-platform)): the plan in the checkout and the platform's own bundle (its portal's ad call, and the compiled plan). Hard Gate (check-tiers `platform-ads`, lesson L30) where the pinned profile says the portal requires ads; a WARNING elsewhere. |
+| platform-validate | guard `ads_integrated` ([publish-module.md](publish-module.md)): verify's check for the commit and the package's ad call; reads the Factory's *current* profile, so a title pinned before a portal's requirement was recorded is still refused. |
+| game repository | `pnpm sdk:check` (web-game-template 1.2.3, `scripts/sdk/ad-coverage.mjs`) runs the same rule in the game's CI. |
+
+`ads.required_by_portal` is set only where the portal's own pages say so, with
+`required_by_portal_source` (URLs and the date read): Y8 (`y8@1.4.0`). Yandex, CrazyGames,
+Poki, GameDistribution, GameMonetize and GamePix are not marked: their pages were not read for
+a requirement, so a gap there is a WARNING, not a guess.
 
 ## Publishing
 

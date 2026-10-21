@@ -9,6 +9,41 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Ads on every target platform** (lesson L30; [docs/platform-architecture.md](docs/platform-architecture.md#ads-on-every-target-platform-since-283)).
+On 2026-10-21 Y8 returned a game the Factory built: "the game is missing ads". Its integration
+plan listed placements for the platforms of the original design (crazygames, yandex, poki);
+the title was retargeted to yandex, crazygames and y8 with `ad_kinds: [interstitial,
+rewarded]`, and the y8 build made no ad call while every gate passed. Two more titles had the
+same flaw. One rule (`scripts/wgflib/ad_coverage.py`, a `wgflib` change because three modules
+read it) - every target that offers a committed ad kind is reached by a placement of it - now
+holds in four places:
+
+- **sdk step.** A target gets the design's placements of a kind its profile offers when the
+  kind's lists predate the retarget (they name a platform no longer targeted) or the portal
+  requires ads - not only when the design never considered it (2.8.0). A committed, offered,
+  unreached kind is never `not-required` on a portal that requires ads: it is `not-started`,
+  and a required platform fails the step. The plan's header records its targets
+  (`// Targets: ...`), so a retarget after it reads as stale.
+- **verify.** `platform.ads-integrated:<id>`: the plan in the checkout and the platform's own
+  bundle (the portal's ad call, `core/reference/portal-sdks.yaml` `ad_calls` 1.1.0, measured on
+  real template builds; the compiled plan). Hard Gate where the pinned profile records
+  `ads.required_by_portal`, a WARNING elsewhere. check-tiers 1.9.0 (`platform-ads`),
+  quality-assessment 1.6.0 (family `platform-ads`), lessons 2.3.0 (L30, blocking).
+- **platform-validate.** Guard `ads_integrated`, read against the Factory's current profile, so
+  a title pinned before the requirement was recorded is still refused.
+- **Profiles.** `y8@1.4.0`: `ads.required_by_portal: true` with its source (docs.y8.com
+  advertising and ad placement guidelines, read 2026-10-21), the placement rules in `notes`,
+  and the media rules (docs.y8.com/studio/media): `store_listing.screenshots.excluded_states`
+  (no title, menu or loading screen - left out of the rendition, a listing-validation WARNING
+  if one remains) and, in `notes`, no logo-alone promo (a person's check). The profile schema
+  gains `ads.required_by_portal`, `ads.required_by_portal_source` and
+  `store_listing.screenshots.excluded_states`. **A title pinned to `y8@1.3.0` re-plans
+  (tech-plan, G3) to pin 1.4.0**, as for any profile version.
+
+The game-side guard is web-game-template 1.2.3 `pnpm sdk:check` (a local candidate, not pinned
+here: `workspace/config/template.lock.json` stays at v1.2.1 until 1.2.3 is released and both
+golden runs pass on it).
+
 ## [2.8.2] - 2026-10-15
 
 Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.2".

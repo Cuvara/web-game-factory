@@ -326,6 +326,11 @@ def render_platform(platform, requirements, *, canonical, copies, out_dir, run_d
         if orientation:
             wanted = set(orientation)
             shots = [s for s in shots if s.get("viewport") in wanted] or shots
+        # Screens the portal refuses as a screenshot (a title, menu or loading screen) are
+        # left out while any other remains; listing validation warns for one that remains.
+        excluded = set(shots_req.get("excluded_states") or ())
+        if excluded:
+            shots = [s for s in shots if s.get("state") not in excluded] or shots
         maximum = shots_req.get("max")
         if maximum:
             shots = shots[:maximum]

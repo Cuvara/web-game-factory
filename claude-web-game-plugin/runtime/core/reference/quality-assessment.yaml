@@ -68,7 +68,8 @@
 # 1.4.0: model-craft-lint and model-craft-judge - the model review's craft lint and its opt-in
 #        judge (core/reference/model-review-rubric.yaml); both advisory, so supporting.
 # 1.5.0: the level critic's families (level-critic, risk-reward).
-version: 1.5.0
+# 1.6.0: platform-ads - verify's platform.ads-integrated:<id>, per target platform.
+version: 1.6.0
 
 statuses: [PASS, FAIL, INCONCLUSIVE, NOT_SUPPORTED]
 
@@ -289,6 +290,16 @@ families:
     method: verify's browser-QA spec on the verified commit (core/reference/browser-qa.yaml), per viewport.
     limits: Chromium under Playwright on the build host.
     cannot_justify: Behaviour on Safari, Firefox or a real handset.
+  - id: platform-ads
+    label: Ads integrated per target platform
+    dimension: runtime_correctness
+    class: deterministic
+    when: reported
+    checks: [platform-ads:platform.ads-integrated]
+    measures: Every ad kind the title commits to that a target's profile offers is reached on that target - by a placement of the integration plan, and in the target's own bundle (its portal's ad call built in, the compiled plan listing it).
+    method: verify reads the plan in the checkout and scans each platform's bundle against core/reference/portal-sdks.yaml (wgflib.ad_coverage).
+    limits: Static - it shows the placements and the ad path exist, not that the game reaches the moment or that the portal serves an ad.
+    cannot_justify: That ads are shown at good moments, or that the portal's review accepts them.
   - id: browser-oracle
     label: Browser QA - states the game reports
     dimension: runtime_correctness

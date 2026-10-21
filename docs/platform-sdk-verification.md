@@ -65,6 +65,35 @@ template contract 1: `collect-facts.mjs` echoes the platform id into `package.pl
 without reading the bundle. platform-validate refuses a package that carries another portal's
 SDK or does not load its own (guards `portal_sdk_isolated`, `portal_sdk_loaded`).
 
+## Ads on every target platform (since 2.8.3)
+
+On 2026-10-21 Y8 returned a game the Factory built with *"Dear Dev, the game is missing ads. Please fix it and re-upload with correct promo images"*. The sdk-report had called y8's ads `not-required`, because no
+placement of the plan - generated before the title was retargeted to y8 - listed y8. Verify
+now checks, per target, that every ad kind the title commits to and the target's profile
+offers is integrated: `platform.ads-integrated:<id>`
+([verification-module.md](verification-module.md#ads-integrated-per-target-platform)), on the
+plan and on the bundle. In the bundle it looks for the portal's **ad call**
+(`core/reference/portal-sdks.yaml` `ad_calls`, 1.1.0) and for the plan's placements as
+compiled (esbuild keeps an object literal's keys and strings). The ad call alone proves only
+that the adapter's ad path is built in - the adapter is bundled whether or not the game asks
+for an ad - so the plan is read as well.
+
+Each ad-call pattern was measured on real template v1.2.2 builds, one per platform
+(2026-10-21, `WGF_GAME_CONFIG` naming one platform, `ad_kinds: [interstitial, rewarded]`):
+
+| Platform | Ad call (pattern) | Its own bundle | Any other of the five |
+|---|---|---|---|
+| y8 | `.showAd(` | yes | no |
+| yandex | `adv.showFullscreenAdv` / `adv.showRewardedVideo` | yes | no |
+| crazygames | `ad.requestAd(` | yes | no |
+| poki | `commercialBreak(` / `rewardedBreak(` | yes | no |
+| gamepix | `interstitialAd(` / `rewardAd(` | yes | no |
+
+GameDistribution (`gdsdk.showAd`) and GameMonetize (`sdk.showBanner`) have no `ad_calls`
+entry yet: no build of theirs was measured. A portal without one is judged on the plan alone.
+The sdk step's own changes are in
+[platform-architecture.md](platform-architecture.md#ads-on-every-target-platform-since-283).
+
 ## Checked against documentation — 2026-09-23 (historical; see the status column)
 
 Sources: Yandex Games SDK v2 (yandex.com/dev/games/doc/en), CrazyGames HTML5 SDK v3

@@ -32,6 +32,7 @@ Nothing here contacts a portal, and the checkout is only read.
 import os
 import zipfile
 
+from wgflib import ad_coverage
 from wgflib import checkout as checkouts
 from wgflib import portal_sdks
 from wgflib import publication as pub
@@ -144,9 +145,17 @@ class PlatformValidateStep(WorkflowStep):
                 pid, scan, common.verified_check(verification, manifest,
                                                  f"platform.foreign-sdk:{pid}"))
             guards["portal_sdk_loaded"] = portal_sdks.loaded_guard(pid, scan, ids_pending)
+            # The ads the platform must show (wgflib.ad_coverage): verify's
+            # platform.ads-integrated:<id> for this commit, and the package's ad call where the
+            # portal requires ads - RED for a y8 package with no ad call (2026-10-21).
+            guards["ads_integrated"] = portal_sdks.ads_guard(
+                pid, profile, scan, common.verified_check(verification, manifest,
+                                                          f"platform.ads-integrated:{pid}"))
             if scan_problem:
                 guards["portal_sdk_isolated"] = pub.unknown(scan_problem)
                 guards["portal_sdk_loaded"] = pub.unknown(scan_problem)
+                if guards["ads_integrated"].value is not False                         and ad_coverage.required_by_portal(profile):
+                    guards["ads_integrated"] = pub.unknown(scan_problem)
             try:
                 credential = read_credential(publication_profile, settings.data, env)
                 present = credential.present if credential.kind != "none" else None

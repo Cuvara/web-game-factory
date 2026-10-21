@@ -171,9 +171,9 @@ class ShippedRegistry(unittest.TestCase):
                          "advisory")
         self.assertEqual(CHECKS["quality-dimension:ui"]["tier"], "quality")
 
-    def test_every_lesson_is_l1_to_l29_with_a_check_or_a_gap(self):
+    def test_every_lesson_is_l1_to_l30_with_a_check_or_a_gap(self):
         lessons = DATA["lessons"]["lessons"]
-        self.assertEqual([l["id"] for l in lessons], [f"L{i}" for i in range(1, 30)])
+        self.assertEqual([l["id"] for l in lessons], [f"L{i}" for i in range(1, 31)])
         for lesson in lessons:
             if lesson["status"] in ("enforced", "partial"):
                 self.assertTrue(lesson["checks"] and lesson["tests"], lesson["id"])
@@ -394,6 +394,11 @@ def _with_result(source, check, failing):
     elif source in ("browser-qa", "browser-qa-run"):
         report["checks"].append({
             "id": check + (":mobile" if source == "browser-qa" else ""), "category": "gameplay",
+            "title": check, "status": status, "required": True, "message": "measured",
+            "evidence": [{"kind": "observation", "summary": "measured"}]})
+    elif source == "platform-ads":
+        report["checks"].append({
+            "id": check + ":y8", "category": "platform", "platform_id": "y8",
             "title": check, "status": status, "required": True, "message": "measured",
             "evidence": [{"kind": "observation", "summary": "measured"}]})
     elif source in ("content-sufficiency", "level-design"):
@@ -779,7 +784,7 @@ class Integrity(unittest.TestCase):
             os.chdir(cwd)
         self.assertEqual(module.ERRORS, [])
         self.assertGreater(len(checks), 100)
-        self.assertEqual(len(lessons), 29)
+        self.assertEqual(len(lessons), 30)
 
 
 if __name__ == "__main__":

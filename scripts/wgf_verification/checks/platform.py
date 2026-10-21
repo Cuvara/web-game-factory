@@ -10,7 +10,7 @@ claims otherwise.
 import os
 import re
 
-from wgflib import portal_sdks
+from wgflib import ad_coverage, portal_sdks
 from wgflib import template_contract as contract
 
 from ..model import BLOCKED, FAIL, PASS, PASS_MOCK, WARNING, Check, Evidence
@@ -99,6 +99,7 @@ def _per_platform(session, platform):
 
     yield _build_target(session, pid, common)
     yield from _portal_sdks(session, pid, common)
+    yield _ads_integrated(session, pid, common)
 
     # The profile the build is judged by: the pinned one, by content hash - never the
     # latest, and never a copy that only declares the pinned version.
@@ -240,10 +241,142 @@ def _portal_sdks(session, pid, common):
                                      title=LOADED_TITLE, **common)
         return
     bundle, _env = session.platform_bundle(pid)
-    scan = portal_sdks.scan_directory(reference, session.path(*bundle.split("/")), bundle)
+    scan = _bundle_scan(session, pid, bundle, reference)
     yield _foreign_sdk(session, pid, bundle, reference, scan, common)
     if declares_loader:
         yield _sdk_loaded(session, pid, bundle, reference, scan, common)
+
+
+ADS_CHECK = "platform.ads-integrated"
+ADS_TITLE = "The ads this platform must show are integrated"
+
+
+def _bundle_scan(session, pid, bundle, reference):
+    """This platform's bundle scanned once (wgflib.portal_sdks), shared by its checks."""
+    cache = session.__dict__.setdefault("_bundle_scans", {})
+    if pid not in cache:
+        cache[pid] = portal_sdks.scan_directory(reference, session.path(*bundle.split("/")),
+                                                bundle)
+    return cache[pid]
+
+
+def _ads_integrated(session, pid, common):
+    """platform.ads-integrated:<id> - every ad kind the title commits to (game.config.yaml
+    monetization.ad_kinds) that this platform's pinned profile offers is reached on it:
+
+      1. by a placement of the integration plan in the checkout
+         (src/platform/integration-plan.ts, which the sdk step generates): `platforms: null`
+         or listing <id> - matched by the target id, as gameplay.ts matches it, an
+         interstitial also by `breakOnContinue`;
+      2. in the platform's own bundle: its portal's ad call is compiled in
+         (core/reference/portal-sdks.yaml `ad_calls`), and the plan's placements compiled into
+         the bundle - when they can be read there - list <id> for the kind.
+
+    Required (a Hard Gate, check-tiers.yaml) where the pinned profile records that the portal
+    requires ads (`ads.required_by_portal`): a gap FAILs. Elsewhere a gap is a WARNING. A plan
+    generated for other targets than game.config.yaml's is named stale in the message. The
+    2026-10-21 incident: a y8 build whose plan listed crazygames, yandex and poki shipped with
+    no ad call and passed every gate (wgflib.ad_coverage)."""
+    cid, title = f"{ADS_CHECK}:{pid}", ADS_TITLE
+    profile, source = session.profile(pid)
+    if profile is None:
+        return session.blocked_by(f"platform.profile:{pid}", id=cid, title=title, **common)
+    portal = ad_coverage.required_by_portal(profile)
+    common = dict(common, required=bool(common.get("required")) and portal)
+    gap_status = FAIL if portal else WARNING
+    entry = next((e for e in session.platforms if e.get("id") == pid), {"id": pid})
+    config = {"platforms": [entry], "monetization": session.game_config.get("monetization")}
+    required = ad_coverage.requirements(config, lambda _pid: profile)
+    committed = ad_coverage.committed(session.game_config)
+    rule = (f"{pid}@{profile.get('version')} offers {', '.join(ad_coverage.offered(profile)) or 'no ads'}"
+            f"{' and its portal requires ads (ads.required_by_portal)' if portal else ''}; "
+            f"game.config.yaml monetization.ad_kinds: {', '.join(committed) or 'none'}")
+    evidence = [Evidence("reference", rule, path=source)]
+    if not required:
+        return Check(cid, title=title, status=PASS, evidence=evidence, **common,
+                     message=f"no ad placement is required on {pid}: {rule}")
+
+    fix = (f"Run the sdk step again (bin/wgf resume <run> --from sdk), which regenerates "
+           f"{ad_coverage.PLAN_FILE} with every target whose profile offers a committed kind")
+    plan_path = ad_coverage.PLAN_FILE
+    if not session.exists(*plan_path.split("/")):
+        evidence.append(Evidence("file", f"{plan_path} does not exist", path=plan_path))
+        return Check(cid, title=title, status=gap_status, evidence=evidence, **common,
+                     message=f"{pid} must show {', '.join(r.kind for r in required)} ads, but "
+                             f"the checkout has no {plan_path}: the sdk step did not integrate "
+                             f"this commit. {fix}")
+    with open(session.path(*plan_path.split("/")), encoding="utf-8") as handle:
+        text = handle.read()
+    plan_evidence = Evidence("file", f"{plan_path}", path=plan_path,
+                             content_hash=session.file_hash(plan_path))
+    try:
+        plan = ad_coverage.parse_plan(text)
+    except ad_coverage.PlanUnreadable as exc:
+        evidence.append(plan_evidence)
+        return Check(cid, title=title, status=gap_status, evidence=evidence, **common,
+                     message=f"{exc}: which placements reach {pid} is not established. {fix}")
+    stale = ad_coverage.stale(text, session.game_config)
+    problems = []
+    for gap in ad_coverage.gaps(plan, required):
+        listed = ", ".join(ad_coverage.listed_for(plan, gap.kind)) or "none"
+        problems.append(f"no {gap.kind} placement in {plan_path} lists {pid} ({gap.kind} "
+                        f"placements list: {listed})")
+    plan_evidence.summary = (f"{plan_path}: " + "; ".join(
+        f"{r.kind} {'reaches' if ad_coverage.covers(plan, r.kind, pid) else 'does not reach'} "
+        f"{pid}" for r in required) + (f"; {stale}" if stale else ""))
+    evidence.append(plan_evidence)
+
+    upstream = _bundle_ready(session, pid)
+    if upstream is not None:
+        if problems:
+            return Check(cid, title=title, status=gap_status, evidence=evidence, **common,
+                         message=f"the {pid} build would show no ads of a kind it must: "
+                                 + "; ".join(problems) + (f". {stale}" if stale else "")
+                                 + f". {fix}")
+        return session.blocked_by(upstream, id=cid, title=title, **common)
+    bundle, _env = session.platform_bundle(pid)
+    try:
+        reference = session.portal_sdk_reference()
+    except (OSError, ValueError, KeyError) as exc:
+        reference = None
+        evidence.append(Evidence("observation", f"core/reference/portal-sdks.yaml cannot be "
+                                                f"read: {exc}"))
+    if reference is not None:
+        scan = _bundle_scan(session, pid, bundle, reference)
+        calls = reference.ad_calls(pid)
+        found = sorted((scan.ad_calls.get(pid) or {}))
+        if calls:
+            evidence.append(Evidence("artifact", f"{bundle}/: {pid} ad call "
+                                                 + (", ".join(found) if found else "not found")
+                                                 + f" ({reference.label})", path=bundle,
+                                     data={"ad_calls": found}))
+            if not found:
+                problems.append(f"the {pid} bundle ({bundle}/) carries no {pid} ad call "
+                                f"({', '.join(i for i, _ in calls)}): its adapter's ad path is "
+                                "not built in")
+        compiled = scan.placements
+        if compiled:
+            for r in required:
+                if not ad_coverage.bundle_covers(compiled, r.kind, pid,
+                                                 plan.get("breakOnContinue") or []):
+                    problems.append(f"the plan compiled into {bundle}/ has no {r.kind} "
+                                    f"placement listing {pid}")
+            evidence.append(Evidence("artifact", f"{bundle}/: the compiled plan's placements "
+                                                 + "; ".join(f"{k}: {', '.join(p) if p is not None else 'every platform'}"
+                                                             for k, p in compiled),
+                                     path=bundle))
+        else:
+            evidence.append(Evidence("observation", f"{bundle}/: the plan's placements were not "
+                                                    f"recognised in the built code; judged on "
+                                                    f"{plan_path} and the ad call"))
+    if problems:
+        return Check(cid, title=title, status=gap_status, evidence=evidence, **common,
+                     message=f"the {pid} build would show no ads of a kind it must "
+                             f"({'its portal requires ads' if portal else 'the title commits to it and ' + pid + ' offers it'}): "
+                             + "; ".join(problems) + (f". {stale}" if stale else "") + f". {fix}")
+    return Check(cid, title=title, status=PASS, evidence=evidence, **common,
+                 message=f"{', '.join(r.kind for r in required)} reach {pid} in {plan_path} and "
+                         f"its bundle" + (f" ({stale})" if stale else ""))
 
 
 FOREIGN_TITLE = "No other portal's SDK in this platform's bundle"

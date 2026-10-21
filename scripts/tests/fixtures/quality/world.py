@@ -909,7 +909,7 @@ class FixtureVerifyStep(_Fixture):
                                 "content_hash": "sha256:" + hashlib.sha256(
                                     ship.encode()).hexdigest()}
         vr["evidence_status"] = "PASS_MOCK"
-        vr["checks"] = list(vr.get("checks") or []) + browser_checks()
+        vr["checks"] = list(vr.get("checks") or []) + browser_checks() + [ads_check("yandex")]
         vr["platform_readiness"] = [{"platform_id": "yandex", "profile": "yandex@1.2.0",
                                      "role": "required", "readiness": "ready",
                                      "checks": ["build.build"], "blocking_checks": [],
@@ -919,6 +919,17 @@ class FixtureVerifyStep(_Fixture):
         report = _seal(self, "qa-report", qa, inputs, context, self.role,
                        also=[("verification-report", verification.content)])
         return StepResult.success([verification, report], message="verify (fixture)")
+
+
+def ads_check(platform_id):
+    """verify's platform.ads-integrated:<id> (wgflib.ad_coverage, lesson L30) for a build whose
+    target shows every ad kind it must: the check verify reports for every target platform."""
+    return {"id": f"platform.ads-integrated:{platform_id}", "category": "platform",
+            "title": "The ads this platform must show are integrated", "status": "PASS",
+            "required": False, "platform_id": platform_id,
+            "message": "fixture: every committed ad kind the profile offers reaches the target",
+            "evidence": [{"kind": "observation",
+                          "summary": "fixture: the plan and the bundle reach the target"}]}
 
 
 def browser_checks():

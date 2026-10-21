@@ -72,6 +72,12 @@ def filtered(relpath, data):
     text = data.decode("utf-8")
     if relpath == "core/reference/lessons.yaml":
         out = _drop_list_item(text, f"  - id: {LESSON}")
+        # Lessons promoted after L29 did not exist before it either: the draft takes the next
+        # free id, which must be L29's.
+        later = int(LESSON[1:]) + 1
+        while f"  - id: L{later}" in out.split("\n"):
+            out = _drop_list_item(out, f"  - id: L{later}")
+            later += 1
     elif relpath == "core/reference/check-tiers.yaml":
         out = text.replace(f"      {CHECK}: hard\n", "", 1)
     elif relpath == "core/reference/content-sufficiency.yaml":

@@ -114,7 +114,9 @@
 #        craft lint and the model judge are advisory and opt-in, so they are not among its
 #        checks (an advisory check would derive the rule down to recommended; declaring it
 #        blocking would make an uncalibrated lint block every 3D build). No rule changed.
-version: 2.2.1
+# 2.3.0: L30 - a retargeted title shipped with no ads on a portal that requires them
+#        (check-tiers platform-ads:platform.ads-integrated, hard).
+version: 2.3.0
 
 statuses: [enforced, partial, gap, process]
 
@@ -1138,3 +1140,48 @@ lessons:
       generalizes:
         - scripts/tests/test_lesson_l29.py::test_L29_generalizes_to_a_synthetic_3d_racer
         - scripts/tests/test_knowledge_transfer.py::test_session_b_a_fresh_session_applies_the_principle
+
+  - id: L30
+    title: A retargeted title shipped with no ads on a portal that requires them
+    category: platform_compliance
+    domain: technical
+    classification: BLOCKING
+    revision: 1
+    principle: >-
+      Every target platform that offers an ad kind the title commits to is reached by a
+      placement of that kind, checked per target on the plan and the built bundle, because a
+      placement list written for the platforms of an earlier design reaches none of the
+      platforms added since.
+    anti_pattern: >-
+      An integration plan whose placements list the platforms of the original design, reused
+      after the title is retargeted, so a new target's build makes no ad call while its
+      configuration commits to ads.
+    problem: >-
+      A portal that requires ads returned a build with "the game is missing ads": its
+      configuration committed to interstitial and rewarded ads, its bundle carried the
+      portal's ad adapter, and it never requested an ad. Other titles retargeted the same way
+      had the same flaw.
+    root_cause: >-
+      The integration plan was generated from the design before the title was retargeted, and
+      its placements listed only the platforms of the original design; the sdk step reported
+      an offered kind no placement reached as not required, and no verify check, quality
+      gate or publication guard asked, per target, whether the target's ads were integrated.
+    lesson: >-
+      A title's ad placements must be checked per target platform, not per title: a plan
+      generated before a retarget lists the old targets, the runtime shows a placement only
+      on the targets it lists, and a new target that offers the committed kinds ships with no
+      ads unless something reads the plan and the bundle for that target.
+    scope: global
+    status: enforced
+    lifecycle: active
+    introduced: {version: 2.8.3, date: 2026-10-21}
+    checks: [platform-ads:platform.ads-integrated]
+    tests:
+      catches:
+        - scripts/tests/test_ad_coverage.py::test_L30_verify_fails_the_incident
+        - scripts/tests/test_ad_coverage.py::test_L30_the_sdk_step_covers_a_retargeted_portal_required_target
+        - scripts/tests/test_ad_coverage.py::test_L30_platform_validate_refuses_the_incident_package
+      passes:
+        - scripts/tests/test_ad_coverage.py::test_L30_verify_passes_once_the_plan_lists_the_target
+      generalizes:
+        - scripts/tests/test_ad_coverage.py::test_L30_generalizes_to_another_portal_and_kind

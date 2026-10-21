@@ -406,9 +406,36 @@ def check_portal_sdks(profiles):
         if audit is not None and not all(str((audit or {}).get(k) or "")
                                          for k in ("cli", "report", "check")):
             ERRORS.append(f"{path}: {pid}: audit needs cli, report and check")
+        for item in entry.get("ad_calls") or []:
+            if not isinstance(item, dict) or not item.get("id") or not item.get("pattern"):
+                ERRORS.append(f"{path}: {pid}: an ad call needs an id and a pattern")
+                continue
+            try:
+                re.compile(str(item["pattern"]))
+            except re.error as exc:
+                ERRORS.append(f"{path}: {pid}.{item['id']}: invalid ad call pattern ({exc})")
     for pid in sorted(set(profiles) - set(portals)):
         ERRORS.append(f"{path}: no entry for platform '{pid}': say how its SDK is recognised "
                       "in a bundle, or `signatures: []` when the portal has none")
+    # A portal that requires ads is judged on its ad call in the bundle
+    # (platform.ads-integrated:<id>, a Hard Gate there): without one stated here the check
+    # could never see the ad path, and the gate would rest on the plan alone.
+    sys.path.insert(0, "scripts")
+    try:
+        from wgflib.yamllite import load_file as _load
+        for pid in sorted(profiles):
+            try:
+                ads = (_load(os.path.join("core", "reference", "platforms", f"{pid}.yaml"))
+                       or {}).get("ads") or {}
+            except Exception:  # the profile's own check reports an unreadable profile
+                continue
+            if ads.get("required_by_portal") is True and not (
+                    (portals.get(pid) or {}).get("ad_calls")):
+                ERRORS.append(f"{path}: {pid}: its profile says the portal requires ads "
+                              "(ads.required_by_portal), so its ad call must be stated "
+                              "(`ad_calls`) for verify to see the ad path in its bundle")
+    finally:
+        sys.path.pop(0)
 
 
 def check_template_adapters(directory, profiles):

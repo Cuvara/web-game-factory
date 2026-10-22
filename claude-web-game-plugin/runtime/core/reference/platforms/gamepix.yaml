@@ -8,13 +8,19 @@
 # Where they say nothing - bundle size, listing sizes, review time, age rating - the field is
 # null or left out rather than guessed.
 #
-# NOT A TARGET YET. The Factory's pinned template (v1.2.0) has no GamePix SDK adapter: its
-# registry's createPlatform("gamepix") throws at boot. Strategy and tech-plan refuse the
-# platform while `gamepix` is absent from workspace/config/template.lock.json
-# `platform_adapters` (wgflib.template.platform_adapters): "GamePix needs a template release
-# carrying its SDK adapter (HUMAN_ACTION_REQUIRED: release and pin)". The adapter is on
-# template main (Cuvara/web-game-template#23, merged 2026-10-04), with a proposed
-# config/platforms/gamepix.yaml at the same version; reconcile the two when the pin moves.
+# A target since template v1.2.2: its registry carries the GamePix SDK adapter
+# (packages/platform-sdk/src/adapters/gamepix.ts, `gamepix` in KNOWN_PLATFORM_IDS and in
+# workspace/config/template.lock.json `platform_adapters`), and a gamepix build carries the
+# script as the first, synchronous script in <head> and no other portal's SDK. The template
+# ships a byte-identical copy of this file as config/platforms/gamepix.yaml. Before 1.0.1 the
+# pinned template had no adapter and strategy and tech-plan refused the platform.
+#
+# 1.0.1 (2026-10-18): this header only - no requirement, assertion or listing field changed.
+# Re-read 2026-10-18 (JS, SUB, DEV and the engine guides under partners.gamepix.com/sdk/doc):
+# the v3 script also exposes pause/resume/soundOn/soundOff hooks a GamePix parent frame can
+# drive (documented for Construct 3, not in the JS reference), which the template adapter does
+# not register - unverified on the real portal; the template's docs/platforms/gamepix.md says
+# what a person checks in GamePix's test tool before submitting.
 #
 # Portal ids: none. No Game ID or key goes into the code (JS). Exclusivity: a game is
 # exclusive to gamepix.com unless "Allow Distribution" is selected when uploading it (SUB) -
@@ -22,7 +28,7 @@
 
 id: gamepix
 name: GamePix
-version: 1.0.0
+version: 1.0.1  # 1.0.1: header only (a target since template v1.2.2; the 2026-10-18 re-read)
 status: unverified
 docs: https://partners.gamepix.com/sdk/doc/javascript
 

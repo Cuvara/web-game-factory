@@ -222,7 +222,7 @@ ports a known-good example into the layout the brief requires:
 4. boots that entry through the seam the develop step already wrote, as the brief asks any
    developer to: `await createGamePlatform()` for the platform, `createGameIntegration(game,
    platform)` for the seam, no `createPlatform`. The ports carry no `main.ts`. **Temporary
-   release-1 bridge:** the pinned release (`v1.2.1`) is still contract 1 - its `main.ts`
+   release-1 bridge:** the pinned release (`v1.2.4`) is still contract 1 - its `main.ts`
    starts the template boot scene and there is no `src/game/context.ts` - so on such a
    repository (detected, never assumed: no `src/game/context.ts`, or only the bridge's own from
    an earlier visit, which carries the replay header) the replay writes the

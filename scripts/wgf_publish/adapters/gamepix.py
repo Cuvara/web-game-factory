@@ -1,12 +1,13 @@
 """GamePix (my.gamepix.com, the GamePix Dashboard): the profile-driven console adapter with
 GamePix's own rules.
 
-NOT A TARGET YET. The pinned template has no GamePix SDK adapter, so no build the Factory
-makes today carries the GamePix SDK, and GamePix's terms take only a game that calls it
-(core/reference/platforms/gamepix.yaml, `gamepix_sdk_present`). This adapter refuses BLOCKED
-before the dashboard is contacted unless the package's build carries the SDK - the
-manifest package's `platform_sdk` is `gamepix`, or the archive references gamepix.sdk.js.
-The refusal names the human action: HUMAN_ACTION_REQUIRED - a template release carrying the
+A target since the Factory's template pin moved to v1.2.2, whose gamepix build carries the
+GamePix SDK; GamePix's terms take only a game that calls it
+(core/reference/platforms/gamepix.yaml, `gamepix_sdk_present`). This adapter still refuses
+BLOCKED before the dashboard is contacted unless the package's build carries the SDK - the
+manifest package's `platform_sdk` is `gamepix`, or the archive references gamepix.sdk.js -
+which a package built from a template without the adapter (before v1.2.2) does not. The
+refusal names the human action: HUMAN_ACTION_REQUIRED - a template release carrying the
 GamePix SDK adapter, and the Factory's template pin moved to it.
 
 Every locator, url and status word is data in core/reference/publication/gamepix.yaml, each a

@@ -92,8 +92,9 @@ build throws at boot. The adapter list is `workspace/config/template.lock.json`
 `platform_adapters` (the pinned registry's `KNOWN_PLATFORM_IDS`, held equal by
 `check-integrity.py`), and a platform outside it is `BLOCKED` with "<Name> needs a template
 release carrying its SDK adapter (HUMAN_ACTION_REQUIRED: release and pin)" (`selection.py`
-`require_adapters`). Strategy refuses the same platforms earlier. GamePix is the case today
-(`docs/platform-targets-2026-10.md`).
+`require_adapters`). Strategy refuses the same platforms earlier. GamePix was the case until
+the pin moved to template v1.2.2, which carries its adapter (`docs/platform-targets-2026-10.md`);
+the tests hold the refusal with a lock that lacks it.
 
 From the profiles:
 

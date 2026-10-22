@@ -48,8 +48,14 @@
 # because the plan listed no y8 placement). Measured on real template v1.2.2 builds, one per
 # platform: each pattern matches its own portal's bundle and no other's
 # (docs/platform-sdk-verification.md). A portal with no ad call here is not judged on it.
+# 1.2.0 (2026-10-22): GamePix's loader. Template v1.2.2 injects the documented
+# https://integration.gamepix.com/sdk/v3/gamepix.sdk.js tag, first and synchronous in <head>,
+# into a gamepix build only (scripts/build/game-config-plugin.ts, GamePix's one Mandatory
+# integration step, https://partners.gamepix.com/sdk/doc/javascript). Before it a gamepix
+# package was judged by its signature alone, which the adapter's own runtime-fallback URL
+# satisfies even in a page that never loads the script; now the page must load it.
 
-version: 1.1.0
+version: 1.2.0  # 1.2.0: the GamePix loader; 1.1.0: ad_calls
 
 portals:
   generic-web:
@@ -97,3 +103,5 @@ portals:
       - {id: gamepix, pattern: 'gamepix\.com', ignore_case: true}
     ad_calls:
       - {id: gamepix-ad, pattern: '\b(?:interstitialAd|rewardAd)\s*\('}
+    loader:
+      script: https://integration.gamepix.com/sdk/v3/gamepix.sdk.js

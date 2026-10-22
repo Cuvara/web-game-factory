@@ -81,6 +81,31 @@ submitted by hand left no trace on the Factory's side before. `registry show` no
 one; `--json` adds `ungated` only when there is one. It reports and refuses nothing. Nothing
 existing needs bringing forward.
 
+**Template pin: web-game-template v1.2.4, and GamePix a target** (`workspace/config/template.lock.json`:
+`v1.2.4`, `34d5641`, was `v1.2.1`, `4b74b08`; `platform_adapters` gains `gamepix`). v1.2.4 is
+v1.2.2 (the GamePix adapter, below) plus v1.2.3 (`pnpm sdk:check`, the game's own ad-coverage
+guard) plus two adapter fixes cherry-picked from the template's main (P0-07): Yandex caps an open
+ad whose close is lost (it froze the game), and CrazyGames bounds `sdk.init()` (a hung init kept
+the boot screen black) and caps a started ad that never ends. What follows was written for
+v1.2.2 and holds for v1.2.4. Template
+contract unchanged (1); `golden_ports` unchanged. 1.2.2 is a patch release on the 1.2 line, cut
+from v1.2.1: the template main's GamePix adapter (`20ad76e`, unchanged), wired into the
+contract-1 build - the documented `gamepix.sdk.js` tag first and synchronous in `<head>` of a
+gamepix build only, `createPlatform("gamepix")` guarded by `__WGF_PLATFORM__` like every portal
+adapter - with its tests and docs. Strategy and tech-plan now plan GamePix; a game created from
+v1.2.1 keeps its pin, and takes GamePix by applying the template's v1.2.2 diff to its
+template-owned files. Platform profile `gamepix` 1.0.1 (header only: a target since v1.2.2,
+and the 2026-10-18 re-read of GamePix's public pages - the v3 script's undocumented
+pause/resume/sound hooks, which the adapter does not register), byte-identical to the
+template's `config/platforms/gamepix.yaml`; publication profile `gamepix` 2.1.1 (header only;
+publishing is unchanged: the dashboard is unobserved, so the publish step stops
+HUMAN_REQUIRED); `core/reference/portal-sdks.yaml` 1.1.0 adds GamePix's `loader`, so
+`portal_sdk_loaded` and verify's `platform.sdk-loaded:gamepix` require the package's page to
+load the documented script, not only a GamePix signature. Tests that held the refusal on the
+real pin now hold it on a lock without the adapter, beside new ones for the planned path.
+Nothing verified against the real GamePix SDK inside GamePix's frame, its test tool or its
+dashboard.
+
 ## [2.8.2] - 2026-10-15
 
 Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.2".

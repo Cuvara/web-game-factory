@@ -34,7 +34,7 @@ template that predates them is now refused, which is exactly what a major means.
 **Contract 2.1.0** (Factory 2.8.0): CI never publishes a game to a portal - publication is the
 Factory's `publish` group, behind a person's G6 (`docs/publish-module.md`) - so
 `.github/workflows/publish.yml` and `scripts/publish/` are no longer required. A repository
-without them is accepted; the pinned template (v1.2.1) still ships both, and the drift test
+without them is accepted; the pinned template (v1.2.4) still ships both, and the drift test
 still passes against it because removing an assumption never breaks it. Also unversioned:
 `PLATFORM_REGISTRY` names the adapter registry `SOURCE_PATHS` already required, because its
 `KNOWN_PLATFORM_IDS` are now read - `workspace/config/template.lock.json` `platform_adapters`

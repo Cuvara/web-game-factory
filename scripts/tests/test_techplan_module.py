@@ -463,7 +463,9 @@ class TemplatePin(unittest.TestCase):
 class TemplateAdapters(unittest.TestCase):
     """A platform profile is not a target until the pinned template has its SDK adapter: the
     template's createPlatform() throws at boot for any other id (the lock's
-    platform_adapters, wgflib.template.platform_adapters)."""
+    platform_adapters, wgflib.template.platform_adapters). GamePix was the case until the pin
+    moved to template v1.2.2, which carries its adapter; the refusal is held below with a
+    lock that lacks it, the shape every pin before v1.2.2 had."""
 
     setUp = PortalRegistrations.setUp
     targeting = PortalRegistrations.targeting
@@ -473,13 +475,21 @@ class TemplateAdapters(unittest.TestCase):
     MESSAGE = ("GamePix needs a template release carrying its SDK adapter "
                "(HUMAN_ACTION_REQUIRED: release and pin)")
 
-    def test_gamepix_has_a_profile_but_no_adapter_at_the_pin(self):
+    def without_gamepix(self):
+        """The pinned lock as a pin without the GamePix adapter records it."""
+        from wgflib import template as template_pin
+        lock = dict(template_pin.load_lock())
+        lock["platform_adapters"] = [a for a in lock["platform_adapters"] if a != "gamepix"]
+        return mock.patch.object(template_pin, "load_lock", lambda path=None: dict(lock))
+
+    def test_gamepix_has_a_profile_and_an_adapter_at_the_pin(self):
         from wgflib import template as template_pin
         self.assertTrue(os.path.isfile(os.path.join(paths.PLATFORMS, "gamepix.yaml")))
-        self.assertNotIn("gamepix", template_pin.platform_adapters())
+        self.assertIn("gamepix", template_pin.platform_adapters())
 
     def test_a_platform_without_an_adapter_at_the_pin_blocks(self):
-        result = self.plan(self.targeting("gamepix"))
+        with self.without_gamepix():
+            result = self.plan(self.targeting("gamepix"))
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)
         self.assertIn(self.MESSAGE, result.message)
         self.assertEqual(result.artifacts, [])
@@ -488,17 +498,23 @@ class TemplateAdapters(unittest.TestCase):
         strat = self.targeting("gamepix")
         for entry in strat["platform_set"]:
             entry["role"] = "required" if entry["id"] == "gamepix" else "optional"
-        result = self.plan(rehash(strat))
+        with self.without_gamepix():
+            result = self.plan(rehash(strat))
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)
         self.assertIn(self.MESSAGE, result.message)
 
-    def test_a_pin_that_carries_the_adapter_plans_it(self):
-        from wgflib import template as template_pin
-        lock = dict(template_pin.load_lock())
-        lock["platform_adapters"] = list(lock["platform_adapters"]) + ["gamepix"]
-        with mock.patch.object(template_pin, "load_lock", lambda path=None: dict(lock)):
-            entry = self.entry(self.plan(self.targeting("gamepix")), "gamepix")
-        self.assertEqual(entry, {"id": "gamepix", "profile": "gamepix@1.0.0", "role": "optional"})
+    def test_the_pin_carries_the_adapter_and_plans_it(self):
+        version = load_file(os.path.join(paths.PLATFORMS, "gamepix.yaml"))["version"]
+        entry = self.entry(self.plan(self.targeting("gamepix")), "gamepix")
+        self.assertEqual(entry, {"id": "gamepix", "profile": f"gamepix@{version}",
+                                 "role": "optional"})
+
+    def test_it_plans_gamepix_as_the_required_platform(self):
+        strat = self.targeting("gamepix")
+        for entry in strat["platform_set"]:
+            entry["role"] = "required" if entry["id"] == "gamepix" else "optional"
+        entry = self.entry(self.plan(rehash(strat)), "gamepix")
+        self.assertEqual(entry["role"], "required")
 
     def test_a_lock_without_the_list_blocks_rather_than_guessing(self):
         from wgflib import template as template_pin

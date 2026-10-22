@@ -13,13 +13,15 @@
 # Domain: none required - the developer sign-up asks for no website, and GamePix hosts the
 # game ("GamePix will host your games on secure servers", developers page).
 #
-# GamePix is not a target yet: the pinned template has no GamePix SDK adapter, so strategy and
-# tech-plan refuse it (core/reference/platforms/gamepix.yaml). This file exists so the portal
-# is described the day the pin moves, not so it can be published to today.
+# GamePix is a target since the pin moved to template v1.2.2, which carries its SDK adapter
+# (core/reference/platforms/gamepix.yaml): a title can plan, build, verify and package it.
+# Publishing is unchanged by that: everything above still holds - nobody has observed the
+# dashboard, so the publish step stops HUMAN_REQUIRED before contacting it.
 
 id: gamepix
-version: 2.1.0  # 2.1.0: the GamePix adapter's flow - create, upload, listing, media and save,
+version: 2.1.1  # 2.1.0: the GamePix adapter's flow - create, upload, listing, media and save,
                 #        and the status words, all hypotheses; the submit stays a person's
+                # 2.1.1: header only - a target since template v1.2.2; nothing else changed
 status: unverified
 docs: https://partners.gamepix.com/developers
 

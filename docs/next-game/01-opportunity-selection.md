@@ -1,12 +1,12 @@
 # Next game: opportunity selection
 
-Date: 2026-10-22. Status: Phase 1 of the next-game task. Planning only; no code, build or paid call was made to produce it.
+Date: 2026-10-22. Status: Phase 1 of the next-game task. Planning only; no code, build or paid call was made to produce it. A free `--mock` `new-game` run was made only to check that the idea string routes through the workflow to G4; its placeholder output is workflow evidence, not evidence about game quality, and nothing in this document depends on it.
 Labels: **[F]** verified fact with source; **[H]** hypothesis; **[U]** unknown. Sources accessed 2026-10-22 unless a repository path is given.
 
 ## 1. Constraints from the repository
 
 - Template pin: `web-game-template` v1.2.4, commit `34d5641` (`workspace/config/template.lock.json`, merged in PR #89) [F].
-- Portfolio so far: Brick Breaker Worlds (breakout, 2D), Sky Marble (marble, 3D), Animal Out (tap-away puzzle, 2D), Zombie Swarm Survivor (survivor shooter, 2D). None has portal outcome data beyond Animal Out's 398 plays / 200 impressions on Y8 [F, `docs/monetization/README.md`, `docs/monetization-audit.md` in the working copy].
+- Portfolio so far: Brick Breaker Worlds (breakout, 2D), Sky Marble (marble, 3D), Animal Out (tap-away puzzle, 2D), Zombie Swarm Survivor (survivor shooter, 2D). None has portal outcome data beyond Animal Out's 398 plays / 200 impressions on Y8 [F, Y8 console snapshot of 2026-10-21 recorded in `docs/monetization/README.md`; figures not independently re-checked].
 - Portfolio rules (`docs/monetization/market-research-strategy.md` section 5): no two consecutive titles in the same archetype before the first clears a portal's Full Launch bar; at most half of active titles in one genre family; at least 3 non-exclusive portals per title [F, repository policy].
 - Portal bars the game must be able to meet: CrazyGames Full Launch looks at average playtime, D1 and conversion; successful titles often see 10+ minutes, D1 10-15%, 80%+ conversion, load under 10 s, build under 20 MB [F, https://docs.crazygames.com/resources/basic-launch-metrics/]. Poki Player Fit Test: 3+ minutes average and 25%+ of plays over 3 minutes; final review targets 65%+ conversion and 5+ minutes (10+ for management and simulation) [F, https://developers.poki.com/guide/how-testing-works]. Y8 rejects copied, low-quality, repeatedly reskinned or mass-generated games [F, https://developer.y8.com/].
 - Corpus gap: `workspace/research/games/` holds no teardown records, so no candidate can carry an `observed` market claim from our own teardowns [F, `docs/monetization/market-research-strategy.md` section 1]. Everything about competitors below comes from public pages and is labelled as such.
@@ -59,7 +59,7 @@ Totals are the weight-by-score sums (C1: 0.8+0.8+0.6+0.5+0.6+0.4+0.4 = 4.10). Th
 **C1, Switchyard.** Why it beats the others:
 1. It is the only candidate that is both a new archetype for the portfolio and unvetoed with a named differentiating axis: a tower-defense layer plus a routing layer (switching rails) so the player shapes where enemies travel as well as what they meet. Comparable titles in the lists above place towers on fixed or player-drawn paths; none found in the lists above routes enemies on switchable rails [H: absence in a short listing sweep, not a full survey].
 2. Strategy/tower defense sustains 10+ minute sessions: levels of 10-15 minutes are the genre norm [F, secondary], which fits the CrazyGames and Poki playtime bars better than short-round arcade formats [H].
-3. Natural ad breaks exist: between waves, between levels, and on defeat; an optional rewarded offer fits (retry with bonus gold). That matches the portals' rules: ads between levels, rewarded optional [F, `docs/monetization-research.md`].
+3. Natural ad breaks exist: between waves, between levels, and on defeat; an optional rewarded offer fits (retry with bonus gold). That matches the portals' rules: ads between levels, rewarded optional [F, `docs/monetization/monetization-and-distribution.md` (CrazyGames, Yandex rules) and portal profiles in `core/reference/platforms/`].
 4. It is feasible in 2D with geometric art, small bundle and no physics engine; load and size budgets are easy [H].
 5. Its content scales by data (maps, rail layouts, enemy mixes), which the Factory's genre model already counts (`core/reference/genre-models.yaml`, family `strategy`).
 

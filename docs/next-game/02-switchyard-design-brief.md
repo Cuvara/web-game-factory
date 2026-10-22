@@ -16,7 +16,7 @@ Date: 2026-10-22. Status: Phase 2 input. This is the human-written brief that th
 4. Resolve: enemies reaching the depot cost lives; kills pay gold.
 5. Between waves: spend, re-plan. After the last wave: stars (1-3) for lives left.
 
-Secondary loops: star-gated world unlocks (meta), tower upgrades inside a level (short), a best-stars board per level (return reason). No shop, daily login or leaderboard in version 1; they are not justified by the loop and the portals' adapters do not support leaderboards (`docs/monetization-audit.md` B3).
+Secondary loops: star-gated world unlocks (meta), tower upgrades inside a level (short), a best-stars board per level (return reason). No shop, daily login or leaderboard in version 1; they are not justified by the loop and the portals' adapters do not support leaderboards (`docs/monetization/factory-audit.md` T7).
 
 ## Controls and onboarding
 

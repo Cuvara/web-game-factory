@@ -81,8 +81,13 @@ submitted by hand left no trace on the Factory's side before. `registry show` no
 one; `--json` adds `ungated` only when there is one. It reports and refuses nothing. Nothing
 existing needs bringing forward.
 
-**Template pin: web-game-template v1.2.2, and GamePix a target** (`workspace/config/template.lock.json`:
-`v1.2.2`, `e103cf1`, was `v1.2.1`, `4b74b08`; `platform_adapters` gains `gamepix`). Template
+**Template pin: web-game-template v1.2.4, and GamePix a target** (`workspace/config/template.lock.json`:
+`v1.2.4`, `34d5641`, was `v1.2.1`, `4b74b08`; `platform_adapters` gains `gamepix`). v1.2.4 is
+v1.2.2 (the GamePix adapter, below) plus v1.2.3 (`pnpm sdk:check`, the game's own ad-coverage
+guard) plus two adapter fixes cherry-picked from the template's main (P0-07): Yandex caps an open
+ad whose close is lost (it froze the game), and CrazyGames bounds `sdk.init()` (a hung init kept
+the boot screen black) and caps a started ad that never ends. What follows was written for
+v1.2.2 and holds for v1.2.4. Template
 contract unchanged (1); `golden_ports` unchanged. 1.2.2 is a patch release on the 1.2 line, cut
 from v1.2.1: the template main's GamePix adapter (`20ad76e`, unchanged), wired into the
 contract-1 build - the documented `gamepix.sdk.js` tag first and synchronous in `<head>` of a

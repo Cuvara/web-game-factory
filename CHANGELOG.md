@@ -9,6 +9,10 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.8.3] - 2026-10-22
+
+Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.3".
+
 **Y8's pause rule is portal data: the game pauses inside the ad's own callbacks there**
 (P0-04, `factory.sdk.pause_inside_ad_callbacks: [y8]`, docs/platform-architecture.md). Y8 wants
 the game paused and muted inside `beforeAd` and resumed inside `afterAd`, never around the

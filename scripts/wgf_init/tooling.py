@@ -400,11 +400,13 @@ class GitCli(Git):
         # What was committed on top of the generated root - the template's bootstrap commit
         # on GitHub - stays; everything else becomes the pinned revision's.
         on_top = self._names(directory, root, "HEAD")
-        patch = self._git(directory, "diff", "--binary", "--no-renames", root, commit)
         handle, patch_path = tempfile.mkstemp(prefix="wgf-template-pin-", suffix=".patch")
+        os.close(handle)
         try:
-            with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as out:
-                out.write(patch)
+            # git writes the patch itself: read back through stdout, a patch larger than the
+            # process runner's bounded tail (wgflib.procs) loses its head - the first files.
+            self._git(directory, "diff", "--binary", "--no-renames", f"--output={patch_path}",
+                      root, commit)
             try:
                 self._git(directory, "apply", "--index", "--3way", "--whitespace=nowarn",
                           patch_path)

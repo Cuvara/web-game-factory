@@ -1280,6 +1280,21 @@ class GithubPin(InitCase):
         self.assertEqual(self.pin_commits(), [pin_commit])
         self.assertEqual(again.artifacts[0].content["template"]["pin_commit"], pin_commit)
 
+    def test_a_pin_larger_than_the_output_tail_is_applied_whole(self):
+        # The patch is read by git apply from a file, never through stdout: the process
+        # runner keeps a bounded tail of stdout, which would drop the patch's first files.
+        self.advance_default_branch("aaa-first.txt", "first in the patch\n")
+        self.advance_default_branch("zzz-large.txt",
+                                    "".join(f"{i:08x}{os.urandom(28).hex()}\n"
+                                            for i in range(100_000)))   # ~6.5 MB of text
+        result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        [pin_commit] = self.pin_commits()
+        self.assertFalse(os.path.exists(os.path.join(self.local, "aaa-first.txt")))
+        self.assertFalse(os.path.exists(os.path.join(self.local, "zzz-large.txt")))
+        differs = set(git(self.local, "diff", "--name-only", self.pinned, pin_commit).split())
+        self.assertEqual(differs, {"game.config.yaml", ".github/workflows/bootstrap.yml"})
+
     def test_a_pin_that_cannot_be_applied_fails_loudly(self):
         # The default branch changed the line next to the one bootstrap edits on top of the
         # root: the pin cannot be applied without overwriting one of the two changes.

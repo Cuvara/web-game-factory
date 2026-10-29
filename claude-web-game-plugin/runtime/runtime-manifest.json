@@ -1,7 +1,7 @@
 {
-  "factory_version": "2.8.3",
+  "factory_version": "2.8.4",
   "files": {
-    "VERSION": "sha256:e3fdbc5ab5230a7343de5d2ee3c2df4892f7f30e5fdef2f9654e4a3ac29cd987",
+    "VERSION": "sha256:4b27eec369475e0403454478c25a1777503a969827259a25f597a903e91bd8d4",
     "bin/wgf": "sha256:ca3aedd7bf278145a3c59ce71a05156992a641a18b15cd4332ba32b7659dab34",
     "core/README.md": "sha256:85eb201200d31c35486289ed1ef2675000f4c45ce8b6419eefc2d2475ddad346",
     "core/artifacts/asset-manifest.schema.json": "sha256:c975e26b7a3012721260f58c8c7361185ec03e3c25217f6e7bb4823263fe800e",
@@ -292,7 +292,7 @@
     "scripts/wgf_init/profiles.py": "sha256:81959a0f7ad189d968c296bf21597475c36a041d5532af0aab8094366b270233",
     "scripts/wgf_init/project.py": "sha256:4c88d1ff1392425e621d02a336096eb7dce751894936e291279a265ce6810799",
     "scripts/wgf_init/step.py": "sha256:589b327f3e3079a6a9b1691469bab3886d782b02e86391414419ee5e4dc9661e",
-    "scripts/wgf_init/tooling.py": "sha256:94a3dfe2a5c80974578b2301cca5b423cdc61aa6c0f986d6f118c28db00d0260",
+    "scripts/wgf_init/tooling.py": "sha256:ac9dbdedb156974e2fd270daa550bece66a40f630d606f4b3c6ae8e07f94e743",
     "scripts/wgf_knowledge/__init__.py": "sha256:210f861fa8dc6ef9dd118f181e54a02b9e1a17892f8a617af8604db2d7523fa9",
     "scripts/wgf_knowledge/cli.py": "sha256:c098e361f59f4aa659fe140eb0d45ae110aaaa905eb9e12c4ea80bacf0f08cdd",
     "scripts/wgf_knowledge/exceptions.py": "sha256:5df7af368b677877b25dc024d14432c16a2cadec526c0e1d702ad85f56949903",

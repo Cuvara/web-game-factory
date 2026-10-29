@@ -9,6 +9,17 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.8.4] - 2026-10-29
+
+Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.4".
+
+**init brings a generated repository to the pin whatever the size of the difference.** The
+pin patch is written by `git diff --output` and read by `git apply` from that file; it was
+read through the process runner's stdout, whose bounded 4 MB tail dropped the head of a
+larger patch, and init failed with "differs from web-game-template ... after pinning".
+Nothing to bring forward: a run that failed this way is resumed (`wgf resume <run>`), after
+its half-pinned checkout is moved aside.
+
 ## [2.8.3] - 2026-10-22
 
 Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.3".

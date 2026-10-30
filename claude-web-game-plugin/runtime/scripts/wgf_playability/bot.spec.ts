@@ -440,17 +440,41 @@ type Effect = { seen_ms: number[]; max_share: number; samples: number; tries: nu
 const CONTEXT_LOST = "[wgf-play] webglcontextlost";
 
 // In the page, before any of the game's scripts: every canvas a context is asked of reports a
-// `webglcontextlost` event on the console. Patches getContext only to add the listener.
+// `webglcontextlost` event on the console. Patches getContext to add the listener, and each
+// context's getExtension to see WEBGL_lose_context.loseContext() called: a context the page
+// releases itself (PixiJS probing WebGL support, three.js forceContextLoss on dispose) is not
+// a loss - the same rule as verify's browser QA (wgf_verification/browser_qa.spec.ts).
 function installContextWatch(): void {
   const proto = HTMLCanvasElement.prototype as unknown as { getContext: (...args: unknown[]) => unknown };
   const original = proto.getContext;
   const watched = new WeakSet<object>();
+  const released = new WeakSet<object>();
   proto.getContext = function (this: HTMLCanvasElement, ...args: unknown[]): unknown {
-    if (!watched.has(this)) {
-      watched.add(this);
-      this.addEventListener("webglcontextlost", () => console.warn("[wgf-play] webglcontextlost"));
+    const canvas = this;
+    if (!watched.has(canvas)) {
+      watched.add(canvas);
+      canvas.addEventListener("webglcontextlost", () => {
+        if (!released.has(canvas)) console.warn("[wgf-play] webglcontextlost");
+      });
     }
-    return original.apply(this, args);
+    const context = original.apply(canvas, args) as
+      { getExtension?: (name: string) => unknown; __wgfPlay?: boolean } | null;
+    if (context && typeof context.getExtension === "function" && !context.__wgfPlay) {
+      context.__wgfPlay = true;
+      const getExtension = context.getExtension.bind(context);
+      context.getExtension = (name: string) => {
+        const ext = getExtension(name) as { loseContext?: () => void } | null;
+        if (ext && name === "WEBGL_lose_context" && typeof ext.loseContext === "function") {
+          const lose = ext.loseContext.bind(ext);
+          ext.loseContext = () => {
+            released.add(canvas);
+            lose();
+          };
+        }
+        return ext;
+      };
+    }
+    return context;
   };
 }
 

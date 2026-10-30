@@ -665,6 +665,8 @@ class PlayabilityStep(WorkflowStep):
             "contact_min_speed": float(bars.get("min_speed_px") or 1.0),
             "contact_max_step": float(bars.get("max_step_px") or 120),
             "contact_tolerance": float(bars.get("tolerance_px") or 6),
+            # physics.drawn_extent's window: the asked freeze waits for a mover clear in it.
+            "contact_clear_colliders": float(contact.get("window_colliders") or 2),
         }
 
     @staticmethod

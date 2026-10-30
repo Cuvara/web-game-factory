@@ -874,6 +874,22 @@ class TheContract(unittest.TestCase):
         self.assertIn("webglcontextlost", bot)
         self.assertIn("addInitScript(installContextWatch)", bot)
 
+    def test_a_context_the_page_releases_itself_is_not_a_loss(self):
+        # PixiJS releases its WebGL-support probe with WEBGL_lose_context.loseContext(): the
+        # bot counted that as a lost context once per page load, failing every PixiJS build.
+        # Same rule as verify's browser QA.
+        with open(os.path.join(SCRIPTS, "wgf_playability", "bot.spec.ts"), encoding="utf-8") as h:
+            bot = h.read()
+        watch = bot[bot.index("function installContextWatch"):]
+        watch = watch[:watch.index("\n}\n") + 3]
+        self.assertIn('name === "WEBGL_lose_context"', watch)
+        self.assertIn("released.add(canvas)", watch)
+        self.assertIn("if (!released.has(canvas)) console.warn", watch)
+        with open(os.path.join(SCRIPTS, "wgf_verification", "browser_qa.spec.ts"),
+                  encoding="utf-8") as h:
+            qa = h.read()
+        self.assertIn("if (!released.has(canvas))", qa)
+
 
 class Viewports(unittest.TestCase):
     def test_the_viewports_are_data(self):

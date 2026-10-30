@@ -332,7 +332,7 @@
     "scripts/wgf_playability/__init__.py": "sha256:14bd2c57782b13824a0ad3ca15d221fed1b05d08e7fd01c8ac1c7badd9d60ba9",
     "scripts/wgf_playability/analysis.py": "sha256:4ca66965ef35e04119acf9dfc0adecc8606f58e904cf3bb86e03388dc5799e0b",
     "scripts/wgf_playability/baseline.py": "sha256:b6b3d97037cb601d88f485bb0e0de773b1a400f8bc5ae46c13d19faaaad0e90e",
-    "scripts/wgf_playability/bot.spec.ts": "sha256:2798549b57fc9230ea1311133d68ace294dcd73019786a00f304768e32c36208",
+    "scripts/wgf_playability/bot.spec.ts": "sha256:3445c6676641cd1cf38a444c0e58984517ebcc06117ee800d3ccd81a62dbc330",
     "scripts/wgf_playability/realism.py": "sha256:f9501e55e6269bad971551047efe4c2aacb8b6806d37b3aa5454c4064ac879cc",
     "scripts/wgf_playability/scenario.py": "sha256:12cf8be927b15bd162b19df0a8e23e55b5ad177045b8cf43e24cbc57b5dec3e4",
     "scripts/wgf_playability/step.py": "sha256:5498ea52772923410da10be608ee33b5c1d25926a77b67788f4fead574f32d92",

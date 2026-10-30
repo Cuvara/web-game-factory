@@ -9,6 +9,16 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.8.6] - 2026-10-31
+
+Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.6".
+
+**physics.drawn_extent measures a game whose movers never turn** (play-realism 1.3.0). The bot's
+asked freeze waits for a mover clear in its window, the oracle playing on, up to three
+captures; an entity masked in every frame is covered by one of the same drawing (role and
+asset) that was read, never by one drawn otherwise. A playability report pinned to 1.2.0 keeps
+its verdict; the next playability visit measures again.
+
 ## [2.8.5] - 2026-10-30
 
 Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.5".

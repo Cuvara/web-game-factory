@@ -9,6 +9,16 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.8.5] - 2026-10-30
+
+Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.5".
+
+**The playability bot no longer counts a WebGL context the page releases itself as lost.**
+`runtime.webgl_context` failed every PixiJS build once per page load, because PixiJS releases
+its WebGL-support probe with `WEBGL_lose_context.loseContext()`. Verify's browser QA already
+excluded it; the bot now applies the same rule. Nothing to bring forward: a playability
+report that failed only this way is measured again on the next visit.
+
 ## [2.8.4] - 2026-10-29
 
 Release notes: [docs/v2.8-release.md](docs/v2.8-release.md) "2.8.4".

@@ -36,7 +36,13 @@
 # freezes on turns at moving and composite surfaces and keeps a third frame, read for sparks
 # and for the drawn extent away from the impact (`contact.composite_min_share`,
 # `contact.along_share`; K7 review).
-version: 1.2.0
+# 1.3.0: after a window with no turn, the bot asks for frames on a mover clear of everything
+# else reported within `window_colliders` of it, the oracle playing on until one is in view, up
+# to three captures (a shooter's shots fly until they hit and never turn); and an entity
+# physics.drawn_extent never reads (masked in every frame) is covered by another of the same
+# drawing - role and asset - that was read, never by one drawn otherwise (wave-shooter,
+# 2026-10-30).
+version: 1.3.0
 basis: measured-2
 
 # Which quality tiers (quality-benchmark.yaml `tiers[].id`) a measured FAIL of a check here

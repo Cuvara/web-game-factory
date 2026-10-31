@@ -874,6 +874,22 @@ class TheContract(unittest.TestCase):
         self.assertIn("webglcontextlost", bot)
         self.assertIn("addInitScript(installContextWatch)", bot)
 
+    def test_the_asked_contact_frame_waits_for_a_mover_in_view(self):
+        # A game whose movers never turn (shots that fly until they hit) is only measured by
+        # the asked freeze after the window; frozen on any frame, it caught a frame with no
+        # mover in it and physics.drawn_extent stayed unmeasured. It now waits for a frame of
+        # play that draws a mover of the roles, with the oracle playing on until then.
+        with open(os.path.join(SCRIPTS, "wgf_playability", "bot.spec.ts"), encoding="utf-8") as h:
+            bot = h.read()
+        self.assertIn("freezeOnMover: () => {", bot)
+        self.assertIn("if (st.onMover && !mover) return;", bot)
+        self.assertIn('st.event = mover ? { kind: "asked", id: mover[0] } : { kind: "asked" };', bot)
+        fallback = bot[bot.index("No turn frozen on, but movers in play"):]
+        fallback = fallback[:fallback.index('await contactCall(page, "thaw");')]
+        self.assertIn('await contactCall(page, "freezeOnMover");', fallback)
+        self.assertIn("await act(page, s.oracle, touch);", fallback)
+        self.assertNotIn('contactCall(page, "freezeAfter", 0)', fallback)
+
     def test_a_context_the_page_releases_itself_is_not_a_loss(self):
         # PixiJS releases its WebGL-support probe with WEBGL_lose_context.loseContext(): the
         # bot counted that as a lost context once per page load, failing every PixiJS build.

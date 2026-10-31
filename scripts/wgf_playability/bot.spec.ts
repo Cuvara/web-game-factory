@@ -185,6 +185,9 @@ const CFG = JSON.parse(fs.readFileSync(process.env.WGF_PLAY_CONFIG as string, "u
   contact_tolerance?: number;
   contact_after_frames?: number;
   contact_frame_ms?: number;
+  // physics.drawn_extent's window around a collider, in collider sizes (play-realism.yaml
+  // contact `window_colliders`): the asked freeze waits for a mover clear of others in it.
+  contact_clear_colliders?: number;
 };
 const URL = "/?wgf-probe=1";
 
@@ -1446,6 +1449,7 @@ test("win: the oracle plays well", async ({ page }, info) => {
 // surface where it is, not where the mover met it. A stop is not frozen on (the win test's
 // samples still judge it by the probe).
 function installContact(cfg: { roles: string[]; min_speed: number; max_step: number; gap_ms: number; tolerance: number;
+                                clear_colliders: number;
                                frame_ms: number }): void {
   type Ent = [string, string, number, number, number, number, number, string | null, string | null,
               [string, number, number, number, number] | null, [number, number, number, number] | null, boolean | null];
@@ -1455,7 +1459,9 @@ function installContact(cfg: { roles: string[]; min_speed: number; max_step: num
   let held: number[] = [];
   let next = 1;
   const st = {
-    frozen: false, freezeIn: -1, armed: false, event: null as unknown, frames: [] as { t: number; e: Ent[]; pf: unknown }[],
+    frozen: false, freezeIn: -1, onMover: false, armed: false, event: null as unknown,
+    asked: [0, 0, 0] as number[],
+    frames: [] as { t: number; e: Ent[]; pf: unknown }[],
     lastAt: -1e9, seen: 0, movers: 0, passed: 0, turns: 0, gaps: [0, 0, 0, 0], prevReal: -1,
     // Game time (the stepped clock) since the bot armed the hook: the bot's waits are on it, so
     // a slow host does not end the window early.
@@ -1538,9 +1544,31 @@ function installContact(cfg: { roles: string[]; min_speed: number; max_step: num
         st.freezeIn -= 1;
         return;
       }
+      // Asked for on a mover (`freezeOnMover`): only a frame of play that draws one of the
+      // roles, visible and not a composite, clear of everything else reported around it, is
+      // frozen on - a frame without one has nothing whose collider can be held to its pixels
+      // (realism._contact_extent masks every other entity in its window, `window_colliders`
+      // x its size, which `clear` matches). Until then the page keeps running.
+      const clear = (m: Ent): boolean => {
+        const b = m[9] ? [m[9][1], m[9][2], m[9][3], m[9][4]] : [m[3], m[4], m[5], m[6]];
+        const reach = cfg.clear_colliders * Math.max(b[2], b[3]);
+        const [cx, cy] = [b[0] + b[2] / 2, b[1] + b[3] / 2];
+        return s.e.every((o) => o === m || !o[2] || o[3] > cx + reach || o[3] + o[5] < cx - reach
+                                 || o[4] > cy + reach || o[4] + o[6] < cy - reach);
+      };
+      const movers = st.onMover && s.state === "playing"
+        ? s.e.filter((x) => cfg.roles.includes(x[1]) && x[2] && x[8] !== "composite") : [];
+      const mover = movers.find(clear);
+      if (st.onMover) {
+        st.asked[0] += 1;
+        if (movers.length) st.asked[1] += 1;
+        if (mover) st.asked[2] += 1;
+      }
+      if (st.onMover && !mover) return;
       st.freezeIn = -1;
+      st.onMover = false;
       st.frozen = true;
-      st.event = { kind: "asked" };
+      st.event = mover ? { kind: "asked", id: mover[0] } : { kind: "asked" };
       return;
     }
     if (s.state !== "playing") {
@@ -1602,7 +1630,7 @@ function installContact(cfg: { roles: string[]; min_speed: number; max_step: num
     pending.delete(id);
   };
   w.__wgf_contact__ = {
-    state: () => ({ frozen: st.frozen, event: st.event, frames: st.frames, seen: st.seen, movers: st.movers,
+    state: () => ({ frozen: st.frozen, event: st.event, frames: st.frames, seen: st.seen, movers: st.movers, asked: st.asked,
                     passed: st.passed, turns: st.turns, gaps: st.gaps,
                     gameMs: st.armedT < 0 ? 0 : st.lastT - st.armedT }),
     arm: (on: boolean) => {
@@ -1610,9 +1638,14 @@ function installContact(cfg: { roles: string[]; min_speed: number; max_step: num
       if (on) st.armedT = -1;
     },
     freezeAfter: (frames: number) => { st.freezeIn = Math.max(0, frames); },
+    freezeOnMover: () => {
+      st.freezeIn = 0;
+      st.onMover = true;
+    },
     thaw: () => {
       st.frozen = false;
       st.freezeIn = -1;
+      st.onMover = false;
       st.prevReal = -1;
       tracks.clear();
       st.event = null;
@@ -1631,6 +1664,7 @@ function installContact(cfg: { roles: string[]; min_speed: number; max_step: num
 }
 
 type ContactState = { frozen: boolean; event: Record<string, unknown> | null; frames: { t: number; e: unknown[]; pf: unknown }[];
+                      asked: number[];
                       seen: number; movers: number; passed: number; turns: number; gaps: number[]; gameMs: number };
 
 // The frame `after_frames` frames on from a thawed page, kept with the same crop as `id`, or null.
@@ -1652,7 +1686,7 @@ async function contactState(page: Page): Promise<ContactState | null> {
   });
 }
 
-async function contactCall(page: Page, name: "freezeAfter" | "thaw" | "arm", value: boolean | number = true): Promise<void> {
+async function contactCall(page: Page, name: "freezeAfter" | "freezeOnMover" | "thaw" | "arm", value: boolean | number = true): Promise<void> {
   await page.evaluate(({ n, v }) => {
     const c = (window as unknown as { __wgf_contact__?: Record<string, (a?: boolean | number) => void> }).__wgf_contact__;
     c?.[n]?.(v);
@@ -1680,6 +1714,8 @@ async function frozenShot(page: Page, project: string, id: string, frames: strin
 // viewport - wide enough that the mover, read for its drawn extent in the frame after (0.3 s
 // of game time on), is still inside it with its window around it.
 const CONTACT_MARGIN = 5;
+// Captures asked for after a window with no turn (each a mover clear in its window).
+const ASKED_MAX = 3;
 const CONTACT_MIN_PX = 120;
 function contactClip(c: ContactState, viewport: { width: number; height: number } | null, last = false): Clip | null {
   const id = (c.event as { id?: string } | null)?.id;
@@ -1705,6 +1741,7 @@ test("contact: frozen frames where a mover turns", async ({ page }, info) => {
   await page.addInitScript(installContact, {
     roles: CFG.contact_roles ?? [], min_speed: CFG.contact_min_speed ?? 1, max_step: CFG.contact_max_step ?? 120,
     gap_ms: CFG.contact_gap_ms ?? 400, tolerance: CFG.contact_tolerance ?? 6, frame_ms: CFG.contact_frame_ms ?? 1000 / 60,
+    clear_colliders: CFG.contact_clear_colliders ?? 2,
   });
   const frames: string[] = [];
   const watch = new Watch(page, project, frames);
@@ -1718,6 +1755,7 @@ test("contact: frozen frames where a mover turns", async ({ page }, info) => {
   let seen = 0;
   let gameMs: number | null = null;
   let retries = 0;
+  let asked: number[] | null = null;
   if (started.playingMs === null) {
     ended = "play never began";
   } else {
@@ -1777,26 +1815,42 @@ test("contact: frozen frames where a mover turns", async ({ page }, info) => {
       }
     }
     // No turn frozen on, but movers in play: one pair of frames asked for anyway (`kind:
-    // asked`), so what is drawn over a collider can still be measured.
+    // asked`), so what is drawn over a collider can still be measured. The freeze waits for a
+    // frame that draws a mover of contact_roles (a game whose movers never turn - shots that fly
+    // until they hit - has one in view only part of the time), and the oracle plays on until
+    // then, as in the window: a page left without input may never fire one.
+    // Up to ASKED_MAX of them: what the frames after show is the game's business (a shot that
+    // clears a wave sets off its celebration over the window), so one capture can be masked.
     const now = await contactState(page);
-    if (!captures.length && (now?.seen ?? 0) > 0) {
-      await contactCall(page, "freezeAfter", 0);
+    for (let n = 1; n <= ASKED_MAX && captures.length < n && (now?.seen ?? 0) > 0; n += 1) {
+      await contactCall(page, "freezeOnMover");
       let at: Record<string, unknown> | null = null;
       for (let i = 0; i < 400 && !at; i += 1) {
-        await page.waitForTimeout(25);
         const c = await contactState(page);
-        if (c?.frozen) at = await frozenShot(page, project, "contact-1-at", frames, contactClip(
-          { ...c, event: { id: ((c.frames.at(-1)?.e ?? []) as unknown[][]).find((e) => (CFG.contact_roles ?? []).includes(e[1] as string))?.[0] } } as ContactState,
-          page.viewportSize(), true));
+        if (c?.frozen) {
+          at = await frozenShot(page, project, `contact-${n}-at`, frames, contactClip(c, page.viewportSize(), true));
+          break;
+        }
+        const s = watch.saw(await snap(page));
+        if (s?.state === "won" || s?.state === "lost") {
+          await page.waitForTimeout(800);
+          await retry(page, watch.saw(await snap(page)), touch);
+          await page.waitForTimeout(600);
+        } else if (s?.oracle) {
+          await act(page, s.oracle, touch);
+          await page.waitForTimeout(25);
+        } else {
+          await page.waitForTimeout(25);
+        }
       }
       await contactCall(page, "thaw");
-      if (at) {
-        const after = await frozenAfter(page, project, "contact-1-after", frames, at.clip as Clip | null);
-        const later = after ? await frozenAfter(page, project, "contact-1-later", frames, at.clip as Clip | null) : null;
-        captures.push({ n: 1, at_ms: null, unit_id: null, at, after, later,
-                        viewport: [page.viewportSize()?.width ?? null, page.viewportSize()?.height ?? null] });
-      }
+      if (!at) break;
+      const after = await frozenAfter(page, project, `contact-${n}-after`, frames, at.clip as Clip | null);
+      const later = after ? await frozenAfter(page, project, `contact-${n}-later`, frames, at.clip as Clip | null) : null;
+      captures.push({ n, at_ms: null, unit_id: null, at, after, later,
+                      viewport: [page.viewportSize()?.width ?? null, page.viewportSize()?.height ?? null] });
     }
+    asked = (await contactState(page))?.asked ?? null;
     await contactCall(page, "arm", false);
     const last = await contactState(page);
     passed = last?.passed ?? 0;
@@ -1811,6 +1865,8 @@ test("contact: frozen frames where a mover turns", async ({ page }, info) => {
   // <= 100 ms, longer); `clock`: each frame's timestamp was stepped by contact_frame_ms.
   write(project, "contact", { applies: true, clock: "frame-stepped", frame_ms: CFG.contact_frame_ms ?? 1000 / 60, ...started,
                               ended, captures, turns, passed, movers_seen: seen, frame_gaps: gaps, game_ms: gameMs,
+                              // frames read while a freeze was asked: all, with a mover, with one clear
+                              asked_frames: asked,
                               ...watch.record(), frames });
 });
 

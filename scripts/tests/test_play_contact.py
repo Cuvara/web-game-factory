@@ -678,6 +678,45 @@ class Bypasses(unittest.TestCase):
         self.assertEqual(result["measured"]["masked_out"], ["ball"])
         self.assertIn("under something else reported", result["summary"])
 
+    def shots(self, masked_asset):
+        """Two captures: shot-a drawn its collider's size in the clear, and shot-b drawn three
+        times its collider under a "trail" reported over it in its frozen frame."""
+        def renamed(capture, eid, asset):
+            for part in ("at", "after", "later"):
+                for f in (capture.get(part) or {}).get("frames") or []:
+                    for e in f["e"]:
+                        if e[0] == "ball":
+                            e[0], e[7] = eid, asset
+            return capture
+        clear = Scene(self.dir, n=1, drawn=40, collider=12)
+        frozen = clear.capture()["at"]["frames"][-1]["e"][0]
+        box = realism._box(*frozen[9][1:5])
+        paint(clear.at, disc((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, 14), (240, 200, 40))
+        honest = renamed(clear.capture(), "shot-a", "shot")
+        s = Scene(self.dir, n=2, drawn=40, collider=12)
+        capture = s.capture()
+        frozen = capture["at"]["frames"][-1]["e"]
+        box = realism._box(*frozen[0][9][1:5])
+        cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        paint(s.at, disc(cx, cy, 36), (240, 200, 40))
+        frozen.append(entity("trail", cx - 10, cy - 10, 20, 20, role="vfx"))
+        with open(os.path.join(self.dir, "contact-2-at.png"), "wb") as handle:
+            handle.write(encode_png(s.at))
+        return judged(record(honest, renamed(capture, "shot-b", masked_asset)), self.dir,
+                      HELD)["physics.drawn_extent"]
+
+    def test_an_entity_masked_in_every_frame_is_covered_by_one_of_the_same_drawing(self):
+        # A shot masked by the wave's celebration beside a shot of the same drawing read in the
+        # clear (wave-shooter, 2026-10-30): one drawing, one measurement.
+        result = self.shots("shot")
+        self.assertEqual(result["status"], "PASS", result)
+        self.assertEqual(result["measured"]["covered_by_same_drawing"], ["shot-b"])
+        # Drawn otherwise (another asset), it is held on its own: never passed on shot-a.
+        other = self.shots("bomb")
+        self.assertEqual(other["status"], "FAIL", other)
+        self.assertEqual(other["measured"]["unmeasured"], realism.UNREPORTED)
+        self.assertNotIn("covered_by_same_drawing", other["measured"])
+
     def test_an_entity_masked_in_every_frame_is_not_dropped_from_the_drawn_extent(self):
         # The ball, drawn three times its collider, under a "trail" entity reported over it
         # (drawn nowhere) in the frozen frame; a paddle drawn its collider's size beside it. The

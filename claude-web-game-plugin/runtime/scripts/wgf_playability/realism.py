@@ -1184,6 +1184,9 @@ def _contact_extent(captures, frames_dir, bars, physics, project, strength, reac
     along_share = bars.get("along_share")
     along_share = float(along_share) if along_share is not None else None
     unread_samples = 0
+    # What each entity is drawn as - its role and the asset that draws it (null for a
+    # primitive) - so an entity never read can be told from one of the same drawing read.
+    drawing = {}
     # Entities whose collider was in view but every pixel of it under something else reported:
     # never read is not passed (a "trail" reported over a body hides it).
     masked = {}
@@ -1211,6 +1214,7 @@ def _contact_extent(captures, frames_dir, bars, physics, project, strength, reac
                     and isinstance(collider, (list, tuple)) and len(collider) >= 5):
                 continue
             reported += 1
+            drawing[s[0]] = (s[1], s[7] if len(s) > 7 else None)
             cbox = _box(*collider[1:5])
             size = max(cbox[2] - cbox[0], cbox[3] - cbox[1])
             if size <= 0:
@@ -1342,6 +1346,16 @@ def _contact_extent(captures, frames_dir, bars, physics, project, strength, reac
         measured.update(along={e: v for e, v in lengthwise.items() if v is not None},
                         along_lower_bounds={e: v for e, v in lengthwise_low.items()
                                             if v is not None})
+    # An entity never read is covered by another of the same drawing (role and asset) that was
+    # read - a shot masked by the wave's celebration, beside one in the clear: one drawing,
+    # one measurement. Never by an entity drawn otherwise (a ball under a trail is not read
+    # by the paddle beside it): what is drawn differently is held on its own (L10).
+    read = {drawing.get(eid) for eid, r in per.items()
+            if any(v is not None for v in r) or crossed[eid] is not None}
+    covered = sorted(eid for eid in unread if drawing.get(eid) in read)
+    unread = [eid for eid in unread if eid not in covered]
+    if covered:
+        measured["covered_by_same_drawing"] = covered[:20]
     if unread and not off and not nothing and not over:
         return _unmeasured("physics.drawn_extent", project, strength,
                            "the drawing of " + ", ".join(unread[:5]) + " was cut by something "
